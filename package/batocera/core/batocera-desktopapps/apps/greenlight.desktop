@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Icon=/usr/share/icons/batocera/greenlight.png
+Exec=batocera-app-greenlight
+Terminal=false
+Type=Application
+Categories=Game;Network;batocera.linux;
+Name=Greenlight
+GenericName=Xbox Cloud Gaming Client
+Comment=Launch Greenlight

@@ -1,0 +1,4 @@
+config BR2_PACKAGE_LIBRETRO_XMIL
+    bool "libretro-xmil"
+    help
+      A libretro Sharp X1 emulator

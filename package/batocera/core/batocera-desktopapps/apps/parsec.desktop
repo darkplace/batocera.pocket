@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Icon=/usr/share/icons/batocera/parsec.png
+Exec=batocera-app-parsec
+Terminal=false
+Type=Application
+Categories=Network;batocera.linux;
+Name=Parsec
+GenericName=Remote Streaming Client
+Comment=Launch Parsec

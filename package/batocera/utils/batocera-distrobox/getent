@@ -1,0 +1,35 @@
+#!/bin/sh
+
+# Minimal getent fallback for passwd/group lookups.
+# Supports only: getent passwd [name|uid], getent group [name|gid]
+
+db="$1"
+key="$2"
+
+case "$db" in
+    passwd)
+        file="/etc/passwd"
+        ;;
+    group)
+        file="/etc/group"
+        ;;
+    "")
+        echo "usage: getent <database> [key]" >&2
+        exit 2
+        ;;
+    *)
+        echo "getent: unsupported database: $db" >&2
+        exit 2
+        ;;
+esac
+
+if [ ! -r "$file" ]; then
+    exit 2
+fi
+
+if [ -z "$key" ]; then
+    cat "$file"
+    exit 0
+fi
+
+awk -F: -v key="$key" '($1 == key) || ($3 == key) { print; found=1 } END { exit(found ? 0 : 2) }' "$file"

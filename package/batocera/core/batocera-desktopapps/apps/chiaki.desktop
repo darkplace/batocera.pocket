@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Icon=/usr/share/icons/batocera/chiaki.png
+Exec=batocera-app-chiaki
+Terminal=false
+Type=Application
+Categories=Game;Network;batocera.linux;
+Name=Chiaki
+GenericName=PlayStation Remote Play Client
+Comment=Launch Chiaki

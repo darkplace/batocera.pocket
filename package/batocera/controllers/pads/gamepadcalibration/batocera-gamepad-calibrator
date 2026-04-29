@@ -1,0 +1,34 @@
+#!/bin/sh
+
+set -eu
+
+PARAM_DIR="/sys/module/rsinput/parameters"
+LOG="/userdata/system/logs/gamepadcalibration.log"
+
+mkdir -p "$(dirname "${LOG}")"
+
+if [ ! -d "${PARAM_DIR}" ]; then
+	echo "RSInput calibration parameters are not available at ${PARAM_DIR}" | tee -a "${LOG}"
+	if command -v batocera-flash-screen >/dev/null 2>&1; then
+		batocera-flash-screen 5 "#ffffff" "RSInput gamepad calibration is unavailable." 20 >/dev/null 2>&1 || true
+	fi
+	exit 1
+fi
+
+export HOME="/userdata/system"
+export XDG_DATA_HOME="${HOME}/.local/share"
+export XDG_CONFIG_HOME="${HOME}/.config"
+export XDG_CACHE_HOME="${HOME}/.cache"
+export PYTHONDONTWRITEBYTECODE=1
+
+if [ -z "${WAYLAND_DISPLAY:-}" ] && [ -z "${DISPLAY:-}" ] && command -v getLocalXDisplay >/dev/null 2>&1; then
+	export DISPLAY="$(getLocalXDisplay)"
+fi
+
+if command -v batocera-mouse >/dev/null 2>&1; then
+	batocera-mouse show >/dev/null 2>&1 || true
+	trap 'batocera-mouse hide >/dev/null 2>&1 || true' EXIT
+fi
+
+cd /usr/share/gpcal
+exec python3 ./main.py >> "${LOG}" 2>&1

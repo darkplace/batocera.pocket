@@ -1,0 +1,12 @@
+config BR2_PACKAGE_BATOCERA_STEAM_AARCH64
+	bool "batocera-steam-aarch64"
+	depends on BR2_aarch64
+	depends on BR2_PACKAGE_BATOCERA_TARGET_SM8550 || \
+		   BR2_PACKAGE_BATOCERA_TARGET_SM8250 || \
+		   BR2_PACKAGE_BATOCERA_TARGET_QCS6490
+	select BR2_PACKAGE_BATOCERA_STEAM_REQUIREMENTS
+	help
+	  Steam launcher integration for Batocera aarch64 Qualcomm targets.
+	  Launches the native ARM64 Steam beta client through steamrtarm64,
+	  registers Proton 11.0 (ARM64) as a custom compatibility tool,
+	  and intentionally avoids the old x86 Steam through FEX path.

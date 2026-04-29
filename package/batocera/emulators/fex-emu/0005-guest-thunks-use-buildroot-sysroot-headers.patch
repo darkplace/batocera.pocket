@@ -1,0 +1,80 @@
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -43,6 +43,7 @@
+ set(THUNKGEN_EXE "" CACHE FILEPATH "Path to a prebuilt thunk generator executable")
+ set(GUEST_CLANG_PATH "" CACHE FILEPATH "Path to clang used for guest thunk sub-builds")
+ set(GUEST_CLANGXX_PATH "" CACHE FILEPATH "Path to clang++ used for guest thunk sub-builds")
++set(GUEST_THUNK_SYSROOT "" CACHE PATH "Sysroot containing guest thunk parsing headers")
+ option(THUNKGEN_ONLY "Only build thunkgen; skip HostLibs, GuestLibs and guest thunk external projects" OFF)
+ set(X86_DEV_ROOTFS "/" CACHE FILEPATH "Path to the sysroot used for cross-compiling for i686 and x86_64")
+ set(DATA_DIRECTORY "" CACHE PATH "Global data directory (override)")
+@@ -680,6 +681,7 @@
+         "-DCLANG_BUILTIN_HEADERS=${CLANG_BUILTIN_HEADERS}"
+         "-DCMAKE_TOOLCHAIN_FILE:FILEPATH=${X86_64_TOOLCHAIN_FILE}"
+         "-DCMAKE_INSTALL_PREFIX=${CMAKE_INSTALL_PREFIX}"
++        "-DGUEST_THUNK_SYSROOT=${GUEST_THUNK_SYSROOT}"
+         "-DFEX_PROJECT_SOURCE_DIR=${FEX_PROJECT_SOURCE_DIR}"
+         "-DGENERATOR_EXE=${GENERATOR_EXE}"
+         "-DX86_DEV_ROOTFS=${X86_DEV_ROOTFS}"
+--- a/ThunkLibs/GuestLibs/CMakeLists.txt
++++ b/ThunkLibs/GuestLibs/CMakeLists.txt
+@@ -9,6 +9,28 @@
+   add_link_options(${LD_OVERRIDE})
+ endif()
+ 
++set(GUEST_THUNK_SYSROOT "" CACHE PATH "Sysroot containing guest thunk parsing headers")
++
++function(guest_thunk_add_sysroot_include TARGET INCLUDE_DIR)
++  if (GUEST_THUNK_SYSROOT)
++    set(SYSROOT_INCLUDE "${GUEST_THUNK_SYSROOT}${INCLUDE_DIR}")
++    if (EXISTS "${SYSROOT_INCLUDE}")
++      target_include_directories(${TARGET} INTERFACE "${SYSROOT_INCLUDE}")
++      return()
++    endif()
++  endif()
++
++  if (EXISTS "${INCLUDE_DIR}")
++    target_include_directories(${TARGET} INTERFACE "${INCLUDE_DIR}")
++  endif()
++endfunction()
++
++function(guest_thunk_add_common_window_includes TARGET)
++  guest_thunk_add_sysroot_include(${TARGET} /usr/include)
++  guest_thunk_add_sysroot_include(${TARGET} /usr/include/X11)
++  guest_thunk_add_sysroot_include(${TARGET} /usr/include/xcb)
++endfunction()
++
+ if (NOT X86_DEV_ROOTFS)
+   message(FATAL_ERROR "X86_DEV_ROOTFS must be set(use \"/\" to ignore)")
+ endif()
+@@ -180,6 +202,7 @@
+   #add_guest_lib(fex_malloc)
+ 
+   generate(libasound ${CMAKE_CURRENT_SOURCE_DIR}/../libasound/libasound_interface.cpp)
++  guest_thunk_add_sysroot_include(libasound-guest-deps /usr/include)
+   add_guest_lib(asound "libasound.so.2")
+ 
+   # disabled for now, headers are platform specific
+@@ -192,17 +215,19 @@
+ 
+   generate(libvulkan ${CMAKE_CURRENT_SOURCE_DIR}/../libvulkan/libvulkan_interface.cpp)
+   target_include_directories(libvulkan-guest-deps INTERFACE ${FEX_PROJECT_SOURCE_DIR}/External/Vulkan-Headers/include/)
++  guest_thunk_add_common_window_includes(libvulkan-guest-deps)
+   add_guest_lib(vulkan "libvulkan.so.1")
+ 
+   generate(libdrm ${CMAKE_CURRENT_SOURCE_DIR}/../libdrm/libdrm_interface.cpp)
+-  target_include_directories(libdrm-guest-deps INTERFACE /usr/include/drm/)
+-  target_include_directories(libdrm-guest-deps INTERFACE /usr/include/libdrm/)
++  guest_thunk_add_sysroot_include(libdrm-guest-deps /usr/include)
++  guest_thunk_add_sysroot_include(libdrm-guest-deps /usr/include/drm)
++  guest_thunk_add_sysroot_include(libdrm-guest-deps /usr/include/libdrm)
+   add_guest_lib(drm "libdrm.so.2")
+ endif()
+ 
+ generate(libwayland-client ${CMAKE_CURRENT_SOURCE_DIR}/../libwayland-client/libwayland-client_interface.cpp)
+ add_guest_lib(wayland-client "libwayland-client.so.0.20.0")
+-target_include_directories(libwayland-client-guest-deps INTERFACE /usr/include/wayland)
++guest_thunk_add_sysroot_include(libwayland-client-guest-deps /usr/include)
+ 
+ generate(libVDSO ${CMAKE_CURRENT_SOURCE_DIR}/../libVDSO/libVDSO_interface.cpp)
+ add_guest_lib(VDSO "linux-vdso.so.1")

@@ -1,0 +1,100 @@
+#!/bin/sh
+
+ACTION=$1
+
+PRIMARY_DISPLAY=$(batocera-resolution currentOutput)
+ALL_OUTPUTS=$(wf-recorder -L | awk '/Name:/ {print $3}')
+
+PULSEAUDIO_MONITOR=$(LC_ALL=C pactl info | grep -E '^Default Sink: ' | sed -e s+"^Default Sink: "+""+ | head -1).monitor
+TIMESTAMP=$(date +%Y.%m.%d-%Hh%M.%S)
+BASE_DIR="/userdata/recordings"
+mkdir -p $BASE_DIR || exit 1
+
+usage() {
+    echo "Usage: $0 [--ultra-fast | --very-fast | --help]"
+    echo "  --ultra-fast      Record 30fps with the fastest encoding settings (Recommended)"
+    echo "  --very-fast       Record 30fps with very-fast encoding settings"
+    echo "  --high-quality    Record with 60fps high quality settings (Hurt that ARM CPU!)"
+    echo "  -h, --help        Show this help message"
+}
+
+start_recording_logic() {
+    CRF=$1
+    PRESET=$2
+    FPS=$3
+    
+    echo "Detected Outputs: ${ALL_OUTPUTS}"
+    echo "Primary Display : ${PRIMARY_DISPLAY}"
+    echo
+    echo "  /!\\ HIGH CPU WARNING /!\\"
+    echo "  -----------------------------------------------------"
+    echo "  Recording multiple outputs simultaneously will place "
+    echo "  extreme load on the CPU. Framerates may drop."
+    echo
+    echo "  NOTE: Audio will ONLY be recorded on the Primary Display."
+    echo "        Secondary displays will be video-only."
+    echo "  -----------------------------------------------------"
+    echo
+    echo -n "Do you want to record ALL outputs simultaneously? (y/N): "
+    read -r ANSWER
+
+    if [ "$ANSWER" = "y" ] || [ "$ANSWER" = "Y" ]; then
+        echo "Starting multi-screen recording..."
+        PIDS=""
+        
+        for DISP in $ALL_OUTPUTS; do
+            FILE="${BASE_DIR}/capture-${TIMESTAMP}-${DISP}.mkv"
+            
+            if [ "$DISP" = "$PRIMARY_DISPLAY" ]; then
+                # Primary screen for audio
+                echo "  [PRIMARY] Starting A/V recording on $DISP -> $FILE"
+                wf-recorder -a$PULSEAUDIO_MONITOR -c libx264 -p crf=$CRF preset=$PRESET -C aac -r $FPS -o $DISP -f "$FILE" &
+            else
+                # Additional screens
+                echo "  [SECONDARY] Starting VIDEO-ONLY recording on $DISP -> $FILE"
+                wf-recorder -c libx264 -p crf=$CRF preset=$PRESET -r $FPS -o $DISP -f "$FILE" &
+            fi
+            
+            # Capture PID(s)
+            PIDS="$PIDS $!"
+        done
+
+        echo
+        echo "+-----------------------------------------+" >&2
+        echo "| Recording ALL screens. Ctrl+c to stop.  |" >&2
+        echo "+-----------------------------------------+" >&2
+
+        trap "kill $PIDS" INT TERM
+        wait
+    else
+        # Standard Single Recording (Primary only)
+        FILE="${BASE_DIR}/capture-${TIMESTAMP}.mkv"
+        echo "Recording primary output ($PRIMARY_DISPLAY) to: ${FILE}"
+        echo
+        echo "+-------------------------------+" >&2
+        echo "| Press Ctrl+c to end recording |" >&2
+        echo "+-------------------------------+" >&2
+        
+        wf-recorder -a$PULSEAUDIO_MONITOR -c libx264 -p crf=$CRF preset=$PRESET -C aac -r $FPS -o $PRIMARY_DISPLAY -f "$FILE"
+    fi
+}
+
+case "$ACTION" in
+    --ultra-fast)
+        start_recording_logic 30 ultrafast 30
+        ;;
+    --very-fast)
+        start_recording_logic 28 veryfast 30
+        ;;
+    --high-quality)
+        start_recording_logic 23 fast 60
+        ;;
+    -h|--help)
+        usage
+        exit 0
+        ;;
+    *)
+        usage
+        exit 1
+        ;;
+esac

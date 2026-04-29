@@ -1,0 +1,97 @@
+#!/bin/sh
+
+set -eu
+
+usage() {
+    echo "Usage: xdg-mime query default <mimetype> | query filetype <file> | default <desktop-file> <mimetype...>" >&2
+    exit 1
+}
+
+read_user_default() {
+    mime="${1}"
+    conf_file="/userdata/system/.config/mimeapps.list"
+    if [ -f "${conf_file}" ]; then
+        awk -F= -v m="${mime}" '$1 == m { gsub(/;.*/, "", $2); print $2; exit }' "${conf_file}"
+    fi
+}
+
+set_default() {
+    desktop="${1}"
+    shift
+    conf_dir="/userdata/system/.config"
+    conf_file="${conf_dir}/mimeapps.list"
+    tmp_file="${conf_file}.tmp.$$"
+
+    mkdir -p "${conf_dir}"
+    if [ ! -f "${conf_file}" ]; then
+        printf '%s\n' "[Default Applications]" > "${conf_file}"
+    fi
+
+    cp -f "${conf_file}" "${tmp_file}"
+    if ! grep -q '^\[Default Applications\]' "${tmp_file}"; then
+        printf '%s\n' "[Default Applications]" >> "${tmp_file}"
+    fi
+
+    for mime in "$@"; do
+        # Replace existing mapping or append one.
+        if grep -q "^${mime}=" "${tmp_file}"; then
+            sed -i "s#^${mime}=.*#${mime}=${desktop};#g" "${tmp_file}"
+        else
+            printf '%s\n' "${mime}=${desktop};" >> "${tmp_file}"
+        fi
+    done
+
+    mv -f "${tmp_file}" "${conf_file}"
+}
+
+if [ "$#" -lt 1 ]; then
+    usage
+fi
+
+case "${1}" in
+    query)
+        [ "$#" -ge 3 ] || usage
+        case "${2}" in
+            default)
+                mime="${3}"
+                user_default="$(read_user_default "${mime}" || true)"
+                if [ -n "${user_default}" ]; then
+                    printf '%s\n' "${user_default}"
+                    exit 0
+                fi
+                case "${mime}" in
+                    x-scheme-handler/http|x-scheme-handler/https)
+                        printf '%s\n' "${BATOCERA_XDG_DEFAULT_BROWSER_DESKTOP:-firefox.desktop}"
+                        exit 0
+                        ;;
+                esac
+
+                if command -v gio >/dev/null 2>&1; then
+                    gio mime "${mime}" 2>/dev/null | sed -n 's/^Default application for .*: //p' | awk '{print $1}'
+                    exit 0
+                fi
+                exit 0
+                ;;
+            filetype)
+                file_path="${3}"
+                if command -v gio >/dev/null 2>&1; then
+                    gio info -a standard::content-type "${file_path}" 2>/dev/null | sed -n 's/^.*standard::content-type:[[:space:]]*//p'
+                    exit 0
+                fi
+                exit 1
+                ;;
+            *)
+                usage
+                ;;
+        esac
+        ;;
+    default)
+        [ "$#" -ge 3 ] || usage
+        desktop_file="${2}"
+        shift 2
+        set_default "${desktop_file}" "$@"
+        ;;
+    *)
+        usage
+        ;;
+esac

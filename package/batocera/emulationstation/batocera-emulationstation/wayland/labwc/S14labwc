@@ -1,0 +1,160 @@
+#!/bin/sh
+
+SRC_DIR="/usr/share/labwc"
+DEST_DIR="/userdata/system/.config/labwc"
+
+update_window_rules() {
+    python3 - "$1" "$2" "$3" "$4" "$5" <<'PY'
+import sys
+import xml.etree.ElementTree as ET
+
+path, primary, secondary, touch_name, dual_mode = sys.argv[1:6]
+tree = ET.parse(path)
+root = tree.getroot()
+
+for touch in root.findall("touch"):
+    root.remove(touch)
+
+insert_at = 1 if root.find("core") is not None else 0
+touch_rules = []
+
+if dual_mode == "1" and secondary:
+    touch_rules = [
+        ("generic ft5x06 (8d)", secondary),
+        ("generic ft5x06 (8d)", primary),
+    ]
+elif touch_name and primary:
+    touch_rules = [(touch_name, primary)]
+
+for device_name, output_name in reversed(touch_rules):
+    if not output_name:
+        continue
+    root.insert(insert_at, ET.Element("touch", {
+        "deviceName": device_name,
+        "mapToOutput": output_name,
+        "mouseEmulation": "no",
+    }))
+
+def set_outputs(rule, mapping):
+    for action in rule.findall("action"):
+        output = action.find("output")
+        if output is None:
+            continue
+        action_name = action.attrib.get("name")
+        if action_name in mapping:
+            output.text = mapping[action_name]
+
+for rule in root.findall("./windowRules/windowRule"):
+    identifier = rule.attrib.get("identifier")
+    title = rule.attrib.get("title")
+
+    if identifier == "emulationstation":
+        set_outputs(rule, {"FocusOutput": primary, "MoveToOutput": primary})
+    elif title == "backglass":
+        set_outputs(rule, {"MoveToOutput": secondary})
+    elif identifier == "azahar" and title is None:
+        set_outputs(rule, {"MoveToOutput": primary})
+    elif identifier == "azahar" and title == "*Secondary Window*":
+        set_outputs(rule, {"MoveToOutput": secondary})
+    elif identifier in {"net.kuribo64.melonDS", "melonDS"} and title == "*w1*":
+        set_outputs(rule, {"MoveToOutput": primary})
+    elif identifier in {"net.kuribo64.melonDS", "melonDS"} and title == "*w2*":
+        set_outputs(rule, {"MoveToOutput": secondary})
+    elif title == "*GamePad*":
+        set_outputs(rule, {"MoveToOutput": secondary})
+
+ET.indent(tree, space="  ")
+tree.write(path, encoding="UTF-8", xml_declaration=True)
+PY
+}
+
+apply_xwayland_touch_matrix() {
+    local MODEL PRIMARY_OUT SECONDARY_OUT DISPLAY_POSITION XWAYLAND_TOUCH
+
+    MODEL=$(batocera-model 2>/dev/null)
+    PRIMARY_OUT=$(batocera-settings-get-master global.videooutput)
+    SECONDARY_OUT=$(batocera-settings-get-master global.videooutput2)
+    DISPLAY_POSITION=$(batocera-settings-get-master display.position)
+
+    if [ "${MODEL}" != "AYN_Thor" ] || [ "${DISPLAY_POSITION}" != "top-bottom" ] || [ "${PRIMARY_OUT}" != "DSI-2" ] || [ "${SECONDARY_OUT}" != "DSI-1" ]; then
+        return 0
+    fi
+
+    for _try in $(seq 1 30); do
+        XWAYLAND_TOUCH=$(DISPLAY=:0 xinput list --name-only 2>/dev/null | awk '/^xwayland-touch:/{print; exit}')
+        if [ -n "${XWAYLAND_TOUCH}" ]; then
+            DISPLAY=:0 xinput set-prop "${XWAYLAND_TOUCH}" "Coordinate Transformation Matrix" \
+                0.645833 0 0.177083 \
+                0 0.95 0.5 \
+                0 0 1 >/dev/null 2>&1
+            return 0
+        fi
+        sleep 1
+    done
+
+    return 0
+}
+
+start() {
+    display_log="/userdata/system/logs/display.log"
+    mkdir -p "$(dirname "$display_log")"
+    echo "Initializing Labwc configuration..." > "$display_log"
+    mkdir -p "$DEST_DIR"
+    for file in rc.xml autostart; do
+        echo "Copying default $file to $DEST_DIR..." >> "$display_log"
+        cp "$SRC_DIR/$file" "$DEST_DIR/"
+    done
+
+    RC_XML_PATH="$DEST_DIR/rc.xml"
+    if [ -f "${RC_XML_PATH}" ]; then
+        echo "Fetching video output settings to apply to ${RC_XML_PATH}..." >> "$display_log"
+        PRIMARY_OUT=$(batocera-settings-get-master global.videooutput)
+        SECONDARY_OUT=$(batocera-settings-get-master global.videooutput2)
+        TOUCHSCREEN=$(libinput list-devices | awk -v RS= '/Capabilities:.*touch/ {if (match($0, /Device:[[:space:]]+([^\n]+)/, m)) {print m[1]; exit}}')
+        TOUCHSCREEN_COUNT=$(libinput list-devices | awk -v RS= '/Capabilities:.*touch/ {count++} END {print count+0}')
+        DISPLAY_POSITION=$(batocera-settings-get-master display.position)
+        DUAL_TOUCH_MODE=0
+
+        echo "Found Primary Output: ${PRIMARY_OUT:-none}" >> "$display_log"
+        echo "Found Secondary Output: ${SECONDARY_OUT:-none}" >> "$display_log"
+        echo "Applying window rules for EmulationStation -> ${PRIMARY_OUT}" >> "$display_log"
+        echo "Applying window rules for backglass..." >> "$display_log"
+        echo "Applying window rules for azahar..." >> "$display_log"
+        echo "Setting main azahar window -> ${PRIMARY_OUT}" >> "$display_log"
+        echo "Setting azahar Secondary Window -> ${SECONDARY_OUT}" >> "$display_log"
+        echo "Applying window rules for melonDS..." >> "$display_log"
+        echo "Setting melonDS [w1] window -> ${PRIMARY_OUT}" >> "$display_log"
+        echo "Setting melonDS [w2] window -> ${SECONDARY_OUT}" >> "$display_log"
+        echo "Applying window rules for cemu..." >> "$display_log"
+        echo "Setting cemu GamePad window -> ${SECONDARY_OUT}" >> "$display_log"
+
+        if [ "${DISPLAY_POSITION}" = "top-bottom" ] && [ -n "${SECONDARY_OUT}" ] && [ "${TOUCHSCREEN_COUNT}" -ge 2 ] && [ "${TOUCHSCREEN}" = "generic ft5x06 (8d)" ]; then
+            DUAL_TOUCH_MODE=1
+            echo "Configuring Thor dual touch mappings: bottom -> ${SECONDARY_OUT}, top -> ${PRIMARY_OUT}." >> "$display_log"
+        elif [ -n "${TOUCHSCREEN}" ]; then
+            echo "Configuring single touch mapping: ${TOUCHSCREEN} -> ${PRIMARY_OUT}." >> "$display_log"
+        else
+            echo "No touchscreen found. Touch mapping will be left empty." >> "$display_log"
+        fi
+
+        update_window_rules "${RC_XML_PATH}" "${PRIMARY_OUT}" "${SECONDARY_OUT}" "${TOUCHSCREEN}" "${DUAL_TOUCH_MODE}"
+        echo "Labwc configuration modification complete." >> "$display_log"
+        ( apply_xwayland_touch_matrix ) >> "$display_log" 2>&1 &
+    else
+        echo "ERROR: ${RC_XML_PATH} not found after copy. Cannot apply settings." >> "$display_log"
+    fi
+}
+
+case "$1" in
+    start)
+        start
+        ;;
+    stop)
+        ;;
+    *)
+        echo "Usage: $0 start"
+        exit 1
+        ;;
+esac
+
+exit 0

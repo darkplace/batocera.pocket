@@ -1,0 +1,70 @@
+#!/bin/bash
+#
+# Starts LED driver for handheld devices
+#
+
+# Exit if not in the list of supported devices
+SUPPBOARD=$(python3 /usr/lib/python*/batoled.py)
+[[ "$SUPPBOARD" == "Unsupported" ]] && exit
+# Exit if system.led-handheld=0 in batocera.conf
+OPT=$(batocera-settings-get system.led-handheld)
+[[ "$OPT" == 0 ]] && exit
+PROCESS="/usr/bin/batocera-led-handheld"
+PID="/var/run/led-handheld.pid"
+HOOK_DIR="/var/run/emulationstation/scripts/achievements"
+HOOK_TARGET="/usr/share/batocera-led-handheld/scripts/achievements.sh"
+HOOK_LINK="${HOOK_DIR}/batocera-led-handheld.sh"
+
+register_hook() {
+	mkdir -p "${HOOK_DIR}"
+	ln -sf "${HOOK_TARGET}" "${HOOK_LINK}"
+}
+
+unregister_hook() {
+	rm -f "${HOOK_LINK}"
+}
+
+start() {
+	printf "Starting LED handheld daemon: "
+	register_hook
+	start-stop-daemon -S -q -b -m -p "$PID" --exec "$PROCESS" -- start
+	[ $? = 0 ] && echo "OK" || echo "FAIL"
+}
+
+stop() {
+	printf "Stopping LED handheld daemon: "
+	RES=0
+	if [ -f "$PID" ]; then
+		start-stop-daemon -K -q -p "$PID" --retry 5
+		RES=$?
+		rm -f "$PID"
+	else
+		# Fallback when pidfile is missing/stale.
+		pkill -f "python3 /usr/bin/batocera-led-handheld start" >/dev/null 2>&1
+		RES=$?
+	fi
+	unregister_hook
+	[ $RES = 0 ] && echo "OK" || echo "FAIL"
+	/usr/bin/batocera-led-handheld stop
+}
+restart() {
+	stop
+	start
+}
+
+case "$1" in
+  start)
+  	start
+	;;
+  stop)
+  	stop
+	;;
+  restart|reload)
+  	restart
+	;;
+  *)
+	echo "Usage: $0 {start|stop|restart}"
+	exit 1
+esac
+
+exit $?

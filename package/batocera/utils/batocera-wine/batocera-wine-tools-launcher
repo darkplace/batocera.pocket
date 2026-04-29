@@ -1,0 +1,22 @@
+#!/bin/bash
+set -euo pipefail
+
+if [ -z "${DISPLAY:-}" ]; then
+    export DISPLAY="$(getLocalXDisplay 2>/dev/null || printf ':0.0')"
+fi
+
+log_dir="/userdata/system/logs"
+log_file="${log_dir}/batocera-wine-tools.log"
+mkdir -p "${log_dir}"
+
+batocera-mouse show
+trap 'batocera-mouse hide' EXIT
+
+exec xterm -fs 14 -fg white -bg black -fa "Monospace" -en UTF-8 -sb -rightbar \
+    -T "Batocera Wine Tools" \
+    -e /bin/bash -lc '
+        set -o pipefail
+        log_file="$1"
+        printf "\n===== batocera-wine-tools %s =====\n" "$(date -Is)" | tee -a "${log_file}"
+        /usr/bin/batocera-wine-tools 2>&1 | tee -a "${log_file}"
+    ' bash "${log_file}"

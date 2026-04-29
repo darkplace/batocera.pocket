@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Icon=/usr/share/icons/batocera/protonupqt.png
+Exec=batocera-app-protonupqt
+Terminal=false
+Type=Application
+Categories=Game;batocera.linux;
+Name=ProtonUp-Qt
+GenericName=Proton Compatibility Tool Manager
+Comment=Install and manage Proton-GE and related compatibility tools

@@ -1,0 +1,109 @@
+#!/bin/sh
+
+CALIBRATION="/userdata/system/configs/rsinput/rsinput-calibration.conf"
+PARAM_DIR="/sys/module/rsinput/parameters"
+LOG="/userdata/system/logs/gamepadcalibration.log"
+LAUNCHER_SRC="/usr/share/gpcal/launcher/Gamepad_Calibration.sh"
+LAUNCHER_ICON_SRC="/usr/share/gpcal/launcher/images/gamepad-calibration.svg"
+LAUNCHER_DST="/userdata/roms/emulator/Gamepad_Calibration.sh"
+LAUNCHER_ICON_DST="/userdata/roms/emulator/images/gamepad-calibration.svg"
+LAUNCHER_GAMELIST="/userdata/roms/emulator/gamelist.xml"
+
+ensure_launcher() {
+	mkdir -p /userdata/roms/emulator/images
+
+	if [ -f "${LAUNCHER_SRC}" ]; then
+		cp -f "${LAUNCHER_SRC}" "${LAUNCHER_DST}" 2>/dev/null || true
+		chmod 0755 "${LAUNCHER_DST}" 2>/dev/null || true
+	fi
+
+	if [ -f "${LAUNCHER_ICON_SRC}" ]; then
+		cp -f "${LAUNCHER_ICON_SRC}" "${LAUNCHER_ICON_DST}" 2>/dev/null || true
+	fi
+
+	if [ ! -f "${LAUNCHER_GAMELIST}" ]; then
+		cat > "${LAUNCHER_GAMELIST}" <<'EOF'
+<?xml version="1.0"?>
+<gameList>
+</gameList>
+EOF
+	fi
+
+	if ! grep -q './Gamepad_Calibration.sh' "${LAUNCHER_GAMELIST}" 2>/dev/null; then
+		awk '/<\/gameList>/ {
+			print "  <game>";
+			print "    <path>./Gamepad_Calibration.sh</path>";
+			print "    <name>Gamepad Calibration</name>";
+			print "    <image>./images/gamepad-calibration.svg</image>";
+			print "  </game>";
+		} { print }' "${LAUNCHER_GAMELIST}" > "${LAUNCHER_GAMELIST}.tmp" &&
+			mv "${LAUNCHER_GAMELIST}.tmp" "${LAUNCHER_GAMELIST}"
+	fi
+}
+
+apply_calibration() {
+	local key
+	local value
+	local num
+	local i
+
+	[ -f "${CALIBRATION}" ] || return 0
+
+	mkdir -p "$(dirname "${LOG}")"
+	for i in $(seq 1 20); do
+		[ -d "${PARAM_DIR}" ] && break
+		sleep 0.25
+	done
+
+	if [ ! -d "${PARAM_DIR}" ]; then
+		echo "RSInput calibration parameters are not available at ${PARAM_DIR}" >> "${LOG}"
+		return 0
+	fi
+
+	echo "Applying RSInput gamepad calibration from ${CALIBRATION}" >> "${LOG}"
+	while IFS='=' read -r key value; do
+		case "${key}" in
+			''|\#*)
+				continue
+				;;
+			axis_leftx_min|axis_leftx_max|axis_leftx_center|axis_leftx_deadzone|axis_leftx_antideadzone|\
+			axis_lefty_min|axis_lefty_max|axis_lefty_center|axis_lefty_deadzone|axis_lefty_antideadzone|\
+			axis_rightx_min|axis_rightx_max|axis_rightx_center|axis_rightx_deadzone|axis_rightx_antideadzone|\
+			axis_righty_min|axis_righty_max|axis_righty_center|axis_righty_deadzone|axis_righty_antideadzone|\
+			trigger_left_max|trigger_left_deadzone|trigger_left_antideadzone|\
+			trigger_right_max|trigger_right_deadzone|trigger_right_antideadzone|\
+			update_params)
+				;;
+			*)
+				echo "Ignoring unknown RSInput calibration key: ${key}" >> "${LOG}"
+				continue
+				;;
+		esac
+
+		num="${value#-}"
+		case "${num}" in
+			''|*[!0-9]*)
+				echo "Ignoring invalid RSInput calibration value: ${key}=${value}" >> "${LOG}"
+				continue
+				;;
+		esac
+
+		[ -w "${PARAM_DIR}/${key}" ] || continue
+		printf '%s' "${value}" > "${PARAM_DIR}/${key}" 2>> "${LOG}" || true
+	done < "${CALIBRATION}"
+}
+
+case "$1" in
+	start|restart|reload)
+		ensure_launcher
+		apply_calibration
+		;;
+	stop)
+		;;
+	*)
+		echo "Usage: $0 {start|stop|restart|reload}"
+		exit 1
+		;;
+esac
+
+exit 0

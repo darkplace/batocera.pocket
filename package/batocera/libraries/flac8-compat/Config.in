@@ -1,0 +1,8 @@
+config BR2_PACKAGE_FLAC8_COMPAT
+	bool "flac8-compat"
+	select BR2_PACKAGE_LIBOGG
+	help
+	  Installs legacy libFLAC.so.8 runtime compatibility library.
+	  Intended for older prebuilt binaries (e.g. some PortMaster ports)
+	  that still depend on FLAC SONAME 8.
+

@@ -1,0 +1,58 @@
+#!/bin/sh
+# SPDX-FileCopyrightText: 2026 suckbluefrog
+set -eu
+
+LOG="/userdata/system/logs/steam.log"
+HOTKEY_DIR="/userdata/system/configs/hotkeygen"
+ACTIVE_MAP="${HOTKEY_DIR}/ASUS_ROG_Ally_Config-b05-1abe.mapping"
+ES_MAP="${HOTKEY_DIR}/ASUS_ROG_Ally_Config-b05-1abe.mapping.es"
+DATAINIT_DIR="/usr/share/batocera/datainit/system/configs/hotkeygen"
+
+hotkeygen_permanent_running() {
+    pgrep -f '(^|[[:space:]])(/usr/bin/)?hotkeygen([[:space:]].*)?--permanent([[:space:]]|$)' >/dev/null 2>&1
+}
+
+restore_ally_es_map() {
+    src=""
+
+    mkdir -p "${HOTKEY_DIR}" 2>/dev/null || true
+    for src in \
+        "${ES_MAP}" \
+        "${DATAINIT_DIR}/ASUS_ROG_Ally_Config-b05-1abe.mapping.es" \
+        "${DATAINIT_DIR}/ASUS_ROG_Ally_Config-b05-1abe.mapping"
+    do
+        if [ -f "${src}" ]; then
+            cp -f "${src}" "${ACTIVE_MAP}" 2>/dev/null || true
+            return 0
+        fi
+    done
+
+    return 1
+}
+
+start() {
+    mkdir -p "$(dirname "${LOG}")" 2>/dev/null || true
+
+    if restore_ally_es_map; then
+        echo "Steam hotkeys boot-reset: restored ES profile" >> "${LOG}"
+    fi
+
+    if command -v hotkeygen >/dev/null 2>&1; then
+        /usr/bin/hotkeygen --default-context >/dev/null 2>&1 || true
+        if hotkeygen_permanent_running; then
+            /usr/bin/hotkeygen --reload >/dev/null 2>&1 || true
+        fi
+    fi
+}
+
+case "${1:-}" in
+    start|restart)
+        start
+        ;;
+    stop)
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|restart}" >&2
+        exit 1
+        ;;
+esac

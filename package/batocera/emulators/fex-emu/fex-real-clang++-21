@@ -1,0 +1,51 @@
+#!/bin/sh
+unset CCC_OVERRIDE_OPTIONS CFLAGS CXXFLAGS CPPFLAGS LDFLAGS TARGET_CFLAGS TARGET_CXXFLAGS TARGET_LDFLAGS
+
+set -- "$@"
+filtered_args=
+for arg in "$@"; do
+	case "$arg" in
+		-march=*|-mcpu=*|-mtune=*|-mabi=*)
+			continue
+			;;
+	esac
+	filtered_args="${filtered_args}
+${arg}"
+done
+
+set --
+old_ifs=$IFS
+IFS='
+'
+for arg in $filtered_args; do
+	set -- "$@" "$arg"
+done
+IFS=$old_ifs
+
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+if [ -x "$script_dir/clang++-21.real" ]; then
+	LD_LIBRARY_PATH="$script_dir:/usr/lib:/usr/lib64:/lib:/lib64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+		exec "$script_dir/clang++-21.real" "$@"
+fi
+
+for compiler in \
+	/usr/bin/clang++-21 \
+	/bin/clang++-21 \
+	/proc/self/root/usr/bin/clang++-21 \
+	/proc/self/root/bin/clang++-21 \
+	/proc/1/root/usr/bin/clang++-21 \
+	/proc/1/root/bin/clang++-21 \
+	/usr/bin/clang++ \
+	/bin/clang++ \
+	/proc/self/root/usr/bin/clang++ \
+	/proc/self/root/bin/clang++ \
+	/proc/1/root/usr/bin/clang++ \
+	/proc/1/root/bin/clang++
+do
+	if [ -x "$compiler" ]; then
+		exec "$compiler" "$@"
+	fi
+done
+
+echo "fex-real-clang++-21: no real host clang++ found" >&2
+exit 127

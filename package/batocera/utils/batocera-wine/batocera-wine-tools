@@ -1,0 +1,795 @@
+#!/bin/bash
+set -u -o pipefail
+
+ROOT_ROMS_WINDOWS="/userdata/roms/windows"
+ROOT_WINE_BOTTLES="/userdata/system/wine-bottles/windows"
+ROOT_WINE_CUSTOM="/userdata/system/wine/custom"
+ROOT_WINE_EXE="/userdata/system/wine/exe"
+ROOT_WINE_EXE_BAK="/userdata/system/wine/exe.bak"
+WINETRICKS_ALL_URL="https://raw.githubusercontent.com/Winetricks/winetricks/master/files/verbs/all.txt"
+KRON4EK_RELEASES_URL="https://api.github.com/repos/Kron4ek/Wine-Builds/releases?per_page=300"
+WINE_GE_RELEASES_URL="https://api.github.com/repos/GloriousEggroll/wine-ge-custom/releases?per_page=100"
+PROTON_GE_RELEASES_URL="https://api.github.com/repos/GloriousEggroll/proton-ge-custom/releases?per_page=100"
+
+clear_screen() {
+    clear >/dev/null 2>&1 || true
+}
+
+msg_box() {
+    dialog --msgbox "$1" 14 78 2>&1 >/dev/tty
+    clear_screen
+}
+
+yes_no() {
+    dialog --yesno "$1" 14 78 2>&1 >/dev/tty
+    local rc=$?
+    clear_screen
+    return "$rc"
+}
+
+info_box() {
+    dialog --infobox "$1" 6 72 2>&1 >/dev/tty
+}
+
+dialog_capture_stdout() {
+    dialog --stdout "$@" </dev/tty 2>/dev/tty
+}
+
+require_dialog() {
+    if ! command -v dialog >/dev/null 2>&1; then
+        echo "batocera-wine-tools requires dialog." >&2
+        exit 1
+    fi
+    if ! [ -t 0 ] && ! [ -t 1 ] && ! [ -t 2 ]; then
+        echo "batocera-wine-tools requires an interactive terminal." >&2
+        exit 1
+    fi
+}
+
+require_commands() {
+    local missing=() cmd
+    for cmd in "$@"; do
+        command -v "$cmd" >/dev/null 2>&1 || missing+=("$cmd")
+    done
+    if [ "${#missing[@]}" -gt 0 ]; then
+        msg_box "Missing required commands: ${missing[*]}"
+        return 1
+    fi
+    return 0
+}
+
+select_single() {
+    local title="$1"
+    local prompt="$2"
+    shift 2
+    local entries=("$@")
+    local options=()
+    local idx choice
+
+    [ "${#entries[@]}" -gt 0 ] || return 1
+
+    for idx in "${!entries[@]}"; do
+        options+=("$((idx + 1))" "${entries[$idx]}")
+    done
+
+    choice=$(dialog --clear --title "$title" --menu "$prompt" 22 100 12 "${options[@]}" 2>&1 >/dev/tty) || {
+        clear_screen
+        return 1
+    }
+    clear_screen
+    printf '%s\n' "${entries[$((choice - 1))]}"
+}
+
+select_multiple_from_json() {
+    local title="$1"
+    local prompt="$2"
+    local json="$3"
+    local options=()
+    local count idx label
+
+    count=$(printf '%s' "$json" | jq 'length') || return 1
+    [ "$count" -gt 0 ] || return 1
+
+    for ((idx=0; idx<count; idx++)); do
+        label=$(printf '%s' "$json" | jq -r ".[$idx].label")
+        options+=("$((idx + 1))" "$label" off)
+    done
+
+    dialog --separate-output --title "$title" --checklist "$prompt" 24 100 14 "${options[@]}" 2>&1 >/dev/tty
+    local rc=$?
+    clear_screen
+    return "$rc"
+}
+
+select_radiolist() {
+    local title="$1"
+    local prompt="$2"
+    shift 2
+    dialog_capture_stdout --title "$title" --radiolist "$prompt" 20 90 12 "$@"
+    local rc=$?
+    clear_screen
+    return "$rc"
+}
+
+fetch_json() {
+    curl -fsSL "$1"
+}
+
+download_with_gauge() {
+    local url="$1"
+    local output="$2"
+    local title="$3"
+    local status_file
+    status_file=$(mktemp)
+
+    mkdir -p "$(dirname "$output")" || return 1
+    rm -f "$output"
+
+    (
+        if wget --tries=10 --no-check-certificate --no-cache --no-cookies --progress=dot --timeout=60 -O "$output" "$url" 2>&1 | \
+            while IFS= read -r line; do
+                if [[ "$line" =~ ([0-9]{1,3})% ]]; then
+                    echo "${BASH_REMATCH[1]}"
+                fi
+            done; then
+            echo 0 > "$status_file"
+        else
+            echo 1 > "$status_file"
+        fi
+        echo 100
+    ) | dialog --gauge "\n${title}" 9 75 0 2>&1 >/dev/tty
+
+    local rc=1
+    [ -f "$status_file" ] && rc=$(cat "$status_file")
+    rm -f "$status_file"
+    clear_screen
+    [ "$rc" -eq 0 ] && [ -s "$output" ]
+}
+
+archive_entry_count() {
+    local archive="$1"
+    case "$archive" in
+        *.tar.gz) tar -tf "$archive" | wc -l ;;
+        *.tar.xz) tar -tJf "$archive" | wc -l ;;
+        *) return 1 ;;
+    esac
+}
+
+archive_top_count() {
+    local archive="$1"
+    case "$archive" in
+        *.tar.gz) tar -tf "$archive" | awk -F/ 'NF {print $1}' | sort -u | wc -l ;;
+        *.tar.xz) tar -tJf "$archive" | awk -F/ 'NF {print $1}' | sort -u | wc -l ;;
+        *) return 1 ;;
+    esac
+}
+
+extract_archive_with_gauge() {
+    local archive="$1"
+    local destination="$2"
+    local title="$3"
+    local total top fifo status_file count percent
+    total=$(archive_entry_count "$archive") || return 1
+    [ "$total" -gt 0 ] || return 1
+    top=$(archive_top_count "$archive") || return 1
+
+    mkdir -p "$destination" || return 1
+
+    fifo=$(mktemp -u)
+    status_file=$(mktemp)
+    rm -f "$fifo"
+    mkfifo "$fifo" || return 1
+
+    count=0
+    (
+        case "$archive" in
+            *.tar.gz)
+                if [ "$top" -eq 1 ]; then
+                    tar --strip-components=1 -xzf "$archive" -C "$destination" --checkpoint=10 --checkpoint-action=echo='%u' > "$fifo" 2>/dev/null &
+                else
+                    tar -xzf "$archive" -C "$destination" --checkpoint=10 --checkpoint-action=echo='%u' > "$fifo" 2>/dev/null &
+                fi
+                ;;
+            *.tar.xz)
+                if [ "$top" -eq 1 ]; then
+                    tar --strip-components=1 -xJf "$archive" -C "$destination" --checkpoint=10 --checkpoint-action=echo='%u' > "$fifo" 2>/dev/null &
+                else
+                    tar -xJf "$archive" -C "$destination" --checkpoint=10 --checkpoint-action=echo='%u' > "$fifo" 2>/dev/null &
+                fi
+                ;;
+            *)
+                echo 1 > "$status_file"
+                echo 100
+                exit 0
+                ;;
+        esac
+        local tar_pid=$!
+        while IFS= read -r _; do
+            count=$((count + 10))
+            percent=$((count * 100 / total))
+            [ "$percent" -gt 100 ] && percent=100
+            echo "$percent"
+        done < "$fifo"
+        if wait "$tar_pid"; then
+            echo 0 > "$status_file"
+        else
+            echo 1 > "$status_file"
+        fi
+        echo 100
+    ) | dialog --gauge "\n${title}" 9 75 0 2>&1 >/dev/tty
+
+    local rc=1
+    [ -f "$status_file" ] && rc=$(cat "$status_file")
+    rm -f "$status_file" "$fifo"
+    clear_screen
+    [ "$rc" -eq 0 ]
+}
+
+postprocess_proton_dir() {
+    local destination="$1"
+    if [ -d "$destination/files" ]; then
+        shopt -s dotglob nullglob
+        mv "$destination/files"/* "$destination/" 2>/dev/null || true
+        shopt -u dotglob nullglob
+        rmdir "$destination/files" 2>/dev/null || true
+    fi
+}
+
+archive_dir_name() {
+    local archive="$1"
+    case "$archive" in
+        *.tar.gz) printf '%s\n' "${archive%.tar.gz}" ;;
+        *.tar.xz) printf '%s\n' "${archive%.tar.xz}" ;;
+        *) return 1 ;;
+    esac
+}
+
+download_release_selection() {
+    local title="$1"
+    local prompt="$2"
+    local json="$3"
+    local selections idx archive url outdir tmpfile dirname
+
+    mkdir -p "$ROOT_WINE_CUSTOM" || return 1
+    selections=$(select_multiple_from_json "$title" "$prompt" "$json") || return 1
+    [ -n "$selections" ] || return 1
+
+    for idx in $selections; do
+        idx=$((idx - 1))
+        archive=$(printf '%s' "$json" | jq -r ".[$idx].archive")
+        url=$(printf '%s' "$json" | jq -r ".[$idx].url")
+        dirname=$(archive_dir_name "$archive") || {
+            msg_box "Unsupported archive format: ${archive}"
+            continue
+        }
+        outdir="${ROOT_WINE_CUSTOM}/${dirname}"
+        tmpfile="${ROOT_WINE_CUSTOM}/${archive}"
+
+        if ! download_with_gauge "$url" "$tmpfile" "Downloading ${archive}..."; then
+            msg_box "Download failed: ${archive}"
+            rm -f "$tmpfile"
+            continue
+        fi
+
+        mkdir -p "$outdir" || return 1
+        if ! extract_archive_with_gauge "$tmpfile" "$outdir" "Extracting ${archive}..."; then
+            msg_box "Extraction failed: ${archive}"
+            rm -f "$tmpfile"
+            continue
+        fi
+        rm -f "$tmpfile"
+
+        case "$archive" in
+            GE-Proton*.tar.gz|Proton*.tar.gz|proton-*.tar.gz)
+                postprocess_proton_dir "$outdir"
+                ;;
+        esac
+    done
+
+    msg_box "Selected downloads completed."
+}
+
+wine_vanilla_menu() {
+    require_commands jq curl wget tar || return 1
+    local data filtered
+    data=$(fetch_json "$KRON4EK_RELEASES_URL") || {
+        msg_box "Failed to fetch Kron4ek Wine releases."
+        return 1
+    }
+    filtered=$(printf '%s' "$data" | jq -c '
+        [.[] as $r
+         | $r.assets[]?
+         | select((.name | endswith("amd64.tar.xz")) or (.name | endswith("x86_64.tar.xz")))
+         | select((.name | contains("staging-tkg")) | not)
+         | {
+             label: (.name + " [" + $r.tag_name + "]"),
+             archive: .name,
+             url: .browser_download_url
+           }
+        ]') || {
+        msg_box "Failed to parse Kron4ek Wine releases."
+        return 1
+    }
+    download_release_selection "Wine Builds" "Select Wine builds to download:" "$filtered"
+}
+
+wine_tkg_menu() {
+    require_commands jq curl wget tar xz || return 1
+    local data filtered
+    data=$(fetch_json "$KRON4EK_RELEASES_URL") || {
+        msg_box "Failed to fetch Kron4ek staging-tkg releases."
+        return 1
+    }
+    filtered=$(printf '%s' "$data" | jq -c '
+        [.[] as $r
+         | $r.assets[]?
+         | select(.name | contains("staging-tkg"))
+         | select((.name | endswith("amd64.tar.xz")) or (.name | endswith("x86_64.tar.xz")))
+         | {
+             label: (.name + " [" + $r.tag_name + "]"),
+             archive: .name,
+             url: .browser_download_url
+           }
+        ]') || {
+        msg_box "Failed to parse Kron4ek staging-tkg releases."
+        return 1
+    }
+    download_release_selection "Wine TKG" "Select Wine staging-tkg builds to download:" "$filtered"
+}
+
+wine_ge_menu() {
+    require_commands jq curl wget tar xz || return 1
+    msg_box "Note: testing has shown Wine-GE versions above 8.15 may be broken on Batocera."
+    local data filtered
+    data=$(fetch_json "$WINE_GE_RELEASES_URL") || {
+        msg_box "Failed to fetch Wine-GE releases."
+        return 1
+    }
+    filtered=$(printf '%s' "$data" | jq -c '
+        [.[] as $r
+         | $r.assets[]?
+         | select(.name | endswith("x86_64.tar.xz"))
+         | {
+             label: (.name + " [" + $r.tag_name + "]"),
+             archive: .name,
+             url: .browser_download_url
+           }
+        ]') || {
+        msg_box "Failed to parse Wine-GE releases."
+        return 1
+    }
+    download_release_selection "Wine-GE" "Select Wine-GE builds to download:" "$filtered"
+}
+
+ge_proton_menu() {
+    if [[ "$(uname -m)" != "x86_64" ]]; then
+        msg_box "GE-Proton downloads are only enabled on x86_64 builds."
+        return 1
+    fi
+
+    require_commands jq curl wget tar || return 1
+    local data filtered
+    data=$(fetch_json "$PROTON_GE_RELEASES_URL") || {
+        msg_box "Failed to fetch GE-Proton releases."
+        return 1
+    }
+    filtered=$(printf '%s' "$data" | jq -c '
+        [.[] as $r
+         | $r.assets[]?
+         | select(.name | endswith(".tar.gz"))
+         | {
+             label: (.name + " [" + $r.tag_name + "]"),
+             archive: .name,
+             url: .browser_download_url
+           }
+        ]') || {
+        msg_box "Failed to parse GE-Proton releases."
+        return 1
+    }
+    download_release_selection "GE-Proton" "Select GE-Proton builds to download:" "$filtered"
+}
+
+prepare_dependency_installers() {
+    require_commands wget curl || return 1
+    local options selected tag
+
+    if [ -d "$ROOT_WINE_EXE" ]; then
+        rm -rf "$ROOT_WINE_EXE_BAK"
+        mv "$ROOT_WINE_EXE" "$ROOT_WINE_EXE_BAK"
+    fi
+    mkdir -p "$ROOT_WINE_EXE" || return 1
+
+    options=(
+      directx "DirectX3D (7z package)" off
+      vcredist_1519_x86 "VC++ 2015-2019 (x86)" off
+      vcredist_1519_x64 "VC++ 2015-2019 (x64)" off
+      vcredist_2019_x86 "VC++ 2019 (x86)" off
+      vcredist_2019_x64 "VC++ 2019 (x64)" off
+      vcredist_2017_x86 "VC++ 2017 (x86)" off
+      vcredist_2017_x64 "VC++ 2017 (x64)" off
+      vcredist_2015_x86 "VC++ 2015 (x86)" off
+      vcredist_2015_x64 "VC++ 2015 (x64)" off
+      vcredist_2013_x86 "VC++ 2013 (x86)" off
+      vcredist_2013_x64 "VC++ 2013 (x64)" off
+      vcredist_2012_x86 "VC++ 2012 (x86)" off
+      vcredist_2012_x64 "VC++ 2012 (x64)" off
+      vcredist_2010_x86 "VC++ 2010 (x86)" off
+      vcredist_2010_x64 "VC++ 2010 (x64)" off
+      vcredist_2008_x86 "VC++ 2008 (x86)" off
+      vcredist_2008_x64 "VC++ 2008 (x64)" off
+      vcredist_2005_x86 "VC++ 2005 (x86)" off
+      vcredist_2005_x64 "VC++ 2005 (x64)" off
+    )
+
+    selected=$(dialog_capture_stdout --checklist "Download Wine dependency installers for next Windows app launch:" 28 90 16 "${options[@]}") || {
+        clear_screen
+        return 1
+    }
+    clear_screen
+    [ -n "$selected" ] || return 1
+
+    for tag in $selected; do
+        case "$tag" in
+            directx)
+                require_commands 7zr || continue
+                if download_with_gauge "https://batocera.org/users/liberodark/wine/directx.7z" "$ROOT_WINE_EXE/directx.7z" "Downloading DirectX package..."; then
+                    7zr x "$ROOT_WINE_EXE/directx.7z" -o"$ROOT_WINE_EXE" >/dev/null 2>&1 || true
+                    rm -f "$ROOT_WINE_EXE/directx.7z"
+                fi
+                ;;
+            vcredist_1519_x86) download_with_gauge "https://batocera.org/users/liberodark/wine/vcredist_x86_2015_2019.exe" "$ROOT_WINE_EXE/vcredist_x86_2015_2019.exe" "Downloading VC++ 2015-2019 (x86)..." ;;
+            vcredist_1519_x64) download_with_gauge "https://batocera.org/users/liberodark/wine/vcredist_x64_2015_2019.exe" "$ROOT_WINE_EXE/vcredist_x64_2015_2019.exe" "Downloading VC++ 2015-2019 (x64)..." ;;
+            vcredist_2019_x86) download_with_gauge "https://batocera.org/users/liberodark/wine/vcredist_x86_2019.exe" "$ROOT_WINE_EXE/vcredist_x86_2019.exe" "Downloading VC++ 2019 (x86)..." ;;
+            vcredist_2019_x64) download_with_gauge "https://batocera.org/users/liberodark/wine/vcredist_x64_2019.exe" "$ROOT_WINE_EXE/vcredist_x64_2019.exe" "Downloading VC++ 2019 (x64)..." ;;
+            vcredist_2017_x86) download_with_gauge "https://batocera.org/users/liberodark/wine/vcredist_x86_2017.exe" "$ROOT_WINE_EXE/vcredist_x86_2017.exe" "Downloading VC++ 2017 (x86)..." ;;
+            vcredist_2017_x64) download_with_gauge "https://batocera.org/users/liberodark/wine/vcredist_x64_2017.exe" "$ROOT_WINE_EXE/vcredist_x64_2017.exe" "Downloading VC++ 2017 (x64)..." ;;
+            vcredist_2015_x86) download_with_gauge "https://batocera.org/users/liberodark/wine/vcredist_x86_2015.exe" "$ROOT_WINE_EXE/vcredist_x86_2015.exe" "Downloading VC++ 2015 (x86)..." ;;
+            vcredist_2015_x64) download_with_gauge "https://batocera.org/users/liberodark/wine/vcredist_x64_2015.exe" "$ROOT_WINE_EXE/vcredist_x64_2015.exe" "Downloading VC++ 2015 (x64)..." ;;
+            vcredist_2013_x86) download_with_gauge "https://batocera.org/users/liberodark/wine/vcredist_x86_2013.exe" "$ROOT_WINE_EXE/vcredist_x86_2013.exe" "Downloading VC++ 2013 (x86)..." ;;
+            vcredist_2013_x64) download_with_gauge "https://batocera.org/users/liberodark/wine/vcredist_x64_2013.exe" "$ROOT_WINE_EXE/vcredist_x64_2013.exe" "Downloading VC++ 2013 (x64)..." ;;
+            vcredist_2012_x86) download_with_gauge "https://batocera.org/users/liberodark/wine/vcredist_x86_2012.exe" "$ROOT_WINE_EXE/vcredist_x86_2012.exe" "Downloading VC++ 2012 (x86)..." ;;
+            vcredist_2012_x64) download_with_gauge "https://batocera.org/users/liberodark/wine/vcredist_x64_2012.exe" "$ROOT_WINE_EXE/vcredist_x64_2012.exe" "Downloading VC++ 2012 (x64)..." ;;
+            vcredist_2010_x86) download_with_gauge "https://batocera.org/users/liberodark/wine/vcredist_x86_2010.exe" "$ROOT_WINE_EXE/vcredist_x86_2010.exe" "Downloading VC++ 2010 (x86)..." ;;
+            vcredist_2010_x64) download_with_gauge "https://batocera.org/users/liberodark/wine/vcredist_x64_2010.exe" "$ROOT_WINE_EXE/vcredist_x64_2010.exe" "Downloading VC++ 2010 (x64)..." ;;
+            vcredist_2008_x86) download_with_gauge "https://batocera.org/users/liberodark/wine/vcredist_x86_2008.exe" "$ROOT_WINE_EXE/vcredist_x86_2008.exe" "Downloading VC++ 2008 (x86)..." ;;
+            vcredist_2008_x64) download_with_gauge "https://batocera.org/users/liberodark/wine/vcredist_x64_2008.exe" "$ROOT_WINE_EXE/vcredist_x64_2008.exe" "Downloading VC++ 2008 (x64)..." ;;
+            vcredist_2005_x86) download_with_gauge "https://batocera.org/users/liberodark/wine/vcredist_x86_2005.exe" "$ROOT_WINE_EXE/vcredist_x86_2005.exe" "Downloading VC++ 2005 (x86)..." ;;
+            vcredist_2005_x64) download_with_gauge "https://batocera.org/users/liberodark/wine/vcredist_x64_2005.exe" "$ROOT_WINE_EXE/vcredist_x64_2005.exe" "Downloading VC++ 2005 (x64)..." ;;
+        esac
+    done
+
+    msg_box "Dependency installers prepared in ${ROOT_WINE_EXE}.\n\nAny previous set was moved to ${ROOT_WINE_EXE_BAK} if it existed."
+}
+
+collect_prefixes() {
+    local results=()
+    local path
+
+    if [ -d "$ROOT_ROMS_WINDOWS" ]; then
+        while IFS= read -r -d '' path; do
+            results+=("$path")
+        done < <(find "$ROOT_ROMS_WINDOWS" -maxdepth 1 -mindepth 1 -type d \( -name '*.pc' -o -name '*.wine' \) -print0 2>/dev/null)
+    fi
+
+    if [ -d "$ROOT_WINE_BOTTLES" ]; then
+        while IFS= read -r -d '' path; do
+            results+=("$path")
+        done < <(find "$ROOT_WINE_BOTTLES" -type d -name '*.wine' -print0 2>/dev/null)
+    fi
+
+    printf '%s\n' "${results[@]}"
+}
+
+select_prefix() {
+    local prefixes=()
+    while IFS= read -r line; do
+        [ -n "$line" ] && prefixes+=("$line")
+    done < <(collect_prefixes)
+
+    if [ "${#prefixes[@]}" -eq 0 ]; then
+        msg_box "No Wineprefix directories found."
+        return 1
+    fi
+
+    select_single "Select Wineprefix" "Choose a Wineprefix:" "${prefixes[@]}"
+}
+
+create_autorun_cmd_menu() {
+    local prefix file exe_dir exe_file files=() rel_files=()
+    prefix=$(select_prefix) || return 1
+
+    while IFS= read -r -d '' file; do
+        files+=("$file")
+        rel_files+=("$(realpath --relative-to="$prefix" "$file")")
+    done < <(find "$prefix" -type f \( -iname '*.exe' -o -iname '*.bat' -o -iname '*.com' \) -print0 2>/dev/null)
+
+    if [ "${#rel_files[@]}" -eq 0 ]; then
+        msg_box "No executable files found in ${prefix}."
+        return 1
+    fi
+
+    file=$(select_single "Select Executable" "Choose the executable to run:" "${rel_files[@]}") || return 1
+    exe_dir=$(dirname "$file")
+    exe_file=$(basename "$file")
+
+    {
+        [ "$exe_dir" != "." ] && printf 'DIR=%s\n' "$exe_dir"
+        printf 'CMD="%s"\n' "$exe_file"
+    } > "$prefix/autorun.cmd"
+
+    msg_box "autorun.cmd created in:\n${prefix}"
+}
+
+run_easy_winetricks() {
+    require_commands curl jq batocera-wine || return 1
+    local prefix common pkg temp_file parsed options=() line tag desc
+
+    while true; do
+        prefix=$(select_prefix) || return 1
+
+        while true; do
+            pkg=""
+            if yes_no "Do you want to install a common VC++ runtime or DirectX9 component?"; then
+                common=$(select_radiolist "Common Dependencies" "Select one dependency to install:" \
+                    vcrun2008 "Visual C++ 2008" off \
+                    vcrun2010 "Visual C++ 2010" off \
+                    vcrun2012 "Visual C++ 2012" off \
+                    vcrun2013 "Visual C++ 2013" off \
+                    vcrun2022 "Visual C++ 2015-2022" off \
+                    d3dx9_43 "DirectX9 (d3dx9_43)" off) || true
+                pkg="$common"
+            elif yes_no "Do you want to install another Winetricks package from the official list?"; then
+                temp_file=$(mktemp)
+                parsed=$(mktemp)
+                if curl -fsSL "$WINETRICKS_ALL_URL" -o "$temp_file"; then
+                    grep -v '^=====' "$temp_file" | grep -v '^[[:space:]]*$' > "$parsed"
+                    while IFS= read -r line; do
+                        tag=$(awk '{print $1}' <<<"$line")
+                        desc=$(cut -d' ' -f2- <<<"$line")
+                        options+=("$tag" "$desc" off)
+                    done < "$parsed"
+                    pkg=$(dialog_capture_stdout --title "Winetricks Packages" --radiolist "Select one additional Winetricks package:" 30 100 14 "${options[@]}") || true
+                    clear_screen
+                else
+                    msg_box "Failed to fetch the Winetricks package list."
+                fi
+                rm -f "$temp_file" "$parsed"
+                options=()
+            fi
+
+            [ -n "$pkg" ] || break
+
+            msg_box "Check the main display for any installer prompts.\n\nApplying ${pkg} to:\n${prefix}"
+            export DISPLAY=:0.0
+            command -v unclutter-remote >/dev/null 2>&1 && unclutter-remote -s || true
+            batocera-wine windows tricks "$prefix" "$pkg" unattended
+            command -v unclutter-remote >/dev/null 2>&1 && unclutter-remote -h || true
+            msg_box "Winetricks processing complete."
+
+            yes_no "Apply another trick to the same prefix?" || break
+        done
+
+        yes_no "Do you want to process another Wineprefix?" || break
+    done
+}
+
+choose_compression_method() {
+    select_radiolist "Compression Type" "Choose compression method:" \
+        wsquashfs "SquashFS - best for larger games with small writes" off \
+        wtgz "WTGZ - best for smaller games with larger writes" on
+}
+
+compress_wine_folder() {
+    require_commands batocera-wine || return 1
+    local folders=() path selected method output
+
+    if [ -d "$ROOT_ROMS_WINDOWS" ]; then
+        while IFS= read -r -d '' path; do
+            folders+=("$path")
+        done < <(find "$ROOT_ROMS_WINDOWS" -maxdepth 1 -mindepth 1 -type d -name '*.wine' -print0 2>/dev/null)
+    fi
+
+    if [ "${#folders[@]}" -eq 0 ]; then
+        msg_box "No .wine folders found in ${ROOT_ROMS_WINDOWS}."
+        return 1
+    fi
+
+    selected=$(select_single "Select .wine Folder" "Choose a .wine folder to compress:" "${folders[@]}") || return 1
+    method=$(choose_compression_method) || return 1
+
+    info_box "Compressing $(basename "$selected")..."
+    case "$method" in
+        wsquashfs)
+            batocera-wine windows wine2squashfs "$selected"
+            output="${selected%.wine}.wsquashfs"
+            ;;
+        wtgz)
+            batocera-wine windows wine2winetgz "$selected"
+            output="${selected%.wine}.wtgz"
+            ;;
+        *)
+            clear_screen
+            return 1
+            ;;
+    esac
+    clear_screen
+
+    if [ -f "$output" ]; then
+        msg_box "Compression complete.\nOutput: ${output}"
+        if yes_no "Delete the source .wine folder?\n\n${selected}"; then
+            rm -rf "$selected"
+            msg_box "Deleted ${selected}."
+        fi
+    else
+        msg_box "Compression failed. Expected output not found:\n${output}"
+    fi
+}
+
+decompress_wine_archive() {
+    require_commands tar unsquashfs || return 1
+    local files=() path selected output_dir
+
+    if [ -d "$ROOT_ROMS_WINDOWS" ]; then
+        while IFS= read -r -d '' path; do
+            files+=("$path")
+        done < <(find "$ROOT_ROMS_WINDOWS" -maxdepth 1 -mindepth 1 -type f \( -name '*.wsquashfs' -o -name '*.wtgz' -o -name '*.tgz' \) -print0 2>/dev/null)
+    fi
+
+    if [ "${#files[@]}" -eq 0 ]; then
+        msg_box "No .wsquashfs, .wtgz, or .tgz files found in ${ROOT_ROMS_WINDOWS}."
+        return 1
+    fi
+
+    selected=$(select_single "Select Archive" "Choose a compressed Windows image to extract:" "${files[@]}") || return 1
+    case "$selected" in
+        *.wsquashfs) output_dir="${selected%.wsquashfs}.wine" ;;
+        *.wtgz) output_dir="${selected%.wtgz}.wine" ;;
+        *.tgz) output_dir="${selected%.tgz}.wine" ;;
+        *) return 1 ;;
+    esac
+
+    if [ -e "$output_dir" ]; then
+        yes_no "${output_dir} already exists. Replace it?" || return 1
+        rm -rf "$output_dir"
+    fi
+    mkdir -p "$output_dir" || return 1
+
+    info_box "Extracting $(basename "$selected")..."
+    case "$selected" in
+        *.wsquashfs)
+            unsquashfs -d "$output_dir" "$selected" >/dev/null
+            ;;
+        *.wtgz|*.tgz)
+            tar -xzf "$selected" -C "$output_dir"
+            ;;
+    esac
+    clear_screen
+
+    msg_box "Extraction complete.\nOutput: ${output_dir}"
+    if yes_no "Delete the compressed archive?\n\n${selected}"; then
+        rm -f "$selected"
+        msg_box "Deleted ${selected}."
+    fi
+}
+
+convert_pc_to_wine() {
+    local pc_folders=() bottle_folders=() selected_pc selected_bottle new_path method output path
+
+    if [ -d "$ROOT_ROMS_WINDOWS" ]; then
+        while IFS= read -r -d '' path; do
+            pc_folders+=("$path")
+        done < <(find "$ROOT_ROMS_WINDOWS" -maxdepth 1 -mindepth 1 -type d -name '*.pc' -print0 2>/dev/null)
+    fi
+    if [ "${#pc_folders[@]}" -eq 0 ]; then
+        msg_box "No .pc folders found in ${ROOT_ROMS_WINDOWS}."
+        return 1
+    fi
+
+    if [ -d "$ROOT_WINE_BOTTLES" ]; then
+        while IFS= read -r -d '' path; do
+            bottle_folders+=("$path")
+        done < <(find "$ROOT_WINE_BOTTLES" -type d -name '*.wine' -print0 2>/dev/null)
+    fi
+    if [ "${#bottle_folders[@]}" -eq 0 ]; then
+        msg_box "No .wine folders found in ${ROOT_WINE_BOTTLES}."
+        return 1
+    fi
+
+    msg_box "You must run the Windows game in a .pc folder at least once before Batocera generates a matching wine bottle."
+
+    selected_pc=$(select_single "Select .pc Folder" "Choose the .pc folder to convert:" "${pc_folders[@]}") || return 1
+    selected_bottle=$(select_single "Select Wine Bottle" "Choose the matching wine bottle:" "${bottle_folders[@]}") || return 1
+
+    yes_no "Copy data from:\n${selected_bottle}\n\ninto:\n${selected_pc}\n\nthen delete the original bottle and rename the game folder to .wine?" || return 1
+
+    cp -a "$selected_bottle"/. "$selected_pc"/ || {
+        msg_box "Failed to copy bottle contents."
+        return 1
+    }
+    rm -rf "$selected_bottle" || {
+        msg_box "Failed to remove source bottle ${selected_bottle}."
+        return 1
+    }
+
+    new_path="${selected_pc%.pc}.wine"
+    mv "$selected_pc" "$new_path" || {
+        msg_box "Failed to rename ${selected_pc} to ${new_path}."
+        return 1
+    }
+
+    msg_box "Conversion complete.\nNew folder: ${new_path}"
+
+    if yes_no "Compress the new .wine folder now?"; then
+        method=$(choose_compression_method) || return 0
+        info_box "Compressing $(basename "$new_path")..."
+        case "$method" in
+            wsquashfs)
+                batocera-wine windows wine2squashfs "$new_path"
+                output="${new_path%.wine}.wsquashfs"
+                ;;
+            wtgz)
+                batocera-wine windows wine2winetgz "$new_path"
+                output="${new_path%.wine}.wtgz"
+                ;;
+        esac
+        clear_screen
+        msg_box "Compression complete.\nOutput: ${output}"
+        if yes_no "Delete the .wine folder after compression?\n\n${new_path}"; then
+            rm -rf "$new_path"
+            msg_box "Deleted ${new_path}."
+        fi
+    fi
+}
+
+main_menu() {
+    local choice
+    while true; do
+        local menu_options=(
+            1 "Download Wine builds (vanilla)"
+            2 "Download Wine-TKG-Staging builds"
+            3 "Download Wine-GE Custom builds"
+        )
+
+        if [[ "$(uname -m)" == "x86_64" ]]; then
+            menu_options+=(4 "Download GE-Proton builds")
+        fi
+
+        menu_options+=(
+            5 "Prepare VC++ / DX9 / Steamy installers for next run"
+            6 "Easy Batocera Winetricks"
+            7 "Easy autorun.cmd creator"
+            8 "Convert .pc folder to .wine folder"
+            9 "Compress .wine folder to .wsquashfs or .wtgz"
+            10 "Decompress .wsquashfs / .wtgz back to .wine"
+            99 "Exit"
+        )
+
+        choice=$(dialog --clear --backtitle "Batocera Wine Tools" \
+            --title "batocera-wine-tools" \
+            --menu "Choose a Wine management action:" \
+            22 92 12 \
+            "${menu_options[@]}" \
+            2>&1 >/dev/tty) || {
+                clear_screen
+                break
+            }
+        clear_screen
+
+        case "$choice" in
+            1) wine_vanilla_menu ;;
+            2) wine_tkg_menu ;;
+            3) wine_ge_menu ;;
+            4) ge_proton_menu ;;
+            5) prepare_dependency_installers ;;
+            6) run_easy_winetricks ;;
+            7) create_autorun_cmd_menu ;;
+            8) convert_pc_to_wine ;;
+            9) compress_wine_folder ;;
+            10) decompress_wine_archive ;;
+            99) break ;;
+        esac
+    done
+}
+
+require_dialog
+main_menu

@@ -1,0 +1,108 @@
+config BR2_PACKAGE_DWARFS_ARCH_SUPPORTS
+	bool
+	default y if ((BR2_arm || BR2_armeb) && BR2_ARM_CPU_HAS_ARM)
+	default y if (BR2_aarch64 || BR2_aarch64_be)
+	default y if BR2_i386
+	default y if BR2_mips
+	default y if BR2_mipsel
+	default y if BR2_powerpc
+	default y if BR2_x86_64
+	default y if BR2_riscv
+
+config BR2_PACKAGE_DWARFS
+	bool "dwarfs"
+	depends on !BR2_STATIC_LIBS
+	depends on BR2_HOST_CMAKE_AT_LEAST_3_28
+	depends on BR2_INSTALL_LIBSTDCPP
+	depends on BR2_PACKAGE_DWARFS_ARCH_SUPPORTS
+	depends on BR2_TOOLCHAIN_GCC_AT_LEAST_10 # C++20
+	depends on BR2_TOOLCHAIN_HAS_THREADS
+	depends on BR2_TOOLCHAIN_SUPPORTS_ALWAYS_LOCKFREE_ATOMIC_INTS # boost-thread, boost-filesystem
+	depends on !BR2_TOOLCHAIN_HAS_GCC_BUG_64735 # boost-context, boost-thread
+	depends on BR2_USE_MMU # libfuse3
+	depends on BR2_USE_WCHAR # fmt, boost
+	select BR2_PACKAGE_BOOST
+	select BR2_PACKAGE_BOOST_CHRONO
+	select BR2_PACKAGE_BOOST_CONTEXT
+	select BR2_PACKAGE_BOOST_FILESYSTEM
+	select BR2_PACKAGE_BOOST_PROGRAM_OPTIONS
+	select BR2_PACKAGE_BOOST_REGEX
+	select BR2_PACKAGE_BOOST_THREAD
+	select BR2_PACKAGE_DOUBLE_CONVERSION
+	select BR2_PACKAGE_FMT
+	select BR2_PACKAGE_GLOG
+	select BR2_PACKAGE_LIBARCHIVE
+	select BR2_PACKAGE_LIBEVENT
+	select BR2_PACKAGE_LIBFUSE3
+	select BR2_PACKAGE_OPENSSL
+	select BR2_PACKAGE_PARALLEL_HASHMAP
+	select BR2_PACKAGE_RANGE_V3
+	select BR2_PACKAGE_UTFCPP
+	select BR2_PACKAGE_XXHASH
+	select BR2_PACKAGE_ZSTD
+	help
+	  DwarFS is a compressed read-only filesystem and toolset.
+
+	  This package builds the core libraries, the `mkdwarfs`,
+	  `dwarfsck`, and `dwarfsextract` tools, plus the FUSE3 mount
+	  binary.
+
+	  https://github.com/mhx/dwarfs
+
+comment "dwarfs needs a toolchain w/ dynamic library, C++, threads, wchar, gcc >= 10"
+	depends on BR2_HOST_CMAKE_AT_LEAST_3_28
+	depends on BR2_PACKAGE_DWARFS_ARCH_SUPPORTS
+	depends on BR2_TOOLCHAIN_SUPPORTS_ALWAYS_LOCKFREE_ATOMIC_INTS
+	depends on !BR2_TOOLCHAIN_HAS_GCC_BUG_64735
+	depends on BR2_USE_MMU
+	depends on BR2_STATIC_LIBS || !BR2_INSTALL_LIBSTDCPP || \
+		!BR2_TOOLCHAIN_GCC_AT_LEAST_10 || !BR2_TOOLCHAIN_HAS_THREADS || \
+		!BR2_USE_WCHAR
+
+comment "dwarfs needs host cmake >= 3.28"
+	depends on !BR2_HOST_CMAKE_AT_LEAST_3_28
+	depends on !BR2_STATIC_LIBS
+	depends on BR2_INSTALL_LIBSTDCPP
+	depends on BR2_PACKAGE_DWARFS_ARCH_SUPPORTS
+	depends on BR2_TOOLCHAIN_GCC_AT_LEAST_10
+	depends on BR2_TOOLCHAIN_HAS_THREADS
+	depends on BR2_TOOLCHAIN_SUPPORTS_ALWAYS_LOCKFREE_ATOMIC_INTS
+	depends on !BR2_TOOLCHAIN_HAS_GCC_BUG_64735
+	depends on BR2_USE_MMU
+	depends on BR2_USE_WCHAR
+
+comment "dwarfs needs an architecture supported by boost-context"
+	depends on !BR2_PACKAGE_DWARFS_ARCH_SUPPORTS
+	depends on !BR2_STATIC_LIBS
+	depends on BR2_HOST_CMAKE_AT_LEAST_3_28
+	depends on BR2_INSTALL_LIBSTDCPP
+	depends on BR2_TOOLCHAIN_GCC_AT_LEAST_10
+	depends on BR2_TOOLCHAIN_HAS_THREADS
+	depends on BR2_TOOLCHAIN_SUPPORTS_ALWAYS_LOCKFREE_ATOMIC_INTS
+	depends on !BR2_TOOLCHAIN_HAS_GCC_BUG_64735
+	depends on BR2_USE_MMU
+	depends on BR2_USE_WCHAR
+
+comment "dwarfs needs a toolchain with lockfree atomic ints"
+	depends on !BR2_TOOLCHAIN_SUPPORTS_ALWAYS_LOCKFREE_ATOMIC_INTS
+	depends on !BR2_STATIC_LIBS
+	depends on BR2_HOST_CMAKE_AT_LEAST_3_28
+	depends on BR2_INSTALL_LIBSTDCPP
+	depends on BR2_PACKAGE_DWARFS_ARCH_SUPPORTS
+	depends on BR2_TOOLCHAIN_GCC_AT_LEAST_10
+	depends on BR2_TOOLCHAIN_HAS_THREADS
+	depends on !BR2_TOOLCHAIN_HAS_GCC_BUG_64735
+	depends on BR2_USE_MMU
+	depends on BR2_USE_WCHAR
+
+comment "dwarfs needs a toolchain not affected by GCC bug 64735"
+	depends on BR2_TOOLCHAIN_HAS_GCC_BUG_64735
+	depends on !BR2_STATIC_LIBS
+	depends on BR2_HOST_CMAKE_AT_LEAST_3_28
+	depends on BR2_INSTALL_LIBSTDCPP
+	depends on BR2_PACKAGE_DWARFS_ARCH_SUPPORTS
+	depends on BR2_TOOLCHAIN_GCC_AT_LEAST_10
+	depends on BR2_TOOLCHAIN_HAS_THREADS
+	depends on BR2_TOOLCHAIN_SUPPORTS_ALWAYS_LOCKFREE_ATOMIC_INTS
+	depends on BR2_USE_MMU
+	depends on BR2_USE_WCHAR

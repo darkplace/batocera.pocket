@@ -1,0 +1,6 @@
+# From https://pypi.org/pypi/PyQt5-sip/json
+md5  207cb64076e4a6b0822d91a0e985fd2a  pyqt5_sip-12.17.0.tar.gz
+sha256  682dadcdbd2239af9fdc0c0628e2776b820e128bec88b49b8d692fe682f90b4f  pyqt5_sip-12.17.0.tar.gz
+
+# Locally calculated
+sha256  3859cfca971e429d6b79bdfeb1dc9e43aa9592f7295bf28fdd62824097909383  LICENSE

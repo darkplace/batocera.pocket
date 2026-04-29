@@ -1,0 +1,6 @@
+#!/bin/sh
+set -e
+
+batocera-mouse show
+trap 'batocera-mouse hide' EXIT
+exec /usr/libexec/batocera-appimage-launcher /usr/share/batocera/apps/geforceinfinity.AppImage geforceinfinity 1 "$@"

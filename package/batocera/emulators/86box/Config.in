@@ -1,0 +1,16 @@
+config BR2_PACKAGE_86BOX
+	bool "86box"
+	depends on BR2_PACKAGE_BATOCERA_TARGET_X86_64_ANY
+	select BR2_PACKAGE_BATOCERA_QT6
+	select BR2_PACKAGE_BATOCERA_SDL2
+	select BR2_PACKAGE_RTMIDI
+	select BR2_PACKAGE_LIBSNDFILE
+	select BR2_PACKAGE_SLIRP
+	select BR2_PACKAGE_OPENAL
+	select BR2_PACKAGE_XORG7
+	select BR2_PACKAGE_LIBXKBCOMMON
+
+	help
+	  86Box IBM PC system emulator.
+
+	  https://86box.net/

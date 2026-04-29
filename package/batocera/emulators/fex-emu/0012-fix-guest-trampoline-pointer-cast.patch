@@ -1,0 +1,11 @@
+--- a/ThunkLibs/include/common/Guest.h
++++ b/ThunkLibs/include/common/Guest.h
+@@ -179,7 +179,7 @@ inline Target* AllocateHostTrampolineForGuestFunction(void THUNK_ABI (*GuestUnpa
+     uint64_t GuestUnpacker;
+     uint64_t GuestTarget;
+     uint64_t rv;
+-  } argsrv = {(uintptr_t)GuestUnpacker, (uintptr_t)GuestTarget};
++  } argsrv = {reinterpret_cast<uint64_t>(GuestUnpacker), reinterpret_cast<uint64_t>(GuestTarget)};
+ 
+   fexthunks_fex_allocate_host_trampoline_for_guest_function((void*)&argsrv);
+ 

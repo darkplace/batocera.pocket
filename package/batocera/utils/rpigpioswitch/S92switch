@@ -1,0 +1,52 @@
+#!/bin/sh
+
+readonly RUN="/usr/bin/rpi_gpioswitch"
+
+### --DEVS! Add a new power device to /usr/bin/rpi_gpioswitch array--
+# Read current config, if no key is set in batocera.conf then try to use
+# default value setted by udev-rule
+powerswitch="$(/usr/bin/batocera-settings-get system.power.switch)"
+if [ $? -ne 0 ] && [ -f /var/run/powerswitch-by-udevrule ]; then
+    powerswitch="$(cat /var/run/powerswitch-by-udevrule)"
+fi
+
+# Carry out specific functions when asked to by the system
+case "$1" in
+    start)
+        if [ -n "$powerswitch" ]; then
+            $RUN start "$powerswitch" &
+        fi
+    ;;
+
+    stop)
+        if [ -n "$powerswitch" ]; then
+            "$RUN" stop "$powerswitch"
+        fi
+    ;;
+
+    restart)
+        "$0" stop
+        sleep 1
+        "$0" start
+    ;;
+
+    setup)
+        $RUN
+        #now check parameter is set again
+        powerswitch="$(/usr/bin/batocera-settings-get system.power.switch)"
+        if [ -n "$powerswitch" ]; then
+            # Run with config switch to ensure paramters are saved ready for the reboot
+            # This saves having to reboot twice for certain cases
+            echo "Setting appropriate case configuration"
+            $RUN config "$powerswitch"
+            echo "DONE !"
+        fi
+    ;;
+
+    *)
+        echo "Usage: $0 {start|stop|restart|setup}"
+        exit 1
+    ;;
+esac
+
+exit 0

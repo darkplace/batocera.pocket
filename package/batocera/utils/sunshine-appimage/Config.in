@@ -1,0 +1,8 @@
+config BR2_PACKAGE_SUNSHINE_APPIMAGE
+	bool "sunshine-appimage (AppImage)"
+	depends on BR2_x86_64
+	help
+	  Sunshine game-streaming host packaged as an AppImage wrapper.
+
+comment "sunshine-appimage needs an x86_64 target"
+	depends on !BR2_x86_64

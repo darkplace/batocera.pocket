@@ -1,0 +1,42 @@
+#!/bin/bash
+
+LOG_FILE="/userdata/system/logs/waydroid-service.log"
+
+start() {
+    mkdir -p /userdata/system/logs
+    /usr/bin/batocera-waydroid-init >>"${LOG_FILE}" 2>&1 || return 1
+    /usr/bin/waydroid container start >>"${LOG_FILE}" 2>&1
+}
+
+stop() {
+    /usr/bin/waydroid session stop >>"${LOG_FILE}" 2>&1 || true
+    /usr/bin/waydroid container stop >>"${LOG_FILE}" 2>&1 || true
+}
+
+status() {
+    /usr/bin/waydroid status
+}
+
+restart() {
+    stop
+    start
+}
+
+case "$1" in
+    start)
+        start
+        ;;
+    stop)
+        stop
+        ;;
+    restart)
+        restart
+        ;;
+    status)
+        status
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|restart|status}"
+        exit 1
+        ;;
+esac

@@ -1,0 +1,41 @@
+From 3f4a4ea60d44ba9c8e56c5ca5da2e6508fe8c6c1 Mon Sep 17 00:00:00 2001
+From: Batocera Builder <noreply@batocera.org>
+Date: Sun, 15 Feb 2026 10:00:00 +0000
+Subject: [PATCH] emu: guard FPSCR builtins when ARM FP ABI is unavailable
+
+On some armhf toolchain configurations, box86 is compiled without
+ARM FP builtins being available, which makes GCC emit unresolved
+references to __builtin_arm_get_fpscr/__builtin_arm_set_fpscr.
+
+Limit FPSCR access to builds that expose ARM FP capability macros and
+gracefully no-op otherwise.
+---
+ src/emu/x86emu.c | 9 ++++++++-
+ 1 file changed, 8 insertions(+), 1 deletion(-)
+
+diff --git a/src/emu/x86emu.c b/src/emu/x86emu.c
+index 683da2c..2a80479 100644
+--- a/src/emu/x86emu.c
++++ b/src/emu/x86emu.c
+@@ -535,11 +535,18 @@ void applyFlushTo0(x86emu_t* emu)
+ {
+ #ifdef __i386__
+     _mm_setcsr(_mm_getcsr() | (emu->mxcsr.x32&0x8040));
+-#elif defined(__arm__)
++#elif defined(__arm__) && (defined(__VFP_FP__) || defined(__ARM_FP)) && !defined(__SOFTFP__)
+     uint64_t fpscr = __builtin_arm_get_fpscr();
+     fpscr &= ~(1<<24);                     // clear bit FZ (24)
+     fpscr |= (emu->mxcsr.f.MXCSR_FZ)<<24;  // set FZ as mxcsr FZ
+     __builtin_arm_set_fpscr(fpscr);
++#elif defined(__arm__)
++    /*
++     * Some armhf configurations compile without ARM FP builtins enabled.
++     * In that case, skip FPSCR manipulation instead of introducing
++     * unresolved __builtin_arm_{get,set}_fpscr references.
++     */
++    (void)emu;
+ #else
+     (void)emu;
+ #endif
+-- 
+2.49.0

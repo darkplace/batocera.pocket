@@ -1,0 +1,15 @@
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -460,7 +460,10 @@ if(ENUM_ENUM_WARNING)
+ endif()
+ 
+ # GCC enables -Wchanges-meaning by default and treats some cases as an error
+ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+-  add_compile_options(-Wno-error=changes-meaning)
++  check_cxx_compiler_flag("-Wno-error=changes-meaning" GNU_HAS_NO_ERROR_CHANGES_MEANING)
++  if (GNU_HAS_NO_ERROR_CHANGES_MEANING)
++    add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-Wno-error=changes-meaning>)
++  endif()
+ endif()
+ 
+ if(ENABLE_WERROR OR ENABLE_STRICT_WERROR)

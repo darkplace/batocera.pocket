@@ -1,0 +1,9 @@
+dl/
+output/
+buildroot-ccache/
+.ba-docker-image-available
+**/__pycache__/
+*.py[cod]
+*~
+keys.txt
+package/batocera/emulators/fex-emu/.host-bin/

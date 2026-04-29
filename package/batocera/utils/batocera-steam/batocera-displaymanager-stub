@@ -1,0 +1,98 @@
+#!/usr/bin/python3
+# SPDX-FileCopyrightText: Added/modified by suckbluefrog
+import os
+import subprocess
+import sys
+import time
+
+import dbus
+import dbus.mainloop.glib
+import dbus.service
+from gi.repository import GLib
+
+
+LOG = "/userdata/system/logs/displaymanager-stub.log"
+SWITCH_BIN = "/usr/bin/batocera-steam-desktop-switch"
+BUS_NAME = "org.freedesktop.DisplayManager"
+SEAT_PATH = "/org/freedesktop/DisplayManager/Seat0"
+
+
+def log(msg: str) -> None:
+    os.makedirs(os.path.dirname(LOG), exist_ok=True)
+    with open(LOG, "a", encoding="utf-8") as f:
+        f.write(f"[{time.strftime('%F %T')}] {msg}\n")
+
+
+def ensure_system_bus_env() -> None:
+    if os.path.exists("/run/dbus/system_bus_socket"):
+        os.environ.setdefault("DBUS_SYSTEM_BUS_ADDRESS", "unix:path=/run/dbus/system_bus_socket")
+
+
+class Seat(dbus.service.Object):
+    def __init__(self, bus, path):
+        super().__init__(bus, path)
+
+    @dbus.service.method("org.freedesktop.DisplayManager.Seat")
+    def SwitchTo(self, *args):
+        log(f"Seat.SwitchTo{args}: requested")
+        self._do_switch()
+
+    @dbus.service.method("org.freedesktop.DisplayManager.Seat")
+    def SwitchToUser(self, *args):
+        log(f"Seat.SwitchToUser{args}: requested")
+        self._do_switch()
+
+    @dbus.service.method("org.freedesktop.DisplayManager.Seat")
+    def SwitchToUserByName(self, *args):
+        log(f"Seat.SwitchToUserByName{args}: requested")
+        self._do_switch()
+
+    @dbus.service.method("org.freedesktop.DisplayManager.Seat")
+    def SwitchToGreeter(self, *args):
+        log(f"Seat.SwitchToGreeter{args}: requested")
+        self._do_switch()
+
+    def _do_switch(self):
+        if os.path.exists(SWITCH_BIN) and os.access(SWITCH_BIN, os.X_OK):
+            subprocess.Popen([SWITCH_BIN], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        else:
+            log(f"switch bin missing or not executable: {SWITCH_BIN}")
+
+
+class DisplayManager(dbus.service.Object):
+    def __init__(self, bus, path, seat_path):
+        super().__init__(bus, path)
+        self._seat_path = seat_path
+
+    @dbus.service.method("org.freedesktop.DisplayManager", out_signature="o")
+    def GetSeat(self, seat_id):
+        log(f"GetSeat({seat_id})")
+        return dbus.ObjectPath(self._seat_path)
+
+    @dbus.service.method("org.freedesktop.DisplayManager", out_signature="ao")
+    def GetSeats(self):
+        log("GetSeats()")
+        return [dbus.ObjectPath(self._seat_path)]
+
+
+def main() -> int:
+    try:
+        ensure_system_bus_env()
+        dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
+        bus = dbus.SystemBus()
+        result = bus.request_name(BUS_NAME)
+        log(f"Bus name request result: {result}")
+
+        DisplayManager(bus, "/org/freedesktop/DisplayManager", SEAT_PATH)
+        Seat(bus, SEAT_PATH)
+
+        log("DisplayManager stub running")
+        GLib.MainLoop().run()
+        return 0
+    except Exception as exc:
+        log(f"DisplayManager stub failed: {exc}")
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

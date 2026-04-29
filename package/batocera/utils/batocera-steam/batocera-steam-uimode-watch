@@ -1,0 +1,280 @@
+#!/usr/bin/python3
+# SPDX-FileCopyrightText: 2026 suckbluefrog
+import asyncio
+import json
+import os
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.request
+
+import websockets
+
+
+LOG = "/userdata/system/logs/steam-uimode-watch.log"
+CDP_LIST_URL = "http://127.0.0.1:8080/json/list"
+SWITCH_BIN = "/usr/bin/batocera-steam-desktop-switch"
+TRIGGER_MODES = {7}
+DESKTOP_SWITCH_BANNER = "Switching to Desktop..."
+RECONNECT_DELAY_SECS = 1.0
+TRIGGER_COOLDOWN_SECS = 5.0
+
+
+def log(msg: str) -> None:
+    os.makedirs(os.path.dirname(LOG), exist_ok=True)
+    with open(LOG, "a", encoding="utf-8") as f:
+        f.write(f"[{time.strftime('%F %T')}] {msg}\n")
+
+
+def steam_stack_active() -> bool:
+    checks = (
+        ("pgrep", "-x", "batocera-steam"),
+        ("pgrep", "-f", r"(^|/)batocera-steam-session([[:space:]]|$)"),
+        ("pgrep", "-x", "steam"),
+        ("pgrep", "-x", "steamwebhelper"),
+        ("pgrep", "-x", "gamescope"),
+        ("pgrep", "-x", "gamescopereaper"),
+        ("pgrep", "-x", "gamescopestream"),
+        ("pgrep", "-x", "gamescopectl"),
+        ("pgrep", "-f", r"/userdata/system/steam/steam\.sh([[:space:]]|$)"),
+        ("pgrep", "-f", r"emulatorlauncher.*-system steam"),
+        ("pgrep", "-f", r"Steam GamepadUI\.steam|Steam Desktop\.steam"),
+    )
+
+    for cmd in checks:
+        if subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False).returncode == 0:
+            return True
+    return False
+
+
+def desktop_switch_running() -> bool:
+    return (
+        subprocess.run(
+            ("pgrep", "-f", r"(^|/)batocera-steam-desktop-switch([[:space:]]|$)"),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        ).returncode
+        == 0
+    )
+
+
+def run_desktop_switch(reason: str) -> bool:
+    if not (os.path.exists(SWITCH_BIN) and os.access(SWITCH_BIN, os.X_OK)):
+        log(f"desktop switch helper missing: {SWITCH_BIN}")
+        return False
+
+    if desktop_switch_running():
+        log(f"desktop switch already running, skipping duplicate trigger ({reason})")
+        return False
+
+    subprocess.Popen(
+        [SWITCH_BIN],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+    log(f"triggered desktop switch ({reason})")
+    return True
+
+
+def get_cdp_pages() -> list[dict] | None:
+    try:
+        with urllib.request.urlopen(CDP_LIST_URL, timeout=2) as response:
+            return json.load(response)
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+        log(f"devtools endpoint unavailable: {exc}")
+        return None
+
+
+def get_shared_context_ws_url(pages: list[dict]) -> str | None:
+    for page in pages:
+        title = page.get("title", "")
+        url = page.get("url", "")
+        ws_url = page.get("webSocketDebuggerUrl")
+        if ws_url and (title == "SharedJSContext" or "steamloopback.host" in url):
+            return ws_url
+
+    log("SharedJSContext target not present yet")
+    return None
+
+
+def get_bigpicture_ws_url(pages: list[dict]) -> str | None:
+    for page in pages:
+        if page.get("title", "") == "Steam Big Picture Mode":
+            ws_url = page.get("webSocketDebuggerUrl")
+            if ws_url:
+                return ws_url
+
+    log("Steam Big Picture target not present yet")
+    return None
+
+
+async def cdp_call(conn, call_id: int, method: str, params: dict | None = None) -> dict:
+    payload = {"id": call_id, "method": method}
+    if params is not None:
+        payload["params"] = params
+    await conn.send(json.dumps(payload))
+
+    while True:
+        message = json.loads(await conn.recv())
+        if message.get("id") == call_id:
+            return message
+
+
+async def get_uimode(conn, call_id: int) -> int | None:
+    response = await cdp_call(
+        conn,
+        call_id,
+        "Runtime.evaluate",
+        {
+            "expression": "SteamClient.UI.GetUIMode()",
+            "awaitPromise": True,
+            "returnByValue": True,
+        },
+    )
+
+    result = response.get("result", {}).get("result", {})
+    if result.get("type") == "number":
+        return int(result.get("value"))
+    return None
+
+
+async def get_bigpicture_text(conn, call_id: int) -> str:
+    response = await cdp_call(
+        conn,
+        call_id,
+        "Runtime.evaluate",
+        {
+            "expression": "document.body ? document.body.innerText : ''",
+            "awaitPromise": True,
+            "returnByValue": True,
+        },
+    )
+
+    result = response.get("result", {}).get("result", {})
+    value = result.get("value")
+    return value if isinstance(value, str) else ""
+
+
+async def open_bigpicture_conn() -> tuple[object | None, int]:
+    pages = get_cdp_pages()
+    if not pages:
+        return None, 1
+
+    bigpicture_ws_url = get_bigpicture_ws_url(pages)
+    if not bigpicture_ws_url:
+        return None, 1
+
+    conn = await websockets.connect(bigpicture_ws_url, max_size=2**20)
+    call_id = 1
+    await cdp_call(conn, call_id, "Runtime.enable")
+    log("attached to Steam Big Picture target")
+    return conn, 2
+
+
+async def watch_shared_context(shared_ws_url: str) -> None:
+    last_mode = None
+    last_switch_banner = False
+    last_trigger_ts = 0.0
+    call_id = 1
+    bigpicture_conn = None
+    bigpicture_call_id = 1
+
+    async with websockets.connect(shared_ws_url, max_size=2**20) as conn:
+        await cdp_call(conn, call_id, "Runtime.enable")
+        call_id += 1
+
+        while steam_stack_active():
+            if bigpicture_conn is None:
+                try:
+                    bigpicture_conn, bigpicture_call_id = await open_bigpicture_conn()
+                except (OSError, websockets.WebSocketException, asyncio.TimeoutError) as exc:
+                    log(f"big picture attach retry failed: {exc}")
+                    bigpicture_conn = None
+                    bigpicture_call_id = 1
+
+            try:
+                mode = await get_uimode(conn, call_id)
+                call_id += 1
+            except (OSError, websockets.WebSocketException, asyncio.TimeoutError) as exc:
+                log(f"lost SharedJSContext target, reconnecting: {exc}")
+                break
+
+            if mode is not None and mode != last_mode:
+                log(f"Steam UI mode changed: {last_mode} -> {mode}")
+                last_mode = mode
+
+            now = time.monotonic()
+            if mode in TRIGGER_MODES and (now - last_trigger_ts) >= TRIGGER_COOLDOWN_SECS:
+                if run_desktop_switch(f"Steam UI mode {mode}"):
+                    last_trigger_ts = now
+
+            switch_banner_visible = False
+            if bigpicture_conn is not None:
+                try:
+                    page_text = await get_bigpicture_text(bigpicture_conn, bigpicture_call_id)
+                    bigpicture_call_id += 1
+                    switch_banner_visible = DESKTOP_SWITCH_BANNER in page_text
+                    if switch_banner_visible and not last_switch_banner:
+                        log(f"detected desktop switch banner: {DESKTOP_SWITCH_BANNER}")
+                    last_switch_banner = switch_banner_visible
+                except (OSError, websockets.WebSocketException, asyncio.TimeoutError) as exc:
+                    log(f"lost Steam Big Picture target, will retry: {exc}")
+                    try:
+                        await bigpicture_conn.close()
+                    except Exception:
+                        pass
+                    bigpicture_conn = None
+                    bigpicture_call_id = 1
+                    last_switch_banner = False
+
+            now = time.monotonic()
+            if switch_banner_visible and (now - last_trigger_ts) >= TRIGGER_COOLDOWN_SECS:
+                if run_desktop_switch("Steam desktop switch banner"):
+                    last_trigger_ts = now
+
+            await asyncio.sleep(RECONNECT_DELAY_SECS)
+
+    if bigpicture_conn is not None:
+        try:
+            await bigpicture_conn.close()
+        except Exception:
+            pass
+
+
+async def main_async() -> int:
+    log("watcher starting")
+
+    while steam_stack_active():
+        pages = get_cdp_pages()
+        if not pages:
+            await asyncio.sleep(RECONNECT_DELAY_SECS)
+            continue
+
+        shared_ws_url = get_shared_context_ws_url(pages)
+        if not shared_ws_url:
+            await asyncio.sleep(RECONNECT_DELAY_SECS)
+            continue
+
+        try:
+            await watch_shared_context(shared_ws_url)
+        except (OSError, websockets.WebSocketException, asyncio.TimeoutError) as exc:
+            log(f"watch loop retry after error: {exc}")
+
+        await asyncio.sleep(RECONNECT_DELAY_SECS)
+
+    log("watcher exiting: steam stack is no longer active")
+    return 0
+
+
+def main() -> int:
+    try:
+        return asyncio.run(main_async())
+    except KeyboardInterrupt:
+        return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

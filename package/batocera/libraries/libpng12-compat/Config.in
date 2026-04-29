@@ -1,0 +1,8 @@
+config BR2_PACKAGE_LIBPNG12_COMPAT
+	bool "libpng12-compat"
+	depends on BR2_i386
+	select BR2_PACKAGE_ZLIB
+	help
+	  Installs legacy libpng12 runtime compatibility library:
+	  libpng12.so.0.
+	  Intended for older prebuilt 32-bit binaries.

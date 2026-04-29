@@ -1,0 +1,14 @@
+config BR2_PACKAGE_ARMSX2
+    bool "armsx2"
+    depends on BR2_aarch64
+    depends on BR2_PACKAGE_HAS_GLES3 || BR2_PACKAGE_BATOCERA_VULKAN
+    depends on BR2_PACKAGE_BATOCERA_TARGET_SM8550 || BR2_PACKAGE_BATOCERA_TARGET_SM8250 || BR2_PACKAGE_BATOCERA_TARGET_QCS6490 || BR2_PACKAGE_BATOCERA_TARGET_RK3588
+    select BR2_PACKAGE_ALSA_LIB
+    select BR2_PACKAGE_LIBCURL
+    select BR2_PACKAGE_DBUS
+    select BR2_PACKAGE_LIBPCAP
+    select BR2_PACKAGE_ZLIB
+    help
+      ARMSX2 is a PCSX2 fork with a native ARM64 JIT for PlayStation 2 emulation.
+
+      https://github.com/zeruth/ARMSX2

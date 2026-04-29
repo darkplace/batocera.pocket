@@ -1,0 +1,115 @@
+#!/bin/bash
+set -euo pipefail
+
+LOG_FILE="${LOG_FILE:-/userdata/system/logs/waydroid-session.log}"
+
+log_msg() {
+    printf '[%s] %s\n' "$(date '+%H:%M:%S')" "$*" >>"${LOG_FILE}"
+}
+
+waydroid_shell_quiet() {
+    if command -v timeout >/dev/null 2>&1; then
+        timeout 5 /usr/bin/waydroid shell -- "$@" 2>/dev/null || true
+    else
+        /usr/bin/waydroid shell -- "$@" 2>/dev/null || true
+    fi
+}
+
+container_running() {
+    /usr/bin/waydroid status 2>/dev/null | grep -q '^Container:[[:space:]]\+RUNNING'
+}
+
+wait_for_boot() {
+    local boot_completed=""
+    local attempt
+
+    for attempt in $(seq 1 45); do
+        if ! container_running; then
+            log_msg "Post-boot hook exiting because Waydroid container is no longer running"
+            return 1
+        fi
+
+        boot_completed="$(waydroid_shell_quiet getprop sys.boot_completed | tr -d '\r\n')"
+        if [ "${boot_completed}" = "1" ]; then
+            log_msg "Post-boot hook detected Android boot completion"
+            return 0
+        fi
+
+        sleep 2
+    done
+
+    log_msg "Post-boot hook timed out waiting for Android boot completion"
+    return 1
+}
+
+trigger_controller_uevents() {
+    local link
+    local devnode
+    local sysfs_uevent
+    local seen_nodes=""
+    local triggered=0
+
+    for link in /dev/input/by-path/*-event-joystick /dev/input/by-path/*-joystick /dev/input/by-id/*-event-joystick /dev/input/by-id/*-joystick; do
+        [ -e "${link}" ] || continue
+
+        devnode="$(basename "$(readlink -f "${link}")")"
+        [ -n "${devnode}" ] || continue
+        case " ${seen_nodes} " in
+            *" ${devnode} "*) continue ;;
+        esac
+        seen_nodes="${seen_nodes} ${devnode}"
+
+        sysfs_uevent="/sys/class/input/${devnode}/uevent"
+        if [ ! -w "${sysfs_uevent}" ]; then
+            sysfs_uevent="/sys/class/input/${devnode}/device/uevent"
+        fi
+
+        if [ -w "${sysfs_uevent}" ]; then
+            echo add > "${sysfs_uevent}"
+            log_msg "Post-boot hook retriggered controller uevent for ${devnode} via ${link} (${sysfs_uevent})"
+            triggered=1
+        fi
+    done
+
+    if [ "${triggered}" -eq 0 ]; then
+        log_msg "Post-boot hook found no writable joystick uevent targets on the host"
+    fi
+}
+
+log_android_input_summary() {
+    local summary
+
+    summary="$(waydroid_shell_quiet dumpsys input | grep -A 12 'Microsoft X-Box 360 pad' || true)"
+    if [ -n "${summary}" ]; then
+        log_msg "Post-boot hook Android InputManager summary:"
+        while IFS= read -r line; do
+            [ -n "${line}" ] || continue
+            log_msg "  ${line}"
+        done <<< "${summary}"
+    else
+        summary="$(waydroid_shell_quiet cat /proc/bus/input/devices | grep -E 'Name=\"(Microsoft X-Box 360 pad|Xbox|Controller|ROG Ally|ASUS ROG Ally)' -A 8 || true)"
+        if [ -n "${summary}" ]; then
+            log_msg "Post-boot hook Android /proc/bus/input/devices summary:"
+            while IFS= read -r line; do
+                [ -n "${line}" ] || continue
+                log_msg "  ${line}"
+            done <<< "${summary}"
+        else
+            log_msg "Post-boot hook did not find a controller-like device in Android"
+        fi
+    fi
+}
+
+main() {
+    log_msg "Post-boot hook started"
+
+    if ! wait_for_boot; then
+        exit 0
+    fi
+
+    trigger_controller_uevents
+    sleep 2
+    log_android_input_summary
+}
+
+main "$@"

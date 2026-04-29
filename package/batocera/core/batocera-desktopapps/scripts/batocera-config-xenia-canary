@@ -1,0 +1,10 @@
+#!/bin/bash
+
+if test -z "${DISPLAY}"
+then
+	export DISPLAY=$(getLocalXDisplay)
+fi
+
+emulatorlauncher -system xbox360 -emulator xenia-canary -core xenia-canary -rom config
+
+exit 0

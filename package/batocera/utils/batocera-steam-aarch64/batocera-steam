@@ -1,0 +1,1113 @@
+#!/bin/bash
+# SPDX-FileCopyrightText: Added/modified by suckbluefrog
+set -euo pipefail
+
+log="/userdata/system/logs/steam.log"
+mkdir -p "$(dirname "${log}")"
+
+GAME_ID="${1:-}"
+MODE="${BATOCERA_STEAM_MODE:-}"
+
+export HOME="/userdata/system"
+export XDG_DATA_HOME="${HOME}/.local/share"
+export XDG_CONFIG_HOME="${HOME}/.config"
+export XDG_CACHE_HOME="${HOME}/.cache"
+export STEAM_ROOT="${BATOCERA_STEAM_ROOT:-${XDG_DATA_HOME}/Steam}"
+export PROTON11_ARM64_APPID="${BATOCERA_STEAM_PROTON11_ARM64_APPID:-4628740}"
+export PROTON11_ARM64_DIR_NAME="Proton 11.0 (ARM64)"
+export PROTON11_ARM64_INSTALL_URI="steam://install/${PROTON11_ARM64_APPID}"
+export BATOCERA_STEAM_FEX_ROOTFS_NAME="${BATOCERA_STEAM_FEX_ROOTFS_NAME:-Fedora_43.sqsh}"
+export BATOCERA_STEAM_FEX_ROOTFS_URL="${BATOCERA_STEAM_FEX_ROOTFS_URL:-https://rootfs.fex-emu.gg/Fedora_43/2026-01-20/Fedora_43.sqsh}"
+export PROTON_USE_ARM64="${PROTON_USE_ARM64:-1}"
+
+declare -a DISABLED_BINFMT=()
+declare -a REGISTERED_BINFMT=()
+declare -a ENABLED_BINFMT=()
+
+log_msg() {
+    printf '%s\n' "$*" >> "${log}"
+}
+
+flash_msg() {
+    local seconds="$1"
+    local message="$2"
+    local size="${3:-22}"
+
+    if command -v batocera-flash-screen >/dev/null 2>&1; then
+        /usr/bin/batocera-flash-screen "${seconds}" "#ffffff" "${message}" "${size}" >/dev/null 2>&1 || true
+    fi
+}
+
+die() {
+    log_msg "ERROR: $*"
+    echo "$*" >&2
+    flash_msg 8 "$*" 22
+    exit 1
+}
+
+has_network() {
+    if command -v ip >/dev/null 2>&1 && ! ip route get 1.1.1.1 >/dev/null 2>&1; then
+        return 1
+    fi
+
+    if command -v ping >/dev/null 2>&1; then
+        timeout 2 ping -c 1 -W 1 1.1.1.1 >/dev/null 2>&1
+        return $?
+    fi
+
+    return 0
+}
+
+activate_wifi_for_steam() {
+    local i
+
+    if has_network; then
+        return 0
+    fi
+
+    log_msg "Steam setup needs network; trying to enable Wi-Fi."
+    flash_msg 5 "Steam setup needs Wi-Fi. Enabling Wi-Fi..." 21
+
+    if command -v connmanctl >/dev/null 2>&1; then
+        connmanctl enable wifi >> "${log}" 2>&1 || true
+        connmanctl scan wifi >> "${log}" 2>&1 || true
+    fi
+
+    for i in $(seq 1 "${BATOCERA_STEAM_WIFI_WAIT_SECS:-30}"); do
+        if has_network; then
+            log_msg "Network became available for Steam setup."
+            return 0
+        fi
+        sleep 1
+    done
+
+    log_msg "Network is still unavailable after Wi-Fi enable attempt."
+    return 1
+}
+
+gamescope_install_flashes_enabled() {
+    [[ "${MODE}" == "steamos" || "${BATOCERA_STEAM_USE_GAMESCOPE:-0}" == "1" ]] || return 1
+    command -v batocera-flash-screen >/dev/null 2>&1
+}
+
+file_size_mb() {
+    local file="$1"
+    local bytes
+
+    bytes="$(wc -c < "${file}" 2>/dev/null || echo 0)"
+    [[ "${bytes}" =~ ^[0-9]+$ ]] || bytes=0
+    printf '%s\n' $((bytes / 1048576))
+}
+
+flash_download_progress() {
+    local tmp="$1"
+    local label="$2"
+    local last_mb=0
+    local current_mb=0
+    local step_mb=100
+    local rounded_mb=0
+
+    gamescope_install_flashes_enabled || return 0
+
+    while true; do
+        if [[ -e "${tmp}" ]]; then
+            current_mb="$(file_size_mb "${tmp}")"
+            if (( current_mb >= 1024 )); then
+                step_mb=500
+            else
+                step_mb=100
+            fi
+            rounded_mb=$(((current_mb / step_mb) * step_mb))
+
+            if (( rounded_mb > 0 && rounded_mb > last_mb )); then
+                last_mb="${rounded_mb}"
+                flash_msg 3 "${label}: ${last_mb} MB downloaded" 20
+                log_msg "${label}: ${last_mb} MB downloaded"
+            fi
+        fi
+
+        sleep 3
+    done
+}
+
+fetch_url_stdout() {
+    local url="$1"
+
+    if command -v curl >/dev/null 2>&1; then
+        curl -fsSL "${url}"
+        return
+    fi
+
+    if command -v wget >/dev/null 2>&1; then
+        wget -qO- "${url}"
+        return
+    fi
+
+    return 1
+}
+
+download_file() {
+    local url="$1"
+    local target="$2"
+    local label="${3:-Steam setup}"
+    local tmp="${target}.part"
+    local progress_pid=""
+
+    start_progress() {
+        if gamescope_install_flashes_enabled; then
+            flash_download_progress "${tmp}" "${label}" &
+            progress_pid="$!"
+        fi
+    }
+
+    stop_progress() {
+        if [[ -n "${progress_pid}" ]]; then
+            kill "${progress_pid}" 2>/dev/null || true
+            wait "${progress_pid}" 2>/dev/null || true
+            progress_pid=""
+        fi
+    }
+
+    rm -f "${tmp}"
+    if command -v curl >/dev/null 2>&1; then
+        start_progress
+        if curl -fL --retry 5 --connect-timeout 20 -o "${tmp}" "${url}" >> "${log}" 2>&1; then
+            stop_progress
+            mv -f "${tmp}" "${target}"
+            if gamescope_install_flashes_enabled; then
+                flash_msg 3 "${label}: download complete" 20
+            fi
+            return 0
+        fi
+        stop_progress
+    fi
+
+    rm -f "${tmp}"
+    if command -v wget >/dev/null 2>&1; then
+        start_progress
+        if wget -c -t 5 -O "${tmp}" "${url}" >> "${log}" 2>&1; then
+            stop_progress
+            mv -f "${tmp}" "${target}"
+            if gamescope_install_flashes_enabled; then
+                flash_msg 3 "${label}: download complete" 20
+            fi
+            return 0
+        fi
+        stop_progress
+    fi
+
+    rm -f "${tmp}"
+    return 1
+}
+
+if [[ -z "${MODE}" ]]; then
+    MODE="$(batocera-settings-get steam.session.mode 2>/dev/null || true)"
+fi
+if [[ -z "${MODE}" ]]; then
+    MODE="gamepadui"
+fi
+
+case "${MODE}" in
+    steamos|gamescope|gamemode)
+        MODE="steamos"
+        ;;
+esac
+
+ensure_runtime_dir() {
+    local uid candidate
+
+    if [[ -n "${XDG_RUNTIME_DIR:-}" && -d "${XDG_RUNTIME_DIR}" ]]; then
+        return
+    fi
+
+    uid="$(id -u)"
+    candidate="/run/user/${uid}"
+    if mkdir -p "${candidate}" 2>/dev/null; then
+        chmod 700 "${candidate}" 2>/dev/null || true
+        export XDG_RUNTIME_DIR="${candidate}"
+        return
+    fi
+
+    candidate="/tmp/runtime-${uid}"
+    mkdir -p "${candidate}"
+    chmod 700 "${candidate}" 2>/dev/null || true
+    export XDG_RUNTIME_DIR="${candidate}"
+}
+
+ensure_x11_session_env() {
+    if [[ -z "${DISPLAY:-}" ]]; then
+        if command -v getLocalXDisplay >/dev/null 2>&1; then
+            export DISPLAY="$(getLocalXDisplay)"
+        else
+            export DISPLAY=":0"
+        fi
+    else
+        export DISPLAY
+    fi
+
+    export GDK_BACKEND="${GDK_BACKEND:-x11}"
+    export SDL_VIDEODRIVER="${SDL_VIDEODRIVER:-x11}"
+}
+
+ensure_system_bus_address() {
+    if [[ -n "${DBUS_SYSTEM_BUS_ADDRESS:-}" ]]; then
+        return
+    fi
+
+    if [[ -S /run/dbus/system_bus_socket ]]; then
+        export DBUS_SYSTEM_BUS_ADDRESS="unix:path=/run/dbus/system_bus_socket"
+        return
+    fi
+
+    if [[ -n "${DBUS_SESSION_BUS_ADDRESS:-}" ]]; then
+        export DBUS_SYSTEM_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS}"
+    fi
+}
+
+start_stub() {
+    local stub="$1"
+    local pattern="$2"
+
+    if [[ ! -x "${stub}" ]]; then
+        return
+    fi
+
+    if pgrep -f "${pattern}" >/dev/null 2>&1; then
+        return
+    fi
+
+    nohup "${stub}" >> "${log}" 2>&1 &
+    sleep 0.2
+}
+
+start_compat_shims() {
+    ensure_system_bus_address
+    start_stub "/usr/bin/batocera-networkmanager-stub" '(^|/)batocera-networkmanager-stub([[:space:]]|$)'
+    start_stub "/usr/bin/batocera-login1-stub" '(^|/)batocera-login1-stub([[:space:]]|$)'
+    start_stub "/usr/bin/batocera-consolekit-stub" '(^|/)batocera-consolekit-stub([[:space:]]|$)'
+    start_stub "/usr/bin/batocera-displaymanager-stub" '(^|/)batocera-displaymanager-stub([[:space:]]|$)'
+}
+
+normalize_game_target() {
+    local game="$1"
+
+    if [[ -z "${game}" ]]; then
+        return
+    fi
+
+    if [[ "${game}" =~ ^steam://rungameid/([0-9]+)$ ]]; then
+        printf '%s' "${BASH_REMATCH[1]}"
+        return
+    fi
+
+    if [[ "${game}" =~ ^[0-9]+$ ]]; then
+        printf '%s' "${game}"
+        return
+    fi
+
+    printf '%s' "${game}"
+}
+
+steam_gamepadui_enabled() {
+    case "${BATOCERA_STEAM_GAMEPADUI:-1}" in
+        0|false|FALSE|False|no|NO|No|off|OFF|Off)
+            return 1
+            ;;
+        *)
+            return 0
+            ;;
+    esac
+}
+
+append_steam_startup_args() {
+    local -n args="$1"
+
+    if [[ "${BATOCERA_STEAM_STARTUP_ARGS:-1}" == "0" ]]; then
+        return
+    fi
+
+    args+=(
+        -noverifyfiles
+        -nobootstrapupdate
+        -skipinitialbootstrap
+        -norepairfiles
+    )
+}
+
+build_steam_args() {
+    local -n out_args="$1"
+    local game_target="$2"
+    local -a extra_args=()
+
+    out_args=()
+
+    if steam_gamepadui_enabled; then
+        if [[ "${MODE}" == "steamos" ]]; then
+            out_args+=(-steamdeck -steamos3 -gamepadui)
+        else
+            out_args+=("${BATOCERA_STEAM_GAMEPADUI_ARG:-${BATOCERA_STEAM_BIGPICTURE_ARG:--gamepadui}}")
+        fi
+        export STEAM_GAMEPADUI=1
+        export STEAM_FORCE_DESKTOPUI=0
+    else
+        out_args+=(-nofriendsui)
+        export STEAM_GAMEPADUI=0
+        export STEAM_FORCE_DESKTOPUI=1
+    fi
+
+    append_steam_startup_args out_args
+
+    if [[ -n "${BATOCERA_STEAM_EXTRA_ARGS:-}" ]]; then
+        read -r -a extra_args <<< "${BATOCERA_STEAM_EXTRA_ARGS}"
+        out_args+=("${extra_args[@]}")
+    fi
+
+    if [[ ! -x "${STEAM_ROOT}/steamapps/common/${PROTON11_ARM64_DIR_NAME}/proton" ]]; then
+        log_msg "Proton 11.0 (ARM64) payload missing; requesting Steam install for AppID ${PROTON11_ARM64_APPID}."
+        out_args+=("${PROTON11_ARM64_INSTALL_URI}")
+        if [[ -n "${game_target}" ]]; then
+            log_msg "Deferring requested game '${game_target}' until Proton 11.0 (ARM64) is installed."
+            return 0
+        fi
+    fi
+
+    if [[ -n "${game_target}" ]]; then
+        if [[ "${game_target}" =~ ^[0-9]+$ ]]; then
+            out_args+=(-applaunch "${game_target}")
+        else
+            out_args+=("${game_target}")
+        fi
+    fi
+}
+
+ensure_steam_links() {
+    mkdir -p "${STEAM_ROOT}" "${HOME}/.steam"
+
+    if [[ -L "${HOME}/.steam/steam" || ! -e "${HOME}/.steam/steam" ]]; then
+        ln -sfn "${STEAM_ROOT}" "${HOME}/.steam/steam"
+    fi
+
+    if [[ -L "${HOME}/.steam/root" || ! -e "${HOME}/.steam/root" ]]; then
+        ln -sfn "${STEAM_ROOT}" "${HOME}/.steam/root"
+    fi
+
+    if [[ -d "${STEAM_ROOT}/linuxarm64" ]]; then
+        ln -sfn "${STEAM_ROOT}/linuxarm64" "${HOME}/.steam/sdkarm64"
+    fi
+}
+
+install_steam_registry_defaults() {
+    local registry_src="/usr/share/steam/registry.vdf"
+    local registry_dst
+
+    [[ -f "${registry_src}" ]] || return
+
+    mkdir -p "${HOME}/.steam" "${STEAM_ROOT}" "/userdata/roms/steam/steamapps"
+    for registry_dst in "${HOME}/.steam/registry.vdf" "${STEAM_ROOT}/registry.vdf"; do
+        if [[ ! -f "${registry_dst}" || "${BATOCERA_STEAM_FORCE_REGISTRY_DEFAULTS:-0}" == "1" ]]; then
+            cp -f "${registry_src}" "${registry_dst}"
+            chmod 0644 "${registry_dst}" 2>/dev/null || true
+            log_msg "Installed Steam Deck registry defaults to ${registry_dst}."
+        fi
+
+        command -v python3 >/dev/null 2>&1 || continue
+        python3 - "${registry_dst}" <<'PY' >> "${log}" 2>&1 || true
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+
+def q(value: object) -> str:
+    return '"' + str(value).replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def tokenize(text: str) -> list[str]:
+    tokens: list[str] = []
+    index = 0
+    while index < len(text):
+        char = text[index]
+        if char.isspace():
+            index += 1
+            continue
+        if char == "/" and index + 1 < len(text) and text[index + 1] == "/":
+            while index < len(text) and text[index] != "\n":
+                index += 1
+            continue
+        if char in "{}":
+            tokens.append(char)
+            index += 1
+            continue
+        if char == '"':
+            index += 1
+            buf: list[str] = []
+            while index < len(text):
+                current = text[index]
+                if current == "\\" and index + 1 < len(text):
+                    buf.append(text[index + 1])
+                    index += 2
+                    continue
+                if current == '"':
+                    index += 1
+                    break
+                buf.append(current)
+                index += 1
+            tokens.append("".join(buf))
+            continue
+
+        start = index
+        while index < len(text) and not text[index].isspace() and text[index] not in "{}":
+            index += 1
+        tokens.append(text[start:index])
+    return tokens
+
+
+def parse_object(tokens: list[str], index: int = 0) -> tuple[dict[str, object], int]:
+    data: dict[str, object] = {}
+    while index < len(tokens):
+        token = tokens[index]
+        if token == "}":
+            return data, index + 1
+        key = token
+        index += 1
+        if index >= len(tokens):
+            data[key] = ""
+            break
+        token = tokens[index]
+        if token == "{":
+            value, index = parse_object(tokens, index + 1)
+            data[key] = value
+        else:
+            data[key] = token
+            index += 1
+    return data, index
+
+
+def load_vdf(path: Path) -> dict[str, object]:
+    try:
+        tokens = tokenize(path.read_text(encoding="utf-8", errors="ignore"))
+        data, _ = parse_object(tokens)
+        return data
+    except Exception:
+        return {}
+
+
+def dump_object(node: dict[str, object], indent: str = "") -> list[str]:
+    lines: list[str] = []
+    for key, value in node.items():
+        if isinstance(value, dict):
+            lines.append(f"{indent}{q(key)}")
+            lines.append(f"{indent}" + "{")
+            lines.extend(dump_object(value, indent + "\t"))
+            lines.append(f"{indent}" + "}")
+        else:
+            lines.append(f"{indent}{q(key)}\t\t{q(value)}")
+    return lines
+
+
+def ensure_dict(parent: dict[str, object], key: str) -> dict[str, object]:
+    current = parent.get(key)
+    if isinstance(current, dict):
+        return current
+    created: dict[str, object] = {}
+    parent[key] = created
+    return created
+
+
+path = Path(sys.argv[1])
+data = load_vdf(path)
+registry = ensure_dict(data, "Registry")
+hklm_steam = ensure_dict(ensure_dict(ensure_dict(ensure_dict(registry, "HKLM"), "Software"), "Valve"), "Steam")
+hkcu_software = ensure_dict(ensure_dict(registry, "HKCU"), "Software")
+hkcu_valve = ensure_dict(hkcu_software, "Valve")
+hkcu_steamglobal = ensure_dict(hkcu_valve, "Steamsteamglobal")
+hkcu_steam = ensure_dict(hkcu_valve, "Steam")
+
+hklm_steam["SteamPID"] = "0"
+hklm_steam["ClientLauncherType"] = "0"
+hklm_steam["SteamDeckOOBEComplete"] = "1"
+
+hkcu_steamglobal.setdefault("language", "english")
+hkcu_steam.setdefault("language", "english")
+hkcu_steam["GamescopeEnableAppTargetRefreshRate2"] = "1"
+hkcu_steam["StartupModeTmpIsValid"] = "0"
+hkcu_steam["CompletedOOBEStage1"] = "1"
+hkcu_steam["SourceModInstallPath"] = "/userdata/roms/steam/steamapps\\sourcemods"
+hkcu_steam["Rate"] = "30000"
+hkcu_steam["AlreadyRetriedOfflineMode"] = "0"
+hkcu_steam["CompletedOOBE"] = "1"
+
+path.parent.mkdir(parents=True, exist_ok=True)
+path.write_text("\n".join(dump_object(data)) + "\n", encoding="utf-8")
+print(f"Applied Steam Deck registry defaults to {path}")
+PY
+    done
+}
+
+link_arm64_runtime_libs() {
+    local runtime_lib_dir
+    local ibus_lib
+    local gtk2_lib
+    local gdk2_lib
+    local libnm_lib
+
+    runtime_lib_dir="$(find "${STEAM_ROOT}/steam-runtime-steamrt-arm64" -path '*/files/lib/aarch64-linux-gnu' -type d 2>/dev/null | head -n 1 || true)"
+    [[ -n "${runtime_lib_dir}" ]] || return
+
+    ibus_lib="$(find "${runtime_lib_dir}" -maxdepth 1 -name 'libibus-1.0.so.5.*' -type f 2>/dev/null | head -n 1 || true)"
+    if [[ -n "${ibus_lib}" ]]; then
+        mkdir -p "${STEAM_ROOT}/lib/aarch64-linux-gnu"
+        ln -sfn "${ibus_lib}" "${STEAM_ROOT}/lib/aarch64-linux-gnu/libibus-1.0.so.5"
+    fi
+
+    gtk2_lib="$(find "${runtime_lib_dir}" -maxdepth 1 -name 'libgtk-x11-2.0.so.0.*' -type f 2>/dev/null | head -n 1 || true)"
+    if [[ -n "${gtk2_lib}" ]]; then
+        mkdir -p "${STEAM_ROOT}/lib/aarch64-linux-gnu"
+        ln -sfn "${gtk2_lib}" "${STEAM_ROOT}/lib/aarch64-linux-gnu/libgtk-x11-2.0.so.0"
+    fi
+
+    gdk2_lib="$(find "${runtime_lib_dir}" -maxdepth 1 -name 'libgdk-x11-2.0.so.0.*' -type f 2>/dev/null | head -n 1 || true)"
+    if [[ -n "${gdk2_lib}" ]]; then
+        mkdir -p "${STEAM_ROOT}/lib/aarch64-linux-gnu"
+        ln -sfn "${gdk2_lib}" "${STEAM_ROOT}/lib/aarch64-linux-gnu/libgdk-x11-2.0.so.0"
+    fi
+
+    libnm_lib="$(find "${runtime_lib_dir}" -maxdepth 1 -name 'libnm.so.0.*' -type f 2>/dev/null | head -n 1 || true)"
+    if [[ -n "${libnm_lib}" ]]; then
+        mkdir -p "${STEAM_ROOT}/lib/aarch64-linux-gnu"
+        ln -sfn "${libnm_lib}" "${STEAM_ROOT}/lib/aarch64-linux-gnu/libnm.so.0"
+    fi
+}
+
+ensure_steam_taskset_shim() {
+    local shim_dir="${STEAM_ROOT}/batocera-bin"
+    local shim="${shim_dir}/taskset"
+
+    mkdir -p "${shim_dir}"
+    cat > "${shim}" <<'EOF'
+#!/bin/sh
+# Minimal taskset shim for images without util-linux taskset.
+
+if [ "$#" -lt 2 ]; then
+    echo "usage: taskset mask command [args...]" >&2
+    exit 1
+fi
+
+case "$1" in
+    -p|--pid)
+        echo "taskset shim: pid mode is not supported" >&2
+        exit 1
+        ;;
+    -c|--cpu-list|-a|--all-tasks)
+        shift
+        ;;
+esac
+
+shift
+exec "$@"
+EOF
+    chmod +x "${shim}" 2>/dev/null || true
+    case ":${PATH}:" in
+        *":${shim_dir}:"*) ;;
+        *) export PATH="${shim_dir}:${PATH}" ;;
+    esac
+}
+
+patch_arm64_steamwebhelper_launcher() {
+    local helper_script="${STEAM_ROOT}/steamrtarm64/steamwebhelper.sh"
+
+    [[ -f "${helper_script}" ]] || return
+    if grep -q 'BATOCERA_STEAMWEBHELPER_TASKSET_FALLBACK' "${helper_script}" 2>/dev/null; then
+        return
+    fi
+
+    cat > "${helper_script}" <<'EOF'
+#!/bin/bash
+# BATOCERA_STEAMWEBHELPER_TASKSET_FALLBACK
+
+SCRIPTPATH="$(dirname -- "${BASH_SOURCE[0]}")"
+cd "$SCRIPTPATH" || exit 1
+
+if [ -z "${DISPLAY:-}" ]; then
+    echo "steamwebhelper: DISPLAY not set -- defaulting to :0"
+    export DISPLAY=:0
+fi
+
+echo "setting LIBGL_KOPPER_DISABLE=true for steamwebhelper to get store working properly"
+export LIBGL_KOPPER_DISABLE=true
+
+log="${HOME:-/userdata/system}/.steam/steam/logs/steamwebhelper.log"
+if command -v taskset >/dev/null 2>&1; then
+    exec taskset 0x7e "$(pwd)/steamwebhelper" "$@" &> "$log"
+fi
+
+exec "$(pwd)/steamwebhelper" "$@" &> "$log"
+EOF
+    chmod +x "${helper_script}" 2>/dev/null || true
+}
+
+ensure_arm64_steam_runtime() {
+    local archive="${STEAM_ROOT}/steam-runtime-steamrt-arm64.tar.xz"
+    local url="https://repo.steampowered.com/steamrt3c/images/latest-public-beta/steam-runtime-steamrt-arm64.tar.xz"
+
+    if [[ -d "${STEAM_ROOT}/steam-runtime-steamrt-arm64" ]]; then
+        link_arm64_runtime_libs
+        return
+    fi
+
+    command -v tar >/dev/null 2>&1 || die "tar is required to install the ARM64 Steam runtime."
+    log_msg "Downloading ARM64 Steam runtime from ${url}"
+    download_file "${url}" "${archive}" "Steam runtime" || die "Failed to download ARM64 Steam runtime."
+    tar -xf "${archive}" -C "${STEAM_ROOT}" >> "${log}" 2>&1 || die "Failed to extract ARM64 Steam runtime."
+    rm -f "${archive}"
+    link_arm64_runtime_libs
+}
+
+ensure_native_steam_client() {
+    local manifest
+    local target_file
+    local archive="${STEAM_ROOT}/linuxarm64.zip"
+    local manifest_url="https://client-update.fastly.steamstatic.com/steam_client_publicbeta_linuxarm64"
+
+    ensure_arm64_steam_runtime
+
+    if [[ -x "${STEAM_ROOT}/steamrtarm64/steam" ]]; then
+        return
+    fi
+
+    command -v unzip >/dev/null 2>&1 || die "unzip is required to install the ARM64 Steam client."
+    command -v strings >/dev/null 2>&1 || die "strings is required to parse the ARM64 Steam client manifest."
+
+    log_msg "Downloading ARM64 Steam client manifest from ${manifest_url}"
+    if ! manifest="$(fetch_url_stdout "${manifest_url}" | strings)"; then
+        die "Failed to download ARM64 Steam client manifest."
+    fi
+
+    target_file="$(printf '%s\n' "${manifest}" | grep -Eo 'bins_linuxarm64_linuxarm64\.zip\.[^"[:space:]]+' | grep -v '\.vz\.' | head -n 1 || true)"
+    [[ -n "${target_file}" ]] || die "Could not find ARM64 Steam client archive in manifest."
+
+    log_msg "Downloading ARM64 Steam client ${target_file}"
+    download_file "https://client-update.steamstatic.com/${target_file}" "${archive}" "Steam client" || die "Failed to download ARM64 Steam client."
+    unzip -o "${archive}" -d "${STEAM_ROOT}" >> "${log}" 2>&1 || die "Failed to extract ARM64 Steam client."
+    rm -f "${archive}"
+    chmod +x "${STEAM_ROOT}/steamrtarm64/steam" 2>/dev/null || true
+
+    [[ -x "${STEAM_ROOT}/steamrtarm64/steam" ]] || die "ARM64 Steam client did not install to ${STEAM_ROOT}/steamrtarm64/steam."
+}
+
+prepare_arm64_steam_layout() {
+    local helper
+
+    mkdir -p "${STEAM_ROOT}/package"
+    printf '%s\n' "publicbeta" > "${STEAM_ROOT}/package/beta"
+    : > "${STEAM_ROOT}/.steam-enable-steamrt64-client"
+    ensure_steam_taskset_shim
+
+    if [[ -d "${STEAM_ROOT}/linuxarm64" ]]; then
+        ln -sfn "${STEAM_ROOT}/linuxarm64" "${HOME}/.steam/sdkarm64"
+    fi
+
+    for helper in \
+        steam \
+        steamwebhelper \
+        steamwebhelper.sh \
+        gldriverquery \
+        vulkandriverquery \
+        steamsysinfo
+    do
+        [[ -e "${STEAM_ROOT}/steamrtarm64/${helper}" ]] || continue
+        chmod +x "${STEAM_ROOT}/steamrtarm64/${helper}" 2>/dev/null || true
+    done
+
+}
+
+write_compatibilitytool_vdf() {
+    local target="$1"
+
+    if [[ -f /usr/share/steam/compatibilitytool.vdf ]]; then
+        cp -f /usr/share/steam/compatibilitytool.vdf "${target}"
+        return
+    fi
+
+    cat > "${target}" <<'EOF'
+"compatibilitytools"
+{
+  "compat_tools"
+  {
+    "proton11_arm64"
+    {
+      "appid" "4628740"
+      "install_path" "Proton11ARM"
+      "display_name" "Proton 11.0 (ARM64)"
+      "from_oslist" "windows"
+      "to_oslist" "linux"
+    }
+  }
+}
+EOF
+}
+
+write_toolmanifest_vdf() {
+    local target="$1"
+
+    if [[ -f /usr/share/steam/toolmanifest.vdf ]]; then
+        cp -f /usr/share/steam/toolmanifest.vdf "${target}"
+        return
+    fi
+
+    cat > "${target}" <<'EOF'
+"manifest"
+{
+  "version" "2"
+  "commandline" "/proton %verb%"
+  "use_sessions" "1"
+  "compatmanager_layer_name" "proton"
+}
+EOF
+}
+
+register_proton11_arm64() {
+    local proton_dir="${STEAM_ROOT}/steamapps/common/${PROTON11_ARM64_DIR_NAME}"
+    local compat_dir="${STEAM_ROOT}/compatibilitytools.d"
+
+    mkdir -p "${proton_dir}" "${compat_dir}"
+    ln -sfn "${proton_dir}" "${compat_dir}/Proton11ARM"
+    write_compatibilitytool_vdf "${compat_dir}/compatibilitytool.vdf"
+    write_toolmanifest_vdf "${proton_dir}/toolmanifest.vdf"
+
+    if [[ -e "${proton_dir}/proton" ]]; then
+        chmod +x "${proton_dir}/proton" 2>/dev/null || true
+        log_msg "Registered installed Proton 11.0 (ARM64) as compatibility tool proton11_arm64."
+    else
+        log_msg "Prepared Proton 11.0 (ARM64) compatibility-tool registration; Proton payload is not installed yet."
+    fi
+}
+
+proton11_toolmanifest_needs_repair() {
+    local manifest="$1"
+
+    [[ -f "${manifest}" ]] || return 0
+    grep -q '"require_tool_appid"' "${manifest}" 2>/dev/null && return 0
+    grep -q '"commandline" "/proton %verb%"' "${manifest}" 2>/dev/null || return 0
+    return 1
+}
+
+repair_proton11_toolmanifest() {
+    local proton_dir="${STEAM_ROOT}/steamapps/common/${PROTON11_ARM64_DIR_NAME}"
+    local manifest="${proton_dir}/toolmanifest.vdf"
+
+    mkdir -p "${proton_dir}"
+    if proton11_toolmanifest_needs_repair "${manifest}"; then
+        write_toolmanifest_vdf "${manifest}"
+        chmod 0644 "${manifest}" 2>/dev/null || true
+        log_msg "Rewrote Proton 11.0 (ARM64) toolmanifest without Steam Linux Runtime dependency."
+    fi
+}
+
+start_proton11_toolmanifest_watcher() {
+    local watch_seconds="${BATOCERA_STEAM_PROTON11_WATCH_SECONDS:-1800}"
+
+    [[ "${watch_seconds}" =~ ^[0-9]+$ ]] || watch_seconds=1800
+    (
+        local end_time=$((SECONDS + watch_seconds))
+        local proton_dir="${STEAM_ROOT}/steamapps/common/${PROTON11_ARM64_DIR_NAME}"
+        local manifest="${proton_dir}/toolmanifest.vdf"
+
+        while (( SECONDS < end_time )); do
+            if [[ -d "${proton_dir}" ]] && proton11_toolmanifest_needs_repair "${manifest}"; then
+                repair_proton11_toolmanifest
+            fi
+            sleep 2
+        done
+    ) >> "${log}" 2>&1 &
+}
+
+apply_steam_user_selection() {
+    local selection="${1:-auto}"
+
+    case "${selection}" in
+        ""|auto|AUTO|Auto)
+            return 0
+            ;;
+    esac
+
+    if [[ ! -x /usr/bin/batocera-steam-users ]]; then
+        log_msg "Steam user selection requested but batocera-steam-users is missing."
+        return 0
+    fi
+
+    BATOCERA_STEAM_HOME="${STEAM_ROOT}" /usr/bin/batocera-steam-users apply "${selection}" >> "${log}" 2>&1 || \
+        log_msg "Steam user selection apply failed for '${selection}'."
+}
+
+disable_host_binfmt() {
+    local name entry
+
+    for name in x86_64 x86 FEX-x86_64 FEX-x86 box64 box32; do
+        entry="/proc/sys/fs/binfmt_misc/${name}"
+        [[ -f "${entry}" && -w "${entry}" ]] || continue
+        if grep -q '^enabled' "${entry}" 2>/dev/null && echo 0 > "${entry}" 2>/dev/null; then
+            DISABLED_BINFMT+=("${entry}")
+            log_msg "Disabled host binfmt handler ${name} for native ARM64 Steam launch."
+        fi
+    done
+}
+
+enable_fex_binfmt() {
+    local name conf entry
+
+    for name in FEX-x86_64 FEX-x86; do
+        conf="/usr/lib/binfmt.d/${name}.conf"
+        entry="/proc/sys/fs/binfmt_misc/${name}"
+
+        [[ -f "${conf}" ]] || die "Missing ${conf}; FEX binfmt cannot be registered for Steam."
+        if [[ -f "${entry}" ]]; then
+            if grep -q '^disabled' "${entry}" 2>/dev/null; then
+                echo 1 > "${entry}" 2>/dev/null || die "Failed to enable ${name} binfmt handler."
+                ENABLED_BINFMT+=("${entry}")
+            fi
+            continue
+        fi
+
+        cat "${conf}" > /proc/sys/fs/binfmt_misc/register 2>/dev/null || die "Failed to register ${name} binfmt handler."
+        REGISTERED_BINFMT+=("${entry}")
+        log_msg "Registered ${name} binfmt handler for Steam Proton/FEX."
+    done
+}
+
+ensure_binfmt_misc() {
+    if [[ ! -d /proc/sys/fs/binfmt_misc || ! -f /proc/sys/fs/binfmt_misc/register ]]; then
+        mount binfmt_misc -t binfmt_misc /proc/sys/fs/binfmt_misc 2>/dev/null || true
+    fi
+
+    [[ -f /proc/sys/fs/binfmt_misc/register ]] || die "binfmt_misc is not available."
+    if [[ "$(cat /proc/sys/fs/binfmt_misc/status 2>/dev/null || true)" = "disabled" ]]; then
+        echo 1 > /proc/sys/fs/binfmt_misc/status 2>/dev/null || true
+    fi
+}
+
+fex_rootfs_configured() {
+    local fex_config="${HOME}/.config/fex-emu/Config.json"
+    local rootfs_dir="${HOME}/.local/share/fex-emu/RootFS"
+    local rootfs_name
+
+    [[ -f "${fex_config}" ]] || return 1
+    rootfs_name="$(sed -n 's/.*"RootFS"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "${fex_config}" | head -n 1)"
+    [[ -n "${rootfs_name}" ]] || return 1
+    [[ "${rootfs_name}" != *.ero ]] || return 1
+    [[ -e "${rootfs_dir}/${rootfs_name}" ]]
+}
+
+steam_setup_state() {
+    if [[ ! -x "${STEAM_ROOT}/steamrtarm64/steam" ]]; then
+        printf 'client\n'
+        return 0
+    fi
+
+    if ! fex_rootfs_configured; then
+        printf 'support\n'
+        return 0
+    fi
+
+    if [[ ! -x "${STEAM_ROOT}/steamapps/common/${PROTON11_ARM64_DIR_NAME}/proton" ]]; then
+        printf 'support\n'
+        return 0
+    fi
+
+    printf 'none\n'
+}
+
+ensure_network_for_steam_setup() {
+    local setup_state
+
+    setup_state="$(steam_setup_state)"
+    if [[ "${setup_state}" == "none" ]]; then
+        return 0
+    fi
+
+    log_msg "Steam/Proton/FEX setup is incomplete; network is required."
+    export BATOCERA_STEAM_SETUP_PENDING=1
+    export BATOCERA_STEAM_SETUP_KIND="${setup_state}"
+    if [[ "${setup_state}" == "client" ]]; then
+        export BATOCERA_STEAM_FIRST_RUN=1
+    fi
+
+    if [[ "${MODE}" == "steamos" || "${BATOCERA_STEAM_USE_GAMESCOPE:-0}" == "1" ]]; then
+        if [[ "${setup_state}" == "client" ]]; then
+            flash_msg 8 "Steam is not installed yet." 22
+        else
+            flash_msg 8 "Steam Proton/FEX setup is incomplete." 20
+        fi
+        flash_msg 8 "Gamescope mode is not supported before setup completes." 17
+        flash_msg 8 "Launch Steam GamepadUI or Desktop without Gamescope first." 17
+        exit 0
+    else
+        if [[ "${setup_state}" == "client" ]]; then
+            flash_msg 6 "Steam first launch setup is starting." 21
+            flash_msg "${BATOCERA_STEAM_FIRST_RUN_WAIT_SECS:-12}" "Downloads can take several minutes." 18
+        else
+            flash_msg 6 "Steam support setup is starting." 22
+            flash_msg "${BATOCERA_STEAM_FIRST_RUN_WAIT_SECS:-12}" "Proton/FEX setup may take several minutes." 18
+        fi
+        flash_msg 9 "For Windows games, select Proton 11.0 (ARM64) as the Steam compatibility runner." 15
+        flash_msg 7 "After setup completes, you may need to relaunch Steam." 19
+    fi
+
+    if activate_wifi_for_steam; then
+        return 0
+    fi
+
+    flash_msg 7 "No internet connection for Steam setup." 22
+    flash_msg 7 "Connect Wi-Fi and launch Steam again." 20
+    die "Steam setup requires an internet connection."
+}
+
+ensure_fex_rootfs() {
+    local rootfs_dir="${HOME}/.local/share/fex-emu/RootFS"
+    local fex_config="${HOME}/.config/fex-emu/Config.json"
+    local target="${rootfs_dir}/${BATOCERA_STEAM_FEX_ROOTFS_NAME}"
+
+    command -v FEX >/dev/null 2>&1 || die "FEX is required for Proton 11.0 (ARM64)."
+    command -v squashfuse >/dev/null 2>&1 || die "squashfuse is required for the Steam FEX rootfs."
+
+    if fex_rootfs_configured; then
+        return
+    fi
+
+    mkdir -p "${rootfs_dir}" "$(dirname "${fex_config}")"
+    if [[ ! -f "${target}" ]]; then
+        log_msg "Downloading FEX rootfs ${BATOCERA_STEAM_FEX_ROOTFS_NAME} from ${BATOCERA_STEAM_FEX_ROOTFS_URL}"
+        download_file "${BATOCERA_STEAM_FEX_ROOTFS_URL}" "${target}" "FEX rootfs" || die "Failed to download FEX rootfs."
+    fi
+
+    cat > "${fex_config}" <<EOF
+{"Config":{"RootFS":"${BATOCERA_STEAM_FEX_ROOTFS_NAME}"},"ThunksDB":{}}
+EOF
+    chmod 0644 "${fex_config}" 2>/dev/null || true
+    log_msg "Configured FEX rootfs ${BATOCERA_STEAM_FEX_ROOTFS_NAME}."
+}
+
+prepare_steam_binfmt() {
+    ensure_binfmt_misc
+    disable_host_binfmt
+    enable_fex_binfmt
+}
+
+restore_host_binfmt() {
+    local entry
+
+    for entry in "${REGISTERED_BINFMT[@]}"; do
+        [[ -f "${entry}" && -w "${entry}" ]] || continue
+        echo -1 > "${entry}" 2>/dev/null || true
+    done
+    REGISTERED_BINFMT=()
+
+    for entry in "${ENABLED_BINFMT[@]}"; do
+        [[ -f "${entry}" && -w "${entry}" ]] || continue
+        echo 0 > "${entry}" 2>/dev/null || true
+    done
+    ENABLED_BINFMT=()
+
+    for entry in "${DISABLED_BINFMT[@]}"; do
+        [[ -f "${entry}" && -w "${entry}" ]] || continue
+        echo 1 > "${entry}" 2>/dev/null || true
+    done
+    DISABLED_BINFMT=()
+}
+
+cleanup() {
+    batocera-mouse hide >/dev/null 2>&1 || true
+    restore_host_binfmt
+}
+
+steam_update_exit_detected() {
+    local before_line="$1"
+    local bootstrap_log="${STEAM_ROOT}/logs/bootstrap_log.txt"
+    local new_log
+
+    [[ -f "${bootstrap_log}" ]] || return 1
+    new_log="$(sed -n "$((before_line + 1)),\$p" "${bootstrap_log}" 2>/dev/null || true)"
+    printf '%s\n' "${new_log}" | grep -Eq 'Update complete, launching( Steam)?'
+}
+
+launch_native_steam() {
+    local -a steam_args=()
+    local game_target
+    local attempt
+    local bootstrap_lines
+    local status
+    local max_attempts=3
+
+    game_target="$(normalize_game_target "${GAME_ID}")"
+    build_steam_args steam_args "${game_target}"
+
+    export LD_LIBRARY_PATH="${STEAM_ROOT}/lib/aarch64-linux-gnu:${STEAM_ROOT}/steamrtarm64${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
+    export STEAM_COMPAT_CLIENT_INSTALL_PATH="${STEAM_ROOT}"
+
+    for attempt in $(seq 1 "${max_attempts}"); do
+        bootstrap_lines=0
+        if [[ -f "${STEAM_ROOT}/logs/bootstrap_log.txt" ]]; then
+            bootstrap_lines="$(wc -l < "${STEAM_ROOT}/logs/bootstrap_log.txt" 2>/dev/null || echo 0)"
+        fi
+
+        log_msg "Launching native ARM64 Steam in ${MODE} mode (attempt ${attempt}/${max_attempts}): ${STEAM_ROOT}/steamrtarm64/steam ${steam_args[*]:-}"
+        ensure_x11_session_env
+        batocera-mouse show
+        set +e
+        (cd "${STEAM_ROOT}" && "${STEAM_ROOT}/steamrtarm64/steam" "${steam_args[@]}")
+        status=$?
+        set -e
+
+        if [[ "${attempt}" -lt "${max_attempts}" ]] && steam_update_exit_detected "${bootstrap_lines}"; then
+            log_msg "Steam exited after applying an update; relaunching client."
+            sleep 2
+            continue
+        fi
+
+        return "${status}"
+    done
+}
+
+launch_steam_deck_session() {
+    local -a steam_args=()
+    local game_target
+    local steam_bin="${STEAM_ROOT}/steamrtarm64/steam"
+
+    game_target="$(normalize_game_target "${GAME_ID}")"
+    build_steam_args steam_args "${game_target}"
+
+    export LD_LIBRARY_PATH="${STEAM_ROOT}/lib/aarch64-linux-gnu:${STEAM_ROOT}/steamrtarm64${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
+    export STEAM_COMPAT_CLIENT_INSTALL_PATH="${STEAM_ROOT}"
+    export BATOCERA_STEAM_USE_GAMESCOPE="1"
+    export BATOCERA_STEAM_GAMEPADUI="${BATOCERA_STEAM_GAMEPADUI:-1}"
+    if [[ "${BATOCERA_STEAM_FORCE_DISABLE_MANGOAPP:-0}" != "1" ]]; then
+        export BATOCERA_STEAM_GS_MANGOAPP="1"
+    fi
+
+    log_msg "Launching native ARM64 SteamDeck session via gamescope: ${steam_bin} ${steam_args[*]:-}"
+    BATOCERA_STEAM_FIRST_RUN="${BATOCERA_STEAM_FIRST_RUN:-0}" /usr/bin/batocera-steam-session "${steam_bin}" "${steam_args[@]}"
+}
+
+trap cleanup EXIT
+
+ensure_runtime_dir
+start_compat_shims
+ensure_steam_links
+install_steam_registry_defaults
+ensure_network_for_steam_setup
+ensure_native_steam_client
+prepare_arm64_steam_layout
+register_proton11_arm64
+apply_steam_user_selection "${BATOCERA_STEAM_USER:-auto}"
+ensure_fex_rootfs
+if [[ "${BATOCERA_STEAM_BOOTSTRAP_ONLY:-0}" == "1" ]]; then
+    log_msg "ARM64 Steam bootstrap completed."
+    exit 0
+fi
+start_proton11_toolmanifest_watcher
+prepare_steam_binfmt
+if [[ "${MODE}" == "steamos" ]]; then
+    launch_steam_deck_session
+else
+    launch_native_steam
+fi

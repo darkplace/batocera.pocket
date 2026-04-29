@@ -1,0 +1,37 @@
+#!/bin/bash
+set -euo pipefail
+
+GSF_DB="/data/data/com.google.android.gsf/databases/gservices.db"
+REGISTER_URL="https://www.google.com/android/uncertified"
+
+status="$(waydroid status 2>/dev/null || true)"
+
+if ! printf '%s\n' "${status}" | grep -q '^Session:[[:space:]]*RUNNING'; then
+    echo "Waydroid is not running."
+    echo "Launch Waydroid first, open Play Store once, then run this script again."
+    exit 1
+fi
+
+android_id="$(waydroid shell -- sh -c "sqlite3 ${GSF_DB} 'select value from main where name = \"android_id\";'" 2>/dev/null | tr -d '\r')"
+
+if [ -z "${android_id}" ]; then
+    echo "No android_id was returned."
+    echo "Make sure Waydroid is still running and open Play Store once before retrying."
+    exit 1
+fi
+
+cat <<EOF
+Waydroid Google Play registration
+
+1. Copy this android_id:
+${android_id}
+
+2. While signed into the same Google account you use in Waydroid, open:
+${REGISTER_URL}
+
+3. Paste the android_id there and register the device.
+
+4. Wait a few minutes for Google services to reflect the change.
+
+5. Restart Waydroid and check Play Store again.
+EOF

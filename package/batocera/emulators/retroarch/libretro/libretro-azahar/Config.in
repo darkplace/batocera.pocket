@@ -1,0 +1,11 @@
+config BR2_PACKAGE_LIBRETRO_AZAHAR
+    bool "libretro-azahar"
+    depends on BR2_INSTALL_LIBSTDCPP
+    depends on BR2_PACKAGE_HAS_LIBGL
+    help
+      Azahar libretro Nintendo 3DS core.
+
+      https://github.com/azahar-emu/azahar
+
+comment "LIBRETRO_AZAHAR needs a toolchain w/ C++ and OpenGL"
+    depends on !BR2_INSTALL_LIBSTDCPP || !BR2_PACKAGE_HAS_LIBGL

@@ -1,0 +1,4 @@
+config BR2_PACKAGE_WINE_MONO
+	bool "wine-mono"
+      help
+      Wine Mono for Wine.

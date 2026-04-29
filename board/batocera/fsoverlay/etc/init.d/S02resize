@@ -1,0 +1,248 @@
+#!/bin/bash
+
+BOOTCONF="/boot/batocera-boot.conf"
+LOG="/tmp/resize.log"
+
+# only at start
+test "$1" != "start" && exit 0
+
+# Get the active console. If it fails, default to tty1 as a fallback.
+ACTIVE_TTY_PATH="/dev/tty$(fgconsole 2>/dev/null || echo /dev/tty1)"
+echo "Detected active console: ${ACTIVE_TTY_PATH}" >> "$LOG"
+
+# true if triggers are not available or not set to do so
+if ! grep -qE '^[ ]*autoresize[ ]*=[ ]*true[ ]*$' "${BOOTCONF}" && ! grep -qE '^[ ]*format-internal[ ]*=' "${BOOTCONF}"; then
+    exit 0
+fi
+
+# Remove the trigger(s)
+remove_trigger() {
+    local trigger="$1"
+    mount -o remount,rw /boot
+    sed -i -e "s/^[ ]*${trigger}/#${trigger}/g" "${BOOTCONF}"
+    mount -o remount,ro /boot
+}
+
+# UI Output with dialog, default colorset
+function dialogoutput() {
+    local percent="$1"
+    local text="Do not switch off your device!"
+
+    # Get terminal dimensions, with fallbacks for safety
+    local term_height=$(tput lines 2>/dev/null)
+    local term_width=$(tput cols 2>/dev/null)
+    if ! [[ "$term_height" =~ ^[0-9]+$ ]] || ! [[ "$term_width" =~ ^[0-9]+$ ]]; then
+        term_height=24
+        term_width=80
+    fi
+
+    # Calculate dialog width (90% of screen, min 45 cols)
+    local dialog_width=$((term_width * 9 / 10))
+    if (( dialog_width < 45 )); then dialog_width=45; fi
+
+    # Calculate dialog height based on number of items + padding
+    local num_items=$((${#arr[@]} / 2))
+    local dialog_height=$((num_items + 8))
+
+    # Final check to ensure dialog fits on screen
+    if (( dialog_height >= term_height )); then dialog_height=$((term_height - 1)); fi
+    if (( dialog_width >= term_width )); then dialog_width=$((term_width - 1)); fi
+
+    dialog --backtitle "batocera.linux" --title " Resizing & Formatting Partition " \
+           --mixedgauge "$text" "$dialog_height" "$dialog_width" "$percent" "${arr[@]}" &>"${ACTIVE_TTY_PATH}"
+}
+
+# Display error with timeout
+function display_error() {
+    # Get terminal dimensions, with fallbacks for safety
+    local term_height=$(tput lines 2>/dev/null)
+    local term_width=$(tput cols 2>/dev/null)
+    if ! [[ "$term_height" =~ ^[0-9]+$ ]] || ! [[ "$term_width" =~ ^[0-9]+$ ]]; then
+        term_height=24
+        term_width=80
+    fi
+
+    # Calculate dialog width (80% of screen, min 50 cols)
+    local dialog_width=$((term_width * 8 / 10))
+    if (( dialog_width < 50 )); then dialog_width=50; fi
+    local dialog_height=8
+
+    # Final check to ensure dialog fits on screen
+    if (( dialog_height >= term_height )); then dialog_height=$((term_height - 1)); fi
+    if (( dialog_width >= term_width )); then dialog_width=$((term_width - 1)); fi
+
+    dialog --title "Resize Error" --timeout 10 \
+           --msgbox "\nPlease check the resize log at: /tmp/resize.log" \
+           "$dialog_height" "$dialog_width" &>"${ACTIVE_TTY_PATH}"
+    exit 1
+}
+
+# Partition size calculation
+get_partition_size_mb() {
+    local partition="$1"
+    local size_kb=$(blockdev --getsize64 "$partition")
+    echo $((size_kb / 1024 / 1024))
+}
+
+# Executing parameters and watch background pid
+# Changes text messages parsed to dialog --mixedgauge
+function textoutput()
+{
+    local cmd_str="$3"
+    local percent="$2"
+    local pid ret
+    echo "cmd: ${cmd_str}" >> "$LOG"
+
+    # Handle empty commands (for skipped steps)
+    if [ -z "$cmd_str" ]; then
+        arr[$1]=0 # msg: Set to success
+        dialogoutput "$percent"
+        return 0
+    fi
+
+    eval "$cmd_str" >> "$LOG" 2>&1 &
+    pid=$!
+    arr[$1]=7 #msg: In Progress
+    dialogoutput "$percent"
+    wait $pid
+    ret=$?
+    echo "cmd code:$ret" >> "$LOG"
+    arr[$1]=$ret #msg: Depends from return value
+    if [ $ret -ne 0 ]; then
+        display_error
+    fi
+    return $ret
+}
+
+# only when resizing is wanted
+if grep -qE '^[ ]*autoresize[ ]*=[ ]*true[ ]*$' "${BOOTCONF}"; then
+    # Preparing text arrays
+    arr=(
+        "Aligning GPT table"      "Pending"
+        "Resizing partition"      "Pending"
+        "Notifying kernel"        "Pending"
+        "Formatting /userdata"    "Pending"
+        "Checking filesystem"     "Pending"
+        "Syncing data to disk"    "Pending"
+        "Removing trigger"        "Pending"
+    )
+
+    # --- BEGIN RESIZE ---
+    
+    # Get /userdata partition details
+    PART=$(batocera-part "share_internal")
+    PARTNUM=$(batocera-part "share_internal_num")
+    echo "Partition name: $PART & number: $PARTNUM" >> "$LOG"
+    
+    # Check the initial partition size
+    PARTSIZE=$(get_partition_size_mb "$PART")
+    echo "Initial partition size: ${PARTSIZE} MB" >> "$LOG"
+    
+    # Determine if we should format based on initial size
+    FORMAT_ALLOWED=false
+    if [ "$PARTSIZE" -eq 256 ] || [ "$PARTSIZE" -eq 512 ]; then
+        FORMAT_ALLOWED=true
+        echo "Initial partition size is ${PARTSIZE}MB, formatting will be allowed" >> "$LOG"
+    else
+        echo "Initial partition size is ${PARTSIZE}MB, formatting will be skipped" >> "$LOG"
+    fi
+    
+    # boot disk
+    DISK=$(batocera-part prefix "${PART}")
+    echo "Disk = $DISK" >> "$LOG"
+
+    TABLETYPE=$(parted -s ${DISK} print | grep 'Partition Table' | awk '{print $3}')
+    echo "Disk partition table type = $TABLETYPE" >> "$LOG"
+
+    # only for ext4
+    PARTTYPE=$(blkid "${PART}" | sed -e s+'^.* TYPE="\([^"]*\)\".*'+'\1'+)
+    test "${PARTTYPE}" != "ext4" && exit 0
+    echo "Partition type = ${PARTTYPE}" >> "$LOG"
+    
+    # textoutput "Message" "percentage" "command call" 
+    for i in 1 3 5 7 9 11 13; do
+    case $i in
+        1)
+            # check for a GPT partition
+            if [ "${TABLETYPE}" = "gpt" ]; then
+                # move backup GPT data structures to the end of the disk
+                echo "Step $i: Moving 2nd GPT table to the end of the disk" >> "$LOG"
+                textoutput $i 10 "sgdisk -e ${DISK}"
+            else
+                echo "Step $i: Skipping GPT table move, disk is not GPT" >> "$LOG"
+                textoutput $i 10 ""
+            fi
+            ;;
+        3)
+            # resize the partition
+            echo "Step $i: Resizing the partition to 100%" >> "$LOG"
+            textoutput $i 30 "parted -s -m -f ${DISK} resizepart ${PARTNUM} 100%"
+            ;;
+        5)
+            # update the kernel
+            echo "Step $i: Updating the kernel" >> "$LOG"
+            textoutput $i 40 "partprobe ${DISK}; sleep 2"
+            ;;
+        7)
+            if test "${PARTTYPE}" = "ext4" && "$FORMAT_ALLOWED" = true
+            then
+                echo "Step $i: Formatting the ext4 file system" >> "$LOG"
+                textoutput $i 60 "mkfs.ext4 -L SHARE -q -F -F ${PART}"
+            else
+                echo "Step $i: Skipping formatting due to partition size or type" >> "$LOG"
+                textoutput $i 60 ""
+            fi
+            ;;
+        9)
+            # check & resize the ext4 file system
+            if test "${PARTTYPE}" = "ext4"
+            then
+                echo "Step $i: Checking ext4 file system" >> "$LOG"
+                textoutput $i 70 "e2fsck -f -p ${PART}"
+            fi
+            ;;
+        11)
+            # finally disk sync
+            echo "Step $i: Final sync" >> "$LOG"
+            textoutput $i 80 "sync"
+            ;;
+        13)
+            # remove the trigger
+            textoutput $i 90 "remove_trigger autoresize"
+            ;;
+    esac
+    done
+
+else
+    ###### format internal share #####
+    FORMAT_INTERNAL_TYPE=$(grep -E '^[ ]*format-internal[ ]*=.*$' "${BOOTCONF}" | head -1 | sed -e s+"^[ ]*format-internal[ ]*=[ ]*\(.*\)[ ]*$"+"\1"+)
+    if test -n "${FORMAT_INTERNAL_TYPE}"; then
+        # Preparing text arrays
+        arr=(
+            "Formatting /userdata"    "Pending"
+            "Removing trigger"        "Pending"
+        )
+        PART=$(batocera-part "share_internal")
+
+        case "${FORMAT_INTERNAL_TYPE}" in
+            "btrfs")
+            textoutput 1 50 "mkfs.btrfs -L SHARE -f ${PART}"
+            ;;
+            "ext4")
+            textoutput 1 50 "mkfs.ext4 -L SHARE -q -F -F ${PART}"
+            ;;
+            "exfat")
+            textoutput 1 50 "mkfs.exfat -n SHARE ${PART}"
+            ;;
+            *)
+            # do nothing
+        esac
+        # remove the trigger
+        textoutput 3 90 "remove_trigger format-internal"
+    fi
+fi
+
+#Cleanup, restore screen, set progress of last item to 100%
+dialogoutput 100
+clear > "${ACTIVE_TTY_PATH}"
+exit 0

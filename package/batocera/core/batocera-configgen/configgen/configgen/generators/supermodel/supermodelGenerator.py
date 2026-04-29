@@ -1,0 +1,229 @@
+from __future__ import annotations
+
+import re
+import shutil
+from pathlib import Path
+from shutil import copyfile
+from typing import TYPE_CHECKING, Final
+
+from ... import Command
+from ...batoceraPaths import CONFIGS, SAVES, ensure_parents_and_open, mkdir_if_not_exists
+from ...controller import Controller, generate_sdl_game_controller_config
+from ...exceptions import BatoceraException
+from ...gun import Guns, guns_need_crosses
+from ...utils.configparser import CaseSensitiveConfigParser
+from ..Generator import Generator
+
+if TYPE_CHECKING:
+    from ...controller import Controllers
+    from ...Emulator import Emulator
+    from ...types import HotkeysContext
+
+
+SUPERMODEL_SHARE: Final = Path('/usr/share/supermodel')
+SUPERMODEL_CONFIG: Final = CONFIGS / 'supermodel'
+SUPERMODEL_SAVES: Final = SAVES / 'supermodel'
+
+
+class SupermodelGenerator(Generator):
+
+    def getHotkeysContext(self) -> HotkeysContext:
+        return {
+            "name": "supermodel",
+            "keys": { "exit": "KEY_ESC", "menu": ["KEY_LEFTALT", "KEY_P"], "pause": ["KEY_LEFTALT", "KEY_P"], "reset": ["KEY_LEFTALT", "KEY_R"],
+                      "save_state": "KEY_F5", "restore_state": "KEY_F7", "next_state": "KEY_F6"
+                     }
+        }
+
+    def generate(self, system, rom, playersControllers, metadata, guns, wheels, gameResolution):
+        commandArray: list[str | Path] = ["supermodel", "-fullscreen", "-channels=2"]
+
+        # legacy3d
+        if system.config.get("engine3D") == "new3d":
+            commandArray.append("-new3d")
+        else:
+            commandArray.extend(["-multi-texture", "-legacy-scsp", "-legacy3d"])
+
+        # widescreen
+        if system.config.get_bool("m3_wideScreen"):
+            commandArray.append("-wide-screen")
+            commandArray.append("-wide-bg")
+            system.config["bezel"] == "none"
+
+        # quad rendering
+        if system.config.get_bool("quadRendering"):
+            commandArray.append("-quad-rendering")
+
+        # crosshairs
+        if crosshairs := system.config.get("crosshairs"):
+            commandArray.append(f"-crosshairs={crosshairs}")
+        else:
+            if guns_need_crosses(guns):
+                if len(guns) == 1:
+                    commandArray.append("-crosshairs=1")
+                else:
+                    commandArray.append("-crosshairs=3")
+
+        # force feedback
+        if system.config.get_bool("forceFeedback"):
+            commandArray.append("-force-feedback")
+
+        # powerpc frequesncy
+        if freq := system.config.get("ppcFreq"):
+            commandArray.append(f"-ppc-frequency={freq}")
+
+        # crt colour
+        if color := system.config.get("crt_colour"):
+            commandArray.append(f"-crtcolors={color}")
+
+        # upscale mode
+        if upscale_mode := system.config.get("upscale_mode"):
+            commandArray.append(f"-upscalemode={upscale_mode}")
+
+        # resolution
+        commandArray.append(f"-res={gameResolution['width']},{gameResolution['height']}")
+
+        # logs
+        commandArray.extend(["-log-output=/userdata/system/logs/Supermodel.log", rom])
+
+        # copy nvram files
+        copy_nvram_files()
+
+        # copy gun asset files
+        copy_asset_files()
+
+        # copy xml
+        copy_xml()
+
+        # controller config
+        configPadsIni(system, rom, guns)
+
+        return Command.Command(
+            array=commandArray,
+            env={
+                "SDL_VIDEODRIVER": "x11",
+                "SDL_GAMECONTROLLERCONFIG": generate_sdl_game_controller_config(playersControllers),
+                "SDL_JOYSTICK_HIDAPI": "0"
+            }
+        )
+
+    def getInGameRatio(self, config, gameResolution, rom):
+        if config.get('m3_wideScreen') == "1":
+            return 16 / 9
+        return 4 / 3
+
+def copy_nvram_files():
+    sourceDir = SUPERMODEL_SHARE / "NVRAM"
+    targetDir = SUPERMODEL_SAVES / "NVRAM"
+
+    mkdir_if_not_exists(targetDir)
+
+    # create nv files which are in source and have a newer modification time than in target
+    for sourceFile in sourceDir.iterdir():
+        if sourceFile.suffix == ".nv":
+            targetFile = targetDir / sourceFile.name
+            if not targetFile.exists():
+                # if the target file doesn't exist, just copy the source file
+                copyfile(sourceFile, targetFile)
+            else:
+                # if the target file exists and has an older modification time than the source file, create a backup and copy the new file
+                if sourceFile.stat().st_mtime > targetFile.stat().st_mtime:
+                    backupFile = targetFile.with_suffix(f"{targetFile.suffix}.bak")
+                    if backupFile.exists():
+                        backupFile.unlink()
+                    targetFile.rename(backupFile)
+                    copyfile(sourceFile, targetFile)
+
+def copy_asset_files():
+    sourceDir = SUPERMODEL_SHARE / "Assets"
+    targetDir = SUPERMODEL_CONFIG / "Assets"
+    if not sourceDir.exists():
+        return
+    mkdir_if_not_exists(targetDir)
+
+    # create asset files which are in source and have a newer modification time than in target
+    for sourceFile in sourceDir.iterdir():
+        targetFile = targetDir / sourceFile.name
+        if not targetFile.exists() or sourceFile.stat().st_mtime > targetFile.stat().st_mtime:
+            copyfile(sourceFile, targetFile)
+
+def copy_xml():
+    source_path = SUPERMODEL_SHARE / 'Games.xml'
+    dest_path = SUPERMODEL_CONFIG / 'Games.xml'
+    mkdir_if_not_exists(dest_path.parent)
+    if not dest_path.exists() or source_path.stat().st_mtime > dest_path.stat().st_mtime:
+        shutil.copy2(source_path, dest_path)
+
+def configPadsIni(system: Emulator, rom: Path, guns: Guns) -> None:
+
+    templateFile = SUPERMODEL_SHARE / "Supermodel.ini.template"
+    targetFile = SUPERMODEL_CONFIG / "Supermodel.ini"
+
+    # template
+    templateConfig = CaseSensitiveConfigParser(interpolation=None)
+    templateConfig.read(templateFile, encoding='utf_8_sig')
+
+    # target
+    targetConfig = CaseSensitiveConfigParser(interpolation=None)
+
+    for section in templateConfig.sections():
+        targetConfig.add_section(section)
+        for key, value in templateConfig.items(section):
+            targetConfig.set(section, key, value)
+
+    # evdev for guns or sdlgamepad
+    for section in targetConfig.sections():
+        if section.strip() in [ "Global", rom.stem ]:
+            # for an input sytem
+            if section.strip() != "Global":
+                targetConfig.set(section, "InputSystem", "to be defined")
+            for key, _ in targetConfig.items(section):
+                if key == "InputSystem":
+                    if system.config.use_guns and guns:
+                        targetConfig.set(section, key, "evdev")
+                    else:
+                        targetConfig.set(section, key, "sdlgamepad")
+                elif system.config.use_guns and guns:
+                    # Player 1 gun bindings
+                    if key == "InputAnalogJoyX":
+                        targetConfig.set(section, key, "MOUSE1_XAXIS_INV")
+                    elif key == "InputAnalogJoyY":
+                        targetConfig.set(section, key, "MOUSE1_YAXIS_INV")
+                    elif key in ("InputGunX", "InputAnalogGunX"):
+                        targetConfig.set(section, key, "MOUSE1_XAXIS")
+                    elif key in ("InputGunY", "InputAnalogGunY"):
+                        targetConfig.set(section, key, "MOUSE1_YAXIS")
+                    elif key in ("InputTrigger", "InputAnalogTriggerLeft", "InputAnalogJoyTrigger"):
+                        targetConfig.set(section, key, "MOUSE1_LEFT_BUTTON")
+                    elif key in ("InputOffscreen", "InputAnalogTriggerRight"):
+                        targetConfig.set(section, key, "MOUSE1_RIGHT_BUTTON")
+                    elif key == "InputStart1":
+                        targetConfig.set(section, key, "MOUSE1_BUTTONX1,JOY1_BUTTON8")
+                    elif key == "InputCoin1":
+                        targetConfig.set(section, key, "MOUSE1_BUTTONX2,JOY1_BUTTON7")
+                    elif key == "InputAnalogJoyEvent":
+                        targetConfig.set(section, key, "KEY_S,MOUSE1_MIDDLE_BUTTON")
+                    # Player 2 gun bindings
+                    elif len(guns) >= 2:
+                        if key == "InputAnalogJoyX2":
+                            targetConfig.set(section, key, "MOUSE2_XAXIS_INV")
+                        elif key == "InputAnalogJoyY2":
+                            targetConfig.set(section, key, "MOUSE2_YAXIS_INV")
+                        elif key in ("InputGunX2", "InputAnalogGunX2"):
+                            targetConfig.set(section, key, "MOUSE2_XAXIS")
+                        elif key in ("InputGunY2", "InputAnalogGunY2"):
+                            targetConfig.set(section, key, "MOUSE2_YAXIS")
+                        elif key in ("InputTrigger2", "InputAnalogTriggerLeft2", "InputAnalogJoyTrigger2"):
+                            targetConfig.set(section, key, "MOUSE2_LEFT_BUTTON")
+                        elif key in ("InputOffscreen2", "InputAnalogTriggerRight2"):
+                            targetConfig.set(section, key, "MOUSE2_RIGHT_BUTTON")
+                        elif key == "InputStart2":
+                            targetConfig.set(section, key, "MOUSE2_BUTTONX1,JOY2_BUTTON8")
+                        elif key == "InputCoin2":
+                            targetConfig.set(section, key, "MOUSE2_BUTTONX2,JOY2_BUTTON7")
+                        elif key == "InputAnalogJoyEvent2":
+                            targetConfig.set(section, key, "MOUSE2_MIDDLE_BUTTON")
+
+    # save the ini file
+    with ensure_parents_and_open(targetFile, 'w') as configfile:
+        targetConfig.write(configfile)

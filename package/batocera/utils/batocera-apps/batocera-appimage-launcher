@@ -1,0 +1,88 @@
+#!/bin/sh
+set -eu
+
+if [ "$#" -lt 3 ]; then
+    echo "Usage: $0 <appimage> <app_id> <default_no_sandbox(0|1)> [args...]" >&2
+    exit 2
+fi
+
+appimage="$1"
+app_id="$2"
+default_no_sandbox="$3"
+shift 3
+
+export HOME="/userdata/saves/apps/${app_id}"
+export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
+export XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
+export XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+local_app="${BATOCERA_APPS_LOCAL_APPIMAGE:-$HOME/${app_id}.AppImage}"
+
+mkdir -p "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_CACHE_HOME" "$XDG_RUNTIME_DIR" "$(dirname "$local_app")" 2>/dev/null || true
+
+if [ ! -x "$appimage" ]; then
+    if [ ! -x "$local_app" ] && [ -f "$appimage" ]; then
+        cp -f "$appimage" "$local_app"
+        chmod 0755 "$local_app" 2>/dev/null || true
+    fi
+    if [ -x "$local_app" ]; then
+        appimage="$local_app"
+    fi
+fi
+
+# App-specific runtime fixes.
+case "$app_id" in
+    moonlight)
+        export QT_QPA_PLATFORM="${QT_QPA_PLATFORM:-xcb}"
+
+        # Prefer a live Xwayland display, not the first X socket.
+        if [ -z "${DISPLAY:-}" ]; then
+            DISPLAY="$(
+                pgrep -af '(^|/)Xwayland ' 2>/dev/null \
+                | sort -nr \
+                | sed -n 's/.*Xwayland \(:[0-9][0-9]*\).*/\1/p' \
+                | head -n 1
+            )"
+        fi
+
+        if [ -z "${DISPLAY:-}" ]; then
+            if [ -d /tmp/.X11-unix ]; then
+                x_sock="$(ls /tmp/.X11-unix/X* 2>/dev/null | sort -V | tail -n 1 || true)"
+                if [ -n "$x_sock" ]; then
+                    DISPLAY=":${x_sock##*X}"
+                fi
+            fi
+        fi
+
+        if [ -z "${DISPLAY:-}" ] && command -v getLocalXDisplay >/dev/null 2>&1; then
+            DISPLAY="$(getLocalXDisplay 2>/dev/null || true)"
+        fi
+
+        if [ -z "${DISPLAY:-}" ]; then
+            echo "moonlight: no active X display found (/tmp/.X11-unix/X* missing)" >&2
+            exit 125
+        fi
+        if [ -z "${XAUTHORITY:-}" ] && [ -f /var/lib/.Xauthority ]; then
+            export XAUTHORITY=/var/lib/.Xauthority
+        fi
+        export DISPLAY
+        ;;
+esac
+
+need_no_sandbox=0
+if [ "${BATOCERA_APPS_NO_SANDBOX:-0}" = "1" ] || [ "${BATOCERA_APPS_NO_SANDBOX:-false}" = "true" ]; then
+    need_no_sandbox=1
+elif [ "$default_no_sandbox" = "1" ] && [ "$(id -u)" = "0" ]; then
+    need_no_sandbox=1
+fi
+
+if [ -n "${BATOCERA_APPS_EXTRA_ARGS:-}" ]; then
+    # shellcheck disable=SC2086
+    set -- "$@" ${BATOCERA_APPS_EXTRA_ARGS}
+fi
+
+if [ "$need_no_sandbox" = "1" ]; then
+    exec "$appimage" --no-sandbox "$@"
+fi
+
+exec "$appimage" "$@"

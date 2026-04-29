@@ -1,0 +1,88 @@
+features:
+  - cheevos
+shared_features:
+  - rewind
+  - autosave
+custom_features:
+  citra_graphics_api:
+    submenu: GRAPHICS
+    prompt: GRAPHICS API
+    description: Choose which renderer lr-azahar should use.
+    choices:
+      Auto: Auto
+      OpenGL: OpenGL
+      Vulkan: Vulkan
+      Software: Software
+    before: citra_resolution_factor
+  citra_layout_option:
+    prompt: SCREEN LAYOUT
+    description: Arrange the dual screen layout.
+    choices:
+      Default Top-Bottom Screen: Default Top-Bottom Screen
+      Single Screen Only: Single Screen Only
+      Large Screen, Small Screen: Large Screen, Small Screen
+      Side by Side: Side by Side
+  citra_swap_screen:
+    prompt: PROMINENT 3DS SCREEN
+    description: Choose which screen is emphasized when the layout supports it.
+    choices:
+      Top: Top
+      Bottom: Bottom
+  citra_resolution_factor:
+    prompt: RENDERING RESOLUTION
+    description: Enhancement. Increase the rendering resolution. Makes 3D objects clearer.
+    choices:
+      1x (Native): 1x (Native)
+      2x: 2x
+      3x: 3x
+      4x: 4x
+      5x: 5x
+      6x: 6x
+      7x: 7x
+      8x: 8x
+      9x: 9x
+      10x: 10x
+  citra_mouse_touchscreen:
+    prompt: MOUSE TO TOUCHSCREEN
+    description: Enable mouse or touchpad pointer input to drive the emulated touch screen.
+    choices:
+      'On': enabled
+      'Off': disabled
+  citra_touch_touchscreen:
+    prompt: TOUCH TO TOUCHSCREEN
+    description: Enable native touchscreen pointer input for the emulated touch screen.
+    choices:
+      'On': enabled
+      'Off': disabled
+  citra_render_touchscreen:
+    prompt: SHOW TOUCH POINTER
+    description: Draw the simulated touch contact on screen when using mouse or touchscreen input.
+    choices:
+      'On': enabled
+      'Off': disabled
+  citra_use_hw_shaders:
+    prompt: HARDWARE SHADERS
+    description: Disable for compatibility in games that misbehave with hardware shaders.
+    choices:
+      'On': enabled
+      'Off': disabled
+  citra_use_hw_shader_cache:
+    prompt: DISK SHADER CACHE
+    description: Save hardware shader cache to disk to reduce stutter on subsequent runs.
+    choices:
+      'On': enabled
+      'Off': disabled
+  citra_custom_textures:
+    prompt: LOAD CUSTOM TEXTURES
+    description: Load replacement textures from the texture pack directory.
+    choices:
+      'Off': disabled
+      'On': enabled
+  citra_is_new_3ds:
+    prompt: NEW 3DS MODE
+    description: The New 3DS has a faster processor and extra controls.
+    choices:
+      'Off': Old 3DS
+      'On': New 3DS
+systems:
+  - 3ds

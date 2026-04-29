@@ -1,0 +1,16 @@
+--- a/src/common/settings.h
++++ b/src/common/settings.h
+@@ -545,10 +545,6 @@
+     SwitchableSetting<SecondaryDisplayLayout> secondary_display_layout{
+         SecondaryDisplayLayout::None, Keys::secondary_display_layout};
+     SwitchableSetting<std::vector<LayoutOption>> layouts_to_cycle{
+-        {LayoutOption::Default, LayoutOption::SingleScreen, LayoutOption::LargeScreen,
+-         LayoutOption::SideScreen,
+-#ifndef ANDROID
+-         LayoutOption::SeparateWindows,
+-#endif
+-         LayoutOption::HybridScreen, LayoutOption::CustomLayout},
++        {LayoutOption::Default, LayoutOption::SingleScreen, LayoutOption::LargeScreen,
++         LayoutOption::SideScreen, LayoutOption::HybridScreen, LayoutOption::CustomLayout},
+         Keys::layouts_to_cycle};
+     SwitchableSetting<float, true> large_screen_proportion{4.f, 1.f, 16.f,

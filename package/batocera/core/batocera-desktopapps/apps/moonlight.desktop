@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Icon=/usr/share/icons/batocera/moonlight.png
+Exec=batocera-app-moonlight
+Terminal=false
+Type=Application
+Categories=Game;Network;batocera.linux;
+Name=Moonlight
+GenericName=Game Streaming Client
+Comment=Launch Moonlight

@@ -1,0 +1,126 @@
+#!/bin/bash
+set -euo pipefail
+
+LOG_FILE="/userdata/system/logs/waydroid-init.log"
+STATE_ROOT="/userdata/system/waydroid"
+STATE_VARLIB="${STATE_ROOT}/var-lib"
+DESIRED_SYSTEM_TYPE="${BATOCERA_WAYDROID_SYSTEM_TYPE:-GAPPS}"
+WAYDROID_CFG="/var/lib/waydroid/waydroid.cfg"
+
+mkdir -p /userdata/system/logs "${STATE_VARLIB}"
+
+# Keep waydroid state in userdata (persistent), even though /var is tmpfs.
+if [ -L /var/lib/waydroid ]; then
+    :
+elif [ -d /var/lib/waydroid ]; then
+    rm -rf /var/lib/waydroid
+    ln -snf "${STATE_VARLIB}" /var/lib/waydroid
+else
+    mkdir -p /var/lib
+    ln -snf "${STATE_VARLIB}" /var/lib/waydroid
+fi
+
+if [ ! -x /usr/bin/waydroid ]; then
+    echo "waydroid binary is not installed" | tee -a "${LOG_FILE}"
+    exit 1
+fi
+
+has_network() {
+    if command -v ip >/dev/null 2>&1; then
+        if ! ip route get 1.1.1.1 >/dev/null 2>&1; then
+            return 1
+        fi
+    fi
+    if command -v ping >/dev/null 2>&1; then
+        timeout 2 ping -c 1 -W 1 1.1.1.1 >/dev/null 2>&1
+        return $?
+    fi
+    return 0
+}
+
+ensure_waydroid_property() {
+    local key="$1"
+    local value="$2"
+
+    [ -f "${WAYDROID_CFG}" ] || return 0
+
+    python3 - "${WAYDROID_CFG}" "${key}" "${value}" <<'PY'
+import configparser
+import sys
+
+cfg_path, key, value = sys.argv[1:]
+cfg = configparser.ConfigParser()
+cfg.read(cfg_path)
+if "properties" not in cfg:
+    cfg["properties"] = {}
+cfg["properties"][key] = value
+with open(cfg_path, "w") as handle:
+    cfg.write(handle)
+PY
+}
+
+need_waydroid_init=0
+need_waydroid_download=0
+expected_images_dir="/var/lib/waydroid/images"
+
+if [ ! -f "${WAYDROID_CFG}" ]; then
+    need_waydroid_init=1
+    need_waydroid_download=1
+elif [ ! -f "${expected_images_dir}/system.img" ] || [ ! -f "${expected_images_dir}/vendor.img" ]; then
+    need_waydroid_init=1
+    need_waydroid_download=1
+elif ! grep -Eq "^system_ota = .*/${DESIRED_SYSTEM_TYPE}\\.json$" "${WAYDROID_CFG}" 2>/dev/null; then
+    need_waydroid_init=1
+fi
+
+if [ "${need_waydroid_init}" -eq 1 ]; then
+    mkdir -p "${expected_images_dir}"
+
+    # Upstream Waydroid skips downloads when the cached datetimes are current,
+    # even if the image files were deleted. Force a re-download in that case.
+    if [ "${need_waydroid_download}" -eq 1 ] && [ -f "${WAYDROID_CFG}" ]; then
+        sed -i \
+            -e 's/^system_datetime = .*/system_datetime = 0/' \
+            -e 's/^vendor_datetime = .*/vendor_datetime = 0/' \
+            "${WAYDROID_CFG}"
+    fi
+
+    if ! has_network; then
+        echo "[$(date '+%F %T')] Waydroid init/update requires internet" | tee -a "${LOG_FILE}"
+        if command -v batocera-flash-screen >/dev/null 2>&1; then
+            if [ "${need_waydroid_download}" -eq 1 ]; then
+                /usr/bin/batocera-flash-screen 6 "#ffffff" "Waydroid image download needs Wi-Fi." 22 >/dev/null 2>&1 || true
+                /usr/bin/batocera-flash-screen 6 "#ffffff" "Please connect to the internet and launch again." 20 >/dev/null 2>&1 || true
+            else
+                /usr/bin/batocera-flash-screen 6 "#ffffff" "Waydroid GAPPS update needs Wi-Fi." 22 >/dev/null 2>&1 || true
+                /usr/bin/batocera-flash-screen 6 "#ffffff" "Please connect to the internet and launch again." 20 >/dev/null 2>&1 || true
+            fi
+        fi
+        exit 1
+    fi
+
+    if command -v batocera-flash-screen >/dev/null 2>&1; then
+        if [ "${need_waydroid_download}" -eq 1 ]; then
+            /usr/bin/batocera-flash-screen 12 "#ffffff" "Downloading Waydroid image. Please wait, this can take a while." 18 >/dev/null 2>&1 || true
+        else
+            /usr/bin/batocera-flash-screen 12 "#ffffff" "Updating Waydroid to GAPPS. Please wait, this can take a while." 18 >/dev/null 2>&1 || true
+        fi
+    fi
+
+    echo "[$(date '+%F %T')] Running waydroid init -f -s ${DESIRED_SYSTEM_TYPE}" | tee -a "${LOG_FILE}"
+    /usr/bin/waydroid init -f -s "${DESIRED_SYSTEM_TYPE}" "$@" >>"${LOG_FILE}" 2>&1
+
+    if [ ! -f "${expected_images_dir}/system.img" ] || [ ! -f "${expected_images_dir}/vendor.img" ]; then
+        echo "[$(date '+%F %T')] Waydroid init finished but expected images are still missing from ${expected_images_dir}" | tee -a "${LOG_FILE}"
+        exit 1
+    fi
+fi
+
+# Allow Android to react to hotplugged controllers and other input devices.
+ensure_waydroid_property "persist.waydroid.udev" "true"
+ensure_waydroid_property "persist.waydroid.uevent" "true"
+
+# Re-apply native-bridge support after init refreshes images/overlay state.
+if [ -x /usr/bin/batocera-waydroid-arm ]; then
+    /usr/bin/batocera-waydroid-arm >>"${LOG_FILE}" 2>&1
+fi

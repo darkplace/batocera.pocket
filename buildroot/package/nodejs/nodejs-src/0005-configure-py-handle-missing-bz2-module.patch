@@ -1,0 +1,45 @@
+From 2f7a95f6a8483d0eb3f14f10fd04f5ca1a65fe28 Mon Sep 17 00:00:00 2001
+From: batocera <batocera@local>
+Date: Fri, 13 Feb 2026 11:40:00 +0000
+Subject: [PATCH] configure: handle missing python bz2 module when unused
+
+Build environments can occasionally have host-python3 without the optional
+_bz2 extension. Node's configure.py imported bz2 unconditionally and aborted
+before processing options, even when the selected intl mode does not require
+bz2-compressed ICU data.
+
+Defer the hard failure to the exact code path that needs bz2.
+---
+ configure.py | 9 ++++++++-
+ 1 file changed, 8 insertions(+), 1 deletion(-)
+
+diff --git a/configure.py b/configure.py
+index 6a4f153..6c6a986 100755
+--- a/configure.py
++++ b/configure.py
+@@ -10,7 +10,10 @@ import re
+ import shlex
+ import subprocess
+ import shutil
+-import bz2
++try:
++  import bz2
++except ImportError:
++  bz2 = None
+ import io
+ from pathlib import Path
+ 
+@@ -2118,6 +2121,10 @@ def configure_intl(o):
+     if icu_tmp_path.is_dir():
+       shutil.rmtree(icu_tmp_path)
+     icu_tmp_path.mkdir()
++    if bz2 is None:
++      error(f'''Cannot unpack {compressed_data}: Python bz2 module is unavailable.
++         Enable BR2_PACKAGE_HOST_PYTHON3_BZIP2 and rebuild host-python3,
++         or use an ICU tree with uncompressed data files.''')
+     icu_data_path = icu_tmp_path / icu_data_file_l
+     with icu_data_path.open(mode='wb') as outf:
+         inf = bz2.BZ2File(compressed_data, 'rb')
+-- 
+2.42.0
+

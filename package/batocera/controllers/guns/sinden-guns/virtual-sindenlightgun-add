@@ -1,0 +1,198 @@
+#!/bin/bash
+
+test "${ACTION}" = "add" || exit 0
+DEVTYPE=
+echo "${DEVNAME}" | grep -qE "^/dev/input/event[0-9]+$" && DEVTYPE=input
+echo "${DEVNAME}" | grep -qE "^/dev/video[0-9]+$"       && DEVTYPE=video
+test -z "${DEVTYPE}" && exit 0
+
+if test "${DEVTYPE}" = "input"
+then
+    PARENTHASH=$(evsieve-helper parent "${DEVNAME}" input usb)
+    # on the sinden, the video parent is the same as the input parent if you modify .1 by .2 at the end
+    PARENTVIDEOSHASH=$(evsieve-helper parent-raw "${DEVNAME}" input usb | sed -e s+"\.2$"+".1"+ | md5sum | cut -c 1-32)
+fi
+if test "${DEVTYPE}" = "video"
+then
+    # on the sinden, the video parent is the same as the input parent if you modify .1 by .2 at the end
+    PARENTHASH=$(evsieve-helper parent-raw "${DEVNAME}" video usb | sed -e s+"\.1$"+".2"+ | md5sum | cut -c 1-32)
+    PARENTVIDEOSHASH=$(evsieve-helper parent "${DEVNAME}" video usb)
+fi
+BASEFILE="virtual-sindenlightgun-devices.${PARENTHASH}"
+PIDFILE="/var/run/${BASEFILE}.pid"
+LOCKFILE="/var/run/${BASEFILE}.lock"
+LOGFILE="/var/log/${BASEFILE}.log"
+LOGFILE2="/var/log/${BASEFILE}.log2"
+
+unlockAndExit() {
+    rmdir "${LOCKFILE}"
+    exit "${1}"
+}
+
+checkRunningPIDAndExit1() {
+    test ! -e "${PIDFILE}" && return 0
+    LPID=$(cat "${PIDFILE}")
+    test ! -d "/proc/${LPID}" && return 0
+    unlockAndExit 1
+}
+
+trylock() {
+    # lock
+    N=0
+    while ! mkdir "${LOCKFILE}"
+    do
+	sleep 1
+	let N++
+	test "${N}" -gt 30 && exit 1 # give up
+    done
+}
+
+reportOnceConfigurationAvailable() {
+    STARTFILE="/var/run/virtual-events.started"
+    LOADERFILE="/var/run/virtual-events.waiting"
+
+    test -e "${STARTFILE}" && return # normal behavior
+    echo "sindengun ${ACTION} ${DEVNAME} ${DEVPATH} virtual-sindenlightgun-add" >> "${LOADERFILE}"
+    exit 0
+}
+
+reportOnceConfigurationAvailable
+trylock
+checkRunningPIDAndExit1
+
+CHILDRENINPUTS=$(evsieve-helper children "${PARENTHASH}" input usb)
+NDEVSINPUTS=$(echo "${CHILDRENINPUTS}" | wc -l)
+
+CHILDRENVIDEOS=$(evsieve-helper children "${PARENTVIDEOSHASH}" video usb)
+NDEVSVIDEOS=$(echo "${CHILDRENVIDEOS}" | wc -l)
+
+if test "${NDEVSINPUTS}" = 2 -a "${NDEVSVIDEOS}" -ge 1
+then
+    DEV1=$(echo "${CHILDRENINPUTS}" | head -1           | cut -f 1)
+    DEV2=$(echo "${CHILDRENINPUTS}" | head -2 | tail -1 | cut -f 1)
+
+# Trigger                  : BTN_LEFT
+# Pump, front left         : BTN_RIGHT
+# Rear left                : BTN_MIDDLE
+# Front right              : KEY_2
+# Rear right               : KEY_1
+# D-pad                    : KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT
+
+    nohup evsieve                                      \
+            --input "${DEV1}" "${DEV2}" persist=exit   \
+            --map key:1                btn:1           \
+            --map key:2                btn:2           \
+            --map key:up               btn:5           \
+            --map key:down             btn:6           \
+            --map key:left             btn:7           \
+            --map key:right            btn:8           \
+            --output name="Sinden lightgun" >/dev/null 2>"${LOGFILE}" &
+    echo $! > "${PIDFILE}"
+
+    # ttyACM
+    ACMSEARCHDIR=/sys$(evsieve-helper parent-raw "${DEVNAME}" input usb)
+    ACM=$(find "${ACMSEARCHDIR}" -name "ttyACM*" | head -1)
+    ACMDEV=/dev/$(basename "${ACM}")
+    if test -n "${ACMDEV}"
+    then
+    	mkdir -p "/var/run/sinden" || unlockAndExit 1
+
+	CONFIGFILE="/var/run/sinden/p${PARENTHASH}/LightgunMono-${PARENTHASH}.exe.config"
+
+	if ! test -e "/var/run/sinden/p${PARENTHASH}"
+	then
+    	    cp -pr /usr/share/sinden "/var/run/sinden/p${PARENTHASH}" || unlockAndExit 1
+	    # mono-service seems to be needed (otherwise, udev won't release, and at batocera statup, it takes long)
+	    # but mono-service seems to want a distinguish exe name
+	    mv "/var/run/sinden/p${PARENTHASH}/LightgunMono.exe" "/var/run/sinden/p${PARENTHASH}/LightgunMono-${PARENTHASH}.exe" || unlockAndExit 1
+	    mv "/var/run/sinden/p${PARENTHASH}/LightgunMono.exe.config" "${CONFIGFILE}" || unlockAndExit 1
+	fi
+
+	# Recoil settings
+	RECOIL_MODE=$(batocera-settings-get controllers.guns.recoil)
+	case "${RECOIL_MODE}" in
+	    "machinegun")
+		RECOIL_ENABLED=1
+		RECOIL_NORMALORREPEAT=1
+		RECOIL_STRENGTH=100
+		RECOIL_STARTDELAY=1
+		RECOIL_PULSEDELAY=10
+	    ;;
+	    "machinegun-quiet")
+		RECOIL_ENABLED=1
+		RECOIL_NORMALORREPEAT=1
+		RECOIL_STRENGTH=40
+		RECOIL_STARTDELAY=1
+		RECOIL_PULSEDELAY=10
+	    ;;
+	    "gun")
+		RECOIL_ENABLED=1
+		RECOIL_NORMALORREPEAT=1
+		RECOIL_STRENGTH=100
+		RECOIL_STARTDELAY=150
+		RECOIL_PULSEDELAY=10
+	    ;;
+	    "gun-quiet")
+		RECOIL_ENABLED=1
+		RECOIL_NORMALORREPEAT=1
+		RECOIL_STRENGTH=40
+		RECOIL_STARTDELAY=150
+		RECOIL_PULSEDELAY=10
+	    ;;
+	    *)
+		RECOIL_ENABLED=0
+		RECOIL_NORMALORREPEAT=1
+		RECOIL_STRENGTH=100
+		RECOIL_STARTDELAY=150
+		RECOIL_PULSEDELAY=10
+	    ;;
+	esac
+
+	# Camera settings
+	OPT_CONTRAST=$(batocera-settings-get controllers.guns.sinden.contrast)
+	OPT_BRIGHTNESS=$(batocera-settings-get controllers.guns.sinden.brightness)
+	OPT_EXPOSURE=$(batocera-settings-get controllers.guns.sinden.exposure)
+	test -z "${OPT_CONTRAST}"   && OPT_CONTRAST=60
+	test -z "${OPT_BRIGHTNESS}" && OPT_BRIGHTNESS=120
+	test -z "${OPT_EXPOSURE}"   && OPT_EXPOSURE=-7
+
+	# Recoil values and parameters
+	sed -i -e s+'\(key="EnableRecoil"[ ]*value="\)[^"]*"'+'\1'${RECOIL_ENABLED}'"'+ "${CONFIGFILE}" # no exit for that
+	sed -i -e s+'\(key="TriggerRecoilNormalOrRepeat"[ ]*value="\)[^"]*"'+'\1'${RECOIL_NORMALORREPEAT}'"'+ "${CONFIGFILE}" # no exit for that
+	sed -i -e s+'\(key="AutoRecoilStrength"[ ]*value="\)[^"]*"'+'\1'${RECOIL_STRENGTH}'"'+ "${CONFIGFILE}" # no exit for that
+	sed -i -e s+'\(key="AutoRecoilStartDelay"[ ]*value="\)[^"]*"'+'\1'${RECOIL_STARTDELAY}'"'+ "${CONFIGFILE}" # no exit for that
+	sed -i -e s+'\(key="AutoRecoilDelayBetweenPulses"[ ]*value="\)[^"]*"'+'\1'${RECOIL_PULSEDELAY}'"'+ "${CONFIGFILE}" # no exit for that
+
+	# Camera values and parameters
+	sed -i -e s+'\(key="CameraContrast"[ ]*value="\)[^"]*"'+'\1'${OPT_CONTRAST}'"'+ "${CONFIGFILE}" # no exit for that
+	sed -i -e s+'\(key="CameraBrightness"[ ]*value="\)[^"]*"'+'\1'${OPT_BRIGHTNESS}'"'+ "${CONFIGFILE}" # no exit for that
+	sed -i -e s+'\(key="CameraExposure"[ ]*value="\)[^"]*"'+'\1'${OPT_EXPOSURE}'"'+ "${CONFIGFILE}" # no exit for that
+
+	# Border ratio
+	OPT_RATIO=$(batocera-settings-get controllers.guns.bordersratio)
+	if test "${OPT_RATIO}" = "4:3"
+	then
+	    sed -i -e s+'\(key="OffsetX"[ ]*value="\)[^"]*"'+'\1012.5"'+     "${CONFIGFILE}" || unlockAndExit 1
+	    sed -i -e s+'\(key="OffsetXRatio"[ ]*value="\)[^"]*"'+'\10.75"'+ "${CONFIGFILE}" || unlockAndExit 1
+	    sed -i -e s+'\(key="OffsetY"[ ]*value="\)[^"]*"'+'\100"'+        "${CONFIGFILE}" || unlockAndExit 1
+	    sed -i -e s+'\(key="OffsetYRatio"[ ]*value="\)[^"]*"'+'\101"'+   "${CONFIGFILE}" || unlockAndExit 1
+	else # full
+	    sed -i -e s+'\(key="OffsetX"[ ]*value="\)[^"]*"'+'\100"'+      "${CONFIGFILE}" || unlockAndExit 1
+	    sed -i -e s+'\(key="OffsetXRatio"[ ]*value="\)[^"]*"'+'\101"'+ "${CONFIGFILE}" || unlockAndExit 1
+	    sed -i -e s+'\(key="OffsetY"[ ]*value="\)[^"]*"'+'\100"'+      "${CONFIGFILE}" || unlockAndExit 1
+	    sed -i -e s+'\(key="OffsetYRatio"[ ]*value="\)[^"]*"'+'\101"'+ "${CONFIGFILE}" || unlockAndExit 1
+	fi
+
+	sed -i -e s+'\(key="SerialPortWrite"[ ]*value="\)[^"]*"'+'\1'${ACMDEV}'"'+ "${CONFIGFILE}" || unlockAndExit 1
+	rm -f "/var/run/sinden/p${PARENTHASH}/lockfile"
+
+	# hack: before starting the sinden program wait again one second. if devices are not ready, the program don't wait, it just exists
+	sleep 1 # just in case because it is far from stable with the sinden program
+
+	PATH=/bin:/sbin:/usr/bin:/usr/sbin nohup mono-service -l:"/var/run/sinden/p${PARENTHASH}/lockfile" -d:"/var/run/sinden/p${PARENTHASH}" --no-daemon "./LightgunMono-${PARENTHASH}.exe" > "${LOGFILE2}" &
+    fi
+else
+    unlockAndExit 1
+fi
+
+unlockAndExit 0

@@ -1,0 +1,130 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<labwc_config>
+  <core>
+    <decoration>server</decoration>
+    <gap>0</gap>
+    <adaptiveSync>yes</adaptiveSync>
+    <allowTearing>no</allowTearing>
+    <autoEnableOutputs>yes</autoEnableOutputs>
+    <reuseOutputMode>no</reuseOutputMode>
+    <xwaylandPersistence>no</xwaylandPersistence>
+  </core>
+  <touch deviceName="generic ft5x06 (8d)" mapToOutput="" mouseEmulation="no"/>
+  <touch deviceName="generic ft5x06 (8d)" mapToOutput="" mouseEmulation="no"/>
+  <keyboard>
+    <keybind key="A-Tab">
+      <action name="NextWindow" />
+    </keybind>
+    <keybind key="A-S-Tab">
+      <action name="PreviousWindow" />
+    </keybind>
+    <keybind key="A-W-h">
+      <action name="HideCursor" />
+      <action name="WarpCursor" x="-1" y="-1" />
+    </keybind>
+    <keybind key="A-W-s">
+      <action name="ShowCursor" />
+    </keybind>
+    <keybind key="A-F4">
+      <action name="Close" />
+    </keybind>
+    <keybind key="W-a">
+      <action name="ToggleMaximize" />
+    </keybind>
+    <keybind key="A-Left">
+      <action name="MoveToEdge" direction="left" />
+    </keybind>
+    <keybind key="A-Right">
+      <action name="MoveToEdge" direction="right" />
+    </keybind>
+    <keybind key="A-Up">
+      <action name="MoveToEdge" direction="up" />
+    </keybind>
+    <keybind key="A-Down">
+      <action name="MoveToEdge" direction="down" />
+    </keybind>
+    <keybind key="W-Left">
+      <action name="SnapToEdge" direction="left" />
+    </keybind>
+    <keybind key="W-Right">
+      <action name="SnapToEdge" direction="right" />
+    </keybind>
+    <keybind key="W-Up">
+      <action name="SnapToEdge" direction="up" />
+    </keybind>
+    <keybind key="W-Down">
+      <action name="SnapToEdge" direction="down" />
+    </keybind>
+  </keyboard>
+  <mouse>
+    <context name="root">
+      <mousebind button="Left" action="None" />
+      <mousebind button="Right" action="None" />
+      <mousebind button="Middle" action="None" />
+    </context>
+  </mouse>
+  <windowRules>
+    <windowRule identifier="*" serverDecoration="no" />
+    <windowRule identifier="emulationstation">
+      <action name="FocusOutput">
+        <output></output>
+      </action>
+      <action name="MoveToOutput">
+        <output></output>
+      </action>
+    </windowRule>
+    <windowRule title="Batocera OSD">
+      <action name="MoveToEdge" direction="up" snapWindows="no" />
+    </windowRule>
+    <windowRule title="backglass">
+      <action name="MoveToOutput">
+        <output></output>
+      </action>
+    </windowRule>
+    <windowRule identifier="azahar">
+      <action name="MoveToOutput">
+        <output></output>
+      </action>
+    </windowRule>
+    <windowRule identifier="azahar" title="*Secondary Window*">
+      <action name="MoveToOutput">
+        <output></output>
+      </action>
+      <action name="ToggleFullscreen" />
+    </windowRule>
+    <windowRule identifier="net.kuribo64.melonDS" title="*w1*">
+      <action name="MoveToOutput">
+        <output></output>
+      </action>
+      <action name="ToggleFullscreen" />
+    </windowRule>
+    <windowRule identifier="melonDS" title="*w1*">
+      <action name="MoveToOutput">
+        <output></output>
+      </action>
+      <action name="ToggleFullscreen" />
+    </windowRule>
+    <windowRule identifier="net.kuribo64.melonDS" title="*w2*">
+      <action name="MoveToOutput">
+        <output></output>
+      </action>
+      <action name="ToggleFullscreen" />
+    </windowRule>
+    <windowRule identifier="melonDS" title="*w2*">
+      <action name="MoveToOutput">
+        <output></output>
+      </action>
+      <action name="ToggleFullscreen" />
+    </windowRule>
+    <windowRule title="*GamePad*">
+      <action name="MoveToOutput">
+        <output></output>
+      </action>
+      <action name="ToggleFullscreen" />
+    </windowRule>
+    <windowRule identifier="pcmanfm">
+      <action name="ToggleFullscreen" />
+    </windowRule>
+    <windowRule identifier="xterm" serverDecoration="yes" />
+  </windowRules>
+</labwc_config>

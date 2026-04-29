@@ -1,0 +1,105 @@
+{
+  "actions_player1": [
+    {
+      "trigger": "joystick2",
+      "type": "mouse",
+      "description": "Move Touch Pointer"
+    },
+    {
+      "trigger": "r3",
+      "type": "key",
+      "target": "BTN_LEFT",
+      "description": "Tap"
+    },
+    {
+      "trigger": "a",
+      "type": "key",
+      "target": "BTN_LEFT",
+      "description": "Tap"
+    },
+    {
+      "trigger": "pageup",
+      "type": "key",
+      "target": "BTN_RIGHT",
+      "description": "Secondary Tap"
+    },
+    {
+      "trigger": "b",
+      "type": "key",
+      "target": "KEY_ESC",
+      "description": "Back"
+    },
+    {
+      "trigger": "x",
+      "type": "key",
+      "target": "KEY_ENTER",
+      "description": "Confirm"
+    },
+    {
+      "trigger": "y",
+      "type": "key",
+      "target": "KEY_MENU",
+      "description": "Menu"
+    },
+    {
+      "trigger": "start",
+      "type": "key",
+      "target": "KEY_ENTER",
+      "description": "Start"
+    },
+    {
+      "trigger": "select",
+      "type": "key",
+      "target": "KEY_TAB",
+      "description": "Next Field"
+    },
+    {
+      "trigger": "up",
+      "type": "key",
+      "target": "KEY_UP",
+      "description": "Up"
+    },
+    {
+      "trigger": "down",
+      "type": "key",
+      "target": "KEY_DOWN",
+      "description": "Down"
+    },
+    {
+      "trigger": "left",
+      "type": "key",
+      "target": "KEY_LEFT",
+      "description": "Left"
+    },
+    {
+      "trigger": "right",
+      "type": "key",
+      "target": "KEY_RIGHT",
+      "description": "Right"
+    },
+    {
+      "trigger": "joystick1up",
+      "type": "key",
+      "target": "KEY_UP",
+      "description": "Analog Up"
+    },
+    {
+      "trigger": "joystick1down",
+      "type": "key",
+      "target": "KEY_DOWN",
+      "description": "Analog Down"
+    },
+    {
+      "trigger": "joystick1left",
+      "type": "key",
+      "target": "KEY_LEFT",
+      "description": "Analog Left"
+    },
+    {
+      "trigger": "joystick1right",
+      "type": "key",
+      "target": "KEY_RIGHT",
+      "description": "Analog Right"
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+diff --git a/bin/pironman5 b/bin/pironman5
+index 2ac8cb324b..a7e363e763 100644
+--- a/bin/pironman5
++++ b/bin/pironman5
+@@ -17,13 +17,13 @@ for arg in "${args[@]}"; do
+ done
+ 
+ if $restart_found; then
+-    /opt/pironman5/venv/bin/pironman5-service stop
++    /usr/bin/pironman5-service stop
+     sleep 5
+ fi
+ 
+ if $background_found; then
+-    /opt/pironman5/venv/bin/pironman5-service "${new_args[@]}" 2>&1 1>/dev/null &
++    /usr/bin/pironman5-service "${new_args[@]}" 2>&1 1>/dev/null &
+ else
+-    /opt/pironman5/venv/bin/pironman5-service "${new_args[@]}"
++    /usr/bin/pironman5-service "${new_args[@]}"
+ fi
+ 

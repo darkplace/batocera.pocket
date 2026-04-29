@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Icon=/usr/share/icons/batocera/brave.png
+Exec=batocera-app-brave
+Terminal=false
+Type=Application
+Categories=Network;WebBrowser;batocera.linux;
+Name=Brave
+GenericName=Web Browser
+Comment=Launch Brave

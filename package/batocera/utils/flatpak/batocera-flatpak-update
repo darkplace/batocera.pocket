@@ -1,0 +1,204 @@
+#!/bin/bash
+set -euo pipefail
+
+ROMS_DIR="/userdata/roms/flatpak"
+IMAGES_DIR="${ROMS_DIR}/images"
+TMP_XML="/tmp/batocera-flatpak-update.tmp"
+ES_SERVER="http://127.0.0.1:1234"
+
+find_icon() {
+    local app_id="$1"
+    local app_name="$2"
+    local list_name="$3"
+    local icon_root="/userdata/saves/flatpak/binaries/app/${app_id}/current/active/export/share/icons"
+    local hint=""
+    local static_icon=""
+
+    icon_hint_from_metadata() {
+        local id="$1"
+        local name="$2"
+        local listed="$3"
+        local key
+
+        key="$(printf '%s %s %s' "$id" "$name" "$listed" | tr '[:upper:]' '[:lower:]')"
+        case "$key" in
+            *heroic*) printf 'heroic\n' ;;
+            *lutris*) printf 'lutris\n' ;;
+            *steam*) printf 'steam\n' ;;
+            *brave*|*chrome*) printf 'chrome\n' ;;
+            *firefox*) printf 'firefox\n' ;;
+            *greenlight*) printf 'greenlight\n' ;;
+            *moonlight*) printf 'moonlight\n' ;;
+            *chiaki*) printf 'chiaki\n' ;;
+            *peazip*) printf 'peazip\n' ;;
+            *vacuumtube*) printf 'vacuumtube\n' ;;
+            *) return 1 ;;
+        esac
+    }
+
+    hint="$(icon_hint_from_metadata "$app_id" "$app_name" "$list_name" || true)"
+    if [ -n "$hint" ]; then
+        static_icon="/usr/share/icons/batocera/${hint}.png"
+        if [ -f "$static_icon" ]; then
+            echo "$static_icon"
+            return 0
+        fi
+    fi
+
+    [ -d "$icon_root" ] || return 0
+
+    find "$icon_root" -type f \( -name "*.png" -o -name "*.jpg" \) | (
+        local best_path=""
+        local best_size=0
+        while IFS= read -r path; do
+            local size
+            size=$(stat -c '%s' "$path" 2>/dev/null || echo 0)
+            if [ "$size" -gt "$best_size" ]; then
+                best_path="$path"
+                best_size="$size"
+            fi
+        done
+        echo "$best_path"
+    )
+}
+
+xml_escape() {
+    local value="$1"
+    value="${value//&/&amp;}"
+    value="${value//</&lt;}"
+    value="${value//>/&gt;}"
+    value="${value//\"/&quot;}"
+    value="${value//\'/&apos;}"
+    printf '%s' "$value"
+}
+
+es_add_game_begin() {
+    echo "<gameList>" > "$TMP_XML"
+}
+
+es_add_game() {
+    local game_basename="$1"
+    local game_name="$2"
+    local game_image="$3"
+
+    cat >> "$TMP_XML" <<EOG
+<game>
+  <path>./$(xml_escape "$game_basename")</path>
+  <name>$(xml_escape "$game_name")</name>
+  <desc></desc>
+  <rating></rating>
+  <releasedate></releasedate>
+  <developer></developer>
+  <publisher></publisher>
+  <genre></genre>
+  <players></players>
+  <image>$(xml_escape "$game_image")</image>
+  <manual></manual>
+  <video></video>
+</game>
+EOG
+}
+
+es_add_game_end() {
+    echo "</gameList>" >> "$TMP_XML"
+    curl -s -X POST \
+        -H "Content-type: application/x-www-form-urlencoded" \
+        -H "Accept: text/plain" \
+        "${ES_SERVER}/addgames/flatpak" \
+        -d @"$TMP_XML" > /dev/null || true
+}
+
+get_desktop_name() {
+    local app_id="$1"
+    local desktop_file="/userdata/saves/flatpak/binaries/app/${app_id}/current/active/export/share/applications/${app_id}.desktop"
+
+    if [ ! -f "$desktop_file" ]; then
+        desktop_file=$(find \
+            "/userdata/saves/flatpak/binaries/app/${app_id}/current/active/export/share/applications" \
+            -maxdepth 1 -type f -name '*.desktop' 2>/dev/null | head -n1 || true)
+    fi
+
+    if [ -n "${desktop_file:-}" ] && [ -f "$desktop_file" ]; then
+        sed -n 's/^Name=//p' "$desktop_file" | head -n1
+        return 0
+    fi
+
+    return 1
+}
+
+get_app_name() {
+    local app_id="$1"
+    local list_name="$2"
+    local app_name=""
+
+    app_name=$(get_desktop_name "$app_id" || true)
+
+    if [ -z "$app_name" ]; then
+        app_name=$(flatpak info --show-metadata "$app_id" 2>/dev/null | sed -n 's/^name=//p' | head -n1 || true)
+    fi
+
+    if [ -z "$app_name" ] || [ "$app_name" = "-" ]; then
+        app_name="$list_name"
+    fi
+
+    if [ -z "$app_name" ] || [ "$app_name" = "-" ]; then
+        app_name="$app_id"
+    fi
+
+    printf '%s' "$app_name"
+}
+
+apply_default_overrides() {
+    local app_id="$1"
+
+    # Keep common Batocera storage paths accessible for app launchers.
+    flatpak override --user --filesystem=/userdata --filesystem=/media "$app_id" >/dev/null 2>&1 || true
+}
+
+mkdir -p "$ROMS_DIR/data"
+mkdir -p "/userdata/saves/flatpak/data/.cache/.flatpak-helper/monitor"
+mkdir -p "$IMAGES_DIR"
+
+# Regenerate managed entries every run for correct name updates.
+find "$ROMS_DIR" -maxdepth 1 -type f -name 'flatpak-auto-*.flatpak' -delete
+find "$IMAGES_DIR" -maxdepth 1 -type f -name 'flatpak-auto-*.png' -delete
+
+es_add_game_begin
+
+added=0
+while IFS=$'\t' read -r app_id list_name; do
+    [ -z "$app_id" ] && continue
+
+    app_name=$(get_app_name "$app_id" "$list_name")
+    apply_default_overrides "$app_id"
+    file_id=$(printf '%s' "$app_id" | sed -e 's#[^a-zA-Z0-9._-]#_#g')
+    rom_file="flatpak-auto-${file_id}.flatpak"
+
+    img_rel=""
+    img_file=$(find_icon "$app_id" "$app_name" "$list_name")
+    if [ -n "$img_file" ] && [ -f "$img_file" ]; then
+        img_rel="./images/flatpak-auto-${file_id}.png"
+        cp "$img_file" "${IMAGES_DIR}/flatpak-auto-${file_id}.png"
+    fi
+
+    echo "$app_id" > "${ROMS_DIR}/${rom_file}"
+    es_add_game "$rom_file" "$app_name" "$img_rel"
+    added=$((added + 1))
+done < <(flatpak list --app --columns=application,name)
+
+if [ "$added" -gt 0 ]; then
+    es_add_game_end
+
+    # Fix rights (the package installation can create unreadable files).
+    target_dir="/userdata/saves/flatpak/data"
+    current_owner=$(stat -c "%U" "$target_dir")
+    current_group=$(stat -c "%G" "$target_dir")
+    if [ "$current_owner:$current_group" != "root:root" ]; then
+        chown -R root:root "$target_dir" || exit 1
+    fi
+
+    chmod -R a+rX /userdata/saves/flatpak/binaries || exit 1
+    chmod a+rx /userdata /userdata/saves /userdata/saves/flatpak || exit 1
+fi
+
+exit 0

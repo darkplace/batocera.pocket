@@ -1,0 +1,9 @@
+config BR2_PACKAGE_BATOCERA_APPS
+	bool "batocera apps (AppImage bundle)"
+	depends on BR2_x86_64
+	help
+	  Bundled AppImage desktop applications exposed through an
+	  EmulationStation "apps" system.
+
+comment "batocera-apps needs an x86_64 target"
+	depends on !BR2_x86_64

@@ -1,0 +1,26 @@
+config BR2_PACKAGE_BATOCERA_DOCKER
+	bool "batocera docker stack"
+	depends on BR2_PACKAGE_HOST_GO_TARGET_ARCH_SUPPORTS
+	depends on BR2_PACKAGE_HOST_GO_TARGET_CGO_LINKING_SUPPORTS
+	depends on BR2_TOOLCHAIN_HAS_THREADS
+	depends on !BR2_TOOLCHAIN_USES_UCLIBC
+	depends on BR2_USE_MMU
+	depends on BR2_PACKAGE_LIBSECCOMP_ARCH_SUPPORTS
+	depends on BR2_TOOLCHAIN_HEADERS_AT_LEAST_3_17
+	select BR2_PACKAGE_DOCKER_ENGINE
+	select BR2_PACKAGE_DOCKER_ENGINE_DOCKER_INIT
+	select BR2_PACKAGE_DOCKER_CLI
+	select BR2_PACKAGE_DOCKER_CLI_BUILDX
+	select BR2_PACKAGE_DOCKER_COMPOSE
+	help
+	  Enable Docker engine plus common Docker client tools:
+	  docker-cli, buildx and docker-compose.
+
+comment "batocera docker stack needs a glibc/musl toolchain with threads and headers >= 3.17"
+	depends on BR2_PACKAGE_HOST_GO_TARGET_ARCH_SUPPORTS
+	depends on BR2_PACKAGE_HOST_GO_TARGET_CGO_LINKING_SUPPORTS
+	depends on BR2_USE_MMU
+	depends on BR2_PACKAGE_LIBSECCOMP_ARCH_SUPPORTS
+	depends on !BR2_TOOLCHAIN_HAS_THREADS || \
+		BR2_TOOLCHAIN_USES_UCLIBC || \
+		!BR2_TOOLCHAIN_HEADERS_AT_LEAST_3_17

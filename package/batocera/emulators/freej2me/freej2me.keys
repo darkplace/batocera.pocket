@@ -1,0 +1,112 @@
+{
+  "actions_player1": [
+    {
+      "trigger": ["joystick1up"],
+      "type": "key",
+      "target": ["KEY_UP"],
+      "description": "Analog Up"
+    },
+    {
+      "trigger": ["joystick1down"],
+      "type": "key",
+      "target": ["KEY_DOWN"],
+      "description": "Analog Down"
+    },
+    {
+      "trigger": ["joystick1left"],
+      "type": "key",
+      "target": ["KEY_LEFT"],
+      "description": "Analog Left"
+    },
+    {
+      "trigger": ["joystick1right"],
+      "type": "key",
+      "target": ["KEY_RIGHT"],
+      "description": "Analog Right"
+    },
+    {
+      "trigger": ["up"],
+      "type": "key",
+      "target": ["KEY_UP"],
+      "description": "Up"
+    },
+    {
+      "trigger": ["down"],
+      "type": "key",
+      "target": ["KEY_DOWN"],
+      "description": "Down"
+    },
+    {
+      "trigger": ["left"],
+      "type": "key",
+      "target": ["KEY_LEFT"],
+      "description": "Left"
+    },
+    {
+      "trigger": ["right"],
+      "type": "key",
+      "target": ["KEY_RIGHT"],
+      "description": "Right"
+    },
+    {
+      "trigger": ["a"],
+      "type": "key",
+      "target": ["KEY_ENTER"],
+      "description": "Fire / 5"
+    },
+    {
+      "trigger": ["b"],
+      "type": "key",
+      "target": ["KEY_Q"],
+      "description": "Left softkey"
+    },
+    {
+      "trigger": ["x"],
+      "type": "key",
+      "target": ["KEY_W"],
+      "description": "Right softkey"
+    },
+    {
+      "trigger": ["y"],
+      "type": "key",
+      "target": ["KEY_E"],
+      "description": "Star"
+    },
+    {
+      "trigger": ["pageup"],
+      "type": "key",
+      "target": ["KEY_R"],
+      "description": "Pound"
+    },
+    {
+      "trigger": ["pagedown"],
+      "type": "key",
+      "target": ["KEY_1"],
+      "description": "1"
+    },
+    {
+      "trigger": ["l2"],
+      "type": "key",
+      "target": ["KEY_3"],
+      "description": "3"
+    },
+    {
+      "trigger": ["r2"],
+      "type": "key",
+      "target": ["KEY_7"],
+      "description": "7"
+    },
+    {
+      "trigger": ["r3"],
+      "type": "key",
+      "target": ["KEY_9"],
+      "description": "9"
+    },
+    {
+      "trigger": ["start"],
+      "type": "key",
+      "target": ["KEY_ENTER"],
+      "description": "Start / 5"
+    }
+  ]
+}

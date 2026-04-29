@@ -1,0 +1,10 @@
+#!/bin/bash
+set -e
+
+usage() {
+    echo "usage: batocera-waydroid-app-session <package>" >&2
+    exit 1
+}
+
+[ $# -eq 1 ] || usage
+exec /usr/bin/batocera-waydroid-session --app "$1"

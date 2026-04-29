@@ -1,0 +1,5 @@
+config BR2_PACKAGE_XGUNNER_LIGHTGUNS
+	bool "xgunner-lightguns"
+	select BR2_PACKAGE_EVSIEVE
+	help
+	  Support for X-Gunner lightguns.

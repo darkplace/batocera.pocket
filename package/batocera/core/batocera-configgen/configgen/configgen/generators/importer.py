@@ -1,0 +1,101 @@
+from __future__ import annotations
+
+from importlib import import_module
+from typing import TYPE_CHECKING, Final
+
+from ..exceptions import BatoceraException
+
+if TYPE_CHECKING:
+    from .Generator import Generator
+
+
+_GENERATOR_MAP: Final[dict[str, tuple[str, str]]] = {
+    'j2me': ('freej2me.freej2meGenerator', 'FreeJ2MEGenerator'),
+    'scummvm': ('scummvm.scummvmGenerator', 'ScummVMGenerator'),
+    'dosbox': ('dosbox.dosboxGenerator', 'DosBoxGenerator'),
+    'dosbox_staging': ('dosboxstaging.dosboxstagingGenerator', 'DosBoxStagingGenerator'),
+    'dosboxx': ('dosboxx.dosboxxGenerator', 'DosBoxxGenerator'),
+    'freej2me': ('freej2me.freej2meGenerator', 'FreeJ2MEGenerator'),
+    'mupen64plus': ('mupen.mupenGenerator', 'MupenGenerator'),
+    'gopher64': ('gopher64.gopher64Generator', 'Gopher64Generator'),
+    'ppsspp': ('ppsspp.ppssppGenerator', 'PPSSPPGenerator'),
+    'hypseus-singe': ('hypseus_singe.hypseusSingeGenerator', 'HypseusSingeGenerator'),
+    'sdlpop': ('sdlpop.sdlpopGenerator', 'SdlPopGenerator'),
+    'melonds': ('melonds.melondsGenerator', 'MelonDSGenerator'),
+    'eden': ('eden.edenGenerator', 'EdenGenerator'),
+    'devilutionx': ('devilutionx.devilutionxGenerator', 'DevilutionXGenerator'),
+    'easyrpg': ('easyrpg.easyrpgGenerator', 'EasyRPGGenerator'),
+    'xash3d_fwgs': ('xash3d_fwgs.xash3dFwgsGenerator', 'Xash3dFwgsGenerator'),
+    'duckstation-legacy': ('duckstation_legacy.duckstationLegacyGenerator', 'DuckstationLegacyGenerator'),
+    'cgenius': ('cgenius.cgeniusGenerator', 'CGeniusGenerator'),
+    'ecwolf': ('ecwolf.ecwolfGenerator', 'ECWolfGenerator'),
+    'model2emu': ('model2emu.model2emuGenerator', 'Model2EmuGenerator'),
+    'sonic2013': ('sonicretro.sonicretroGenerator', 'SonicRetroGenerator'),
+    'soniccd': ('sonicretro.sonicretroGenerator', 'SonicRetroGenerator'),
+    'gsplus': ('gsplus.gsplusGenerator', 'GSplusGenerator'),
+    'openjazz': ('openjazz.openjazzGenerator', 'OpenJazzGenerator'),
+    'xenia-canary': ('xenia.xeniaGenerator', 'XeniaGenerator'),
+    'gzdoom': ('gzdoom.gzdoomGenerator', 'GZDoomGenerator'),
+    'eduke32': ('eduke32.eduke32Generator', 'EDuke32Generator'),
+    'bigpemu': ('bigpemu.bigpemuGenerator', 'BigPEmuGenerator'),
+    'nanoboyadvance': ('nanoboyadvance.nanoboyadvanceGenerator', 'NanoBoyAdvanceGenerator'),
+    'ioquake3': ('ioquake3.ioquake3Generator', 'IOQuake3Generator'),
+    'thextech': ('thextech.thextechGenerator', 'TheXTechGenerator'),
+    'vpinball': ('vpinball.vpinballGenerator', 'VPinballGenerator'),
+    'applewin': ('applewin.applewinGenerator', 'AppleWinGenerator'),
+    'corsixth': ('corsixth.corsixthGenerator', 'CorsixTHGenerator'),
+    'theforceengine': ('theforceengine.theforceengineGenerator', 'TheForceEngineGenerator'),
+    'iortcw': ('iortcw.iortcwGenerator', 'IORTCWGenerator'),
+    'fallout1-ce': ('fallout1.fallout1Generator', 'Fallout1Generator'),
+    'fallout2-ce': ('fallout2.fallout2Generator', 'Fallout2Generator'),
+    'dxx-rebirth': ('dxx_rebirth.dxx_rebirthGenerator', 'DXX_RebirthGenerator'),
+    'etlegacy': ('etlegacy.etlegacyGenerator', 'ETLegacyGenerator'),
+    'sonic3-air': ('sonic3_air.sonic3_airGenerator', 'Sonic3AIRGenerator'),
+    'sonic-mania': ('sonic_mania.sonic_maniaGenerator', 'SonicManiaGenerator'),
+    'shadps4': ('shadps4.shadps4Generator', 'shadPS4Generator'),
+    'jazz2-native': ('jazz2_native.jazz2_nativeGenerator', 'Jazz2_NativeGenerator'),
+    'dhewm3': ('dhewm3.dhewm3Generator', 'Dhewm3Generator'),
+    'catacombgl': ('catacombgl.catacombglGenerator', 'CatacombGLGenerator'),
+    'lindbergh-loader': ('lindbergh.lindberghGenerator', 'LindberghGenerator'),
+    'vkquake': ('vkquake.vkquakeGenerator', 'VKQuakeGenerator'),
+    'vkquake2': ('vkquake2.vkquake2Generator', 'VKQuake2Generator'),
+    'vkquake3': ('ioquake3.ioquake3Generator', 'IOQuake3Generator'),
+    'tr1x': ('tr1x.tr1xGenerator', 'TR1XGenerator'),
+    'tr2x': ('tr2x.tr2xGenerator', 'TR2XGenerator'),
+    'clk': ('clk.clkGenerator', 'ClkGenerator'),
+    'bstone': ('bstone.bstoneGenerator', 'BstoneGenerator'),
+    'openjkdf2': ('openjkdf2.openjkdf2Generator', 'OpenJKDF2Generator'),
+    'openjk': ('openjk.openjkGenerator', 'OpenJKGenerator'),
+    'openmohaa': ('openmohaa.openmohaaGenerator', 'OpenMOHAAGenerator'),
+    'ymir': ('ymir.ymirGenerator', 'YmirGenerator'),
+    'aethersx2': ('aethersx2.aethersx2Generator', 'AetherSX2Generator'),
+    'armsx2': ('armsx2.armsx2Generator', 'Armsx2Generator'),
+    'ares': ('ares.aresGenerator', 'AresGenerator'),
+    'yquake2': ('yquake2.yquake2Generator', 'YQuake2Generator'),
+    'sh': ('sh.shGenerator', 'ShGenerator'),
+    'apps': ('apps.appsGenerator', 'AppsGenerator'),
+    'skyemu': ('skyemu.skyemuGenerator', 'SkyEmuGenerator'),
+    'touchhle': ('touchhle.touchhleGenerator', 'TouchHLEGenerator'),
+    'heroic': ('sh.shGenerator', 'ShGenerator'),
+    'lutris': ('sh.shGenerator', 'ShGenerator'),
+}
+
+def get_generator(emulator: str) -> Generator:
+    if emulator in _GENERATOR_MAP:
+        module_path, cls_name = _GENERATOR_MAP[emulator]
+    else:
+        module_path = f'{emulator}.{emulator}Generator'
+        cls_name = f'{emulator[0].upper()}{emulator[1:]}Generator'
+
+    try:
+        module = import_module(f'..{module_path}', package=__name__)
+        generator_cls: type[Generator] = getattr(module, cls_name)
+    except ImportError as e:
+        if e.name is not None and e.name.startswith(__name__.split('.')[0]):
+            raise BatoceraException(f'No generator found for emulator {emulator}') from e
+
+        raise BatoceraException(f'Error importing generator for emulator {emulator}') from e
+    except AttributeError as e:
+        raise BatoceraException(f'No generator found for emulator {emulator}') from e
+
+    return generator_cls()

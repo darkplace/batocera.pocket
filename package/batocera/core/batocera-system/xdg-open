@@ -1,0 +1,56 @@
+#!/bin/sh
+
+set -eu
+
+target="${1:-}"
+if [ -z "${target}" ]; then
+    echo "Usage: xdg-open <url-or-path>" >&2
+    exit 1
+fi
+
+run_browser() {
+    if [ -n "${BROWSER:-}" ]; then
+        old_ifs="${IFS}"
+        IFS=':'
+        for entry in ${BROWSER}; do
+            if [ -n "${entry}" ] && command -v "${entry}" >/dev/null 2>&1; then
+                exec "${entry}" "${target}"
+            fi
+        done
+        IFS="${old_ifs}"
+    fi
+
+    for browser in \
+        batocera-app-firefox \
+        batocera-app-chrome \
+        firefox \
+        chrome \
+        chromium \
+        brave
+    do
+        if command -v "${browser}" >/dev/null 2>&1; then
+            exec "${browser}" "${target}"
+        fi
+    done
+
+    return 1
+}
+
+case "${target}" in
+    http://*|https://*|ftp://*|steam://*|heroic://*|lutris:*)
+        if run_browser; then
+            exit 0
+        fi
+        ;;
+esac
+
+if command -v gio >/dev/null 2>&1; then
+    exec gio open "${target}"
+fi
+
+if [ -e "${target}" ] && command -v pcmanfm >/dev/null 2>&1; then
+    exec pcmanfm "${target}"
+fi
+
+echo "xdg-open: no handler found for '${target}'" >&2
+exit 2

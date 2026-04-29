@@ -1,0 +1,12 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index d4b85037a2..3333d1f1ab 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -295,6 +295,7 @@ if(NOT OPENGL_LIBRARIES)
+ endif()
+ 
+ if(USING_EGL)
++	add_definitions(-DEGL_NO_X11)
+ 	if(NOT EGL_LIBRARIES)
+ 		set(EGL_LIBRARIES EGL)
+ 	endif()

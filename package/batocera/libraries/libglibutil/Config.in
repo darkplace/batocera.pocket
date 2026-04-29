@@ -1,0 +1,7 @@
+config BR2_PACKAGE_LIBGLIBUTIL
+	bool "libglibutil"
+	select BR2_PACKAGE_LIBGLIB2
+	help
+	  Library of glib utilities used by Waydroid binder stack.
+
+	  https://github.com/waydroid/libglibutil

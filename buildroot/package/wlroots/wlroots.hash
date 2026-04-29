@@ -1,0 +1,8 @@
+# Generated locally, after checking https://gitlab.freedesktop.org/wlroots/wlroots/-/releases/0.19.2/downloads/wlroots-0.19.2.tar.gz.sig
+sha256  09a0a8d60104c8b0772fee4f60ba76a89aed7e59dff7659d00960fba06bdf267  wlroots-0.19.2.tar.gz
+
+# Hashes for license files:
+sha256  ffd3737a478b83a8b51b42757d3bf909ef36694508355879722e11fc1fa6736b  LICENSE
+
+# batocera - for rpi4
+sha256  04d31521bd2b737541b9680098e55ebaaf956e68d692f80479f4ee1236606d98  wlroots-0.17.3.tar.gz

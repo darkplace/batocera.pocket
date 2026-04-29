@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Icon=/usr/share/icons/batocera/geforcenow.png
+Exec=batocera-app-geforcenow
+Terminal=false
+Type=Application
+Categories=Game;batocera.linux;
+Name=GeForce NOW
+GenericName=Cloud Gaming Client
+Comment=Launch NVIDIA GeForce NOW

@@ -1,0 +1,10 @@
+features:
+  - cheevos
+shared_features:
+  - rewind
+  - autosave
+systems:
+  - gb
+  - gbc
+  - gba
+  - nds

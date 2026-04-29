@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Icon=/usr/share/icons/batocera/peazip.png
+Exec=batocera-app-peazip
+Terminal=false
+Type=Application
+Categories=Utility;FileTools;Archiving;batocera.linux;
+Name=PeaZip
+GenericName=Archive Manager
+Comment=Launch PeaZip

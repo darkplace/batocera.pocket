@@ -1,0 +1,47 @@
+--- a/ThunkLibs/GuestLibs/CMakeLists.txt
++++ b/ThunkLibs/GuestLibs/CMakeLists.txt
+@@ -10,6 +10,8 @@
+ endif()
+ 
+ set(GUEST_THUNK_SYSROOT "" CACHE PATH "Sysroot containing guest thunk parsing headers")
++set(CLANG_RESOURCE_DIR "" CACHE PATH "Clang resource directory for thunk parsing")
++set(CLANG_BUILTIN_HEADERS "" CACHE PATH "Clang builtin headers directory for thunk parsing")
+ 
+ function(guest_thunk_add_sysroot_include TARGET INCLUDE_DIR)
+   if (EXISTS "${INCLUDE_DIR}")
+@@ -96,6 +98,26 @@
+   else()
+     set(BITNESS_FLAGS "")
+     set(BITNESS_FLAGS2 "--target=x86_64-linux-gnu")
++  endif()
++
++  set(CLANG_RESOURCE_FLAGS "")
++  if (CLANG_RESOURCE_DIR)
++    list(APPEND CLANG_RESOURCE_FLAGS "-resource-dir" "${CLANG_RESOURCE_DIR}")
++  endif()
++  if (CLANG_BUILTIN_HEADERS)
++    list(APPEND CLANG_RESOURCE_FLAGS "-isystem" "${CLANG_BUILTIN_HEADERS}")
++  endif()
++  if (GUEST_THUNK_SYSROOT)
++    file(GLOB GUEST_CXX_INCLUDE_DIRS LIST_DIRECTORIES true "${GUEST_THUNK_SYSROOT}/usr/include/c++/*")
++    foreach(GUEST_CXX_DIR IN LISTS GUEST_CXX_INCLUDE_DIRS)
++      if (IS_DIRECTORY "${GUEST_CXX_DIR}")
++        get_filename_component(GUEST_CXX_VER "${GUEST_CXX_DIR}" NAME)
++        list(APPEND CLANG_RESOURCE_FLAGS "-isystem" "${GUEST_CXX_DIR}")
++        list(APPEND CLANG_RESOURCE_FLAGS "-isystem" "${GUEST_THUNK_SYSROOT}/usr/include/x86_64-linux-gnu/c++/${GUEST_CXX_VER}")
++        list(APPEND CLANG_RESOURCE_FLAGS "-isystem" "${GUEST_THUNK_SYSROOT}/usr/include/x86_64-linux-gnu")
++        break()
++      endif()
++    endforeach()
+   endif()
+ 
+   add_custom_command(
+@@ -104,7 +114,7 @@
+     OUTPUT "${OUTFILE}"
+     DEPENDS "${GENERATOR_EXE}"
+     DEPENDS "${SOURCE_FILE}"
+-    COMMAND "${GENERATOR_EXE}" "${SOURCE_FILE}" "${NAME}" "-guest" "${OUTFILE}" "${X86_DEV_ROOTFS}" ${BITNESS_FLAGS} -- -std=c++20 ${BITNESS_FLAGS2}
++    COMMAND "${GENERATOR_EXE}" "${SOURCE_FILE}" "${NAME}" "-guest" "${OUTFILE}" "${X86_DEV_ROOTFS}" ${BITNESS_FLAGS} -- -std=c++20 ${BITNESS_FLAGS2} ${CLANG_RESOURCE_FLAGS}
+       # Expand compile definitions to space-separated list of -D parameters
+       "$<$<BOOL:${compile_prop}>:;-D$<JOIN:${compile_prop},;-D>>"
+       # Expand include directories to space-separated list of -isystem parameters

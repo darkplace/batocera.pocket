@@ -1,0 +1,58 @@
+#!/bin/bash
+
+LOG="/userdata/system/logs/display.log"
+DEBOUNCE_LOCK="/var/run/batocera-switch-screen.debounce.lock"
+STATUS_FILE="/var/run/batocera-switch-screen-checker-status"
+
+_wait_for_emulationstation() {
+    local timeout=3; local waited=0
+    while [ "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:1234/isIdle)" == "000" ]; do
+        sleep 0.5; waited=$(echo "$waited + 0.5" | bc)
+        if [ "$(echo "$waited > $timeout" | bc)" -eq 1 ]; then
+            echo "Checker: Timed out waiting for EmulationStation web server. Aborting trigger." >> "$LOG"
+            return 1
+        fi
+    done
+    echo "Checker: EmulationStation web server is responsive." >> "$LOG"
+    return 0
+}
+
+case "$1" in
+    "--init")
+        export XDG_RUNTIME_DIR=/var/run
+        OUTPUT_LIST=$(batocera-resolution listOutputs)
+        LOGGABLE_OUTPUTS=$(echo "${OUTPUT_LIST}" | tr '\n' ' ')
+        echo "Checker-Init: Storing settled display list: [${LOGGABLE_OUTPUTS}]" >> "$LOG"
+
+        echo "${OUTPUT_LIST}" | sort > "${STATUS_FILE}"
+        exit 0
+        ;;
+    *)
+        # This script's only job is to trigger an ES restart.
+        # The main standalone script will handle all display logic.
+
+        # Check for the existence of /tmp/no-hotplug
+        if [ -f "/tmp/no-hotplug" ]; then
+            # this is not a hotplug event, exit
+            rm /tmp/no-hotplug
+            exit 0
+        fi
+
+        # Debounce lock to avoid multiple udev triggers
+        if [ -f "${DEBOUNCE_LOCK}" ]; then
+            exit 0
+        fi
+        touch "${DEBOUNCE_LOCK}"
+        (sleep 5; rm -f "${DEBOUNCE_LOCK}") &
+
+        echo "Checker: Hotplug event detected. Waiting for EmulationStation..." >> "$LOG"
+
+        if ! _wait_for_emulationstation; then
+            rm -f "${DEBOUNCE_LOCK}"
+            exit 1
+        fi
+
+        echo "Checker: Sending quit command to EmulationStation for display restart." >> "$LOG"
+        curl http://localhost:1234/quit
+        ;;
+esac

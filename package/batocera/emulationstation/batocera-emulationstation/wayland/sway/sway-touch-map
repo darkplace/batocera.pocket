@@ -1,0 +1,173 @@
+#!/bin/sh
+
+LOG_FILE="/userdata/system/logs/display.log"
+LOCK_DIR="/var/run/sway-touch-map.lock"
+
+mkdir -p "$(dirname "$LOG_FILE")" /var/run
+
+if ! mkdir "$LOCK_DIR" 2>/dev/null; then
+    old_pid=$(cat "$LOCK_DIR/pid" 2>/dev/null)
+    if [ -n "$old_pid" ] && kill -0 "$old_pid" 2>/dev/null; then
+        exit 0
+    fi
+    rm -f "$LOCK_DIR/pid" 2>/dev/null
+    rmdir "$LOCK_DIR" 2>/dev/null
+    mkdir "$LOCK_DIR" 2>/dev/null || exit 0
+fi
+
+echo "$$" > "$LOCK_DIR/pid"
+trap 'rm -f "$LOCK_DIR/pid"; rmdir "$LOCK_DIR"' EXIT
+
+log_message() {
+    echo "$1" >> "$LOG_FILE"
+}
+
+settings_get() {
+    value=$(batocera-settings-get-master "$1" 2>/dev/null)
+    if [ -z "$value" ]; then
+        value=$(batocera-settings-get "$1" 2>/dev/null)
+    fi
+    echo "$value"
+}
+
+rotation_for_output() {
+    output="$1"
+    role="$2"
+
+    rotation=
+    if [ "$role" = "secondary" ]; then
+        rotation=$(settings_get "display.rotate2.${output}")
+    fi
+    if [ -z "$rotation" ]; then
+        rotation=$(settings_get "display.rotate.${output}")
+    fi
+    if [ -z "$rotation" ]; then
+        rotation=$(settings_get display.rotate)
+    fi
+    echo "$rotation"
+}
+
+wait_for_sway() {
+    for _try in $(seq 1 30); do
+        if swaymsg -t get_outputs >/dev/null 2>&1; then
+            return 0
+        fi
+        sleep 1
+    done
+
+    log_message "Sway touch map: timed out waiting for swaymsg."
+    return 1
+}
+
+map_touch_to_output() {
+    touch_id="$1"
+    output="$2"
+    role="$3"
+    apply_calibration="${4:-1}"
+
+    [ -n "$touch_id" ] || return 0
+    [ -n "$output" ] || return 0
+
+    log_message "Sway touch map: mapping ${touch_id} -> ${output}."
+    swaymsg -t command "input \"${touch_id}\" map_to_output \"${output}\"" >/dev/null 2>&1
+
+    if [ "$apply_calibration" = "0" ]; then
+        swaymsg -t command "input \"${touch_id}\" calibration_matrix 1 0 0 0 1 0" >/dev/null 2>&1
+        return 0
+    fi
+
+    case "$(rotation_for_output "$output" "$role")" in
+        1)
+            swaymsg -t command "input \"${touch_id}\" calibration_matrix 0 -1 1 1 0 0" >/dev/null 2>&1
+            ;;
+        2)
+            swaymsg -t command "input \"${touch_id}\" calibration_matrix -1 0 1 0 -1 1" >/dev/null 2>&1
+            ;;
+        3)
+            if [ "$touch_id" = "0:0:generic_ft5x06_(a0)" ]; then
+                swaymsg -t command "input \"${touch_id}\" calibration_matrix 1 0 0 0 1 0" >/dev/null 2>&1
+            else
+                swaymsg -t command "input \"${touch_id}\" calibration_matrix 0 1 0 -1 0 1" >/dev/null 2>&1
+            fi
+            ;;
+        *)
+            swaymsg -t command "input \"${touch_id}\" calibration_matrix 1 0 0 0 1 0" >/dev/null 2>&1
+            ;;
+    esac
+}
+
+apply_sway_touch_mapping() {
+    model=$(batocera-model 2>/dev/null)
+    primary=$(settings_get global.videooutput)
+    secondary=$(settings_get global.videooutput2)
+    display_position=$(settings_get display.position)
+
+    touch_ids=$(swaymsg -t get_inputs 2>/dev/null | jq -r '.[] | select(.type | ascii_downcase == "touch") | .identifier')
+    touch_count=$(echo "$touch_ids" | sed '/^$/d' | wc -l | tr -d ' ')
+
+    if [ "$touch_count" -eq 0 ]; then
+        log_message "Sway touch map: no touch devices found."
+        return 0
+    fi
+
+    case "$model" in
+        AYN_Odin_2|AYN_Odin_2_Mini|AYN_Odin_2_Portal)
+            first_touch=$(echo "$touch_ids" | sed -n '1p')
+            map_touch_to_output "$first_touch" "DSI-1" primary 0
+            return 0
+            ;;
+    esac
+
+    if [ "$model" = "AYN_Thor" ] && [ "$display_position" = "top-bottom" ] && [ "$primary" = "DSI-2" ] && [ "$secondary" = "DSI-1" ] && [ "$touch_count" -ge 2 ]; then
+        bottom_touch=$(echo "$touch_ids" | sed -n '1p')
+        top_touch=$(echo "$touch_ids" | sed -n '2p')
+
+        if [ "$bottom_touch" = "$top_touch" ]; then
+            log_message "Sway touch map: duplicate touch identifiers; mapping native touch to ${primary} and using Xwayland matrix for bottom-screen emulators."
+            map_touch_to_output "$top_touch" "$primary" primary 0
+            return 0
+        fi
+
+        map_touch_to_output "$bottom_touch" "$secondary" secondary 0
+        map_touch_to_output "$top_touch" "$primary" primary 0
+        return 0
+    fi
+
+    first_touch=$(echo "$touch_ids" | sed -n '1p')
+    map_touch_to_output "$first_touch" "$primary" primary
+}
+
+apply_xwayland_touch_matrix() {
+    model=$(batocera-model 2>/dev/null)
+    primary=$(settings_get global.videooutput)
+    secondary=$(settings_get global.videooutput2)
+    display_position=$(settings_get display.position)
+
+    if [ "$model" != "AYN_Thor" ] || [ "$display_position" != "top-bottom" ] || [ "$primary" != "DSI-2" ] || [ "$secondary" != "DSI-1" ]; then
+        return 0
+    fi
+
+    if ! command -v xinput >/dev/null 2>&1; then
+        log_message "Sway touch map: xinput missing; skipping Xwayland touch matrix."
+        return 0
+    fi
+
+    for _try in $(seq 1 60); do
+        xwayland_touch=$(DISPLAY=:0 xinput list --name-only 2>/dev/null | awk '/^xwayland-touch:/{print; exit}')
+        if [ -n "$xwayland_touch" ]; then
+            log_message "Sway touch map: applying Thor Xwayland touch matrix to ${xwayland_touch}."
+            DISPLAY=:0 xinput set-prop "$xwayland_touch" "Coordinate Transformation Matrix" \
+                0.645833 0 0.177083 \
+                0 0.95 0.5 \
+                0 0 1 >/dev/null 2>&1
+            return 0
+        fi
+        sleep 1
+    done
+
+    log_message "Sway touch map: no Xwayland touch device found for Thor matrix."
+}
+
+wait_for_sway || exit 0
+apply_sway_touch_mapping
+apply_xwayland_touch_matrix

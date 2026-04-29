@@ -1,0 +1,64 @@
+config BR2_PACKAGE_BOX64
+    bool "box64"
+
+	select BR2_PACKAGE_ZSH
+	select BR2_PACKAGE_FISH
+	select BR2_PACKAGE_GIT
+
+	# Modern replacements
+	select BR2_PACKAGE_EZA
+	select BR2_PACKAGE_BAT
+
+	# Monitoring / performance
+	select BR2_PACKAGE_BTOP
+	select BR2_PACKAGE_GLANCES
+	select BR2_PACKAGE_BANDWHICH
+	select BR2_PACKAGE_DUA
+	select BR2_PACKAGE_DUF
+	select BR2_PACKAGE_PROCS
+
+	# Search / navigation
+	select BR2_PACKAGE_FZF
+	select BR2_PACKAGE_RIPGREP
+	select BR2_PACKAGE_RIP
+	select BR2_PACKAGE_SCC
+	select BR2_PACKAGE_ZOXIDE
+	select BR2_PACKAGE_SD
+
+	# Utilities
+	select BR2_PACKAGE_P7ZIP
+	select BR2_PACKAGE_CUPS
+	select BR2_PACKAGE_ARIA2
+	select BR2_PACKAGE_LIBFUSE3
+	select BR2_PACKAGE_HYPERFINE
+	select BR2_PACKAGE_ICDIFF
+	select BR2_PACKAGE_MICRO
+	select BR2_PACKAGE_TREE
+	select BR2_PACKAGE_TLDR
+	select BR2_PACKAGE_TRE
+	select BR2_PACKAGE_XMLSTARLET
+	select BR2_PACKAGE_SCREENFETCH
+	select BR2_PACKAGE_NEOFETCH
+	select BR2_PACKAGE_SPEEDTEST_CLI
+
+	# Debugging / introspection
+	select BR2_PACKAGE_STRACE
+	select BR2_PACKAGE_PAX_UTILS
+	select BR2_PACKAGE_PKGCONF
+	select BR2_PACKAGE_FILE
+	select BR2_PACKAGE_LSOF
+	select BR2_PACKAGE_PATCHELF
+	select BR2_PACKAGE_JQ
+
+	# QoL
+	select BR2_PACKAGE_TMUX
+	select BR2_PACKAGE_NCDU
+	select BR2_PACKAGE_HTOP
+	select BR2_PACKAGE_RSYNC
+	help
+      Box64 is an x86_64 emulator for ARM64 platforms.
+
+      It allows running x86_64 Linux binaries on ARM64 systems
+      using dynamic recompilation.
+
+      https://github.com/ptitseb/box64

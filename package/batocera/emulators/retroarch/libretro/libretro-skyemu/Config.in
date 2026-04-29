@@ -1,0 +1,7 @@
+config BR2_PACKAGE_LIBRETRO_SKYEMU
+    bool "libretro-skyemu"
+    help
+      A libretro core for Game Boy, Game Boy Color, Game Boy Advance,
+      and Nintendo DS built from SkyEmu.
+
+      https://github.com/skylersaleh/SkyEmu

@@ -1,0 +1,113 @@
+#!/bin/bash
+set -euo pipefail
+
+LOG_FILE="/userdata/system/logs/waydroid-arm.log"
+PAYLOAD_ROOT="/usr/share/batocera/waydroid/libndk"
+OVERLAY_ROOT="/var/lib/waydroid/overlay"
+WAYDROID_CFG="/var/lib/waydroid/waydroid.cfg"
+
+mkdir -p /userdata/system/logs
+
+log_msg() {
+    echo "[$(date '+%F %T')] $*" | tee -a "${LOG_FILE}"
+}
+
+rebuild_base_props() {
+    python3 - <<'PY'
+import argparse
+import sys
+
+sys.path.insert(0, "/usr/lib/waydroid")
+
+import tools.config
+from tools.helpers import lxc
+
+args = argparse.Namespace()
+args.config = "/var/lib/waydroid/waydroid.cfg"
+args.work = "/var/lib/waydroid"
+args.log = None
+args.details_to_stdout = False
+args.verbose = False
+args.quiet = True
+args.cache = {}
+
+cfg = tools.config.load(args)
+args.arch = cfg["waydroid"]["arch"]
+args.images_path = cfg["waydroid"]["images_path"]
+args.vendor_type = cfg["waydroid"]["vendor_type"]
+args.system_ota = cfg["waydroid"].get("system_ota", "None")
+args.vendor_ota = cfg["waydroid"].get("vendor_ota", "None")
+
+lxc.make_base_props(args)
+PY
+}
+
+ensure_prop() {
+    local key="$1"
+    local value="$2"
+
+    python3 - "${WAYDROID_CFG}" "${key}" "${value}" <<'PY'
+import configparser
+import sys
+
+cfg_path, key, value = sys.argv[1:]
+cfg = configparser.ConfigParser()
+cfg.read(cfg_path)
+if "properties" not in cfg:
+    cfg["properties"] = {}
+cfg["properties"][key] = value
+with open(cfg_path, "w") as handle:
+    cfg.write(handle)
+PY
+}
+
+if [ ! -f "${WAYDROID_CFG}" ]; then
+    log_msg "Skipping ARM translation seed: ${WAYDROID_CFG} not initialized yet"
+    exit 0
+fi
+
+if [ ! -d "${PAYLOAD_ROOT}" ]; then
+    log_msg "Skipping ARM translation seed: ${PAYLOAD_ROOT} not present"
+    exit 0
+fi
+
+if [ -d "${PAYLOAD_ROOT}/system" ]; then
+    mkdir -p "${OVERLAY_ROOT}/system"
+    cp -a "${PAYLOAD_ROOT}/system/." "${OVERLAY_ROOT}/system/"
+fi
+
+if [ -d "${PAYLOAD_ROOT}/vendor" ]; then
+    mkdir -p "${OVERLAY_ROOT}/vendor"
+    cp -a "${PAYLOAD_ROOT}/vendor/." "${OVERLAY_ROOT}/vendor/"
+fi
+
+required_files=(
+    "${OVERLAY_ROOT}/system/lib64/libndk_translation.so"
+    "${OVERLAY_ROOT}/system/lib/libndk_translation.so"
+    "${OVERLAY_ROOT}/system/lib64/libndk_translation_exec_region.so"
+    "${OVERLAY_ROOT}/system/lib/libndk_translation_exec_region.so"
+    "${OVERLAY_ROOT}/system/etc/ld.config.arm64.txt"
+    "${OVERLAY_ROOT}/system/etc/ld.config.arm.txt"
+)
+
+for required_file in "${required_files[@]}"; do
+    if [ ! -e "${required_file}" ]; then
+        log_msg "Skipping ARM translation seed: incomplete payload under ${PAYLOAD_ROOT}"
+        log_msg "Missing required bridge file: ${required_file}"
+        exit 0
+    fi
+done
+
+ensure_prop "ro.product.cpu.abilist" "x86_64,x86,arm64-v8a,armeabi-v7a,armeabi"
+ensure_prop "ro.product.cpu.abilist32" "x86,armeabi-v7a,armeabi"
+ensure_prop "ro.product.cpu.abilist64" "x86_64,arm64-v8a"
+ensure_prop "ro.dalvik.vm.native.bridge" "libndk_translation.so"
+ensure_prop "ro.enable.native.bridge.exec" "1"
+ensure_prop "ro.vendor.enable.native.bridge.exec" "1"
+ensure_prop "ro.vendor.enable.native.bridge.exec64" "1"
+ensure_prop "ro.ndk_translation.version" "0.2.3"
+ensure_prop "ro.dalvik.vm.isa.arm" "x86"
+ensure_prop "ro.dalvik.vm.isa.arm64" "x86_64"
+rebuild_base_props
+
+log_msg "Applied Waydroid ARM translation overlay from ${PAYLOAD_ROOT}"

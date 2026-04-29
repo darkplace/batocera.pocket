@@ -1,0 +1,14 @@
+"compatibilitytools"
+{
+  "compat_tools"
+  {
+    "proton11_arm64"
+    {
+      "appid" "4628740"
+      "install_path" "Proton11ARM"
+      "display_name" "Proton 11.0 (ARM64)"
+      "from_oslist" "windows"
+      "to_oslist" "linux"
+    }
+  }
+}

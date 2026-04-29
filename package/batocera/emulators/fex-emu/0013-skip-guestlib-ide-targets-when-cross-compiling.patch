@@ -1,0 +1,12 @@
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -664,3 +664,7 @@
+     # Thunk targets for IDE integration of guest code, only
+-    add_subdirectory(ThunkLibs/GuestLibs)
++    # Cross builds use the external guest-libs project below with the x86/x86_64
++    # toolchain files, so skip these host-toolchain IDE objects there.
++    if (NOT CMAKE_CROSSCOMPILING)
++      add_subdirectory(ThunkLibs/GuestLibs)
++    endif()
+ 
+     # Thunk targets for guest libraries

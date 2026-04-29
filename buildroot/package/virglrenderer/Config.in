@@ -1,0 +1,21 @@
+comment "virglrenderer needs a toolchain w/ threads, dynamic library, OpenGL/EGL, and GBM"
+	depends on !BR2_STATIC_LIBS
+	depends on BR2_TOOLCHAIN_HAS_THREADS
+	depends on BR2_PACKAGE_HAS_LIBGL
+	depends on BR2_PACKAGE_HAS_LIBEGL
+	depends on BR2_PACKAGE_HAS_LIBGBM
+
+config BR2_PACKAGE_VIRGLRENDERER
+	bool "virglrenderer"
+	depends on !BR2_STATIC_LIBS
+	depends on BR2_TOOLCHAIN_HAS_THREADS
+	depends on BR2_PACKAGE_HAS_LIBGL
+	depends on BR2_PACKAGE_HAS_LIBEGL
+	depends on BR2_PACKAGE_HAS_LIBGBM
+	select BR2_PACKAGE_LIBDRM
+	select BR2_PACKAGE_LIBEPOXY
+	help
+	  Virglrenderer is the host-side renderer used by QEMU's
+	  virtio-gpu accelerated 3D path.
+
+	  https://gitlab.freedesktop.org/virgl/virglrenderer

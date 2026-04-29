@@ -1,0 +1,12 @@
+config BR2_PACKAGE_BATOCERA_DISTROBOX
+	bool "batocera distrobox"
+	depends on BR2_PACKAGE_BATOCERA_DOCKER
+	help
+	  Distrobox shell tooling integrated with Docker.
+	  This package installs the upstream distrobox scripts and a
+	  minimal getent fallback for root-focused Batocera systems.
+
+	  https://github.com/89luca89/distrobox
+
+comment "batocera distrobox needs batocera docker stack"
+	depends on !BR2_PACKAGE_BATOCERA_DOCKER

@@ -1,0 +1,32 @@
+# SPDX-FileCopyrightText: Added/modified by suckbluefrog
+# batocera-sm8550_armhf_libs.board
+# 32-bit armhf library build for Qualcomm SM8550 boards
+# Produces libraries to be installed at /lib32 on the 64-bit image
+
+include batocera-board.libs
+
+# Target definition - 32-bit ARM
+BR2_arm=y
+BR2_ARM_EABIHF=y
+BR2_cortex_a53=y
+BR2_ARM_FPU_NEON_FP_ARMV8=y
+BR2_PACKAGE_BATOCERA_TARGET_SM8550=y
+# Keep Kconfig cpu on a53 (valid in this Buildroot arm32 setup), but tune
+# package CFLAGS for the actual SoC little cores.
+BR2_TARGET_OPTIMIZATION="-pipe -fsigned-char -mcpu=cortex-a55 -mtune=cortex-a55"
+BR2_TARGET_GENERIC_GETTY_BAUDRATE_115200=y
+BR2_GLOBAL_PATCH_DIR="$(BR2_EXTERNAL_BATOCERA_PATH)/board/batocera/patches $(BR2_EXTERNAL_BATOCERA_PATH)/board/batocera/qualcomm/sm8550/patches"
+
+# Kernel headers matching the sm8550 base build
+BR2_KERNEL_HEADERS_7_0=y
+
+# Enable C++ standard library (needed for many libs)
+BR2_INSTALL_LIBSTDCPP=y
+
+# GPU - Mesa with Freedreno for 32-bit userspace
+BR2_PACKAGE_MESA3D=y
+BR2_PACKAGE_MESA3D_GALLIUM_DRIVER_FREEDRENO=y
+BR2_PACKAGE_MESA3D_OPENGL_EGL=y
+BR2_PACKAGE_MESA3D_OPENGL_ES=y
+
+include batocera-sm8550_armhf_libs.packages

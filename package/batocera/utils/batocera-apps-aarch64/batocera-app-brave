@@ -1,0 +1,2 @@
+#!/bin/sh
+exec /usr/libexec/batocera-appimage-launcher /usr/share/batocera/apps/brave.AppImage brave 1 "$@"

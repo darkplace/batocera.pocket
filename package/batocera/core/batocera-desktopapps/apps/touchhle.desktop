@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Icon=/usr/share/icons/batocera/touchhle.png
+Exec=/usr/bin/touchHLE.sh
+Terminal=false
+Type=Application
+Categories=Game;batocera.linux;
+Name=touchHLE
+GenericName=iPhone OS Emulator
+Comment=Run early iPhone OS apps in touchHLE

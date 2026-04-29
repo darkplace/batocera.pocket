@@ -1,0 +1,26 @@
+#!/bin/sh
+set -eu
+
+src="${BATOCERA_SUNSHINE_SYSTEM_APPIMAGE:-/usr/share/sunshine/sunshine.AppImage}"
+home="${BATOCERA_SUNSHINE_HOME:-/userdata/system}"
+local_app="${BATOCERA_SUNSHINE_LOCAL_APPIMAGE:-/userdata/saves/sunshine/sunshine.AppImage}"
+app="${src}"
+
+export APPIMAGE_EXTRACT_AND_RUN="${APPIMAGE_EXTRACT_AND_RUN:-1}"
+export APPIMAGE_ALLOW_ROOT="${APPIMAGE_ALLOW_ROOT:-1}"
+export HOME="${home}"
+export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
+export XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
+export XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+export SUNSHINE_CONFIG_DIR="${SUNSHINE_CONFIG_DIR:-$XDG_CONFIG_HOME/sunshine}"
+
+mkdir -p "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_CACHE_HOME" "$XDG_RUNTIME_DIR" "$SUNSHINE_CONFIG_DIR" "$(dirname "$local_app")" "$home" 2>/dev/null || true
+
+if [ ! -x "$app" ] && [ -f "$src" ]; then
+	cp -f "$src" "$local_app"
+	chmod 0755 "$local_app" 2>/dev/null || true
+	app="$local_app"
+fi
+
+exec "$app" "$@"

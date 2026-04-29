@@ -1,0 +1,9 @@
+config BR2_PACKAGE_LIBCURL3_COMPAT
+	bool "libcurl3-compat"
+	depends on BR2_i386
+	select BR2_PACKAGE_LIBCURL
+	help
+	  Installs legacy libcurl SONAME compatibility link:
+	  libcurl.so.3 -> libcurl.so.4
+	  Intended for older prebuilt 32-bit binaries.
+

@@ -1,0 +1,60 @@
+#!/usr/bin/env python3
+import argparse
+import os
+import sys
+from argparse import Namespace
+
+sys.path.insert(0, "/usr/lib/waydroid")
+
+from tools.interfaces import IPlatform
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--app")
+    parser.add_argument("--intent", nargs=2, metavar=("ACTION", "URI"))
+    ns = parser.parse_args()
+
+    if bool(ns.app) == bool(ns.intent):
+        parser.error("use exactly one of --app or --intent")
+
+    args = Namespace(
+        config="/var/lib/waydroid/waydroid.cfg",
+        BINDER_DRIVER="binder",
+        SERVICE_MANAGER_PROTOCOL="aidl3",
+        BINDER_PROTOCOL="aidl3",
+    )
+
+    service = IPlatform.get_service(args)
+    if not service:
+        return 1
+
+    if ns.app:
+        info = service.getAppInfo(ns.app)
+        if not info:
+            return 1
+
+        service.setprop("waydroid.active_apps", ns.app)
+        service.launchApp(ns.app)
+    else:
+        action, uri = ns.intent
+        package = service.launchIntent(action, uri)
+        if package is None:
+            return 1
+
+        if package == "":
+            return 0
+
+        service.setprop("waydroid.active_apps", package if package != "android" else "Waydroid")
+
+    multiwin = service.getprop("persist.waydroid.multi_windows", "false")
+    if multiwin == "false":
+        service.settingsPutString(2, "policy_control", "immersive.status=*")
+    else:
+        service.settingsPutString(2, "policy_control", "immersive.full=*")
+
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

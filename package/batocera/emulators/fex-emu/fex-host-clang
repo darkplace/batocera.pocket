@@ -1,0 +1,31 @@
+#!/bin/sh
+
+set -eu
+
+for compiler in \
+	/proc/1/root/usr/bin/clang-21 \
+	/proc/1/root/usr/sbin/clang-21 \
+	/proc/1/root/bin/clang-21 \
+	/proc/1/root/usr/bin/clang \
+	/proc/1/root/usr/sbin/clang \
+	/proc/1/root/bin/clang \
+	/proc/self/root/usr/bin/clang-21 \
+	/proc/self/root/usr/sbin/clang-21 \
+	/proc/self/root/bin/clang-21 \
+	/proc/self/root/usr/bin/clang \
+	/proc/self/root/usr/sbin/clang \
+	/proc/self/root/bin/clang \
+	/usr/bin/clang-21 \
+	/usr/sbin/clang-21 \
+	/bin/clang-21 \
+	/usr/bin/clang \
+	/usr/sbin/clang \
+	/bin/clang
+do
+	if [ -x "$compiler" ]; then
+		exec "$compiler" "$@"
+	fi
+done
+
+echo "fex-host-clang: unable to locate a usable host clang" >&2
+exit 127

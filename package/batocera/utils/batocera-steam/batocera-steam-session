@@ -1,0 +1,785 @@
+#!/bin/bash
+# SPDX-FileCopyrightText: Added/modified by suckbluefrog
+set -euo pipefail
+
+log="/userdata/system/logs/steam.log"
+mkdir -p "$(dirname "$log")"
+if [[ -f "${log}" ]]; then
+    log_size="$(wc -c < "${log}" 2>/dev/null || echo 0)"
+    if [[ "${log_size}" =~ ^[0-9]+$ ]] && (( log_size > 5242880 )); then
+        mv -f "${log}" "${log}.1"
+    fi
+fi
+
+if [[ $# -lt 1 ]]; then
+    echo "Usage: $0 <steam command> [args...]" >&2
+    exit 1
+fi
+
+export STEAM_DECK=1
+export STEAMOS=1
+export XDG_SESSION_TYPE=wayland
+export XDG_CURRENT_DESKTOP=gamescope
+export HOME="/userdata/system"
+export XDG_DATA_HOME="${HOME}/.local/share"
+export XDG_CONFIG_HOME="${HOME}/.config"
+export XDG_CACHE_HOME="${HOME}/.cache"
+STEAM_FIRST_RUN_WIFI_STAMP="/userdata/system/.steam-first-run-wifi-pending"
+STEAM_FIRST_RUN_PENDING=0
+STEAM_SETUP_KIND="${BATOCERA_STEAM_SETUP_KIND:-}"
+STEAM_INSTALL_CALLOUT_PID=""
+ALLY_HOTKEY_DIR="/userdata/system/configs/hotkeygen"
+ALLY_ACTIVE_MAP="${ALLY_HOTKEY_DIR}/ASUS_ROG_Ally_Config-b05-1abe.mapping"
+ALLY_ES_MAP="${ALLY_HOTKEY_DIR}/ASUS_ROG_Ally_Config-b05-1abe.mapping.es"
+ALLY_STEAM_MAP="${ALLY_HOTKEY_DIR}/ASUS_ROG_Ally_Config-b05-1abe.mapping.steam"
+ALLY_DATAINIT_DIR="/usr/share/batocera/datainit/system/configs/hotkeygen"
+
+run_ally_hotkey_hook() {
+    local event="$1"
+    local helper=""
+    local helper_found=0
+
+    apply_ally_hotkey_map_for_event "${event}" || true
+
+    for helper in \
+        "/userdata/system/scripts/50-ally-steam-hotkeys.sh" \
+        "/usr/share/batocera/datainit/system/scripts/50-ally-steam-hotkeys.sh" \
+        "/usr/share/batocera/configgen/scripts/50-ally-steam-hotkeys.sh"
+    do
+        if [[ -f "${helper}" ]]; then
+            /bin/sh "${helper}" "${event}" "steam" "steam" "steam" "" >> "${log}" 2>&1 || true
+            helper_found=1
+        fi
+    done
+
+    [[ "${helper_found}" -eq 1 ]]
+}
+
+hotkeygen_permanent_running() {
+    pgrep -f '(^|[[:space:]])(/usr/bin/)?hotkeygen([[:space:]].*)?--permanent([[:space:]]|$)' >/dev/null 2>&1
+}
+
+ensure_hotkeygen_started() {
+    if command -v hotkeygen >/dev/null 2>&1; then
+        if ! hotkeygen_permanent_running && [ -x /etc/init.d/S90hotkeygen ]; then
+            /etc/init.d/S90hotkeygen start >/dev/null 2>&1 || true
+        fi
+    fi
+}
+
+apply_ally_hotkey_map() {
+    local profile="$1"
+    local src=""
+
+    mkdir -p "${ALLY_HOTKEY_DIR}" 2>/dev/null || true
+
+    case "${profile}" in
+        steam)
+            for src in \
+                "${ALLY_STEAM_MAP}" \
+                "${ALLY_DATAINIT_DIR}/ASUS_ROG_Ally_Config-b05-1abe.mapping.steam"
+            do
+                if [[ -f "${src}" ]]; then
+                    cp -f "${src}" "${ALLY_ACTIVE_MAP}" 2>/dev/null || true
+                    ensure_hotkeygen_started
+                    /usr/bin/hotkeygen --reload >/dev/null 2>&1 || true
+                    echo "Steam hotkeys: applied steam profile from ${src}" >> "${log}"
+                    return 0
+                fi
+            done
+            ;;
+        es)
+            for src in \
+                "${ALLY_ES_MAP}" \
+                "${ALLY_DATAINIT_DIR}/ASUS_ROG_Ally_Config-b05-1abe.mapping.es" \
+                "${ALLY_DATAINIT_DIR}/ASUS_ROG_Ally_Config-b05-1abe.mapping"
+            do
+                if [[ -f "${src}" ]]; then
+                    cp -f "${src}" "${ALLY_ACTIVE_MAP}" 2>/dev/null || true
+                    ensure_hotkeygen_started
+                    /usr/bin/hotkeygen --reload >/dev/null 2>&1 || true
+                    echo "Steam hotkeys: applied ES profile from ${src}" >> "${log}"
+                    return 0
+                fi
+            done
+            ;;
+    esac
+
+    echo "Steam hotkeys: missing profile '${profile}' mapping" >> "${log}"
+    return 1
+}
+
+apply_ally_hotkey_map_for_event() {
+    local event="$1"
+
+    case "${event}" in
+        gameStart)
+            apply_ally_hotkey_map steam
+            ;;
+        gameStop)
+            apply_ally_hotkey_map es
+            ;;
+        *)
+            return 0
+            ;;
+    esac
+}
+
+recover_hotkeys() {
+    if command -v hotkeygen >/dev/null 2>&1; then
+        if ! hotkeygen_permanent_running && [ -x /etc/init.d/S90hotkeygen ]; then
+            /etc/init.d/S90hotkeygen start >/dev/null 2>&1 || true
+        fi
+        /usr/bin/hotkeygen --reload >/dev/null 2>&1 || true
+    fi
+}
+
+flash_msg() {
+    local seconds="$1"
+    local message="$2"
+    local size="${3:-20}"
+
+    if command -v batocera-flash-screen >/dev/null 2>&1; then
+        /usr/bin/batocera-flash-screen "${seconds}" "#ffffff" "${message}" "${size}" >/dev/null 2>&1 || true
+    fi
+}
+
+start_steam_install_callouts() {
+    if [[ "${STEAM_FIRST_RUN_PENDING}" != "1" || "${BATOCERA_STEAM_INSTALL_CALLOUTS:-1}" == "0" ]]; then
+        return
+    fi
+
+    (
+        sleep "${BATOCERA_STEAM_INSTALL_CALLOUT_FIRST_SECS:-45}"
+        while true; do
+            if [[ "${STEAM_SETUP_KIND}" == "client" ]]; then
+                flash_msg 5 "Steam setup is still running..." 20
+            else
+                flash_msg 5 "Steam support setup is still running..." 19
+            fi
+            sleep "${BATOCERA_STEAM_INSTALL_CALLOUT_SECS:-120}"
+            flash_msg 6 "Do not power off. You may need to relaunch Steam when complete." 18
+            sleep "${BATOCERA_STEAM_INSTALL_CALLOUT_SECS:-120}"
+        done
+    ) &
+    STEAM_INSTALL_CALLOUT_PID="$!"
+}
+
+stop_steam_install_callouts() {
+    if [[ -n "${STEAM_INSTALL_CALLOUT_PID}" ]]; then
+        kill "${STEAM_INSTALL_CALLOUT_PID}" 2>/dev/null || true
+        wait "${STEAM_INSTALL_CALLOUT_PID}" 2>/dev/null || true
+        STEAM_INSTALL_CALLOUT_PID=""
+    fi
+}
+
+cleanup_hotkeys_on_exit() {
+    # "Switch to Desktop" kills the original session outside configgen's normal cleanup path.
+    # Restore an explicit default context and ES profile when that happens.
+    stop_steam_install_callouts
+    run_ally_hotkey_hook gameStop || true
+    if command -v hotkeygen >/dev/null 2>&1; then
+        if ! hotkeygen_permanent_running && [ -x /etc/init.d/S90hotkeygen ]; then
+            /etc/init.d/S90hotkeygen start >/dev/null 2>&1 || true
+        fi
+        /usr/bin/hotkeygen --default-context >/dev/null 2>&1 || true
+        /usr/bin/hotkeygen --reload >/dev/null 2>&1 || true
+    fi
+}
+
+cleanup_hotkeys_and_forward() {
+    cleanup_hotkeys_on_exit || true
+}
+
+trap cleanup_hotkeys_and_forward EXIT TERM INT
+
+if [[ "${BATOCERA_STEAM_SETUP_PENDING:-0}" == "1" ]] || [[ "${BATOCERA_STEAM_FIRST_RUN:-0}" == "1" ]] || [[ -f "${STEAM_FIRST_RUN_WIFI_STAMP}" ]]; then
+    STEAM_FIRST_RUN_PENDING=1
+fi
+if [[ -z "${STEAM_SETUP_KIND}" && "${BATOCERA_STEAM_FIRST_RUN:-0}" == "1" ]]; then
+    STEAM_SETUP_KIND="client"
+fi
+if [[ -z "${STEAM_SETUP_KIND}" && "${STEAM_FIRST_RUN_PENDING}" == "1" ]]; then
+    STEAM_SETUP_KIND="support"
+fi
+
+has_network() {
+    if command -v ip >/dev/null 2>&1; then
+        if ! ip route get 1.1.1.1 >/dev/null 2>&1; then
+            return 1
+        fi
+    fi
+    if command -v ping >/dev/null 2>&1; then
+        timeout 2 ping -c 1 -W 1 1.1.1.1 >/dev/null 2>&1
+        return $?
+    fi
+    return 0
+}
+
+STEAM_HAS_NETWORK=0
+if has_network; then
+    STEAM_HAS_NETWORK=1
+fi
+
+if [[ "${BATOCERA_STEAM_REQUIRE_NETWORK:-1}" == "1" ]] && [[ "${STEAM_HAS_NETWORK}" != "1" ]]; then
+    echo "No internet connection detected; aborting Steam launch" >> "${log}"
+
+    if [[ "${STEAM_FIRST_RUN_PENDING}" == "1" ]]; then
+        mkdir -p "$(dirname "${STEAM_FIRST_RUN_WIFI_STAMP}")"
+        : > "${STEAM_FIRST_RUN_WIFI_STAMP}"
+        echo "Steam first run is pending network; keeping ${STEAM_FIRST_RUN_WIFI_STAMP}" >> "${log}"
+    fi
+
+    if command -v batocera-flash-screen >/dev/null 2>&1; then
+        if [[ "${STEAM_FIRST_RUN_PENDING}" == "1" ]]; then
+            if [[ "${STEAM_SETUP_KIND}" == "client" ]]; then
+                /usr/bin/batocera-flash-screen 6 "#ffffff" "Steam first setup needs Wi-Fi." 22 >/dev/null 2>&1 || true
+            else
+                /usr/bin/batocera-flash-screen 6 "#ffffff" "Steam support setup needs Wi-Fi." 21 >/dev/null 2>&1 || true
+            fi
+            /usr/bin/batocera-flash-screen 6 "#ffffff" "Please restart with Wi-Fi enabled." 20 >/dev/null 2>&1 || true
+        else
+            /usr/bin/batocera-flash-screen 6 "#ffffff" "No internet connection." 22 >/dev/null 2>&1 || true
+            /usr/bin/batocera-flash-screen 6 "#ffffff" "Please connect to the internet and launch Steam again." 20 >/dev/null 2>&1 || true
+        fi
+    fi
+
+    exit 1
+fi
+
+ensure_runtime_dir() {
+    local uid
+    local candidate
+
+    if [[ -n "${XDG_RUNTIME_DIR:-}" ]] && [[ -d "${XDG_RUNTIME_DIR}" ]]; then
+        return
+    fi
+
+    uid="$(id -u)"
+    candidate="/run/user/${uid}"
+    if mkdir -p "${candidate}" 2>/dev/null; then
+        chmod 700 "${candidate}" 2>/dev/null || true
+        export XDG_RUNTIME_DIR="${candidate}"
+        return
+    fi
+
+    candidate="/tmp/runtime-${uid}"
+    mkdir -p "${candidate}"
+    chmod 700 "${candidate}" 2>/dev/null || true
+    export XDG_RUNTIME_DIR="${candidate}"
+}
+ensure_runtime_dir
+
+if [[ "${BATOCERA_STEAM_GAMEPADUI:-1}" == "0" ]]; then
+    export STEAM_GAMEPADUI=0
+    export STEAM_FORCE_DESKTOPUI=1
+else
+    export STEAM_GAMEPADUI=1
+    export STEAM_FORCE_DESKTOPUI=0
+fi
+
+setup_cef_remote_debugging() {
+    local marker
+    local -a candidates=(
+        "/userdata/system/steam/.cef-enable-remote-debugging"
+        "/userdata/system/.steam/steam/.cef-enable-remote-debugging"
+        "/userdata/system/.local/share/Steam/.cef-enable-remote-debugging"
+    )
+
+    for marker in "${candidates[@]}"; do
+        mkdir -p "$(dirname "${marker}")"
+        touch "${marker}"
+    done
+}
+
+start_decky_loader() {
+    local decky_bin="${BATOCERA_STEAM_DECKY_BIN:-/userdata/system/homebrew/services/PluginLoader}"
+    local decky_log="/userdata/system/logs/decky-loader.log"
+
+    if [[ ! -x "${decky_bin}" ]]; then
+        return
+    fi
+
+    if pgrep -x "$(basename "${decky_bin}")" >/dev/null 2>&1; then
+        return
+    fi
+
+    setup_cef_remote_debugging
+    echo "Starting Decky Loader from ${decky_bin}" >> "${log}"
+    nohup "${decky_bin}" >> "${decky_log}" 2>&1 &
+}
+
+parse_resolution() {
+    local value="${1:-}"
+    if [[ "${value}" =~ ^[[:space:]]*([0-9]+)x([0-9]+)[[:space:]]*$ ]]; then
+        printf '%s %s\n' "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}"
+        return 0
+    fi
+    return 1
+}
+
+parse_positive_int() {
+    local value="${1:-}"
+    if [[ "${value}" =~ ^[0-9]+$ ]] && (( value > 0 )); then
+        printf '%s\n' "${value}"
+        return 0
+    fi
+    return 1
+}
+
+gamescope_help_cache=""
+
+gamescope_supports_flag() {
+    local flag="$1"
+    if [[ -z "${gamescope_help_cache}" ]]; then
+        gamescope_help_cache="$(gamescope --help 2>&1 || true)"
+    fi
+    [[ "${gamescope_help_cache}" == *"${flag}"* ]]
+}
+
+append_gamescope_flag() {
+    local preferred="$1"
+    local fallback="${2:-}"
+
+    if gamescope_supports_flag "${preferred}"; then
+        gs_args+=("${preferred}")
+        return
+    fi
+
+    if [[ -n "${fallback}" ]] && gamescope_supports_flag "${fallback}"; then
+        gs_args+=("${fallback}")
+        return
+    fi
+
+    echo "Steam gamescope: skipping unsupported flag ${preferred}" >> "${log}"
+}
+
+append_gamescope_option() {
+    local option="$1"
+    local value="$2"
+
+    if gamescope_supports_flag "${option}"; then
+        gs_args+=("${option}" "${value}")
+        return
+    fi
+
+    echo "Steam gamescope: skipping unsupported option ${option}" >> "${log}"
+}
+
+detect_output_resolution() {
+    local parsed
+    parsed="$(parse_resolution "${BATOCERA_STEAM_GS_OUTPUT_RES:-}" || true)"
+    if [[ -n "${parsed}" ]]; then
+        printf '%s\n' "${parsed}"
+        return
+    fi
+
+    parsed="$(parse_resolution "${BATOCERA_STEAM_GS_DEFAULT_RES:-}" || true)"
+    if [[ -n "${parsed}" ]]; then
+        printf '%s\n' "${parsed}"
+        return
+    fi
+
+    if command -v batocera-resolution >/dev/null 2>&1; then
+        parsed="$(parse_resolution "$(batocera-resolution currentResolution 2>/dev/null || true)" || true)"
+        if [[ -n "${parsed}" ]]; then
+            printf '%s\n' "${parsed}"
+            return
+        fi
+    fi
+
+    printf '1280 720\n'
+}
+
+detect_nested_resolution() {
+    local fallback_w="$1"
+    local fallback_h="$2"
+    local parsed
+
+    parsed="$(parse_resolution "${BATOCERA_STEAM_GS_NESTED_RES:-}" || true)"
+    if [[ -n "${parsed}" ]]; then
+        printf '%s\n' "${parsed}"
+        return
+    fi
+
+    printf '%s %s\n' "${fallback_w}" "${fallback_h}"
+}
+
+detect_refresh_rate() {
+    local value
+
+    value="$(parse_positive_int "${BATOCERA_STEAM_GS_NESTED_REFRESH:-}" || true)"
+    if [[ -n "${value}" ]]; then
+        printf '%s\n' "${value}"
+        return
+    fi
+
+    if command -v batocera-resolution >/dev/null 2>&1; then
+        value="$(batocera-resolution refreshRate 2>/dev/null || true)"
+        if [[ "${value}" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+            awk -v rate="${value}" 'BEGIN { printf "%d\n", int(rate + 0.5) }'
+            return
+        fi
+    fi
+
+    printf '0\n'
+}
+
+if [[ "${STEAM_FIRST_RUN_PENDING}" == "1" ]] && [[ "${STEAM_HAS_NETWORK}" == "1" ]]; then
+    rm -f "${STEAM_FIRST_RUN_WIFI_STAMP}"
+fi
+
+if [[ "${STEAM_FIRST_RUN_PENDING}" == "1" ]] && [[ "${STEAM_HAS_NETWORK}" == "1" ]] && command -v batocera-flash-screen >/dev/null 2>&1; then
+    if [[ "${STEAM_SETUP_KIND}" == "client" ]]; then
+        /usr/bin/batocera-flash-screen 6 "#ffffff" "Steam first launch: preparing and downloading updates..." 22 >/dev/null 2>&1 || true
+        /usr/bin/batocera-flash-screen "${BATOCERA_STEAM_FIRST_RUN_WAIT_SECS:-18}" "#ffffff" "Steam is installing updates. This may take a few minutes. Please wait..." 20 >/dev/null 2>&1 || true
+    else
+        /usr/bin/batocera-flash-screen 6 "#ffffff" "Steam support setup: preparing Proton/FEX..." 21 >/dev/null 2>&1 || true
+        /usr/bin/batocera-flash-screen "${BATOCERA_STEAM_FIRST_RUN_WAIT_SECS:-18}" "#ffffff" "Support downloads may take a few minutes. Please wait..." 20 >/dev/null 2>&1 || true
+    fi
+fi
+
+run_ally_hotkey_hook gameStart || true
+recover_hotkeys
+
+ensure_system_bus_address() {
+    # Steam queries org.freedesktop.DisplayManager on the system bus.
+    # Prefer the real system bus socket so Steam and our stub are on the same bus.
+    if [[ -n "${DBUS_SYSTEM_BUS_ADDRESS:-}" ]]; then
+        return
+    fi
+
+    if [[ -S /run/dbus/system_bus_socket ]]; then
+        export DBUS_SYSTEM_BUS_ADDRESS="unix:path=/run/dbus/system_bus_socket"
+        return
+    fi
+
+    # Last resort for atypical environments.
+    if [[ -n "${DBUS_SESSION_BUS_ADDRESS:-}" ]]; then
+        export DBUS_SYSTEM_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS}"
+    fi
+}
+
+start_displaymanager_stub() {
+    local stub="/usr/bin/batocera-displaymanager-stub"
+    local stub_pattern='(^|/)batocera-displaymanager-stub([[:space:]]|$)'
+    local started=0
+
+    probe_displaymanager_stub() {
+        if ! command -v dbus-send >/dev/null 2>&1; then
+            return 1
+        fi
+
+        timeout 2 dbus-send --system --print-reply \
+            --dest=org.freedesktop.DisplayManager \
+            /org/freedesktop/DisplayManager \
+            org.freedesktop.DisplayManager.GetSeats >/dev/null 2>&1
+    }
+
+    if [[ ! -x "${stub}" ]]; then
+        return
+    fi
+
+    if ! pgrep -f "${stub_pattern}" >/dev/null 2>&1; then
+        nohup "${stub}" >> "${log}" 2>&1 &
+        started=1
+        sleep 0.2
+    fi
+
+    if probe_displaymanager_stub; then
+        return
+    fi
+
+    echo "DisplayManager stub probe failed, retrying once" >> "${log}"
+    pkill -f "${stub_pattern}" >/dev/null 2>&1 || true
+    nohup "${stub}" >> "${log}" 2>&1 &
+    sleep 0.2
+    if ! probe_displaymanager_stub; then
+        echo "DisplayManager stub still unavailable after retry" >> "${log}"
+        return
+    fi
+
+    if [[ "${started}" -eq 1 ]]; then
+        echo "DisplayManager stub started and probed successfully" >> "${log}"
+    fi
+}
+
+start_networkmanager_stub() {
+    local stub="/usr/bin/batocera-networkmanager-stub"
+    local stub_pattern='(^|/)batocera-networkmanager-stub([[:space:]]|$)'
+    local started=0
+
+    probe_networkmanager_stub() {
+        if ! command -v dbus-send >/dev/null 2>&1; then
+            return 1
+        fi
+
+        timeout 2 dbus-send --system --print-reply \
+            --dest=org.freedesktop.NetworkManager \
+            /org/freedesktop/NetworkManager \
+            org.freedesktop.DBus.Properties.Get \
+            string:org.freedesktop.NetworkManager \
+            string:State >/dev/null 2>&1
+    }
+
+    if [[ ! -x "${stub}" ]]; then
+        return
+    fi
+
+    if ! pgrep -f "${stub_pattern}" >/dev/null 2>&1; then
+        nohup "${stub}" >> "${log}" 2>&1 &
+        started=1
+        sleep 0.2
+    fi
+
+    if probe_networkmanager_stub; then
+        return
+    fi
+
+    echo "NetworkManager shim probe failed, retrying once" >> "${log}"
+    pkill -f "${stub_pattern}" >/dev/null 2>&1 || true
+    nohup "${stub}" >> "${log}" 2>&1 &
+    sleep 0.2
+    if ! probe_networkmanager_stub; then
+        echo "NetworkManager shim still unavailable after retry" >> "${log}"
+        return
+    fi
+
+    if [[ "${started}" -eq 1 ]]; then
+        echo "NetworkManager shim started and probed successfully" >> "${log}"
+    fi
+}
+
+start_login1_stub() {
+    local stub="/usr/bin/batocera-login1-stub"
+    local stub_pattern='(^|/)batocera-login1-stub([[:space:]]|$)'
+    local started=0
+
+    probe_login1_stub() {
+        if ! command -v dbus-send >/dev/null 2>&1; then
+            return 1
+        fi
+
+        timeout 2 dbus-send --system --print-reply \
+            --dest=org.freedesktop.login1 \
+            /org/freedesktop/login1 \
+            org.freedesktop.login1.Manager.CanReboot >/dev/null 2>&1
+    }
+
+    if [[ ! -x "${stub}" ]]; then
+        return
+    fi
+
+    if ! pgrep -f "${stub_pattern}" >/dev/null 2>&1; then
+        nohup "${stub}" >> "${log}" 2>&1 &
+        started=1
+        sleep 0.2
+    fi
+
+    if probe_login1_stub; then
+        return
+    fi
+
+    echo "login1 shim probe failed, retrying once" >> "${log}"
+    pkill -f "${stub_pattern}" >/dev/null 2>&1 || true
+    nohup "${stub}" >> "${log}" 2>&1 &
+    sleep 0.2
+    if ! probe_login1_stub; then
+        echo "login1 shim still unavailable after retry" >> "${log}"
+        return
+    fi
+
+    if [[ "${started}" -eq 1 ]]; then
+        echo "login1 shim started and probed successfully" >> "${log}"
+    fi
+}
+
+start_consolekit_stub() {
+    local stub="/usr/bin/batocera-consolekit-stub"
+    local stub_pattern='(^|/)batocera-consolekit-stub([[:space:]]|$)'
+    local started=0
+
+    probe_consolekit_stub() {
+        if ! command -v dbus-send >/dev/null 2>&1; then
+            return 1
+        fi
+
+        timeout 2 dbus-send --system --print-reply \
+            --dest=org.freedesktop.ConsoleKit \
+            /org/freedesktop/ConsoleKit/Manager \
+            org.freedesktop.ConsoleKit.Manager.CanStop >/dev/null 2>&1
+    }
+
+    if [[ ! -x "${stub}" ]]; then
+        return
+    fi
+
+    if ! pgrep -f "${stub_pattern}" >/dev/null 2>&1; then
+        nohup "${stub}" >> "${log}" 2>&1 &
+        started=1
+        sleep 0.2
+    fi
+
+    if probe_consolekit_stub; then
+        return
+    fi
+
+    echo "ConsoleKit shim probe failed, retrying once" >> "${log}"
+    pkill -f "${stub_pattern}" >/dev/null 2>&1 || true
+    nohup "${stub}" >> "${log}" 2>&1 &
+    sleep 0.2
+    if ! probe_consolekit_stub; then
+        echo "ConsoleKit shim still unavailable after retry" >> "${log}"
+        return
+    fi
+
+    if [[ "${started}" -eq 1 ]]; then
+        echo "ConsoleKit shim started and probed successfully" >> "${log}"
+    fi
+}
+
+start_uimode_watch() {
+    local watcher="/usr/bin/batocera-steam-uimode-watch"
+    local watcher_pattern='(^|/)batocera-steam-uimode-watch([[:space:]]|$)'
+
+    if [[ ! -x "${watcher}" ]]; then
+        echo "Steam UI mode watcher missing: ${watcher}" >> "${log}"
+        return
+    fi
+
+    if pgrep -f "${watcher_pattern}" >/dev/null 2>&1; then
+        return
+    fi
+
+    nohup "${watcher}" >> "${log}" 2>&1 &
+    echo "Steam UI mode watcher started" >> "${log}"
+}
+
+start_decky_loader
+ensure_system_bus_address
+start_networkmanager_stub
+start_login1_stub
+start_consolekit_stub
+start_displaymanager_stub
+start_uimode_watch
+
+if command -v gamescope >/dev/null 2>&1 && [[ "${BATOCERA_STEAM_USE_GAMESCOPE:-1}" != "0" ]]; then
+    read -r out_w out_h <<< "$(detect_output_resolution)"
+    read -r nest_w nest_h <<< "$(detect_nested_resolution "${out_w}" "${out_h}")"
+    refresh_rate="$(detect_refresh_rate)"
+
+    gs_args=(--steam --rt --expose-wayland -W "${out_w}" -H "${out_h}" -w "${nest_w}" -h "${nest_h}")
+    if [[ "${BATOCERA_STEAM_GS_BORDERLESS:-0}" != "0" ]]; then
+        gs_args+=(-b)
+    else
+        gs_args+=(-f)
+    fi
+
+    case "${BATOCERA_STEAM_GS_BACKEND:-}" in
+        auto|drm|wayland|sdl|headless)
+            append_gamescope_option "--backend" "${BATOCERA_STEAM_GS_BACKEND}"
+            ;;
+    esac
+
+    if xwayland_count="$(parse_positive_int "${BATOCERA_STEAM_GS_XWAYLAND_COUNT:-}" || true)"; [[ -n "${xwayland_count}" ]]; then
+        append_gamescope_option "--xwayland-count" "${xwayland_count}"
+    fi
+
+    if [[ -n "${BATOCERA_STEAM_GS_PREFER_VK_DEVICE:-}" ]]; then
+        append_gamescope_option "--prefer-vk-device" "${BATOCERA_STEAM_GS_PREFER_VK_DEVICE}"
+    fi
+
+    if [[ -n "${BATOCERA_STEAM_GS_PREFER_OUTPUT:-}" ]]; then
+        append_gamescope_option "--prefer-output" "${BATOCERA_STEAM_GS_PREFER_OUTPUT}"
+    fi
+
+    if [[ "${BATOCERA_STEAM_GS_DISABLE_DAMAGE_TRACKING:-0}" != "0" ]]; then
+        append_gamescope_flag "--disable-damage-tracking"
+    fi
+
+    if [[ "${BATOCERA_STEAM_GS_DISABLE_HW_COMPOSITION:-0}" != "0" ]]; then
+        append_gamescope_flag "--disable-hw-composition" "--disable-layers"
+    fi
+
+    if [[ "${BATOCERA_STEAM_GS_ADAPTIVE_SYNC:-0}" != "0" ]]; then
+        append_gamescope_flag "--adaptive-sync"
+    fi
+
+    if [[ "${BATOCERA_STEAM_GS_FORCE_COMPOSITION_PIPELINE:-0}" != "0" ]]; then
+        append_gamescope_flag "--force-composition-pipeline" "--force-composition"
+    fi
+
+    if [[ "${BATOCERA_STEAM_GS_MANGOAPP:-0}" != "0" || -n "${MANGOHUD_CONFIGFILE:-}" || "${MANGOHUD:-0}" == "1" ]]; then
+        append_gamescope_flag "--mangoapp"
+    fi
+
+    if [[ "${BATOCERA_STEAM_GS_FORCE_WINDOWS_FULLSCREEN:-0}" != "0" ]]; then
+        append_gamescope_flag "--force-windows-fullscreen"
+    fi
+
+    if [[ -n "${BATOCERA_STEAM_GS_FORCE_ORIENTATION:-}" ]]; then
+        append_gamescope_option "--force-orientation" "${BATOCERA_STEAM_GS_FORCE_ORIENTATION}"
+    fi
+
+    if [[ "${BATOCERA_STEAM_GS_USE_ROTATION_SHADER:-0}" != "0" ]] && gamescope --help 2>&1 | grep -q -- "--use-rotation-shader"; then
+        append_gamescope_flag "--use-rotation-shader"
+    fi
+
+    if [[ "${refresh_rate}" =~ ^[0-9]+$ ]] && (( refresh_rate > 0 )); then
+        gs_args+=(-r "${refresh_rate}")
+    fi
+
+    if nested_unfocused_refresh="$(parse_positive_int "${BATOCERA_STEAM_GS_NESTED_UNFOCUSED_REFRESH:-}" || true)"; [[ -n "${nested_unfocused_refresh}" ]]; then
+        append_gamescope_option "--nested-unfocused-refresh" "${nested_unfocused_refresh}"
+    fi
+
+    if framerate_limit="$(parse_positive_int "${BATOCERA_STEAM_GS_FRAMERATE_LIMIT:-}" || true)"; [[ -n "${framerate_limit}" ]]; then
+        gs_args+=(--framerate-limit "${framerate_limit}")
+    fi
+
+    if [[ -n "${BATOCERA_STEAM_GS_SCALER:-}" ]]; then
+        gs_args+=(-S "${BATOCERA_STEAM_GS_SCALER}")
+    fi
+    if [[ -n "${BATOCERA_STEAM_GS_FILTER:-}" ]]; then
+        gs_args+=(-F "${BATOCERA_STEAM_GS_FILTER}")
+    fi
+    if [[ -n "${BATOCERA_STEAM_GS_SHARPNESS:-}" ]]; then
+        gs_args+=(--sharpness "${BATOCERA_STEAM_GS_SHARPNESS}")
+    fi
+    if [[ "${BATOCERA_STEAM_GS_HDR:-0}" == "1" ]]; then
+        gs_args+=(--hdr-enabled)
+    fi
+
+    if [[ -n "${BATOCERA_STEAM_GS_STATS_PATH:-}" ]]; then
+        append_gamescope_option "--stats-path" "${BATOCERA_STEAM_GS_STATS_PATH}"
+    fi
+
+    if [[ "${BATOCERA_STEAM_GS_DISABLE_COLOR_MANAGEMENT:-0}" != "0" ]]; then
+        append_gamescope_flag "--disable-color-management"
+    fi
+
+    if [[ "${BATOCERA_STEAM_GS_DISABLE_XRES:-0}" != "0" ]]; then
+        append_gamescope_flag "--disable-xres"
+    fi
+
+    if [[ "${BATOCERA_STEAM_GS_IMMEDIATE_FLIPS:-0}" != "0" ]]; then
+        append_gamescope_flag "--immediate-flips"
+    fi
+
+    if [[ -z "${GAMESCOPE_FAKE_OUTPUT_MM:-}" && "${BATOCERA_STEAM_GS_FAKE_OUTPUT_MM:-508x286}" != "0" ]]; then
+        export GAMESCOPE_FAKE_OUTPUT_MM="${BATOCERA_STEAM_GS_FAKE_OUTPUT_MM:-508x286}"
+    fi
+
+    echo "Steam gamescope args: ${gs_args[*]} fake_output_mm=${GAMESCOPE_FAKE_OUTPUT_MM:-unset}" >> "${log}"
+    start_steam_install_callouts
+    if gamescope "${gs_args[@]}" -- "$@"; then
+        exit 0
+    fi
+    exit $?
+fi
+
+echo "Steam session: gamescope unavailable or disabled, launching without it" >> "${log}"
+if "$@"; then
+    exit 0
+fi
+exit $?

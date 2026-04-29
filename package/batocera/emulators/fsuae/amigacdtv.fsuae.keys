@@ -1,0 +1,10 @@
+{
+    "actions_player1": [
+    {
+            "trigger": "l3",
+            "type": "key",
+            "target": "KEY_F11",
+            "description": "Virtual Keyboard"
+    }
+    ]
+}

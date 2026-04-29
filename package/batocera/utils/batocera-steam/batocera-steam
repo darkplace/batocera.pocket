@@ -1,0 +1,160 @@
+#!/bin/bash
+# SPDX-FileCopyrightText: Added/modified by suckbluefrog
+set -euo pipefail
+
+log="/userdata/system/logs/steam.log"
+mkdir -p "$(dirname "$log")"
+
+GAME_ID="${1:-}"
+MODE="${BATOCERA_STEAM_MODE:-}"
+
+if [[ -z "${MODE}" ]]; then
+    MODE="$(batocera-settings-get steam.session.mode 2>/dev/null || true)"
+fi
+if [[ -z "${MODE}" ]]; then
+    MODE="steamos"
+fi
+
+STEAM_HOME="/userdata/system/steam"
+STEAM_BOOTSTRAP="/usr/share/steam/bootstrap"
+STEAM_BIN_STUB="/usr/share/steam/bin_steam.sh"
+STEAM_SH="${STEAM_HOME}/steam.sh"
+FIRST_RUN=0
+
+seed_steam_tree() {
+    if [[ -x "${STEAM_SH}" ]]; then
+        return
+    fi
+
+    if [[ ! -d "${STEAM_BOOTSTRAP}" ]]; then
+        echo "ERROR: Missing Steam bootstrap at ${STEAM_BOOTSTRAP}" | tee -a "$log" >&2
+        exit 1
+    fi
+
+    mkdir -p "${STEAM_HOME}"
+    rsync -a "${STEAM_BOOTSTRAP}/" "${STEAM_HOME}/"
+    if [[ -f "${STEAM_BIN_STUB}" ]]; then
+        install -m 0755 "${STEAM_BIN_STUB}" "${STEAM_HOME}/bin_steam.sh"
+    fi
+    FIRST_RUN=1
+    echo "Seeded Steam bootstrap into ${STEAM_HOME}" >> "$log"
+}
+
+patch_root_guard() {
+    local target="${STEAM_HOME}/bin_steam.sh"
+
+    if [[ ! -f "${target}" ]]; then
+        return
+    fi
+
+    if grep -q "# Don't allow running as root" "${target}"; then
+        awk 'BEGIN{skip=0} /# Don'\''t allow running as root/{skip=5} {if(skip>0){skip--;next} print}' \
+            "${target}" > "${target}.tmp"
+        mv "${target}.tmp" "${target}"
+        chmod +x "${target}"
+        echo "Patched root guard in ${target}" >> "$log"
+    fi
+}
+
+normalize_game_target() {
+    local game="$1"
+
+    if [[ -z "${game}" ]]; then
+        return
+    fi
+
+    if [[ "${game}" =~ ^steam://rungameid/([0-9]+)$ ]]; then
+        printf '%s' "${BASH_REMATCH[1]}"
+        return
+    fi
+
+    if [[ "${game}" =~ ^[0-9]+$ ]]; then
+        printf '%s' "${game}"
+        return
+    fi
+
+    printf '%s' "${game}"
+}
+
+steam_gamepadui_enabled() {
+    case "${BATOCERA_STEAM_GAMEPADUI:-1}" in
+        0|false|FALSE|False|no|NO|No|off|OFF|Off)
+            return 1
+            ;;
+        *)
+            return 0
+            ;;
+    esac
+}
+
+build_steam_args() {
+    local -n out_args="$1"
+    local game_target="$2"
+    local -a extra_args=()
+    local -a target_args=()
+
+    out_args=()
+
+    if steam_gamepadui_enabled; then
+        out_args+=(-gamepadui)
+    fi
+
+    if [[ -n "${BATOCERA_STEAM_EXTRA_ARGS:-}" ]]; then
+        # Split as regular shell words; advanced quoting is intentionally not expanded.
+        read -r -a extra_args <<< "${BATOCERA_STEAM_EXTRA_ARGS}"
+        out_args+=("${extra_args[@]}")
+    fi
+
+    if [[ -n "${game_target}" ]]; then
+        if [[ "${game_target}" =~ ^[0-9]+$ ]]; then
+            target_args=(-applaunch "${game_target}")
+        else
+            target_args=("${game_target}")
+        fi
+        out_args+=("${target_args[@]}")
+    fi
+}
+
+launch_desktop() {
+    local game_target="$1"
+    local -a steam_args=()
+
+    build_steam_args steam_args "${game_target}"
+
+    batocera-mouse show
+    DISPLAY="$(getLocalXDisplay)" "${STEAM_SH}" "${steam_args[@]}"
+    batocera-mouse hide
+}
+
+launch_steamos() {
+    local game_target="$1"
+    local -a steam_args=()
+
+    build_steam_args steam_args "${game_target}"
+
+    BATOCERA_STEAM_FIRST_RUN="${FIRST_RUN}" /usr/bin/batocera-steam-session "${STEAM_SH}" "${steam_args[@]}"
+}
+
+seed_steam_tree
+patch_root_guard
+
+GAME_TARGET="$(normalize_game_target "${GAME_ID}")"
+
+case "${MODE}" in
+    desktop)
+        echo "Launching Steam in desktop mode" >> "$log"
+        launch_desktop "${GAME_TARGET}"
+        ;;
+    gamepadui)
+        echo "Launching Steam in GamepadUI mode" >> "$log"
+        launch_desktop "${GAME_TARGET}"
+        ;;
+    steamos|gamescope|gamemode)
+        echo "Launching Steam in SteamOS-like mode" >> "$log"
+        launch_steamos "${GAME_TARGET}"
+        ;;
+    *)
+        echo "Unknown steam mode '${MODE}', falling back to SteamOS-like mode" >> "$log"
+        launch_steamos "${GAME_TARGET}"
+        ;;
+esac

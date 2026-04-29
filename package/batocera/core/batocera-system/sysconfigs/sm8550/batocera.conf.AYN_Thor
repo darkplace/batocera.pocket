@@ -1,0 +1,33 @@
+# --- AYN Thor default values ---
+
+# Preferred output
+global.videooutput=DSI-2
+global.videooutput2=DSI-1
+steam.gamescope_backend=wayland
+steam.gamescope.output=DSI-2
+steam.gamescope.orientation=right
+
+# Resolutions
+es.resolution=1080x1920.120000
+es.resolution2=1080x1240.59999
+
+# Rotate DRM for splash
+display.rotate.DSI=1
+
+# Rotate Wayland compositors
+display.rotate.DSI-2=1
+display.rotate2.DSI-1=1
+
+display.position=top-bottom
+
+# Default audio profile
+audio.profile=pro-audio@alsa_card._sys_devices_platform_sound_sound_card0
+
+# Default settings
+display.brightness=40
+display.brightness2=60
+
+global.hud_custom=position=bottom-left\nbackground_alpha=0.9\nlegacy_layout=false\ncustom_text=%GAMENAME%\ncustom_text=%SYSTEMNAME%\ncustom_text=%EMULATORCORE%\nfps\ngpu_name\nengine_version\nvulkan_driver\nresolution\nram\ngpu_stats\nncpu_stats\ncpu_temp\ncore_load\nbattery_icon\nbattery_watt\ngpu_core_clock
+
+# default suspend on handled boards
+system.suspendmode=fake

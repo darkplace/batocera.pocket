@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="1200" height="1080" viewBox="0 0 1200 1080" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="1080" fill="#2e2e2e"/>
+  <path d="M150 670c0-170 80-290 210-290h480c130 0 210 120 210 290 0 95-45 150-115 150-55 0-90-35-125-95H390c-35 60-70 95-125 95-70 0-115-55-115-150z" fill="#a9c0fe"/>
+  <rect x="300" y="510" width="55" height="170" rx="18" fill="#2b325e"/>
+  <rect x="242" y="568" width="170" height="55" rx="18" fill="#2b325e"/>
+  <circle cx="795" cy="565" r="38" fill="#d3176c"/>
+  <circle cx="885" cy="625" r="38" fill="#7d1f71"/>
+  <circle cx="705" cy="625" r="38" fill="#ecc6af"/>
+  <circle cx="795" cy="690" r="38" fill="#ededed"/>
+  <circle cx="470" cy="700" r="70" fill="#333"/>
+  <circle cx="650" cy="700" r="70" fill="#333"/>
+  <path d="M255 335h690" stroke="#ededed" stroke-width="34" stroke-linecap="round"/>
+  <path d="M335 300l-70 70M865 300l70 70" stroke="#ededed" stroke-width="34" stroke-linecap="round"/>
+  <text x="600" y="925" text-anchor="middle" font-family="sans-serif" font-size="82" font-weight="700" fill="#fff">Calibrate Gamepad</text>
+</svg>

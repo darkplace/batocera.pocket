@@ -1,0 +1,67 @@
+################################################################################
+#
+# webp
+#
+################################################################################
+# batocera - bump (move to cmake)
+WEBP_VERSION = 1.6.0
+WEBP_SOURCE = libwebp-$(WEBP_VERSION).tar.gz
+WEBP_SITE = http://downloads.webmproject.org/releases/webp
+WEBP_LICENSE = BSD-3-Clause
+WEBP_LICENSE_FILES = COPYING
+WEBP_CPE_ID_VENDOR = webmproject
+WEBP_CPE_ID_PRODUCT = libwebp
+WEBP_INSTALL_STAGING = YES
+
+WEBP_CONF_OPTS = \
+	-DWEBP_BUILD_CWEBP=ON \
+	-DWEBP_BUILD_DWEBP=ON \
+	-DWEBP_BUILD_WEBPINFO=ON \
+	-DWEBP_BUILD_WEBPMUX=ON \
+	-DWEBP_BUILD_ANIM_UTILS=OFF \
+	-DWEBP_BUILD_GIF2WEBP=OFF \
+	-DWEBP_BUILD_IMG2WEBP=OFF \
+	-DWEBP_BUILD_VWEBP=OFF
+
+HOST_WEBP_CONF_OPTS = \
+	-DWEBP_BUILD_LIBWEBPMUX=ON \
+	-DWEBP_BUILD_CWEBP=OFF \
+	-DWEBP_BUILD_DWEBP=OFF \
+	-DWEBP_BUILD_GIF2WEBP=OFF \
+	-DWEBP_BUILD_IMG2WEBP=OFF \
+	-DWEBP_BUILD_VWEBP=OFF \
+	-DWEBP_BUILD_WEBPINFO=OFF \
+	-DWEBP_BUILD_WEBPMUX=OFF \
+	-DWEBP_BUILD_EXTRAS=OFF
+
+ifeq ($(BR2_PACKAGE_WEBP_MUX),y)
+WEBP_CONF_OPTS += -DWEBP_BUILD_LIBWEBPMUX=ON -DWEBP_BUILD_WEBPMUX=ON
+else
+WEBP_CONF_OPTS += -DWEBP_BUILD_LIBWEBPMUX=OFF -DWEBP_BUILD_WEBPMUX=OFF
+endif
+
+ifeq ($(BR2_PACKAGE_GIFLIB),y)
+WEBP_DEPENDENCIES += giflib
+WEBP_CONF_OPTS += -DWEBP_BUILD_GIF2WEBP=ON -DWEBP_BUILD_ANIM_UTILS=ON
+endif
+
+ifeq ($(BR2_PACKAGE_JPEG),y)
+WEBP_DEPENDENCIES += jpeg
+WEBP_CONF_OPTS += -DWEBP_BUILD_IMG2WEBP=ON
+endif
+
+ifeq ($(BR2_PACKAGE_LIBFREEGLUT),y)
+WEBP_DEPENDENCIES += libfreeglut
+WEBP_CONF_OPTS += -DWEBP_BUILD_VWEBP=ON
+endif
+
+ifeq ($(BR2_PACKAGE_LIBPNG),y)
+WEBP_DEPENDENCIES += libpng
+endif
+
+ifeq ($(BR2_PACKAGE_TIFF),y)
+WEBP_DEPENDENCIES += tiff
+endif
+
+$(eval $(cmake-package))
+$(eval $(host-cmake-package))

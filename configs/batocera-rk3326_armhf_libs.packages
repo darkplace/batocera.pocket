@@ -1,0 +1,5 @@
+# SPDX-FileCopyrightText: Added/modified by suckbluefrog
+# batocera-rk3326_armhf_libs.packages
+# 32-bit library package set for RK3326 / PortMaster compatibility
+
+include batocera-h700_armhf_libs.packages

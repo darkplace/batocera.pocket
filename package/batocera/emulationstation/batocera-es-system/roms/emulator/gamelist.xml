@@ -1,0 +1,68 @@
+<?xml version="1.0"?>
+<gameList>
+  <game>
+    <path>./Configure_Cemu.sh</path>
+    <name>Configure Cemu</name>
+    <image>./images/cemu.png</image>
+  </game>
+  <game>
+    <path>./Configure_AetherSX2.sh</path>
+    <name>Configure AetherSX2</name>
+    <image>./images/aethersx2.png</image>
+  </game>
+  <game>
+    <path>./Configure_Azahar.sh</path>
+    <name>Configure Azahar</name>
+    <image>./images/azahar.png</image>
+  </game>
+  <game>
+    <path>./Configure_Citron.sh</path>
+    <name>Configure Citron</name>
+    <image>./images/citron.png</image>
+  </game>
+  <game>
+    <path>./Configure_Eden.sh</path>
+    <name>Configure Eden</name>
+    <image>./images/eden.png</image>
+  </game>
+  <game>
+    <path>./Configure_Dolphin.sh</path>
+    <name>Configure Dolphin</name>
+    <image>./images/dolphin.png</image>
+  </game>
+  <game>
+    <path>./Configure_DuckStation.sh</path>
+    <name>Configure DuckStation</name>
+    <image>./images/duckstation.png</image>
+  </game>
+  <game>
+    <path>./Configure_Flycast.sh</path>
+    <name>Configure Flycast</name>
+    <image>./images/flycast.png</image>
+  </game>
+  <game>
+    <path>./Configure_PPSSPP.sh</path>
+    <name>Configure PPSSPP</name>
+    <image>./images/ppsspp.png</image>
+  </game>
+    <game>
+    <path>./Configure_RPCS3.sh</path>
+    <name>Configure RPCS3</name>
+    <image>./images/rpcs3.png</image>
+  </game>
+  <game>
+    <path>./Configure_ScummVM.sh</path>
+    <name>Configure ScummVM</name>
+    <image>./images/scummvm.png</image>
+  </game>
+  <game>
+    <path>./Configure_Vita3K.sh</path>
+    <name>Configure Vita3K</name>
+    <image>./images/vita3k.png</image>
+  </game>
+  <game>
+    <path>./File_Manager.sh</path>
+    <name>File Manager</name>
+    <image>./images/filemanagerlauncher.png</image>
+  </game>
+</gameList>

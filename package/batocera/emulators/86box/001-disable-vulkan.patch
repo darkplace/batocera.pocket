@@ -1,0 +1,134 @@
+diff -urN a/src/qt/CMakeLists.txt b/src/qt/CMakeLists.txt
+--- a/src/qt/CMakeLists.txt	2025-12-22 01:59:02.000000000 +0200
++++ b/src/qt/CMakeLists.txt	2026-03-10 20:17:07.897532707 +0200
+@@ -197,13 +197,6 @@
+ 
+     qt_unixmanagerfilter.cpp
+     qt_unixmanagerfilter.hpp
+-
+-    qt_vulkanwindowrenderer.hpp
+-    qt_vulkanwindowrenderer.cpp
+-
+-    qt_vulkanrenderer.hpp
+-    qt_vulkanrenderer.cpp
+-
+     qt_mcadevicelist.hpp
+     qt_mcadevicelist.cpp
+     qt_mcadevicelist.ui
+diff -urN a/src/qt/qt_mainwindow.cpp b/src/qt/qt_mainwindow.cpp
+--- a/src/qt/qt_mainwindow.cpp	2025-12-22 01:59:02.000000000 +0200
++++ b/src/qt/qt_mainwindow.cpp	2026-03-10 20:17:07.909469331 +0200
+@@ -472,21 +472,6 @@
+     ui->actionVNC->setVisible(false);
+ #endif
+ 
+-#if QT_CONFIG(vulkan)
+-    bool vulkanAvailable = false;
+-    {
+-        QVulkanInstance instance;
+-        instance.setApiVersion(QVersionNumber(1, 0));
+-        if (instance.create()) {
+-            uint32_t physicalDevices = 0;
+-            instance.functions()->vkEnumeratePhysicalDevices(instance.vkInstance(), &physicalDevices, nullptr);
+-            if (physicalDevices != 0) {
+-                vulkanAvailable = true;
+-            }
+-        }
+-    }
+-    if (!vulkanAvailable)
+-#endif
+     {
+         if (vid_api == RENDERER_VULKAN)
+             vid_api = RENDERER_SOFTWARE;
+@@ -496,7 +481,6 @@
+     auto actGroup = new QActionGroup(this);
+     actGroup->addAction(ui->actionSoftware_Renderer);
+     actGroup->addAction(ui->actionOpenGL_3_0_Core);
+-    actGroup->addAction(ui->actionVulkan);
+     actGroup->addAction(ui->actionVNC);
+     actGroup->setExclusive(true);
+ 
+@@ -521,9 +505,6 @@
+             case RENDERER_OPENGL3:
+                 newVidApi = RendererStack::Renderer::OpenGL3;
+                 break;
+-            case RENDERER_VULKAN:
+-                newVidApi = RendererStack::Renderer::Vulkan;
+-                break;
+ #ifdef USE_VNC
+             case RENDERER_VNC:
+                 {
+diff -urN a/src/qt/qt_rendererstack.cpp b/src/qt/qt_rendererstack.cpp
+--- a/src/qt/qt_rendererstack.cpp	2025-12-22 01:59:02.000000000 +0200
++++ b/src/qt/qt_rendererstack.cpp	2026-03-10 20:17:07.905490457 +0200
+@@ -21,7 +21,6 @@
+ 
+ #include "qt_openglrenderer.hpp"
+ #include "qt_softwarerenderer.hpp"
+-#include "qt_vulkanwindowrenderer.hpp"
+ 
+ #include "qt_mainwindow.hpp"
+ #include "qt_util.hpp"
+@@ -400,42 +399,6 @@
+                 current.reset(this->createWindowContainer(hw));
+                 break;
+             }
+-#if QT_CONFIG(vulkan)
+-        case Renderer::Vulkan:
+-            {
+-                this->createWinId();
+-                VulkanWindowRenderer *hw = nullptr;
+-                try {
+-                    hw = new VulkanWindowRenderer(this);
+-                } catch (std::runtime_error &e) {
+-                    auto msgBox = new QMessageBox(QMessageBox::Critical, "86Box", e.what() + tr("\nFalling back to software rendering."), QMessageBox::Ok);
+-                    msgBox->setAttribute(Qt::WA_DeleteOnClose);
+-                    msgBox->show();
+-                    imagebufs = {};
+-                    QTimer::singleShot(0, this, [this]() { switchRenderer(Renderer::Software); });
+-                    current.reset(nullptr);
+-                    break;
+-                }
+-                rendererWindow = hw;
+-                connect(this, &RendererStack::blitToRenderer, hw, &VulkanWindowRenderer::onBlit, Qt::QueuedConnection);
+-                connect(hw, &VulkanWindowRenderer::rendererInitialized, [=]() {
+-                    /* Buffers are available only after initialization. */
+-                    imagebufs        = rendererWindow->getBuffers();
+-                    switchInProgress = false;
+-                    emit rendererChanged();
+-                });
+-                connect(hw, &VulkanWindowRenderer::errorInitializing, [=]() {
+-                    /* Renderer could not initialize, fallback to software. */
+-                    auto msgBox = new QMessageBox(QMessageBox::Critical, "86Box", tr("Failed to initialize Vulkan renderer.") % tr("\nFalling back to software rendering."), QMessageBox::Ok);
+-                    msgBox->setAttribute(Qt::WA_DeleteOnClose);
+-                    msgBox->show();
+-                    imagebufs = {};
+-                    QTimer::singleShot(0, this, [this]() { switchRenderer(Renderer::Software); });
+-                });
+-                current.reset(this->createWindowContainer(hw));
+-                break;
+-            }
+-#endif
+     }
+     if (current.get() == nullptr) {
+         return;
+@@ -453,7 +416,7 @@
+ 
+     currentBuf = 0;
+ 
+-    if (renderer != Renderer::OpenGL3 && renderer != Renderer::Vulkan) {
++    if (renderer != Renderer::OpenGL3) {
+         imagebufs        = rendererWindow->getBuffers();
+         switchInProgress = false;
+         emit rendererChanged();
+diff -urN a/src/qt/qt_rendererstack.hpp b/src/qt/qt_rendererstack.hpp
+--- a/src/qt/qt_rendererstack.hpp	2025-12-22 01:59:02.000000000 +0200
++++ b/src/qt/qt_rendererstack.hpp	2026-03-10 20:17:07.897532707 +0200
+@@ -83,7 +83,6 @@
+     enum class Renderer {
+         Software,
+         OpenGL3,
+-        Vulkan,
+         None = -1
+     };
+     void switchRenderer(Renderer renderer);

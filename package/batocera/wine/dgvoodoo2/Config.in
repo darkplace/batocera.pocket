@@ -1,0 +1,6 @@
+config BR2_PACKAGE_DGVOODOO2
+	bool "dgVoodoo2"
+	help
+	  dgVoodoo2 compatibility wrappers for legacy DirectX and Glide games.
+
+	  https://github.com/dege-diosg/dgVoodoo2

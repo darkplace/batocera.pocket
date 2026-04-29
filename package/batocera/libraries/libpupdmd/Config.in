@@ -1,0 +1,7 @@
+config BR2_PACKAGE_LIBPUPDMD
+    bool "libpupdmd"
+    select BR2_HOST_CMAKE_AT_LEAST_3_25
+    help
+      libpupdmd - cross-platform library for matching PUP triggers in DMD frames.
+      
+      https://github.com/ppuc/libpupdmd

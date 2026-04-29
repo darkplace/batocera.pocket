@@ -1,0 +1,39 @@
+#!/bin/bash
+set -e
+
+LOG_FILE="/userdata/system/logs/waydroid-session.log"
+RUNTIME_DIR="/userdata/system/.runtime-waydroid"
+
+usage() {
+    echo "usage: batocera-waydroid-app launch <package>|intent <action> <uri>" >&2
+    exit 1
+}
+
+[ $# -ge 2 ] || usage
+
+mode="$1"
+shift
+
+mkdir -p /userdata/system/logs
+mkdir -p "${RUNTIME_DIR}"
+chmod 700 "${RUNTIME_DIR}"
+
+export XDG_RUNTIME_DIR="${RUNTIME_DIR}"
+export WAYLAND_DISPLAY="/run/wayland-0"
+export PULSE_RUNTIME_PATH="/run/pulse"
+
+/usr/bin/batocera-waydroid-init >>"${LOG_FILE}" 2>&1 || exit 1
+
+case "${mode}" in
+    launch)
+        [ $# -eq 1 ] || usage
+        exec /usr/bin/batocera-waydroid-session --app "$1"
+        ;;
+    intent)
+        [ $# -eq 2 ] || usage
+        exec /usr/bin/batocera-waydroid-session --intent "$1" "$2"
+        ;;
+    *)
+        usage
+        ;;
+esac

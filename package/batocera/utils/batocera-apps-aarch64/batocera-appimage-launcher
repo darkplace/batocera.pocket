@@ -1,0 +1,72 @@
+#!/bin/sh
+set -eu
+
+if [ "$#" -lt 3 ]; then
+    echo "Usage: $0 <appimage> <app_id> <default_no_sandbox(0|1)> [args...]" >&2
+    exit 2
+fi
+
+appimage="$1"
+app_id="$2"
+default_no_sandbox="$3"
+shift 3
+
+export HOME="/userdata/saves/apps/${app_id}"
+export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
+export XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
+export XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+local_app="${BATOCERA_APPS_LOCAL_APPIMAGE:-$HOME/${app_id}.AppImage}"
+
+mkdir -p "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_CACHE_HOME" \
+    "$XDG_RUNTIME_DIR" "$(dirname "$local_app")" 2>/dev/null || true
+
+if [ ! -x "$appimage" ]; then
+    if [ ! -x "$local_app" ] && [ -f "$appimage" ]; then
+        cp -f "$appimage" "$local_app"
+        chmod 0755 "$local_app" 2>/dev/null || true
+    fi
+    if [ -x "$local_app" ]; then
+        appimage="$local_app"
+    fi
+fi
+
+setup_sdl_controller_env() {
+    if [ -f /userdata/system/gamecontrollerdb.txt ]; then
+        SDL_GAMECONTROLLERCONFIG="$(cat /userdata/system/gamecontrollerdb.txt)"
+        export SDL_GAMECONTROLLERCONFIG
+    fi
+    export SDL_JOYSTICK_HIDAPI="${SDL_JOYSTICK_HIDAPI:-0}"
+}
+
+case "$app_id" in
+    steamlink)
+        setup_sdl_controller_env
+        ;;
+esac
+
+need_no_sandbox=0
+if [ "${BATOCERA_APPS_NO_SANDBOX:-0}" = "1" ] || [ "${BATOCERA_APPS_NO_SANDBOX:-false}" = "true" ]; then
+    need_no_sandbox=1
+elif [ "$default_no_sandbox" = "1" ] && [ "$(id -u)" = "0" ]; then
+    need_no_sandbox=1
+fi
+
+if [ -n "${BATOCERA_APPS_EXTRA_ARGS:-}" ]; then
+    # shellcheck disable=SC2086
+    set -- "$@" ${BATOCERA_APPS_EXTRA_ARGS}
+fi
+
+run_appimage() {
+    if [ "$app_id" = "vacuumtube" ] && [ "$(uname -m)" = "aarch64" ] && command -v FEX >/dev/null 2>&1; then
+        exec FEX "$appimage" "$@"
+    fi
+
+    exec "$appimage" "$@"
+}
+
+if [ "$need_no_sandbox" = "1" ]; then
+    run_appimage --no-sandbox "$@"
+fi
+
+run_appimage "$@"

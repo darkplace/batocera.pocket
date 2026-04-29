@@ -1,0 +1,61 @@
+From 74dfb03f65189eff64ebc7851406b77a3efba831 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Fri, 20 Mar 2026 11:30:00 +0200
+Subject: [PATCH] add env overrides for retroachievements options
+
+---
+diff --git a/src/main.c b/src/main.c
+index bfeb587..1d805e5 100644
+--- a/src/main.c
++++ b/src/main.c
+@@ -7527,6 +7527,24 @@ static void frame(void) {
+     sb_save_file_data(settings_path,(uint8_t*)&gui_state.settings,sizeof(gui_state.settings));
+     se_emscripten_flush_fs();
+     gui_state.last_saved_settings=gui_state.settings;
++#ifdef ENABLE_RETRO_ACHIEVEMENTS
++    {
++      const char* env_value = getenv("SKYEMU_RA_HARDCORE_MODE");
++      if(env_value)gui_state.settings.hardcore_mode = atoi(env_value) != 0;
++      env_value = getenv("SKYEMU_RA_DRAW_NOTIFICATIONS");
++      if(env_value)gui_state.settings.draw_notifications = atoi(env_value) != 0;
++      env_value = getenv("SKYEMU_RA_DRAW_PROGRESS_INDICATORS");
++      if(env_value)gui_state.settings.draw_progress_indicators = atoi(env_value) != 0;
++      env_value = getenv("SKYEMU_RA_DRAW_LEADERBOARD_TRACKERS");
++      if(env_value)gui_state.settings.draw_leaderboard_trackers = atoi(env_value) != 0;
++      env_value = getenv("SKYEMU_RA_DRAW_CHALLENGE_INDICATORS");
++      if(env_value)gui_state.settings.draw_challenge_indicators = atoi(env_value) != 0;
++      env_value = getenv("SKYEMU_RA_ONLY_ONE_NOTIFICATION");
++      if(env_value)gui_state.settings.only_one_notification = atoi(env_value) != 0;
++      env_value = getenv("SKYEMU_RA_ENCORE_MODE");
++      if(env_value)gui_state.ra_encore_mode = atoi(env_value) != 0;
++    }
++#endif
+   }
+   atlas_upload_all();
+ }
+diff --git a/src/retro_achievements.cpp b/src/retro_achievements.cpp
+index 69f5e32..01708a1 100644
+--- a/src/retro_achievements.cpp
++++ b/src/retro_achievements.cpp
+@@ -30,6 +30,7 @@ double se_time();
+ #include <cmath>
+ #include <cstdint>
+ #include <cstdio>
++#include <cstdlib>
+ #include <cstring>
+ #include <iomanip>
+ #include <memory>
+@@ -828,6 +829,11 @@ void retro_achievements_initialize(void* state, bool hardcore)
+ 
+     rc_client_set_hardcore_enabled(ra_state->rc_client, hardcore);
+     rc_client_set_event_handler(ra_state->rc_client, retro_achievements_event_handler);
++    const char* unofficial = getenv("SKYEMU_RA_UNOFFICIAL");
++    if (unofficial)
++    {
++        rc_client_set_unofficial_enabled(ra_state->rc_client, atoi(unofficial) != 0);
++    }
+ 
+     // RetroAchievements doesn't enable CORS, so we use a reverse proxy
+ #ifdef SE_PLATFORM_WEB
+-- 
+2.49.0

@@ -1,0 +1,15 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 3fdadfe..f77c4c0 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -142,6 +142,10 @@ find_package(Threads REQUIRED)
+ find_package(SDL2 REQUIRED)
+ find_package(CURL REQUIRED)
+ find_package(pugixml REQUIRED)
++if(NOT TARGET pugixml::pugixml AND TARGET pugixml)
++	add_library(pugixml::pugixml INTERFACE IMPORTED)
++	target_link_libraries(pugixml::pugixml INTERFACE pugixml)
++endif()
+ find_package(RapidJSON REQUIRED)
+ find_package(Boost COMPONENTS program_options filesystem nowide REQUIRED)
+ find_package(libzip REQUIRED)

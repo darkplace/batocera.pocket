@@ -1,0 +1,10 @@
+config BR2_PACKAGE_BOX86
+    bool "box86"
+    depends on BR2_arm
+    help
+      Box86 is an i386 emulator for ARM platforms.
+
+      It allows running i386 Linux binaries on ARM systems
+      using dynamic recompilation.
+
+      https://github.com/ptitseb/box86

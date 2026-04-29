@@ -1,0 +1,20 @@
+[general]
+bios_path = "/userdata/bios/gba_bios.bin"
+bios_skip = false
+sync_to_audio = false
+
+[cartridge]
+save_type = "detect"
+force_rtc = true
+
+[video]
+fullscreen = false
+scale = 2
+shader_vs = ""
+shader_fs = ""
+
+[audio]
+resampler = "cubic"
+interpolate_fifo = true
+mp2k_hle_enable = false
+mp2k_hle_cubic = false

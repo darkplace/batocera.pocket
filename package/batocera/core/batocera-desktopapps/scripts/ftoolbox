@@ -1,0 +1,2 @@
+#!/bin/bash
+curl -L foclabroc.short.gy/toolbox | bash

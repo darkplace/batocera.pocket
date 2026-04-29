@@ -1,0 +1,301 @@
+#!/usr/bin/python3
+# SPDX-FileCopyrightText: Added/modified by suckbluefrog
+import os
+import shutil
+import subprocess
+import sys
+import time
+
+import dbus
+import dbus.mainloop.glib
+import dbus.service
+from gi.repository import GLib
+
+
+LOG = "/userdata/system/logs/login1-stub.log"
+BUS_NAME = "org.freedesktop.login1"
+MANAGER_PATH = "/org/freedesktop/login1"
+SWISSKNIFE = "/usr/bin/batocera-es-swissknife"
+
+
+def log(msg: str) -> None:
+    os.makedirs(os.path.dirname(LOG), exist_ok=True)
+    with open(LOG, "a", encoding="utf-8") as f:
+        f.write(f"[{time.strftime('%F %T')}] {msg}\n")
+
+
+def ensure_system_bus_env() -> None:
+    if os.path.exists("/run/dbus/system_bus_socket"):
+        os.environ.setdefault("DBUS_SYSTEM_BUS_ADDRESS", "unix:path=/run/dbus/system_bus_socket")
+
+
+def _spawn_first_available(commands) -> bool:
+    for cmd in commands:
+        exe = cmd[0]
+        if "/" in exe:
+            if not (os.path.exists(exe) and os.access(exe, os.X_OK)):
+                continue
+        elif not shutil.which(exe):
+            continue
+
+        subprocess.Popen(list(cmd), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        log(f"power action command: {' '.join(cmd)}")
+        return True
+    return False
+
+
+def run_power_action(action: str) -> None:
+    if action == "--reboot":
+        if _spawn_first_available(
+            [
+                ("/sbin/shutdown", "-r", "now"),
+                ("/sbin/reboot",),
+                ("reboot",),
+                (SWISSKNIFE, "--reboot", "0"),
+            ]
+        ):
+            return
+    elif action == "--shutdown":
+        if _spawn_first_available(
+            [
+                ("/sbin/shutdown", "-h", "now"),
+                ("/sbin/poweroff",),
+                ("poweroff",),
+                (SWISSKNIFE, "--shutdown", "0"),
+            ]
+        ):
+            return
+
+    log(f"power action failed: unsupported action {action}")
+
+
+class Manager(dbus.service.Object):
+    def __init__(self, bus):
+        super().__init__(bus, MANAGER_PATH)
+        self._inhibit_fds = []
+
+    def _get_properties(self, interface_name: str):
+        if interface_name != "org.freedesktop.login1.Manager":
+            raise dbus.exceptions.DBusException(
+                "org.freedesktop.DBus.Error.InvalidArgs",
+                f"Unsupported interface {interface_name}",
+            )
+
+        return {
+            "CanPowerOff": dbus.String("yes"),
+            "CanReboot": dbus.String("yes"),
+            "CanHalt": dbus.String("yes"),
+            "CanSuspend": dbus.String("no"),
+            "CanHibernate": dbus.String("no"),
+            "CanHybridSleep": dbus.String("no"),
+            "CanSuspendThenHibernate": dbus.String("no"),
+            "PreparingForShutdown": dbus.Boolean(False),
+            "PreparingForSleep": dbus.Boolean(False),
+            "IdleHint": dbus.Boolean(False),
+            "IdleSinceHint": dbus.UInt64(0),
+            "IdleSinceHintMonotonic": dbus.UInt64(0),
+            "Docked": dbus.Boolean(False),
+            "LidClosed": dbus.Boolean(False),
+            "LidSwitchIgnoreInhibited": dbus.Boolean(True),
+            "OnExternalPower": dbus.Boolean(True),
+            "BlockInhibited": dbus.String(""),
+            "DelayInhibited": dbus.String(""),
+            "HandlePowerKey": dbus.String("ignore"),
+            "HandleSuspendKey": dbus.String("ignore"),
+            "HandleHibernateKey": dbus.String("ignore"),
+            "HandleLidSwitch": dbus.String("ignore"),
+            "HandleLidSwitchExternalPower": dbus.String("ignore"),
+            "HandleLidSwitchDocked": dbus.String("ignore"),
+            "HoldoffTimeoutUSec": dbus.UInt64(0),
+        }
+
+    def _do_poweroff(self, source: str) -> None:
+        log(source)
+        run_power_action("--shutdown")
+
+    def _do_reboot(self, source: str) -> None:
+        log(source)
+        run_power_action("--reboot")
+
+    @dbus.service.method("org.freedesktop.DBus.Properties", in_signature="ss", out_signature="v")
+    def Get(self, interface_name, property_name):
+        props = self._get_properties(interface_name)
+        if property_name not in props:
+            raise dbus.exceptions.DBusException(
+                "org.freedesktop.DBus.Error.InvalidArgs",
+                f"Unknown property {property_name}",
+            )
+        return props[property_name]
+
+    @dbus.service.method("org.freedesktop.DBus.Properties", in_signature="s", out_signature="a{sv}")
+    def GetAll(self, interface_name):
+        return dbus.Dictionary(self._get_properties(interface_name), signature="sv")
+
+    @dbus.service.method("org.freedesktop.DBus.Properties", in_signature="ssv", out_signature="")
+    def Set(self, interface_name, property_name, value):
+        raise dbus.exceptions.DBusException(
+            "org.freedesktop.DBus.Error.AccessDenied",
+            "Read-only login1 compatibility shim",
+        )
+
+    @dbus.service.signal("org.freedesktop.DBus.Properties", signature="sa{sv}as")
+    def PropertiesChanged(self, interface_name, changed_properties, invalidated_properties):
+        return
+
+    @dbus.service.method("org.freedesktop.login1.Manager", in_signature="b", out_signature="")
+    def PowerOff(self, interactive):
+        self._do_poweroff(f"PowerOff(interactive={interactive})")
+
+    @dbus.service.method("org.freedesktop.login1.Manager", in_signature="b", out_signature="")
+    def Reboot(self, interactive):
+        self._do_reboot(f"Reboot(interactive={interactive})")
+
+    @dbus.service.method("org.freedesktop.login1.Manager", in_signature="b", out_signature="")
+    def Halt(self, interactive):
+        self._do_poweroff(f"Halt(interactive={interactive})")
+
+    @dbus.service.method("org.freedesktop.login1.Manager", in_signature="t", out_signature="")
+    def PowerOffWithFlags(self, flags):
+        self._do_poweroff(f"PowerOffWithFlags(flags={int(flags)})")
+
+    @dbus.service.method("org.freedesktop.login1.Manager", in_signature="t", out_signature="")
+    def RebootWithFlags(self, flags):
+        self._do_reboot(f"RebootWithFlags(flags={int(flags)})")
+
+    @dbus.service.method("org.freedesktop.login1.Manager", in_signature="t", out_signature="")
+    def HaltWithFlags(self, flags):
+        self._do_poweroff(f"HaltWithFlags(flags={int(flags)})")
+
+    @dbus.service.method("org.freedesktop.login1.Manager", in_signature="b", out_signature="")
+    def Suspend(self, interactive):
+        raise dbus.exceptions.DBusException(
+            "org.freedesktop.DBus.Error.NotSupported",
+            "Suspend is not implemented by this compatibility shim",
+        )
+
+    @dbus.service.method("org.freedesktop.login1.Manager", in_signature="b", out_signature="")
+    def Hibernate(self, interactive):
+        raise dbus.exceptions.DBusException(
+            "org.freedesktop.DBus.Error.NotSupported",
+            "Hibernate is not implemented by this compatibility shim",
+        )
+
+    @dbus.service.method("org.freedesktop.login1.Manager", in_signature="b", out_signature="")
+    def HybridSleep(self, interactive):
+        raise dbus.exceptions.DBusException(
+            "org.freedesktop.DBus.Error.NotSupported",
+            "HybridSleep is not implemented by this compatibility shim",
+        )
+
+    @dbus.service.method("org.freedesktop.login1.Manager", in_signature="b", out_signature="")
+    def SuspendThenHibernate(self, interactive):
+        raise dbus.exceptions.DBusException(
+            "org.freedesktop.DBus.Error.NotSupported",
+            "SuspendThenHibernate is not implemented by this compatibility shim",
+        )
+
+    @dbus.service.method("org.freedesktop.login1.Manager", in_signature="t", out_signature="")
+    def SuspendWithFlags(self, flags):
+        raise dbus.exceptions.DBusException(
+            "org.freedesktop.DBus.Error.NotSupported",
+            "Suspend is not implemented by this compatibility shim",
+        )
+
+    @dbus.service.method("org.freedesktop.login1.Manager", in_signature="t", out_signature="")
+    def HibernateWithFlags(self, flags):
+        raise dbus.exceptions.DBusException(
+            "org.freedesktop.DBus.Error.NotSupported",
+            "Hibernate is not implemented by this compatibility shim",
+        )
+
+    @dbus.service.method("org.freedesktop.login1.Manager", in_signature="t", out_signature="")
+    def HybridSleepWithFlags(self, flags):
+        raise dbus.exceptions.DBusException(
+            "org.freedesktop.DBus.Error.NotSupported",
+            "HybridSleep is not implemented by this compatibility shim",
+        )
+
+    @dbus.service.method("org.freedesktop.login1.Manager", in_signature="t", out_signature="")
+    def SuspendThenHibernateWithFlags(self, flags):
+        raise dbus.exceptions.DBusException(
+            "org.freedesktop.DBus.Error.NotSupported",
+            "SuspendThenHibernate is not implemented by this compatibility shim",
+        )
+
+    @dbus.service.method("org.freedesktop.login1.Manager", out_signature="s")
+    def CanPowerOff(self):
+        return "yes"
+
+    @dbus.service.method("org.freedesktop.login1.Manager", out_signature="s")
+    def CanReboot(self):
+        return "yes"
+
+    @dbus.service.method("org.freedesktop.login1.Manager", out_signature="s")
+    def CanHalt(self):
+        return "yes"
+
+    @dbus.service.method("org.freedesktop.login1.Manager", out_signature="s")
+    def CanSuspend(self):
+        return "no"
+
+    @dbus.service.method("org.freedesktop.login1.Manager", out_signature="s")
+    def CanHibernate(self):
+        return "no"
+
+    @dbus.service.method("org.freedesktop.login1.Manager", out_signature="s")
+    def CanHybridSleep(self):
+        return "no"
+
+    @dbus.service.method("org.freedesktop.login1.Manager", out_signature="s")
+    def CanSuspendThenHibernate(self):
+        return "no"
+
+    @dbus.service.method("org.freedesktop.login1.Manager", out_signature="a(susso)")
+    def ListSessions(self):
+        return []
+
+    @dbus.service.method("org.freedesktop.login1.Manager", out_signature="a(uso)")
+    def ListUsers(self):
+        return []
+
+    @dbus.service.method("org.freedesktop.login1.Manager", out_signature="a(sosos)")
+    def ListSeats(self):
+        return []
+
+    @dbus.service.method("org.freedesktop.login1.Manager", in_signature="u", out_signature="o")
+    def GetSessionByPID(self, pid):
+        raise dbus.exceptions.DBusException(
+            "org.freedesktop.login1.NoSessionForPID",
+            f"No session for PID {pid}",
+        )
+
+    @dbus.service.method("org.freedesktop.login1.Manager", in_signature="ssss", out_signature="h")
+    def Inhibit(self, what, who, why, mode):
+        # Steam may call this to request sleep inhibition.
+        fd = os.open("/dev/null", os.O_RDONLY)
+        self._inhibit_fds.append(fd)
+        log(f"Inhibit(what={what}, who={who}, mode={mode})")
+        return dbus.types.UnixFd(fd)
+
+
+def main() -> int:
+    try:
+        ensure_system_bus_env()
+        dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
+        bus = dbus.SystemBus()
+        result = bus.request_name(BUS_NAME, dbus.bus.NAME_FLAG_DO_NOT_QUEUE)
+        if result != dbus.bus.REQUEST_NAME_REPLY_PRIMARY_OWNER:
+            log(f"cannot own {BUS_NAME}, result={result}")
+            return 0
+
+        Manager(bus)
+        log("login1 compatibility shim running")
+        GLib.MainLoop().run()
+        return 0
+    except Exception as exc:
+        log(f"login1 compatibility shim failed: {exc}")
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

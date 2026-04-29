@@ -1,0 +1,33 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Batocera Build Fix <build@batocera.local>
+Date: Mon, 23 Feb 2026 10:35:00 +0000
+Subject: [PATCH] libswresample: align swr_convert definition with declaration
+
+GCC 13 warns about mismatched array parameter bounds between
+libswresample/swresample.h and libswresample/swresample.c. In this build,
+warnings are treated as errors, breaking ffmpeg4 (4.4.5) on i386.
+
+Use pointer parameters in the function definition, matching the public header
+declaration.
+---
+ libswresample/swresample.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/libswresample/swresample.c b/libswresample/swresample.c
+index 30e5464..db53074 100644
+--- a/libswresample/swresample.c
++++ b/libswresample/swresample.c
+@@ -712,8 +712,8 @@ int swr_is_initialized(struct SwrContext *s) {
+     return !!s->in_buffer.ch_count;
+ }
+ 
+-int attribute_align_arg swr_convert(struct SwrContext *s, uint8_t *out_arg[SWR_CH_MAX], int out_count,
+-                                                    const uint8_t *in_arg [SWR_CH_MAX], int  in_count){
++int attribute_align_arg swr_convert(struct SwrContext *s, uint8_t **out_arg, int out_count,
++                                                    const uint8_t **in_arg, int  in_count){
+     AudioData * in= &s->in;
+     AudioData *out= &s->out;
+     int av_unused max_output;
+-- 
+2.43.0
+

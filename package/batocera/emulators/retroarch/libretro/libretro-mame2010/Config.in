@@ -1,0 +1,6 @@
+config BR2_PACKAGE_LIBRETRO_MAME2010
+	bool "libretro-mame2010"
+	help
+	  A port of MAME 0.139 to libretro
+
+	  https://github.com/libretro/mame2010-libretro

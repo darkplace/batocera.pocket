@@ -1,0 +1,50 @@
+--- a/Data/CMake/toolchain_x86_32.cmake
++++ b/Data/CMake/toolchain_x86_32.cmake
+@@ -1,3 +1,22 @@
++function(fex_find_guest_clang out_var fallback)
++  if (EXISTS "/bin/${fallback}")
++    set(${out_var} "/bin/${fallback}" PARENT_SCOPE)
++    return()
++  endif()
++
++  if (EXISTS "/usr/bin/${fallback}")
++    set(${out_var} "/usr/bin/${fallback}" PARENT_SCOPE)
++    return()
++  endif()
++
++  find_program(FEX_CLANG_PATH NAMES "${fallback}" REQUIRED)
++  if (EXISTS "${FEX_CLANG_PATH}.br_real")
++    set(${out_var} "${FEX_CLANG_PATH}.br_real" PARENT_SCOPE)
++  else()
++    set(${out_var} "${FEX_CLANG_PATH}" PARENT_SCOPE)
++  endif()
++endfunction()
++
+ option(ENABLE_CLANG_THUNKS "Enable building thunks with clang" FALSE)
+ 
+ set(CMAKE_SYSTEM_PROCESSOR i686)
+--- a/Data/CMake/toolchain_x86_64.cmake
++++ b/Data/CMake/toolchain_x86_64.cmake
+@@ -1,3 +1,22 @@
++function(fex_find_guest_clang out_var fallback)
++  if (EXISTS "/bin/${fallback}")
++    set(${out_var} "/bin/${fallback}" PARENT_SCOPE)
++    return()
++  endif()
++
++  if (EXISTS "/usr/bin/${fallback}")
++    set(${out_var} "/usr/bin/${fallback}" PARENT_SCOPE)
++    return()
++  endif()
++
++  find_program(FEX_CLANG_PATH NAMES "${fallback}" REQUIRED)
++  if (EXISTS "${FEX_CLANG_PATH}.br_real")
++    set(${out_var} "${FEX_CLANG_PATH}.br_real" PARENT_SCOPE)
++  else()
++    set(${out_var} "${FEX_CLANG_PATH}" PARENT_SCOPE)
++  endif()
++endfunction()
++
+ option(ENABLE_CLANG_THUNKS "Enable building thunks with clang" FALSE)
+ 
+ set(CMAKE_SYSTEM_PROCESSOR x86_64)

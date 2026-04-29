@@ -1,0 +1,20 @@
+config BR2_PACKAGE_XDG_DESKTOP_PORTAL
+	bool "xdg-desktop-portal"
+	depends on BR2_USE_WCHAR # gdk-pixbuf
+	depends on BR2_TOOLCHAIN_HAS_THREADS # libglib2
+	depends on BR2_USE_MMU # libglib2
+	depends on !BR2_STATIC_LIBS # libfuse3
+	select BR2_PACKAGE_GDK_PIXBUF
+	select BR2_PACKAGE_JSON_GLIB
+	select BR2_PACKAGE_LIBFUSE3
+	select BR2_PACKAGE_LIBGLIB2
+	select BR2_PACKAGE_PIPEWIRE
+	help
+	  xdg-desktop-portal provides a desktop integration service
+	  used by sandboxed applications, including Flatpak apps.
+
+	  https://github.com/flatpak/xdg-desktop-portal
+
+comment "xdg-desktop-portal needs a toolchain w/ wchar, threads, dynamic library"
+	depends on BR2_USE_MMU
+	depends on !BR2_USE_WCHAR || !BR2_TOOLCHAIN_HAS_THREADS || BR2_STATIC_LIBS

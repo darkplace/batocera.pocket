@@ -1,0 +1,380 @@
+#!/bin/bash
+set -euo pipefail
+
+roms_dir="/userdata/roms/lutris"
+tmp_xml="/tmp/batocera-lutris-update.tmp"
+es_server="http://127.0.0.1:1234"
+log="/userdata/system/logs/lutris-update.log"
+
+mkdir -p "${roms_dir}" "$(dirname "${log}")"
+
+xml_escape() {
+    local value="$1"
+    value="${value//&/&amp;}"
+    value="${value//</&lt;}"
+    value="${value//>/&gt;}"
+    value="${value//\"/&quot;}"
+    value="${value//\'/&apos;}"
+    printf '%s' "${value}"
+}
+
+slugify() {
+    printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//'
+}
+
+normalize_exec() {
+    local line="$1"
+    line="${line#Exec=}"
+    for token in %f %F %u %U %i %c %k %d %D %n %N %v %m; do
+        line="${line//${token}/}"
+    done
+    printf '%s' "${line}" | sed -E 's/[[:space:]]+/ /g; s/^ //; s/ $//'
+}
+
+extract_name() {
+    local desktop_file="$1"
+    local name
+    name="$(sed -n 's/^Name=//p' "${desktop_file}" | head -n1 || true)"
+    if [[ -z "${name}" ]]; then
+        name="$(sed -n 's/^Name\\[[^]]*\\]=//p' "${desktop_file}" | head -n1 || true)"
+    fi
+    printf '%s' "${name}"
+}
+
+extract_icon() {
+    local desktop_file="$1"
+    local icon
+    icon="$(sed -n 's/^Icon=//p' "${desktop_file}" | head -n1 || true)"
+    printf '%s' "${icon}"
+}
+
+extract_lutris_game_id() {
+    local exec_line="$1"
+    if [[ "${exec_line}" =~ lutris:rungameid/([0-9]+) ]]; then
+        printf '%s' "${BASH_REMATCH[1]}"
+        return 0
+    fi
+    return 1
+}
+
+resolve_icon_file() {
+    local icon="$1"
+    local candidate
+    local search_dir
+    local hit
+
+    [[ -n "${icon}" ]] || return 1
+
+    if [[ "${icon}" = /* ]] && [[ -f "${icon}" ]]; then
+        printf '%s\n' "${icon}"
+        return 0
+    fi
+
+    if [[ "${icon}" == *.* ]]; then
+        for candidate in \
+            "/userdata/saves/lutris/.local/share/icons/${icon}" \
+            "/userdata/system/.local/share/icons/${icon}" \
+            "/usr/share/icons/${icon}" \
+            "/usr/share/pixmaps/${icon}"
+        do
+            if [[ -f "${candidate}" ]]; then
+                printf '%s\n' "${candidate}"
+                return 0
+            fi
+        done
+    else
+        for ext in png jpg jpeg webp svg xpm; do
+            for candidate in \
+                "/userdata/saves/lutris/.local/share/icons/${icon}.${ext}" \
+                "/userdata/system/.local/share/icons/${icon}.${ext}" \
+                "/usr/share/icons/${icon}.${ext}" \
+                "/usr/share/pixmaps/${icon}.${ext}"
+            do
+                if [[ -f "${candidate}" ]]; then
+                    printf '%s\n' "${candidate}"
+                    return 0
+                fi
+            done
+        done
+    fi
+
+    for search_dir in \
+        "/userdata/saves/lutris/.local/share/icons" \
+        "/userdata/system/.local/share/icons" \
+        "/usr/share/icons" \
+        "/usr/share/pixmaps"
+    do
+        [[ -d "${search_dir}" ]] || continue
+        if [[ "${icon}" == *.* ]]; then
+            hit="$(find "${search_dir}" -type f -name "${icon}" 2>/dev/null | head -n1 || true)"
+        else
+            hit="$(
+                find "${search_dir}" -type f \( \
+                    -name "${icon}.png" -o \
+                    -name "${icon}.jpg" -o \
+                    -name "${icon}.jpeg" -o \
+                    -name "${icon}.webp" \
+                \) 2>/dev/null | head -n1 || true
+            )"
+        fi
+        if [[ -n "${hit}" ]]; then
+            printf '%s\n' "${hit}"
+            return 0
+        fi
+    done
+
+    return 1
+}
+
+prepare_lutris_image() {
+    local slug="$1"
+    local icon="$2"
+    local game_id="${3:-}"
+    local image_src=""
+    local candidate
+    local stem
+    local ext
+    local ext_lc
+    local image_name
+    local image_dest
+
+    image_src="$(resolve_icon_file "${icon}" || true)"
+
+    if [[ -z "${image_src}" ]]; then
+        for stem in "${slug}" "${game_id}"; do
+            [[ -n "${stem}" ]] || continue
+            for ext in png jpg jpeg webp; do
+                for candidate in \
+                    "/userdata/saves/lutris/.local/share/lutris/icons/${stem}.${ext}" \
+                    "/userdata/saves/lutris/.local/share/lutris/banners/${stem}.${ext}" \
+                    "/userdata/saves/lutris/.local/share/lutris/coverart/${stem}.${ext}" \
+                    "/userdata/saves/lutris/.local/share/lutris/coverart_big/${stem}.${ext}"
+                do
+                    if [[ -f "${candidate}" ]]; then
+                        image_src="${candidate}"
+                        break 3
+                    fi
+                done
+            done
+        done
+    fi
+
+    if [[ -z "${image_src}" ]] || [[ ! -f "${image_src}" ]]; then
+        return 0
+    fi
+
+    ext="${image_src##*.}"
+    ext_lc="$(printf '%s' "${ext}" | tr '[:upper:]' '[:lower:]')"
+    case "${ext_lc}" in
+        png|jpg|jpeg|webp) ;;
+        *)
+            return 0
+            ;;
+    esac
+
+    mkdir -p "${roms_dir}/images"
+    image_name="lutris-auto-${slug}.${ext_lc}"
+    image_dest="${roms_dir}/images/${image_name}"
+    cp -f "${image_src}" "${image_dest}" 2>/dev/null || return 0
+    printf './images/%s' "${image_name}"
+}
+
+write_game_launcher() {
+    local script_path="$1"
+    local exec_line="$2"
+    local escaped_exec
+    escaped_exec="$(printf '%q' "${exec_line}")"
+
+    cat > "${script_path}" <<EOF
+#!/bin/bash
+set -euo pipefail
+batocera-mouse show
+trap 'batocera-mouse hide' EXIT
+export LUTRIS_SKIP_INIT=1
+exec_line=${escaped_exec}
+
+# Keep native Lutris state in /userdata/saves/lutris.
+if [[ "\${exec_line}" != flatpak* ]]; then
+    export HOME="/userdata/saves/lutris"
+    export XDG_CONFIG_HOME="\${HOME}/.config"
+    export XDG_DATA_HOME="\${HOME}/.local/share"
+    export XDG_CACHE_HOME="\${HOME}/.cache"
+    mkdir -p "\${XDG_CONFIG_HOME}" "\${XDG_DATA_HOME}" "\${XDG_CACHE_HOME}"
+fi
+
+bash -lc "\${exec_line} \${BATOCERA_LUTRIS_EXTRA_ARGS:-}"
+EOF
+    chmod 0755 "${script_path}"
+}
+
+write_launcher_entry() {
+    local script_path="$1"
+    cat > "${script_path}" <<'EOF'
+#!/bin/bash
+set -euo pipefail
+batocera-mouse show
+trap 'batocera-mouse hide' EXIT
+export LUTRIS_SKIP_INIT=1
+
+extra_args=()
+if [[ -n "${BATOCERA_LUTRIS_EXTRA_ARGS:-}" ]]; then
+    read -r -a extra_args <<< "${BATOCERA_LUTRIS_EXTRA_ARGS}"
+fi
+
+if command -v lutris >/dev/null 2>&1; then
+    export HOME="/userdata/saves/lutris"
+    export XDG_CONFIG_HOME="${HOME}/.config"
+    export XDG_DATA_HOME="${HOME}/.local/share"
+    export XDG_CACHE_HOME="${HOME}/.cache"
+    mkdir -p "${XDG_CONFIG_HOME}" "${XDG_DATA_HOME}" "${XDG_CACHE_HOME}"
+    exec lutris "${extra_args[@]}"
+elif [[ -x /opt/lutris/bin/lutris ]]; then
+    export HOME="/userdata/saves/lutris"
+    export XDG_CONFIG_HOME="${HOME}/.config"
+    export XDG_DATA_HOME="${HOME}/.local/share"
+    export XDG_CACHE_HOME="${HOME}/.cache"
+    mkdir -p "${XDG_CONFIG_HOME}" "${XDG_DATA_HOME}" "${XDG_CACHE_HOME}"
+    exec /opt/lutris/bin/lutris "${extra_args[@]}"
+elif command -v flatpak >/dev/null 2>&1 && flatpak info net.lutris.Lutris >/dev/null 2>&1; then
+    exec flatpak run net.lutris.Lutris "${extra_args[@]}"
+fi
+
+echo "Lutris runtime not found (expected native lutris, /opt/lutris/bin/lutris or flatpak net.lutris.Lutris)." >&2
+sleep 2
+exit 1
+EOF
+    chmod 0755 "${script_path}"
+}
+
+es_add_game_begin() {
+    echo "<gameList>" > "${tmp_xml}"
+}
+
+es_add_game() {
+    local game_path="$1"
+    local game_name="$2"
+    local game_image="${3:-}"
+    cat >> "${tmp_xml}" <<EOF
+<game>
+  <path>$(xml_escape "${game_path}")</path>
+  <name>$(xml_escape "${game_name}")</name>
+  <desc></desc>
+  <rating></rating>
+  <releasedate></releasedate>
+  <developer></developer>
+  <publisher></publisher>
+  <genre></genre>
+  <players></players>
+  <image>$(xml_escape "${game_image}")</image>
+  <manual></manual>
+  <video></video>
+</game>
+EOF
+}
+
+es_add_game_end() {
+    echo "</gameList>" >> "${tmp_xml}"
+    curl -s -X POST \
+        -H "Content-type: application/x-www-form-urlencoded" \
+        -H "Accept: text/plain" \
+        "${es_server}/addgames/lutris" \
+        -d @"${tmp_xml}" > /dev/null || true
+}
+
+echo "Refreshing Lutris launchers from desktop entries." >> "${log}"
+find "${roms_dir}" -maxdepth 1 -type f -name 'lutris-auto-*.sh' -delete
+
+es_add_game_begin
+
+declare -a desktop_files=()
+for dir in \
+    "/userdata/system/.local/share/applications" \
+    "/userdata/system/.local/share/flatpak/exports/share/applications" \
+    "/userdata/system/Desktop" \
+    "/userdata/saves/lutris/.local/share/applications" \
+    "/userdata/saves/lutris/.local/share/flatpak/exports/share/applications" \
+    "/userdata/saves/lutris/Desktop" \
+    "${HOME:-/userdata/system}/.local/share/applications" \
+    "${HOME:-/userdata/system}/.local/share/flatpak/exports/share/applications" \
+    "/var/lib/flatpak/exports/share/applications" \
+    "${HOME:-/userdata/system}/Desktop"
+do
+    if [[ -d "${dir}" ]]; then
+        while IFS= read -r -d '' file; do
+            desktop_files+=("${file}")
+        done < <(find "${dir}" -maxdepth 1 -type f -name '*.desktop' -print0 2>/dev/null)
+    fi
+done
+
+declare -A seen=()
+game_count=0
+for desktop_file in "${desktop_files[@]}"; do
+    name="$(extract_name "${desktop_file}")"
+    icon="$(extract_icon "${desktop_file}")"
+    exec_line="$(sed -n 's/^Exec=//p' "${desktop_file}" | head -n1 || true)"
+    exec_line="$(normalize_exec "${exec_line}")"
+    game_id="$(extract_lutris_game_id "${exec_line}" || true)"
+
+    [[ -z "${name}" || -z "${exec_line}" ]] && continue
+    exec_lower="${exec_line,,}"
+    [[ "${exec_lower}" == *"lutris:rungame"* ]] || continue
+
+    slug="$(slugify "${name}")"
+    [[ -z "${slug}" ]] && continue
+    [[ -n "${seen["${slug}"]+x}" ]] && continue
+    seen["${slug}"]=1
+
+    script_name="lutris-auto-${slug}.sh"
+    script_path="${roms_dir}/${script_name}"
+    game_image="$(prepare_lutris_image "${slug}" "${icon}" "${game_id}")"
+    write_game_launcher "${script_path}" "${exec_line}"
+    es_add_game "./${script_name}" "${name}" "${game_image}"
+    game_count=$((game_count + 1))
+done
+
+# Fallback for setups with no desktop shortcuts: derive launchers from Lutris DB.
+if [[ "${game_count}" -eq 0 ]]; then
+    lutris_db="/userdata/saves/lutris/.local/share/lutris/pga.db"
+    if [[ -f "${lutris_db}" ]]; then
+        while IFS=$'\t' read -r game_id title; do
+            [[ -z "${game_id}" || -z "${title}" ]] && continue
+
+            slug="$(slugify "${title}")"
+            [[ -z "${slug}" ]] && continue
+            [[ -n "${seen["${slug}"]+x}" ]] && continue
+            seen["${slug}"]=1
+
+            script_name="lutris-auto-${slug}.sh"
+            script_path="${roms_dir}/${script_name}"
+            exec_line="lutris lutris:rungameid/${game_id}"
+            game_image="$(prepare_lutris_image "${slug}" "" "${game_id}")"
+            write_game_launcher "${script_path}" "${exec_line}"
+            es_add_game "./${script_name}" "${title}" "${game_image}"
+            game_count=$((game_count + 1))
+        done < <(python3 - "${lutris_db}" <<'PY'
+import sqlite3
+import sys
+
+path = sys.argv[1]
+try:
+    con = sqlite3.connect(path)
+except Exception:
+    raise SystemExit(0)
+
+cur = con.cursor()
+try:
+    cur.execute("SELECT id, name FROM games WHERE installed = 1 ORDER BY name COLLATE NOCASE")
+except Exception:
+    raise SystemExit(0)
+
+for game_id, title in cur.fetchall():
+    title = (title or "").strip()
+    if title:
+        print(f"{game_id}\t{title}")
+PY
+)
+    fi
+fi
+
+es_add_game_end
+echo "Lutris launcher update complete: ${game_count} game launcher(s) generated." >> "${log}"

@@ -1,0 +1,46 @@
+# SPDX-FileCopyrightText: Added/modified by suckbluefrog
+# batocera-rk3588_armhf_libs.board
+# 32-bit armhf library build for Rockchip RK3588 boards
+# Produces libraries to be installed at /usr/lib32 on the 64-bit image
+
+include batocera-board.libs
+
+# Target definition - 32-bit ARM
+# RK3588 has A76 (big) + A55 (little) cores
+# For 32-bit compat, target A53 class armv8-a cores (Buildroot 2019 32-bit arm
+# options don't expose cortex-a55 directly).
+BR2_arm=y
+BR2_ARM_EABIHF=y
+BR2_cortex_a53=y
+BR2_ARM_FPU_NEON_FP_ARMV8=y
+BR2_PACKAGE_BATOCERA_TARGET_RK3588=y
+# Keep Kconfig cpu on a53 (valid in this Buildroot arm32 setup), but tune
+# package CFLAGS for the actual SoC little cores.
+BR2_TARGET_OPTIMIZATION="-pipe -fsigned-char -mcpu=cortex-a55 -mtune=cortex-a55"
+BR2_TARGET_GENERIC_GETTY_PORT="/dev/ttyFIQ0"
+BR2_TARGET_GENERIC_GETTY_BAUDRATE_115200=y
+BR2_GLOBAL_PATCH_DIR="$(BR2_EXTERNAL_BATOCERA_PATH)/board/batocera/patches $(BR2_EXTERNAL_BATOCERA_PATH)/board/batocera/rockchip/patches $(BR2_EXTERNAL_BATOCERA_PATH)/board/batocera/rockchip/rk3588/patches"
+
+# Linux headers must match the 64-bit build kernel (6.1 armbian)
+BR2_KERNEL_HEADERS_AS_KERNEL=y
+BR2_PACKAGE_HOST_LINUX_HEADERS_CUSTOM_6_1=y
+BR2_LINUX_KERNEL=y
+BR2_LINUX_KERNEL_CUSTOM_GIT=y
+BR2_LINUX_KERNEL_CUSTOM_REPO_URL="https://github.com/armbian/linux-rockchip.git"
+BR2_LINUX_KERNEL_CUSTOM_REPO_VERSION="41da3e69e16b9de57eca897215e8b0adc6efdc8b"
+BR2_LINUX_KERNEL_USE_CUSTOM_CONFIG=y
+BR2_LINUX_KERNEL_CUSTOM_CONFIG_FILE="$(BR2_EXTERNAL_BATOCERA_PATH)/board/batocera/rockchip/rk3588/linux-defconfig.config"
+BR2_LINUX_KERNEL_NEEDS_HOST_OPENSSL=y
+
+# Enable C++ standard library (needed for many libs)
+BR2_INSTALL_LIBSTDCPP=y
+
+# GPU - Mesa with Panfrost/Panthor for 32-bit
+BR2_PACKAGE_MESA3D=y
+BR2_PACKAGE_MESA3D_LLVM=y
+BR2_PACKAGE_MESA3D_GALLIUM_DRIVER_PANFROST=y
+BR2_PACKAGE_MESA3D_OPENGL_EGL=y
+BR2_PACKAGE_MESA3D_OPENGL_ES=y
+
+# Include the packages list (with rockchip MPP/RGA additions)
+include batocera-rk3588_armhf_libs.packages

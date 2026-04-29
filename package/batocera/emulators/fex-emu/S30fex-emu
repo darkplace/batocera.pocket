@@ -1,0 +1,87 @@
+#!/bin/bash
+#
+# S30fex-emu — Register FEX-Emu binfmt_misc handlers for x86/x86_64
+#
+# Runs early so other services can transparently execute x86 binaries.
+#
+
+FEXINTERPRETER="/usr/bin/FEXInterpreter"
+BINFMT_DIR="/proc/sys/fs/binfmt_misc"
+
+start() {
+    printf "Setting up FEX-Emu binfmt_misc: "
+
+    # Ensure FEXInterpreter exists
+    if [ ! -x "$FEXINTERPRETER" ]; then
+        echo "SKIP (FEXInterpreter not found)"
+        return 0
+    fi
+
+    # Mount binfmt_misc if not already mounted
+    if [ ! -d "$BINFMT_DIR" ] || [ ! -f "$BINFMT_DIR/status" ]; then
+        mount binfmt_misc -t binfmt_misc "$BINFMT_DIR" 2>/dev/null
+    fi
+
+    # Check binfmt_misc is enabled
+    if [ ! -f "$BINFMT_DIR/register" ]; then
+        echo "FAIL (binfmt_misc not available)"
+        return 1
+    fi
+
+    # Enable binfmt_misc if disabled
+    if [ "$(cat "$BINFMT_DIR/status" 2>/dev/null)" = "disabled" ]; then
+        echo 1 > "$BINFMT_DIR/status"
+    fi
+
+    # Register x86 handler (if not already registered)
+    if [ ! -f "$BINFMT_DIR/FEX-x86" ]; then
+        echo ":FEX-x86:M:0:\\x7fELF\\x01\\x01\\x01\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x02\\x00\\x03\\x00:\\xff\\xff\\xff\\xff\\xff\\xfe\\xfe\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\xfe\\xff\\xff\\xff:${FEXINTERPRETER}:POCF" > "$BINFMT_DIR/register" 2>/dev/null
+    fi
+
+    # Register x86_64 handler (if not already registered)
+    if [ ! -f "$BINFMT_DIR/FEX-x86_64" ]; then
+        echo ":FEX-x86_64:M:0:\\x7fELF\\x02\\x01\\x01\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x02\\x00\\x3e\\x00:\\xff\\xff\\xff\\xff\\xff\\xfe\\xfe\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\xfe\\xff\\xff\\xff:${FEXINTERPRETER}:POCF" > "$BINFMT_DIR/register" 2>/dev/null
+    fi
+
+    echo "OK"
+}
+
+stop() {
+    printf "Removing FEX-Emu binfmt_misc handlers: "
+
+    # Unregister handlers
+    [ -f "$BINFMT_DIR/FEX-x86" ]    && echo -1 > "$BINFMT_DIR/FEX-x86"    2>/dev/null
+    [ -f "$BINFMT_DIR/FEX-x86_64" ] && echo -1 > "$BINFMT_DIR/FEX-x86_64" 2>/dev/null
+
+    echo "OK"
+}
+
+status() {
+    echo "=== FEX-Emu binfmt_misc Status ==="
+    if [ -f "$BINFMT_DIR/FEX-x86" ]; then
+        echo "FEX-x86:    REGISTERED"
+        cat "$BINFMT_DIR/FEX-x86"
+    else
+        echo "FEX-x86:    NOT REGISTERED"
+    fi
+    echo ""
+    if [ -f "$BINFMT_DIR/FEX-x86_64" ]; then
+        echo "FEX-x86_64: REGISTERED"
+        cat "$BINFMT_DIR/FEX-x86_64"
+    else
+        echo "FEX-x86_64: NOT REGISTERED"
+    fi
+}
+
+case "$1" in
+    start)   start   ;;
+    stop)    stop    ;;
+    restart) stop; start ;;
+    status)  status  ;;
+    *)
+        echo "Usage: $0 {start|stop|restart|status}"
+        exit 1
+        ;;
+esac
+
+exit $?

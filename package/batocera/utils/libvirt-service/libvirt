@@ -1,0 +1,275 @@
+#!/bin/sh
+
+LOG_FILE="/userdata/system/logs/libvirt-service.log"
+
+log_msg() {
+    mkdir -p /userdata/system/logs
+    echo "[$(date '+%F %T')] $*" >> "${LOG_FILE}"
+}
+
+virsh_cmd() {
+    virsh -c qemu:///system "$@" >> "${LOG_FILE}" 2>&1
+}
+
+libvirt_socket_ready() {
+    for sock in \
+        /run/libvirt/virtqemud-sock \
+        /var/run/libvirt/virtqemud-sock \
+        /run/libvirt/libvirt-sock \
+        /var/run/libvirt/libvirt-sock
+    do
+        [ -S "${sock}" ] && return 0
+    done
+    return 1
+}
+
+start_if_needed() {
+    daemon_name="$1"
+    shift
+    daemon_cmd="$1"
+    shift
+
+    if pidof "${daemon_name}" >/dev/null 2>&1; then
+        log_msg "${daemon_name} already running"
+        return 0
+    fi
+
+    log_msg "starting ${daemon_name} via ${daemon_cmd} $*"
+    if "${daemon_cmd}" "$@" >> "${LOG_FILE}" 2>&1; then
+        return 0
+    fi
+
+    log_msg "${daemon_name} failed to start"
+    return 1
+}
+
+stop_if_running() {
+    daemon_name="$1"
+
+    if pidof "${daemon_name}" >/dev/null 2>&1; then
+        log_msg "stopping ${daemon_name}"
+        pkill -TERM -x "${daemon_name}" >> "${LOG_FILE}" 2>&1 || true
+    fi
+}
+
+ensure_libvirt_dirs() {
+    for dir in \
+        /var/cache/libvirt \
+        /var/cache/libvirt/qemu \
+        /var/cache/libvirt/qemu/capabilities \
+        /var/lib/libvirt \
+        /var/lib/libvirt/boot \
+        /var/lib/libvirt/dnsmasq \
+        /var/lib/libvirt/filesystems \
+        /var/lib/libvirt/images \
+        /var/lib/libvirt/lockd \
+        /var/lib/libvirt/network \
+        /var/lib/libvirt/qemu \
+        /var/lib/libvirt/qemu/autostart \
+        /var/lib/libvirt/qemu/channel \
+        /var/lib/libvirt/qemu/channel/target \
+        /var/lib/libvirt/qemu/checkpoint \
+        /var/lib/libvirt/qemu/dump \
+        /var/lib/libvirt/qemu/networks \
+        /var/lib/libvirt/qemu/networks/autostart \
+        /var/lib/libvirt/qemu/nvram \
+        /var/lib/libvirt/qemu/ram \
+        /var/lib/libvirt/qemu/save \
+        /var/lib/libvirt/qemu/snapshot \
+        /var/lib/libvirt/secrets \
+        /var/lib/libvirt/storage \
+        /var/lib/libvirt/nwfilter \
+        /var/log/libvirt \
+        /var/log/libvirt/qemu
+    do
+        mkdir -p "${dir}"
+    done
+}
+
+ensure_compat_links() {
+    ln -snf /usr/sbin/dnsmasq /dnsmasq
+    ln -snf /usr/sbin/dnsmasq /usr/bin/dnsmasq
+}
+
+wait_for_libvirt_socket() {
+    i=0
+    while [ "${i}" -lt 10 ]; do
+        if libvirt_socket_ready; then
+            log_msg "libvirt socket is available"
+            return 0
+        fi
+        sleep 1
+        i=$((i + 1))
+    done
+
+    log_msg "libvirt socket did not come up"
+    return 1
+}
+
+network_defined() {
+    virsh_cmd net-info "$1"
+}
+
+network_active() {
+    virsh -c qemu:///system net-info "$1" 2>/dev/null | grep -q '^Active:.*yes$'
+}
+
+create_default_nat_network() {
+    runtime_xml="/var/lib/libvirt/qemu/networks/default.xml"
+    packaged_xml="/usr/share/batocera/libvirt/default.xml"
+
+    if [ -f "${packaged_xml}" ]; then
+        install -D -m 0600 "${packaged_xml}" "${runtime_xml}"
+        ln -snf ../default.xml /var/lib/libvirt/qemu/networks/autostart/default.xml
+    else
+        tmp_xml="$(mktemp /tmp/libvirt-default-network.XXXXXX.xml)"
+        cat > "${tmp_xml}" <<'EOF'
+<network>
+  <name>default</name>
+  <forward mode='nat'/>
+  <bridge name='virbr0' stp='on' delay='0'/>
+  <ip address='192.168.122.1' netmask='255.255.255.0'>
+    <dhcp>
+      <range start='192.168.122.2' end='192.168.122.254'/>
+    </dhcp>
+  </ip>
+</network>
+EOF
+        runtime_xml="${tmp_xml}"
+    fi
+
+    log_msg "defining default NAT network"
+    virsh_cmd net-define "${runtime_xml}"
+    if [ "${runtime_xml}" != "/var/lib/libvirt/qemu/networks/default.xml" ]; then
+        rm -f "${runtime_xml}"
+    fi
+}
+
+create_bridge_network() {
+    bridge_if="$(ip -o link show type bridge 2>/dev/null | awk -F': ' 'NR==1 {print $2}' | cut -d@ -f1)"
+
+    if [ -z "${bridge_if}" ]; then
+        log_msg "no host bridge interface found; skipping bridge network"
+        return 0
+    fi
+
+    tmp_xml="$(mktemp /tmp/libvirt-bridge-network.XXXXXX.xml)"
+    cat > "${tmp_xml}" <<EOF
+<network>
+  <name>host-bridge</name>
+  <forward mode='bridge'/>
+  <bridge name='${bridge_if}'/>
+</network>
+EOF
+    log_msg "defining host bridge network on ${bridge_if}"
+    virsh_cmd net-define "${tmp_xml}"
+    rm -f "${tmp_xml}"
+}
+
+ensure_network() {
+    network_name="$1"
+    create_func="$2"
+
+    if ! network_defined "${network_name}"; then
+        "${create_func}" || return 0
+        network_defined "${network_name}" || return 0
+    fi
+
+    virsh_cmd net-autostart "${network_name}" || true
+
+    if ! network_active "${network_name}"; then
+        log_msg "starting libvirt network ${network_name}"
+        virsh_cmd net-start "${network_name}" || true
+    fi
+}
+
+ensure_default_networks() {
+    if ! command -v virsh >/dev/null 2>&1; then
+        log_msg "virsh not installed; skipping network setup"
+        return 0
+    fi
+
+    ensure_network default create_default_nat_network
+    ensure_network host-bridge create_bridge_network
+}
+
+start() {
+    log_msg "Starting libvirt stack"
+    ensure_libvirt_dirs
+    ensure_compat_links
+
+    start_if_needed virtlogd /usr/sbin/virtlogd -d || true
+    start_if_needed virtlockd /usr/sbin/virtlockd -d || true
+
+    if [ -x /usr/sbin/virtqemud ]; then
+        start_if_needed virtqemud /usr/sbin/virtqemud -d || true
+        start_if_needed virtproxyd /usr/sbin/virtproxyd -d || true
+        start_if_needed virtstoraged /usr/sbin/virtstoraged -d || true
+        start_if_needed virtnetworkd /usr/sbin/virtnetworkd -d || true
+        start_if_needed virtsecretd /usr/sbin/virtsecretd -d || true
+        start_if_needed virtinterfaced /usr/sbin/virtinterfaced -d || true
+        start_if_needed virtnodedevd /usr/sbin/virtnodedevd -d || true
+        start_if_needed virtnwfilterd /usr/sbin/virtnwfilterd -d || true
+    else
+        /etc/init.d/S91virtlogd start >> "${LOG_FILE}" 2>&1 || true
+        /etc/init.d/S92libvirtd start >> "${LOG_FILE}" 2>&1 || true
+    fi
+
+    wait_for_libvirt_socket || return 1
+    ensure_default_networks
+}
+
+stop() {
+    log_msg "Stopping libvirt stack"
+
+    if [ -x /usr/sbin/virtqemud ]; then
+        stop_if_running virtproxyd
+        stop_if_running virtnetworkd
+        stop_if_running virtstoraged
+        stop_if_running virtsecretd
+        stop_if_running virtinterfaced
+        stop_if_running virtnodedevd
+        stop_if_running virtnwfilterd
+        stop_if_running virtqemud
+        stop_if_running virtlockd
+        stop_if_running virtlogd
+    else
+        /etc/init.d/S92libvirtd stop >> "${LOG_FILE}" 2>&1 || true
+        /etc/init.d/S91virtlogd stop >> "${LOG_FILE}" 2>&1 || true
+    fi
+}
+
+restart() {
+    stop
+    start
+}
+
+status() {
+    if libvirt_socket_ready; then
+        echo "libvirt: running"
+    else
+        echo "libvirt: stopped"
+        return 1
+    fi
+}
+
+case "$1" in
+    start)
+        start
+        ;;
+    stop)
+        stop
+        ;;
+    restart)
+        restart
+        ;;
+    status)
+        status
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|restart|status}"
+        exit 1
+        ;;
+esac
+
+exit $?

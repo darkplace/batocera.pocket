@@ -1,0 +1,8 @@
+config BR2_PACKAGE_EDEN
+	bool "Eden (Nintendo Switch)"
+	depends on BR2_aarch64
+	help
+	  Eden Nintendo Switch emulator.
+
+	  This package installs the published Linux AppImage and wraps it
+	  with a Batocera runtime launcher under /usr/bin/eden.

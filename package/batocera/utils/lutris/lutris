@@ -1,0 +1,71 @@
+#!/bin/sh
+
+lutris_home="${BATOCERA_LUTRIS_HOME:-/userdata/saves/lutris}"
+lutris_bin="${BATOCERA_LUTRIS_BIN:-/usr/libexec/lutris-bin}"
+
+export HOME="$lutris_home"
+export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
+export XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
+export XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+export FONTCONFIG_PATH="${FONTCONFIG_PATH:-/etc/fonts}"
+export FONTCONFIG_FILE="${FONTCONFIG_FILE:-/etc/fonts/fonts.conf}"
+export LUTRIS_SKIP_INIT="${LUTRIS_SKIP_INIT:-1}"
+
+# Ensure GTK can always find system icon themes and symbolic glyph assets.
+case ":${XDG_DATA_DIRS:-}:" in
+	*:/usr/local/share:*) ;;
+	*) XDG_DATA_DIRS="${XDG_DATA_DIRS:+$XDG_DATA_DIRS:}/usr/local/share" ;;
+esac
+case ":${XDG_DATA_DIRS:-}:" in
+	*:/usr/share:*) ;;
+	*) XDG_DATA_DIRS="${XDG_DATA_DIRS:+$XDG_DATA_DIRS:}/usr/share" ;;
+esac
+export XDG_DATA_DIRS
+export GTK_THEME="${GTK_THEME:-Adwaita}"
+export GTK_ICON_THEME="${GTK_ICON_THEME:-Adwaita}"
+
+mkdir -p "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_CACHE_HOME" "$XDG_RUNTIME_DIR"
+# Ensure desktop shortcut targets exist for Lutris "Create Shortcut" actions.
+mkdir -p "${XDG_DATA_HOME}/applications" "${HOME}/Desktop"
+# Compatibility path for tools/scripts using singular "/userdata/save".
+legacy_home="/userdata/save/lutris"
+if [ "$HOME" = "/userdata/saves/lutris" ] && [ ! -e "$legacy_home" ]; then
+	mkdir -p "/userdata/save"
+	ln -s "$HOME" "$legacy_home" 2>/dev/null || true
+fi
+# Ensure Steam userdata path exists in Lutris HOME for Steam shortcut integrations.
+steam_userdata_link="${HOME}/.steam/steam/userdata"
+steam_userdata_src=""
+for candidate in \
+	"/userdata/system/steam/userdata" \
+	"/userdata/system/.steam/steam/userdata" \
+	"/userdata/system/.local/share/Steam/userdata"
+do
+	if [ -d "$candidate" ]; then
+		steam_userdata_src="$candidate"
+		break
+	fi
+done
+mkdir -p "$(dirname "$steam_userdata_link")"
+if [ -n "$steam_userdata_src" ]; then
+	if [ -L "$steam_userdata_link" ]; then
+		current_link="$(readlink "$steam_userdata_link" 2>/dev/null || true)"
+		[ "$current_link" = "$steam_userdata_src" ] || ln -snf "$steam_userdata_src" "$steam_userdata_link" 2>/dev/null || true
+	elif [ ! -e "$steam_userdata_link" ]; then
+		ln -s "$steam_userdata_src" "$steam_userdata_link" 2>/dev/null || true
+	fi
+else
+	mkdir -p "$steam_userdata_link"
+fi
+
+if [ ! -x "$lutris_bin" ]; then
+	lutris_bin="/usr/bin/lutris-bin"
+fi
+
+if [ ! -x "$lutris_bin" ]; then
+	echo "Lutris runtime not found (expected /usr/libexec/lutris-bin)." >&2
+	exit 127
+fi
+
+exec "$lutris_bin" "$@"

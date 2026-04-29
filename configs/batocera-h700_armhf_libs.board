@@ -1,0 +1,40 @@
+# SPDX-FileCopyrightText: Added/modified by suckbluefrog
+# batocera-h700_armhf_libs.board
+# 32-bit armhf library build for Allwinner H700 boards
+# Produces libraries to be installed at /usr/lib32 on the 64-bit image
+
+include batocera-board.libs
+
+# Target definition - 32-bit ARM
+BR2_arm=y
+BR2_ARM_EABIHF=y
+BR2_cortex_a53=y
+BR2_ARM_FPU_NEON_FP_ARMV8=y
+BR2_PACKAGE_BATOCERA_TARGET_H700=y
+BR2_TARGET_OPTIMIZATION="-pipe -fsigned-char -mcpu=cortex-a53 -mtune=cortex-a53"
+BR2_TARGET_GENERIC_GETTY_BAUDRATE_115200=y
+BR2_GLOBAL_PATCH_DIR="$(BR2_EXTERNAL_BATOCERA_PATH)/board/batocera/patches $(BR2_EXTERNAL_BATOCERA_PATH)/board/batocera/allwinner/patches $(BR2_EXTERNAL_BATOCERA_PATH)/board/batocera/allwinner/h700/patches"
+
+# Linux headers must match the 64-bit build kernel (6.18)
+BR2_KERNEL_HEADERS_AS_KERNEL=y
+BR2_LINUX_KERNEL=y
+BR2_LINUX_KERNEL_CUSTOM_VERSION=y
+BR2_LINUX_KERNEL_CUSTOM_VERSION_VALUE="6.18.3"
+BR2_KERNEL_HEADERS_6_18=y
+BR2_LINUX_KERNEL_USE_CUSTOM_CONFIG=y
+BR2_LINUX_KERNEL_CUSTOM_CONFIG_FILE="$(BR2_EXTERNAL_BATOCERA_PATH)/board/batocera/allwinner/h700/linux-sun50i-h700.config"
+BR2_LINUX_KERNEL_NEEDS_HOST_OPENSSL=y
+
+# Enable C++ standard library (needed for many libs)
+BR2_INSTALL_LIBSTDCPP=y
+
+# GPU - Mesa with Panfrost for 32-bit
+# Note: Panfrost works in 32-bit mode on these SoCs
+BR2_PACKAGE_MESA3D=y
+BR2_PACKAGE_MESA3D_LLVM=y
+BR2_PACKAGE_MESA3D_GALLIUM_DRIVER_PANFROST=y
+BR2_PACKAGE_MESA3D_OPENGL_EGL=y
+BR2_PACKAGE_MESA3D_OPENGL_ES=y
+
+# Include the packages list (409 packages adapted from knulli)
+include batocera-h700_armhf_libs.packages

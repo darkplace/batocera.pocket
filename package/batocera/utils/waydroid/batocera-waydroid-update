@@ -1,0 +1,112 @@
+#!/bin/bash
+set -euo pipefail
+
+DESKTOP_DIR="/userdata/system/.local/share/applications"
+LEGACY_ROMS_DIR="/userdata/roms/waydroid"
+ROMS_DIR="/userdata/roms/android"
+IMAGES_DIR="${ROMS_DIR}/images"
+GAMELIST="${ROMS_DIR}/gamelist.xml"
+TMP_XML="/tmp/batocera-waydroid-update.tmp"
+ES_SERVER="http://127.0.0.1:1234"
+
+xml_escape() {
+    local value="$1"
+    value="${value//&/&amp;}"
+    value="${value//</&lt;}"
+    value="${value//>/&gt;}"
+    value="${value//\"/&quot;}"
+    value="${value//\'/&apos;}"
+    printf '%s' "$value"
+}
+
+sanitize_id() {
+    printf '%s' "$1" | sed -e 's#[^a-zA-Z0-9._-]#_#g'
+}
+
+es_add_game_begin() {
+    echo '<gameList>' > "$TMP_XML"
+}
+
+es_add_game() {
+    local game_basename="$1"
+    local game_name="$2"
+    local game_image="$3"
+
+    cat >> "$TMP_XML" <<EOG
+<game>
+  <path>./$(xml_escape "$game_basename")</path>
+  <name>$(xml_escape "$game_name")</name>
+  <image>$(xml_escape "$game_image")</image>
+</game>
+EOG
+}
+
+es_add_game_end() {
+    echo '</gameList>' >> "$TMP_XML"
+    curl -s -X POST \
+        -H 'Content-type: application/x-www-form-urlencoded' \
+        -H 'Accept: text/plain' \
+        "${ES_SERVER}/addgames/android" \
+        -d @"$TMP_XML" > /dev/null || true
+}
+
+if [ -d "$LEGACY_ROMS_DIR" ] && [ ! -e "$ROMS_DIR" ]; then
+    mv "$LEGACY_ROMS_DIR" "$ROMS_DIR"
+fi
+
+mkdir -p "$ROMS_DIR" "$IMAGES_DIR"
+find "$ROMS_DIR" -maxdepth 1 -type f -name 'waydroid-auto-*.waydroid' -delete
+find "$IMAGES_DIR" -maxdepth 1 -type f -name 'waydroid-auto-*.png' -delete
+rm -f "$GAMELIST"
+
+es_add_game_begin
+added=0
+
+if [ -d "$DESKTOP_DIR" ]; then
+    while IFS= read -r desktop_file; do
+        [ -f "$desktop_file" ] || continue
+
+        if grep -Eq '^NoDisplay=true$' "$desktop_file"; then
+            continue
+        fi
+
+        app_name="$(sed -n 's/^Name=//p' "$desktop_file" | head -n1)"
+        exec_line="$(sed -n 's/^Exec=//p' "$desktop_file" | head -n1)"
+        icon_path="$(sed -n 's/^Icon=//p' "$desktop_file" | head -n1)"
+        app_id="$(
+            printf '%s\n' "$exec_line" | sed -n \
+                -e 's#^waydroid app launch \([^ ]\+\).*#\1#p' \
+                -e 's#^/usr/bin/batocera-waydroid-app launch \([^ ]\+\).*#\1#p' \
+                | head -n1
+        )"
+
+        [ -n "$app_name" ] || continue
+        [ -n "$app_id" ] || continue
+
+        file_id="$(sanitize_id "$app_id")"
+        rom_file="waydroid-auto-${file_id}.waydroid"
+        image_rel=""
+
+        printf '%s\n' "$app_id" > "${ROMS_DIR}/${rom_file}"
+
+        if [ -n "$icon_path" ] && [ -f "$icon_path" ]; then
+            cp "$icon_path" "${IMAGES_DIR}/waydroid-auto-${file_id}.png"
+            image_rel="./images/waydroid-auto-${file_id}.png"
+        fi
+
+        es_add_game "$rom_file" "$app_name" "$image_rel"
+        added=$((added + 1))
+    done < <(find "$DESKTOP_DIR" -maxdepth 1 -type f -name 'waydroid.*.desktop' | sort)
+fi
+
+if [ "$added" -gt 0 ]; then
+    cp "$TMP_XML" "$GAMELIST"
+    es_add_game_end
+else
+    cat > "$GAMELIST" <<'EOF'
+<gameList>
+</gameList>
+EOF
+fi
+
+exit 0

@@ -1,0 +1,54 @@
+--- a/Data/CMake/toolchain_x86_32.cmake
++++ b/Data/CMake/toolchain_x86_32.cmake
+@@ -27,5 +27,18 @@
+-  set(CMAKE_EXE_LINKER_FLAGS_INIT "-fuse-ld=lld")
+-  set(CMAKE_MODULE_LINKER_FLAGS_INIT "-fuse-ld=lld")
+-  set(CMAKE_SHARED_LINKER_FLAGS_INIT "-fuse-ld=lld")
+-  set(CMAKE_C_COMPILER clang)
+-  set(CMAKE_CXX_COMPILER clang++)
++  if (NOT CMAKE_C_COMPILER OR CMAKE_C_COMPILER STREQUAL "clang")
++    fex_find_guest_clang(FEX_REAL_CLANG clang)
++    set(CMAKE_C_COMPILER "${FEX_REAL_CLANG}")
++  endif()
++  if (NOT CMAKE_CXX_COMPILER OR CMAKE_CXX_COMPILER STREQUAL "clang++")
++    fex_find_guest_clang(FEX_REAL_CLANGXX clang++)
++    set(CMAKE_CXX_COMPILER "${FEX_REAL_CLANGXX}")
++  endif()
++
++  if (CMAKE_C_COMPILER MATCHES "^(/bin|/usr/bin)/clang$")
++    set(FEX_LD_FLAGS "")
++  else()
++    set(FEX_LD_FLAGS "-fuse-ld=lld")
++  endif()
++
++  set(CMAKE_EXE_LINKER_FLAGS_INIT "${FEX_LD_FLAGS}")
++  set(CMAKE_MODULE_LINKER_FLAGS_INIT "${FEX_LD_FLAGS}")
++  set(CMAKE_SHARED_LINKER_FLAGS_INIT "${FEX_LD_FLAGS}")
+   set(CLANG_FLAGS "-target i686-linux-gnu -msse2 -mfpmath=sse")
+--- a/Data/CMake/toolchain_x86_64.cmake
++++ b/Data/CMake/toolchain_x86_64.cmake
+@@ -27,5 +27,18 @@
+-  set(CMAKE_EXE_LINKER_FLAGS_INIT "-fuse-ld=lld")
+-  set(CMAKE_MODULE_LINKER_FLAGS_INIT "-fuse-ld=lld")
+-  set(CMAKE_SHARED_LINKER_FLAGS_INIT "-fuse-ld=lld")
+-  set(CMAKE_C_COMPILER clang)
+-  set(CMAKE_CXX_COMPILER clang++)
++  if (NOT CMAKE_C_COMPILER OR CMAKE_C_COMPILER STREQUAL "clang")
++    fex_find_guest_clang(FEX_REAL_CLANG clang)
++    set(CMAKE_C_COMPILER "${FEX_REAL_CLANG}")
++  endif()
++  if (NOT CMAKE_CXX_COMPILER OR CMAKE_CXX_COMPILER STREQUAL "clang++")
++    fex_find_guest_clang(FEX_REAL_CLANGXX clang++)
++    set(CMAKE_CXX_COMPILER "${FEX_REAL_CLANGXX}")
++  endif()
++
++  if (CMAKE_C_COMPILER MATCHES "^(/bin|/usr/bin)/clang$")
++    set(FEX_LD_FLAGS "")
++  else()
++    set(FEX_LD_FLAGS "-fuse-ld=lld")
++  endif()
++
++  set(CMAKE_EXE_LINKER_FLAGS_INIT "${FEX_LD_FLAGS}")
++  set(CMAKE_MODULE_LINKER_FLAGS_INIT "${FEX_LD_FLAGS}")
++  set(CMAKE_SHARED_LINKER_FLAGS_INIT "${FEX_LD_FLAGS}")
+   set(CLANG_FLAGS "-target x86_64-linux-gnu")

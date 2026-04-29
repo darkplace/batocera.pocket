@@ -1,0 +1,151 @@
+From 89e09dc74c639d3817c5f2756dd2155cf6cc997f Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Tue, 22 Apr 2025 18:34:31 +0300
+Subject: [PATCH] rsinput: add ff bridge for qcom haptics
+
+---
+ drivers/input/joystick/rsinput.c     | 33 +++++++++++++++++++++
+ drivers/input/misc/qcom-hv-haptics.c | 43 ++++++++++++++++++++++++++++
+ 2 files changed, 76 insertions(+)
+
+diff --git a/drivers/input/joystick/rsinput.c b/drivers/input/joystick/rsinput.c
+index c9cbaf2cd..a55f916a2 100644
+--- a/drivers/input/joystick/rsinput.c
++++ b/drivers/input/joystick/rsinput.c
+@@ -19,6 +19,9 @@
+ #include <linux/slab.h>
+ #include <uapi/linux/sched/types.h>
+ 
++static bool rumble_enable = true;
++module_param(rumble_enable, bool, 0660);
++
+ static int update_params=0;
+ 
+ static int trigger_left_max=0x610;
+@@ -402,6 +405,25 @@ static const struct serdev_device_ops rsinput_rx_ops = {
+     .receive_buf = rsinput_rx,
+ };
+ 
++extern int qcom_spmi_haptics_global_upload(struct ff_effect *effect);
++extern int qcom_spmi_haptics_global_playback(int effect_id, int val);
++
++static int rsinput_rumble_upload(struct input_dev *dev, struct ff_effect *effect, struct ff_effect *old)
++{
++    if (!rumble_enable)
++        return 0;
++
++    return qcom_spmi_haptics_global_upload(effect);
++}
++
++static int rsinput_rumble_play(struct input_dev *dev, int effect_id, int val)
++{
++    if (!rumble_enable)
++        return 0;
++
++    return qcom_spmi_haptics_global_playback(effect_id, val);
++}
++
+ static int rsinput_probe(struct serdev_device *serdev) {
+     struct rsinput_driver *drv;
+     u32 gamepad_bus = 0;
+@@ -528,6 +550,17 @@ static int rsinput_probe(struct serdev_device *serdev) {
+     input_set_abs_params(drv->input, ABS_Z, 0, trigger_left_max - trigger_left_antideadzone, 0, 30);
+     input_set_abs_params(drv->input, ABS_RZ, 0, trigger_right_max - trigger_right_antideadzone, 0, 30);
+ 
++    input_set_capability(drv->input, EV_FF, FF_PERIODIC);
++
++    error = input_ff_create(drv->input, 1);
++    if (error) {
++        pr_err("Unable to create force feedback dev!\n");
++        return error;
++    }
++
++    drv->input->ff->upload = rsinput_rumble_upload;
++    drv->input->ff->playback = rsinput_rumble_play;
++
+     error = input_register_device(drv->input);
+     if (error)
+         return error;
+diff --git a/drivers/input/misc/qcom-hv-haptics.c b/drivers/input/misc/qcom-hv-haptics.c
+index ab8585f6c..6e333837a 100644
+--- a/drivers/input/misc/qcom-hv-haptics.c
++++ b/drivers/input/misc/qcom-hv-haptics.c
+@@ -31,6 +31,7 @@
+ #include <linux/uaccess.h>
+ #include <linux/workqueue.h>
+ #include <linux/vmalloc.h>
++#include <linux/export.h>
+ #include <linux/qpnp/qpnp-pbs.h>
+ 
+ #include <linux/soc/qcom/battery_charger.h>
+@@ -668,6 +669,8 @@ struct haptics_reg_info {
+ 	u8 val;
+ };
+ 
++static struct haptics_chip *global_haptics;
++
+ static inline int get_max_fifo_samples(struct haptics_chip *chip)
+ {
+ 	int val = 0;
+@@ -6075,6 +6078,9 @@ static int haptics_probe(struct platform_device *pdev)
+ 	if (rc < 0)
+ 		dev_err(chip->dev, "Creating debugfs failed, rc=%d\n", rc);
+ #endif
++
++	global_haptics = chip;
++
+ 	return 0;
+ destroy_ff:
+ 	input_ff_destroy(chip->input_dev);
+@@ -6088,6 +6094,9 @@ static void haptics_remove(struct platform_device *pdev)
+ 	if (chip->pbs_node)
+ 		of_node_put(chip->pbs_node);
+ 
++	if (global_haptics == chip)
++		global_haptics = NULL;
++
+ 	unregister_hboost_event_notifier(&chip->hboost_nb);
+ 	class_unregister(&chip->hap_class);
+ #ifdef CONFIG_DEBUG_FS
+@@ -6285,5 +6294,39 @@ static struct platform_driver haptics_driver = {
+ };
+ module_platform_driver(haptics_driver);
+ 
++int qcom_spmi_haptics_global_upload(struct ff_effect *effect)
++{
++	int ret;
++
++	if (!global_haptics)
++		return -ENODEV;
++
++	spin_lock_irq(&global_haptics->input_dev->event_lock);
++	ret = global_haptics->input_dev->ff->upload(global_haptics->input_dev, effect, NULL);
++	spin_unlock_irq(&global_haptics->input_dev->event_lock);
++
++	return ret;
++}
++
++int qcom_spmi_haptics_global_playback(int effect_id, int val)
++{
++	int ret;
++
++	if (!global_haptics)
++		return -ENODEV;
++
++	spin_lock_irq(&global_haptics->input_dev->event_lock);
++	if (val != 0)
++		ret = global_haptics->input_dev->ff->playback(global_haptics->input_dev, effect_id, val);
++	else
++		ret = global_haptics->input_dev->ff->erase(global_haptics->input_dev, effect_id);
++	spin_unlock_irq(&global_haptics->input_dev->event_lock);
++
++	return ret;
++}
++
++EXPORT_SYMBOL_GPL(qcom_spmi_haptics_global_upload);
++EXPORT_SYMBOL_GPL(qcom_spmi_haptics_global_playback);
++
+ MODULE_DESCRIPTION("Qualcomm Technologies, Inc. High-Voltage Haptics driver");
+ MODULE_LICENSE("GPL v2");
+-- 
+2.43.0

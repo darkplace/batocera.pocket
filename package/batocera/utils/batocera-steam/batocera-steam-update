@@ -1,0 +1,422 @@
+#!/bin/bash
+# SPDX-FileCopyrightText: Added/modified by suckbluefrog
+set -euo pipefail
+
+log="/userdata/system/logs/steam.log"
+tmp_xml="/tmp/batocera-steam-update.tmp"
+tmp_merged_xml="/tmp/batocera-steam-update.merged.tmp"
+es_server="http://127.0.0.1:1234"
+
+roms_dir="/userdata/roms/steam"
+images_dir="${roms_dir}/images"
+gamelist_xml="${roms_dir}/gamelist.xml"
+steam_home="${BATOCERA_STEAM_ROOT:-/userdata/system/steam}"
+case "$(uname -m)" in
+    aarch64|arm64)
+        steam_home="${BATOCERA_STEAM_ROOT:-/userdata/system/.local/share/Steam}"
+        ;;
+esac
+steamapps_dir="${steam_home}/steamapps"
+generic_image_rel=""
+
+mkdir -p "$(dirname "$log")" "${roms_dir}" "${images_dir}"
+
+xml_escape() {
+    local value="$1"
+    value="${value//&/&amp;}"
+    value="${value//</&lt;}"
+    value="${value//>/&gt;}"
+    value="${value//\"/&quot;}"
+    value="${value//\'/&apos;}"
+    printf '%s' "${value}"
+}
+
+es_add_game_begin() {
+    echo "<gameList>" > "${tmp_xml}"
+}
+
+merge_existing_gamelist_metadata() {
+    python3 - "${tmp_xml}" "${gamelist_xml}" "${tmp_merged_xml}" "${roms_dir}" <<'PY'
+from __future__ import annotations
+
+import copy
+import sys
+import xml.etree.ElementTree as ET
+from pathlib import Path
+
+new_path = Path(sys.argv[1])
+existing_path = Path(sys.argv[2])
+merged_path = Path(sys.argv[3])
+roms_dir = Path(sys.argv[4])
+
+
+def parse(path: Path) -> ET.Element:
+    return ET.parse(path).getroot()
+
+
+def child_text(node: ET.Element, tag: str) -> str:
+    child = node.find(tag)
+    return "" if child is None or child.text is None else child.text.strip()
+
+
+def first_child(node: ET.Element, tag: str) -> ET.Element | None:
+    return node.find(tag)
+
+
+def ensure_child(node: ET.Element, tag: str) -> ET.Element:
+    child = first_child(node, tag)
+    if child is None:
+        child = ET.SubElement(node, tag)
+    return child
+
+
+def remove_child(node: ET.Element, tag: str) -> None:
+    child = first_child(node, tag)
+    if child is not None:
+        node.remove(child)
+
+
+def normalized_paths(path: str) -> set[str]:
+    path = path.strip()
+    if not path:
+        return set()
+
+    values = {path}
+    name = Path(path).name
+    if name:
+        values.add(name)
+        values.add(f"./{name}")
+        values.add(str(roms_dir / name))
+    return values
+
+
+def is_generic_steam_image(path: str) -> bool:
+    return Path(path.strip()).name.lower() == "steam.png"
+
+
+generated_root = parse(new_path)
+try:
+    existing_root = parse(existing_path)
+except Exception:
+    existing_root = ET.Element("gameList")
+
+existing_by_path: dict[str, ET.Element] = {}
+for game in existing_root.findall("game"):
+    path = child_text(game, "path")
+    for key in normalized_paths(path):
+        existing_by_path[key] = game
+
+merged_root = ET.Element("gameList")
+generated_keys: set[str] = set()
+
+for generated_game in generated_root.findall("game"):
+    path = child_text(generated_game, "path")
+    path_keys = normalized_paths(path)
+    generated_keys.update(path_keys)
+    existing_game = next((existing_by_path[key] for key in path_keys if key in existing_by_path), None)
+
+    if existing_game is None:
+        merged_root.append(copy.deepcopy(generated_game))
+        continue
+
+    merged_game = copy.deepcopy(existing_game)
+
+    # Keep generated launch paths authoritative, but preserve scraper metadata,
+    # artwork, play stats, ids, and unknown ES fields for matching games.
+    ensure_child(merged_game, "path").text = path
+    for generated_child in generated_game:
+        tag = generated_child.tag
+        if tag == "path":
+            continue
+        merged_child = first_child(merged_game, tag)
+        if merged_child is None:
+            merged_game.append(copy.deepcopy(generated_child))
+            continue
+        if (merged_child.text is None or not merged_child.text.strip()) and generated_child.text:
+            merged_child.text = generated_child.text
+
+    basename = Path(path).name
+    if basename.startswith("steam-app-") and basename.endswith(".steam"):
+        generated_image = child_text(generated_game, "image")
+        merged_image = child_text(merged_game, "image")
+        if not generated_image and is_generic_steam_image(merged_image):
+            remove_child(merged_game, "image")
+
+    merged_root.append(merged_game)
+
+for existing_game in existing_root.findall("game"):
+    path = child_text(existing_game, "path")
+    if not path:
+        continue
+    path_keys = normalized_paths(path)
+    if generated_keys.intersection(path_keys):
+        continue
+
+    # Keep user metadata for Steam entries even when Steam libraries are not
+    # mounted or manifest discovery fails during a system update.
+    basename = Path(path).name
+    if basename.endswith(".steam") and (basename.startswith("steam-app-") or basename.startswith("Steam ")):
+        merged_root.append(copy.deepcopy(existing_game))
+
+ET.indent(merged_root, space="\t")
+tree = ET.ElementTree(merged_root)
+tree.write(merged_path, encoding="utf-8", xml_declaration=True)
+PY
+}
+
+es_add_game_end() {
+    echo "</gameList>" >> "${tmp_xml}"
+
+    if ! merge_existing_gamelist_metadata; then
+        cp -f "${tmp_xml}" "${tmp_merged_xml}"
+    fi
+
+    curl -s -X POST \
+        -H "Content-type: application/x-www-form-urlencoded" \
+        -H "Accept: text/plain" \
+        "${es_server}/addgames/steam" \
+        -d @"${tmp_merged_xml}" > /dev/null || true
+
+    # Persist Steam metadata for ES and for startup consistency.
+    # Write after ES API update to avoid stale entries being merged back in.
+    cp -f "${tmp_merged_xml}" "${gamelist_xml}" 2>/dev/null || true
+    rm -f "${tmp_xml}" "${tmp_merged_xml}"
+}
+
+es_add_game() {
+    local game_path="$1"
+    local game_name="$2"
+    local game_image="$3"
+
+    cat >> "${tmp_xml}" <<EOF
+<game>
+  <path>$(xml_escape "${game_path}")</path>
+  <name>$(xml_escape "${game_name}")</name>
+  <desc></desc>
+  <rating></rating>
+  <releasedate></releasedate>
+  <developer></developer>
+  <publisher></publisher>
+  <genre></genre>
+  <players></players>
+  <image>$(xml_escape "${game_image}")</image>
+  <manual></manual>
+  <video></video>
+</game>
+EOF
+}
+
+read_acf_value() {
+    local file="$1"
+    local key="$2"
+
+    sed -n -E "s/^[[:space:]]*\"${key}\"[[:space:]]*\"(.*)\"[[:space:]]*$/\1/p" "${file}" | head -n 1
+}
+
+discover_libraries() {
+    local -a libraries=()
+    local -a libraryfolders_files=()
+    local -a steam_roots=()
+    local path=""
+    local line
+
+    steam_roots+=("${steam_home}")
+    steam_roots+=("/userdata/system/steam")
+    steam_roots+=("/userdata/system/.steam/steam")
+    steam_roots+=("/userdata/system/.local/share/Steam")
+
+    for root in "${steam_roots[@]}"; do
+        if [[ -d "${root}/steamapps" ]]; then
+            libraries+=("${root}/steamapps")
+        fi
+
+        if [[ -f "${root}/steamapps/libraryfolders.vdf" ]]; then
+            libraryfolders_files+=("${root}/steamapps/libraryfolders.vdf")
+        fi
+    done
+
+    for libraryfolders_file in "${libraryfolders_files[@]}"; do
+        while IFS= read -r line; do
+            if [[ "${line}" =~ ^[[:space:]]*\"path\"[[:space:]]*\"(.*)\"[[:space:]]*$ ]]; then
+                path="${BASH_REMATCH[1]}"
+            elif [[ "${line}" =~ ^[[:space:]]*\"[0-9]+\"[[:space:]]*\"(.*)\"[[:space:]]*$ ]]; then
+                # Legacy format: "1" "/path/to/library"
+                path="${BASH_REMATCH[1]}"
+            else
+                continue
+            fi
+
+            path="${path//\\\\/\\}"
+            path="${path%/}"
+
+            if [[ -d "${path}/steamapps" ]]; then
+                libraries+=("${path}/steamapps")
+            elif [[ -d "${path}" ]]; then
+                libraries+=("${path}")
+            fi
+        done < "${libraryfolders_file}"
+    done
+
+    printf '%s\n' "${libraries[@]}"
+}
+
+ensure_generic_image() {
+    local dst="${images_dir}/Steam.png"
+    local source=""
+
+    if [[ -f "${dst}" ]]; then
+        generic_image_rel="./images/Steam.png"
+        return
+    fi
+
+    for source in \
+        "/usr/share/batocera/datainit/roms/steam/images/Steam.png" \
+        "/usr/share/emulationstation/themes/es-theme-carbon/art/consoles/steam.png" \
+        "/usr/share/icons/hicolor/512x512/apps/steam.png" \
+        "/usr/share/icons/hicolor/256x256/apps/steam.png" \
+        "/usr/share/icons/hicolor/128x128/apps/steam.png"
+    do
+        if [[ -f "${source}" ]]; then
+            cp "${source}" "${dst}"
+            generic_image_rel="./images/Steam.png"
+            return
+        fi
+    done
+
+    generic_image_rel=""
+}
+
+find_grid_image() {
+    local appid="$1"
+    local found=""
+
+    while IFS= read -r -d '' found; do
+        printf '%s\n' "${found}"
+        return 0
+    done < <(find "${steam_home}/userdata" -type f \( \
+        -name "${appid}p.png" -o \
+        -name "${appid}.png" -o \
+        -name "${appid}_library_600x900.jpg" -o \
+        -name "${appid}_library_hero.jpg" -o \
+        -name "${appid}_hero.jpg" -o \
+        -name "${appid}_header.jpg" \
+    \) -print0 2>/dev/null)
+
+    return 1
+}
+
+copy_game_image() {
+    local appid="$1"
+    local grid_image=""
+    local ext=""
+    local dst=""
+    local existing=""
+
+    for existing in \
+        "${images_dir}/steam-app-${appid}.png" \
+        "${images_dir}/steam-app-${appid}.jpg" \
+        "${images_dir}/steam-app-${appid}.jpeg" \
+        "${images_dir}/steam-app-${appid}.webp"
+    do
+        if [[ -f "${existing}" ]]; then
+            printf './images/%s\n' "$(basename "${existing}")"
+            return
+        fi
+    done
+
+    if grid_image="$(find_grid_image "${appid}" 2>/dev/null || true)"; [[ -n "${grid_image}" ]]; then
+        ext="${grid_image##*.}"
+        ext="${ext,,}"
+        if [[ "${ext}" != "png" && "${ext}" != "jpg" && "${ext}" != "jpeg" ]]; then
+            ext="png"
+        fi
+        dst="${images_dir}/steam-app-${appid}.${ext}"
+        if [[ ! -f "${dst}" ]]; then
+            cp "${grid_image}" "${dst}" 2>/dev/null || true
+        fi
+        if [[ -f "${dst}" ]]; then
+            printf './images/%s\n' "$(basename "${dst}")"
+            return
+        fi
+    fi
+
+    printf '\n'
+}
+
+write_base_launchers() {
+    local default_mode="steamos"
+    local default_gamescope="1"
+
+    case "$(uname -m)" in
+        aarch64|arm64)
+            default_mode="gamepadui"
+            default_gamescope="0"
+            ;;
+    esac
+
+    # Remove legacy ambiguous launcher.
+    rm -f "${roms_dir}/Steam.steam"
+    rm -f "${roms_dir}/Steam.steam.disabled"
+    rm -f "${roms_dir}/Steam (GamepadUI).steam"
+    rm -f "${roms_dir}/Steam (Desktop).steam"
+    rm -f "${roms_dir}/ProtonUp-Qt.steam"
+    rm -f "${roms_dir}/Steam ROM Manager.steam"
+
+    cat > "${roms_dir}/Steam GamepadUI.steam" <<EOF
+mode=${default_mode}
+gamepadui=1
+gamescope=${default_gamescope}
+EOF
+
+    cat > "${roms_dir}/Steam Desktop.steam" <<'EOF'
+mode=desktop
+gamepadui=0
+gamescope=0
+EOF
+}
+
+echo "Updating Steam launchers from app manifests." >> "${log}"
+
+write_base_launchers
+
+ensure_generic_image
+
+es_add_game_begin
+es_add_game "./Steam GamepadUI.steam" "Steam (GamepadUI)" "${generic_image_rel}"
+es_add_game "./Steam Desktop.steam" "Steam (Desktop)" "${generic_image_rel}"
+
+declare -A seen_libraries=()
+declare -A seen_appids=()
+declare -i game_count=0
+
+while IFS= read -r library; do
+    if [[ -z "${library}" || -n "${seen_libraries["${library}"]+x}" ]]; then
+        continue
+    fi
+    seen_libraries["${library}"]=1
+
+    while IFS= read -r -d '' manifest; do
+        appid="$(read_acf_value "${manifest}" "appid" || true)"
+        if [[ ! "${appid}" =~ ^[0-9]+$ ]] || [[ -n "${seen_appids["${appid}"]+x}" ]]; then
+            continue
+        fi
+
+        seen_appids["${appid}"]=1
+        name="$(read_acf_value "${manifest}" "name" || true)"
+        if [[ -z "${name}" ]]; then
+            name="Steam App ${appid}"
+        fi
+
+        launcher_name="steam-app-${appid}.steam"
+        cat > "${roms_dir}/${launcher_name}" <<EOF
+appid=${appid}
+EOF
+
+        image_rel="$(copy_game_image "${appid}")"
+        es_add_game "./${launcher_name}" "${name}" "${image_rel}"
+        game_count+=1
+    done < <(find "${library}" -maxdepth 1 -type f -name 'appmanifest_*.acf' -print0 2>/dev/null)
+done < <(discover_libraries)
+
+echo "Steam launcher update complete: ${game_count} installed game(s) indexed." >> "${log}"
+es_add_game_end

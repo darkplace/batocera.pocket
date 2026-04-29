@@ -1,0 +1,16 @@
+diff --git a/src/frontend/qt_sdl/Window.cpp b/src/frontend/qt_sdl/Window.cpp
+index b61809be..6924e58f 100755
+--- a/src/frontend/qt_sdl/Window.cpp
++++ b/src/frontend/qt_sdl/Window.cpp
+@@ -715,6 +715,11 @@ MainWindow::MainWindow(int id, EmuInstance* inst, QWidget* parent) :
+         // if the window was closed in fullscreen do not restore this
+         setWindowState(windowState() & ~Qt::WindowFullScreen);
+     }
++    // Batocera - Resize the window to match the primary screen size
++    QScreen *screen = QGuiApplication::primaryScreen();
++    QRect screenGeometry = screen->geometry();
++    resize(screenGeometry.width(), screenGeometry.height());
++
+     show();
+ 
+     panel = nullptr;

@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Icon=/usr/share/icons/batocera/firefox.png
+Exec=batocera-app-firefox
+Terminal=false
+Type=Application
+Categories=Network;WebBrowser;batocera.linux;
+Name=Firefox
+GenericName=Web Browser
+Comment=Launch Firefox

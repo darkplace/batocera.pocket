@@ -1,0 +1,19 @@
+--- a/src/devices/cpu/drcbec.cpp
++++ b/src/devices/cpu/drcbec.cpp
+@@ -17,11 +17,13 @@
+ #include <cfenv>
+ #include <cmath>
+ 
+-#if defined(__clang_major__) && (__clang_major__ < 12)
+-// can't guarantee floating point environment control works
+-#else
++#if defined(__clang__)
++#if (__clang_major__ >= 12)
+ #pragma STDC FENV_ACCESS ON
+ #endif
++#elif !defined(__GNUC__)
++#pragma STDC FENV_ACCESS ON
++#endif
+ 
+ 
+ namespace drc {

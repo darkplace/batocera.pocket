@@ -1,0 +1,8 @@
+# Generated with utils/update-rust
+# Do not edit manually
+
+# From https://static.rust-lang.org/dist/rustc-1.92.0-src.tar.xz.sha256
+sha256  ebee170bfe4c4dfc59521a101de651e5534f4dae889756a5c97ca9ea40d0c307  rustc-1.92.0-src.tar.xz
+# Locally generated
+sha256  62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a  LICENSE-APACHE
+sha256  23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3  LICENSE-MIT

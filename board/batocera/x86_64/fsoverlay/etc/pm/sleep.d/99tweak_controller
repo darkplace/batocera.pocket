@@ -1,0 +1,27 @@
+#!/bin/bash
+
+##############################################
+# Controller resume quirks for X86 handhelds #
+##############################################
+
+case "$1" in
+    resume|thaw)
+        model_output=$(batocera-model)
+        # Steam Decks
+        if [[ $model_output == "Jupiter" || $model_output == "Galileo" ]]; then
+            # Check if the steam controller module is loaded
+            if ! lsmod | grep -q hid_steam; then
+                # Load the steam hid module
+                modprobe hid_steam
+            fi
+            # Set lizard_mode to 0 (false)
+            echo 0 > /sys/module/hid_steam/parameters/lizard_mode
+        # Ayaneo handhelds
+        elif [[ $model_output == "AIR_Plus" || $model_output == "AYANEO_2S" ]]; then
+            rmmod xpad_noone
+            modprobe xpad_noone
+        fi
+        ;;
+esac
+
+exit 0

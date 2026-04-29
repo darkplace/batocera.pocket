@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Icon=/usr/share/icons/batocera/heroic.png
+Exec=heroic
+Terminal=false
+Type=Application
+Categories=Game;batocera.linux;
+Name=Heroic
+GenericName=Heroic Game Launcher
+Comment=Launch Heroic Game Launcher

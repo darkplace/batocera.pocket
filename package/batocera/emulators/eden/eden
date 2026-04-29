@@ -1,0 +1,28 @@
+#!/bin/sh
+set -eu
+
+src="${BATOCERA_EDEN_SYSTEM_APPIMAGE:-/usr/share/eden/eden.AppImage}"
+home="${BATOCERA_EDEN_HOME:-/userdata/system}"
+local_app="${BATOCERA_EDEN_LOCAL_APPIMAGE:-$home/eden.AppImage}"
+app="$src"
+
+export HOME="$home"
+export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-/userdata/system/configs}"
+export XDG_DATA_HOME="${XDG_DATA_HOME:-/userdata/saves/switch}"
+export XDG_CACHE_HOME="${XDG_CACHE_HOME:-/userdata/system/cache}"
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+export QT_QPA_PLATFORM="${QT_QPA_PLATFORM:-xcb}"
+
+mkdir -p "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_CACHE_HOME" "$XDG_RUNTIME_DIR" 2>/dev/null || true
+
+if [ ! -x "$app" ] && [ -f "$src" ]; then
+	cp -f "$src" "$local_app"
+	chmod 0755 "$local_app" 2>/dev/null || true
+	app="$local_app"
+fi
+
+export APPIMAGE_ALLOW_ROOT="${APPIMAGE_ALLOW_ROOT:-1}"
+export APPIMAGE_EXTRACT_AND_RUN="${APPIMAGE_EXTRACT_AND_RUN:-1}"
+export SDL_JOYSTICK_HIDAPI="${SDL_JOYSTICK_HIDAPI:-0}"
+
+exec "$app" "$@"

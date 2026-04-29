@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Icon=/usr/share/icons/batocera/steam-rom-manager.png
+Exec=batocera-app-steamrommanager
+Terminal=false
+Type=Application
+Categories=Game;batocera.linux;
+Name=Steam ROM Manager
+GenericName=Steam ROM Manager
+Comment=Generate Steam shortcuts for non-Steam games

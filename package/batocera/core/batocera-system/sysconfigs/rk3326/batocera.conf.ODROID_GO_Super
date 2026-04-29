@@ -1,0 +1,12 @@
+# odroid-go super default values
+
+# default resolution
+es.resolution=854x480
+
+# default rotation
+display.rotate.DSI=3
+# wayland labwc rotation
+display.rotate.DSI-1=1
+
+# suspend mode
+system.suspendmode=suspend

@@ -1,0 +1,7 @@
+{
+  "Comment": "Disable FEX GL and ALSA thunks for Steam webhelper on ARM64 Steam.",
+  "ThunksDB": {
+    "asound": 0,
+    "GL": 0
+  }
+}

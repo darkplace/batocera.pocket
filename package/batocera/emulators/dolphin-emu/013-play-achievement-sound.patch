@@ -1,0 +1,109 @@
+From 4cb6fd08ce8ac0cb6a2ae2bf6b1fce2b1ff22b47 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Thu, 26 Mar 2026 17:10:00 +0200
+Subject: [PATCH] Add Batocera achievement sound controls for Dolphin
+
+Use the shared Batocera RetroAchievements sound asset when Dolphin
+receives an achievement unlock event, allow Batocera to disable that
+sound through an environment variable, and suppress the outdated
+RetroAchievements build nag while preserving normal achievement popups.
+---
+ Source/Core/Core/AchievementManager.cpp | 53 ++++++++++++++++++++++++++++++++++++++-----------
+ 1 file changed, 42 insertions(+), 11 deletions(-)
+
+--- a/Source/Core/Core/AchievementManager.cpp
++++ b/Source/Core/Core/AchievementManager.cpp
+@@ -5,7 +5,11 @@
+ 
+ #include "Core/AchievementManager.h"
+ 
++#include <cstdlib>
+ #include <memory>
++#include <optional>
++#include <string>
++#include <thread>
+ 
+ #include <fmt/format.h>
+ 
+@@ -54,6 +58,60 @@
+     {"User-Agent", Common::GetUserAgentStr()}};
+ #endif  // ANDROID
+ 
++namespace
++{
++constexpr std::string_view BATOCERA_ACHIEVEMENT_SOUND_ENV = "BATOCERA_DOLPHIN_ACHIEVEMENT_SOUND";
++constexpr std::string_view BATOCERA_ACHIEVEMENT_SOUND_ROOT = "/usr/share/libretro/assets/sounds";
++constexpr std::string_view BATOCERA_DEFAULT_ACHIEVEMENT_SOUND = "mario-1up";
++
++std::optional<std::string> GetBatoceraAchievementSoundPath()
++{
++  const char* configured = std::getenv(BATOCERA_ACHIEVEMENT_SOUND_ENV.data());
++  const std::string value = configured ? configured : std::string{BATOCERA_DEFAULT_ACHIEVEMENT_SOUND};
++  if (value.empty() || value == "0" || value == "false" || value == "False" || value == "none" ||
++      value == "None")
++  {
++    return std::nullopt;
++  }
++
++  if (value.find('/') != std::string::npos)
++  {
++    if (File::Exists(value))
++      return value;
++
++    return std::nullopt;
++  }
++
++  const std::string ogg_path = fmt::format("{}/{}.ogg", BATOCERA_ACHIEVEMENT_SOUND_ROOT, value);
++  if (File::Exists(ogg_path))
++    return ogg_path;
++
++  const std::string wav_path = fmt::format("{}/{}.wav", BATOCERA_ACHIEVEMENT_SOUND_ROOT, value);
++  if (File::Exists(wav_path))
++    return wav_path;
++
++  return std::nullopt;
++}
++
++void PlayBatoceraAchievementSound()
++{
++  const auto sound_path = GetBatoceraAchievementSoundPath();
++  if (!sound_path)
++    return;
++
++  std::thread([sound_path = *sound_path] {
++    const std::string pw_play_command =
++        fmt::format("/usr/bin/pw-play {} >/dev/null 2>&1", sound_path);
++    const std::string paplay_command =
++        fmt::format("/usr/bin/paplay {} >/dev/null 2>&1", sound_path);
++
++    if (std::system(pw_play_command.c_str()) != 0)
++      std::system(paplay_command.c_str());
++  }).detach();
++}
++
++}  // namespace
++
+ AchievementManager& AchievementManager::GetInstance()
+ {
+   static AchievementManager s_instance;
+@@ -1010,10 +1054,6 @@
+   if (result == RC_API_FAILURE)
+   {
+     WARN_LOG_FMT(ACHIEVEMENTS, "Load data request rejected for old Dolphin version.");
+-    OSD::AddMessage("RetroAchievements no longer supports this version of Dolphin.",
+-                    OSD::Duration::VERY_LONG, OSD::Color::RED);
+-    OSD::AddMessage("Please update Dolphin to a newer version.", OSD::Duration::VERY_LONG,
+-                    OSD::Color::RED);
+     return;
+   }
+   if (result == RC_LOGIN_REQUIRED || result == RC_INVALID_CREDENTIALS || result == RC_EXPIRED_TOKEN)
+@@ -1144,6 +1184,7 @@
+                   (rc_client_get_hardcore_enabled(instance.m_client)) ? OSD::Color::YELLOW :
+                                                                         OSD::Color::CYAN,
+                   &instance.GetAchievementBadge(client_event->achievement->id, false));
++  PlayBatoceraAchievementSound();
+   instance.update_event.Trigger(UpdatedItems{.achievements = {client_event->achievement->id}});
+ #ifdef RC_CLIENT_SUPPORTS_RAINTEGRATION
+   switch (rc_client_raintegration_get_achievement_state(instance.m_client,
+-- 
+2.43.0

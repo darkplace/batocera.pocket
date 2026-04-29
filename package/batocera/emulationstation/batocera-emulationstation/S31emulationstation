@@ -1,0 +1,88 @@
+#!/bin/sh
+BOOTCONF="/boot/batocera-boot.conf"
+
+. /etc/profile.d/xdg.sh
+. /etc/profile.d/dbus.sh
+
+# Define the path for our communication pipe
+FIFO_PATH="/tmp/es-resume.fifo"
+SUSPEND_FLAG="/tmp/suspend.please"
+
+case "$1" in
+	start)
+		# Clean up any old pipe and create a new one for communication
+		rm -f "${FIFO_PATH}"
+		rm -f "${SUSPEND_FLAG}"
+		mkfifo -m 666 "${FIFO_PATH}"
+        # Disable XWayland authentication (allows FEX/Steam to access display)
+		export WLR_XWAYLAND_NO_AUTH=1 
+
+		enabled="$(/usr/bin/batocera-settings-get system.es.atstartup)"
+		if [ "$enabled" != "0" ]; then
+			%BATOCERA_EMULATIONSTATION_CMD% %BATOCERA_EMULATIONSTATION_POSTFIX%
+		fi
+		;;
+
+	stop)
+		for COMPOSITOR in openbox sway labwc; do
+			pidof $COMPOSITOR >/dev/null && break || COMPOSITOR=
+		done
+
+		emulationstation-standalone --stop-rebooting 2>/dev/null
+
+		if [ -n "$COMPOSITOR" ]; then
+			case "$COMPOSITOR" in
+				openbox) openbox --exit 2>/dev/null ;;
+				sway)    swaymsg exit 2>/dev/null ;;
+				labwc)   labwc --exit 2>/dev/null ;;
+			esac
+		fi
+
+		# Send the standard terminate signal (SIGTERM) to other processes.
+		killall touchegg         2>/dev/null
+		killall emulationstation 2>/dev/null
+
+		# Forcefully kill the compositor if they're still running.
+		if [ -n "$COMPOSITOR" ] && pidof "$COMPOSITOR" >/dev/null; then
+			killall -9 "$COMPOSITOR" 2>/dev/null
+		fi
+
+		# Kill ES after 20 seconds if still active also
+		if pidof emulationstation >/dev/null; then
+		    timeout -k 5 20 tail -q --pid=$(pidof emulationstation) -f /dev/null 2>/dev/null
+		fi
+		
+		# Clean up the communication pipe on a full system stop
+		rm -f "${FIFO_PATH}"
+		rm -f "${SUSPEND_FLAG}"
+		;;
+
+	suspend)
+		echo "Suspending EmulationStation process only..."
+		# Create the suspend flag file before telling ES to quit.
+		touch "${SUSPEND_FLAG}"
+		# Now, tell the running ES process to quit gracefully.
+		curl -s --connect-timeout 2 "http://localhost:1234/quit" > /dev/null
+		;;
+
+	resume)
+		echo "Resuming EmulationStation process..."
+		# Write to the pipe to unblock the waiting 'read' command in the launcher script.
+		if [ -p "${FIFO_PATH}" ]; then
+			echo "resume" > "${FIFO_PATH}"
+		else
+			echo "Error: FIFO pipe not found. Cannot resume. Is the ES service running?" >&2
+		fi
+		;;
+
+	restart|reload)
+		"$0" stop
+		"$0" start
+		;;
+
+	*)
+		echo "Usage: $0 {start|stop|restart|suspend|resume}"
+		exit 1
+esac
+
+exit $?

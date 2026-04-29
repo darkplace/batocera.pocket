@@ -1,0 +1,8 @@
+config BR2_PACKAGE_CITRON
+	bool "Citron (Nintendo Switch)"
+	depends on BR2_aarch64
+	help
+	  Citron Nintendo Switch emulator (AppImage).
+
+	  This package installs the Citron AppImage into /usr/share/citron
+	  with a wrapper script in /usr/bin/citron.

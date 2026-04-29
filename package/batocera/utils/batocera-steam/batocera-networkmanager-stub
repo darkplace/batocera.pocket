@@ -1,0 +1,1000 @@
+#!/usr/bin/python3
+# SPDX-FileCopyrightText: Added/modified by suckbluefrog
+import hashlib
+import os
+import sys
+import time
+
+import dbus
+import dbus.mainloop.glib
+import dbus.service
+from gi.repository import GLib
+
+
+LOG = "/userdata/system/logs/networkmanager-stub.log"
+BUS_NAME = "org.freedesktop.NetworkManager"
+
+ROOT_PATH = "/org/freedesktop"
+MANAGER_PATH = "/org/freedesktop/NetworkManager"
+DEVICE_PATH = "/org/freedesktop/NetworkManager/Devices/1"
+ACTIVE_PATH = "/org/freedesktop/NetworkManager/ActiveConnection/1"
+IP4CONFIG_PATH = "/org/freedesktop/NetworkManager/IP4Config/1"
+SETTINGS_PATH = "/org/freedesktop/NetworkManager/Settings"
+AP_PATH_PREFIX = "/org/freedesktop/NetworkManager/AccessPoint/"
+
+NM_STATE_UNKNOWN = 0
+NM_STATE_ASLEEP = 10
+NM_STATE_DISCONNECTED = 20
+NM_STATE_DISCONNECTING = 30
+NM_STATE_CONNECTING = 40
+NM_STATE_CONNECTED_LOCAL = 50
+NM_STATE_CONNECTED_SITE = 60
+NM_STATE_CONNECTED_GLOBAL = 70
+
+NM_CONNECTIVITY_UNKNOWN = 0
+NM_CONNECTIVITY_NONE = 1
+NM_CONNECTIVITY_PORTAL = 2
+NM_CONNECTIVITY_LIMITED = 3
+NM_CONNECTIVITY_FULL = 4
+
+NM_DEVICE_TYPE_UNKNOWN = 0
+NM_DEVICE_TYPE_ETHERNET = 1
+NM_DEVICE_TYPE_WIFI = 2
+
+NM_DEVICE_STATE_UNKNOWN = 0
+NM_DEVICE_STATE_UNMANAGED = 10
+NM_DEVICE_STATE_UNAVAILABLE = 20
+NM_DEVICE_STATE_DISCONNECTED = 30
+NM_DEVICE_STATE_PREPARE = 40
+NM_DEVICE_STATE_CONFIG = 50
+NM_DEVICE_STATE_NEED_AUTH = 60
+NM_DEVICE_STATE_IP_CONFIG = 70
+NM_DEVICE_STATE_IP_CHECK = 80
+NM_DEVICE_STATE_SECONDARIES = 90
+NM_DEVICE_STATE_ACTIVATED = 100
+NM_DEVICE_STATE_DEACTIVATING = 110
+NM_DEVICE_STATE_FAILED = 120
+
+NM_ACTIVE_CONNECTION_STATE_UNKNOWN = 0
+NM_ACTIVE_CONNECTION_STATE_ACTIVATING = 1
+NM_ACTIVE_CONNECTION_STATE_ACTIVATED = 2
+NM_ACTIVE_CONNECTION_STATE_DEACTIVATING = 3
+NM_ACTIVE_CONNECTION_STATE_DEACTIVATED = 4
+
+# org.freedesktop.NetworkManager.Device.Wireless
+NM_802_11_MODE_UNKNOWN = 0
+NM_802_11_MODE_ADHOC = 1
+NM_802_11_MODE_INFRA = 2
+NM_802_11_MODE_AP = 3
+
+# org.freedesktop.NetworkManager.AccessPoint security flags
+NM_802_11_AP_FLAGS_NONE = 0
+NM_802_11_AP_FLAGS_PRIVACY = 0x1
+NM_802_11_AP_SEC_NONE = 0x0
+NM_802_11_AP_SEC_PAIR_WEP40 = 0x1
+NM_802_11_AP_SEC_PAIR_WEP104 = 0x2
+NM_802_11_AP_SEC_GROUP_WEP40 = 0x4
+NM_802_11_AP_SEC_GROUP_WEP104 = 0x8
+NM_802_11_AP_SEC_KEY_MGMT_PSK = 0x100
+NM_802_11_AP_SEC_KEY_MGMT_802_1X = 0x200
+
+
+def log(msg: str) -> None:
+    os.makedirs(os.path.dirname(LOG), exist_ok=True)
+    with open(LOG, "a", encoding="utf-8") as f:
+        f.write(f"[{time.strftime('%F %T')}] {msg}\n")
+
+
+def ensure_system_bus_env() -> None:
+    if os.path.exists("/run/dbus/system_bus_socket"):
+        os.environ.setdefault("DBUS_SYSTEM_BUS_ADDRESS", "unix:path=/run/dbus/system_bus_socket")
+
+
+def _to_uint32_ip(addr: str) -> dbus.UInt32:
+    parts = addr.split(".")
+    if len(parts) != 4:
+        return dbus.UInt32(0)
+    try:
+        n = 0
+        for p in parts:
+            n = (n << 8) | int(p)
+        return dbus.UInt32(n)
+    except Exception:
+        return dbus.UInt32(0)
+
+
+def _safe_str(value, default: str = "") -> str:
+    if value is None:
+        return default
+    try:
+        return str(value)
+    except Exception:
+        return default
+
+
+def _safe_int(value, default: int = 0) -> int:
+    try:
+        return int(value)
+    except Exception:
+        try:
+            s = _safe_str(value, "").strip()
+            if s.lower().startswith("byte "):
+                return int(s.split(" ", 1)[1])
+        except Exception:
+            pass
+    return default
+
+
+def _state_to_nm(connman_state: str) -> int:
+    state = connman_state.lower()
+    if state == "online":
+        return NM_STATE_CONNECTED_GLOBAL
+    if state == "ready":
+        return NM_STATE_CONNECTED_SITE
+    if state in ("association", "configuration"):
+        return NM_STATE_CONNECTING
+    if state in ("idle", "offline"):
+        return NM_STATE_DISCONNECTED
+    if state == "failure":
+        return NM_STATE_DISCONNECTED
+    return NM_STATE_UNKNOWN
+
+
+def _state_to_connectivity(connman_state: str) -> int:
+    state = connman_state.lower()
+    if state == "online":
+        return NM_CONNECTIVITY_FULL
+    if state == "ready":
+        return NM_CONNECTIVITY_LIMITED
+    if state in ("idle", "offline", "failure"):
+        return NM_CONNECTIVITY_NONE
+    return NM_CONNECTIVITY_UNKNOWN
+
+
+def _service_type_to_nm(value: str) -> int:
+    t = value.lower()
+    if t == "wifi":
+        return NM_DEVICE_TYPE_WIFI
+    if t in ("ethernet", "gadget"):
+        return NM_DEVICE_TYPE_ETHERNET
+    return NM_DEVICE_TYPE_UNKNOWN
+
+
+def _service_type_to_primary_conn_type(value: str) -> str:
+    t = value.lower()
+    if t == "wifi":
+        return "802-11-wireless"
+    if t in ("ethernet", "gadget"):
+        return "802-3-ethernet"
+    return ""
+
+
+def _connman_service_state_to_nm_device_state(value: str) -> int:
+    s = value.lower()
+    if s in ("online", "ready"):
+        return NM_DEVICE_STATE_ACTIVATED
+    if s in ("association", "configuration"):
+        return NM_DEVICE_STATE_CONFIG
+    if s == "idle":
+        return NM_DEVICE_STATE_DISCONNECTED
+    if s == "failure":
+        return NM_DEVICE_STATE_FAILED
+    return NM_DEVICE_STATE_UNKNOWN
+
+
+def _connman_path_to_ap_path(connman_path: str) -> str:
+    # Stable object path ID per ConnMan service.
+    digest = hashlib.sha1(connman_path.encode("utf-8")).hexdigest()[:8]
+    return f"{AP_PATH_PREFIX}{int(digest, 16)}"
+
+
+def _ssid_to_nm_array(name: str):
+    raw = name.encode("utf-8", errors="ignore")
+    return dbus.Array([dbus.Byte(b) for b in raw], signature="y")
+
+
+def _security_to_nm_flags(security_list):
+    flags = NM_802_11_AP_FLAGS_NONE
+    wpa_flags = NM_802_11_AP_SEC_NONE
+    rsn_flags = NM_802_11_AP_SEC_NONE
+
+    if not isinstance(security_list, list):
+        security_list = []
+
+    sec = { _safe_str(x, "").lower() for x in security_list }
+
+    if "none" not in sec:
+        flags |= NM_802_11_AP_FLAGS_PRIVACY
+
+    if "wep" in sec:
+        wpa_flags |= NM_802_11_AP_SEC_PAIR_WEP40 | NM_802_11_AP_SEC_PAIR_WEP104
+        rsn_flags |= NM_802_11_AP_SEC_PAIR_WEP40 | NM_802_11_AP_SEC_PAIR_WEP104
+
+    if "psk" in sec:
+        wpa_flags |= NM_802_11_AP_SEC_KEY_MGMT_PSK
+        rsn_flags |= NM_802_11_AP_SEC_KEY_MGMT_PSK
+
+    if "ieee8021x" in sec:
+        wpa_flags |= NM_802_11_AP_SEC_KEY_MGMT_802_1X
+        rsn_flags |= NM_802_11_AP_SEC_KEY_MGMT_802_1X
+
+    return dbus.UInt32(flags), dbus.UInt32(wpa_flags), dbus.UInt32(rsn_flags)
+
+
+class NetworkManagerShim:
+    def __init__(self, bus):
+        self._bus = bus
+        self._snapshot = {}
+        self._last_connman_error = None
+        self.refresh()
+
+    def refresh(self) -> None:
+        old_state = self._snapshot.get("manager", {}).get("State")
+        self._snapshot = self._build_snapshot()
+
+        new_state = self._snapshot.get("manager", {}).get("State")
+        if old_state != new_state:
+            log(f"state changed: {old_state} -> {new_state}")
+
+    def _build_snapshot(self):
+        manager_props = {
+            "Version": dbus.String("batocera-connman-shim-1.1"),
+            "State": dbus.UInt32(NM_STATE_DISCONNECTED),
+            "Connectivity": dbus.UInt32(NM_CONNECTIVITY_NONE),
+            "NetworkingEnabled": dbus.Boolean(True),
+            "WirelessEnabled": dbus.Boolean(False),
+            "WirelessHardwareEnabled": dbus.Boolean(False),
+            "WwanEnabled": dbus.Boolean(False),
+            "WwanHardwareEnabled": dbus.Boolean(False),
+            "RadioFlags": dbus.UInt32(0),
+            "PrimaryConnection": dbus.ObjectPath("/"),
+            "PrimaryConnectionType": dbus.String(""),
+            "ActivatingConnection": dbus.ObjectPath("/"),
+            "Startup": dbus.Boolean(False),
+            "Devices": dbus.Array([], signature="o"),
+            "AllDevices": dbus.Array([], signature="o"),
+            "ActiveConnections": dbus.Array([], signature="o"),
+            "Metered": dbus.UInt32(0),
+            "GlobalDnsConfiguration": dbus.Dictionary({}, signature="sv"),
+            "ConnectivityCheckAvailable": dbus.Boolean(False),
+            "ConnectivityCheckEnabled": dbus.Boolean(False),
+            "ConnectivityCheckUri": dbus.String(""),
+            "CanModify": dbus.Boolean(False),
+        }
+        settings_props = {
+            "Connections": dbus.Array([], signature="o"),
+            "Hostname": dbus.String(""),
+            "CanModify": dbus.Boolean(False),
+        }
+
+        device_props = None
+        wireless_props = None
+        active_props = None
+        ip4_props = None
+        ap_props = {}
+
+        try:
+            connman = dbus.Interface(self._bus.get_object("net.connman", "/"), "net.connman.Manager")
+            cprops = connman.GetProperties()
+            state = _safe_str(cprops.get("State", "offline"), "offline")
+            offline_mode = bool(cprops.get("OfflineMode", False))
+
+            manager_props["State"] = dbus.UInt32(_state_to_nm(state))
+            manager_props["Connectivity"] = dbus.UInt32(_state_to_connectivity(state))
+            manager_props["NetworkingEnabled"] = dbus.Boolean(not offline_mode)
+
+            wifi_available = False
+            wifi_enabled = False
+            try:
+                technologies = connman.GetTechnologies()
+                for _, tprops in technologies:
+                    ttype = _safe_str(tprops.get("Type", ""))
+                    if ttype.lower() == "wifi":
+                        wifi_available = True
+                        wifi_enabled = bool(tprops.get("Powered", False))
+                        break
+            except Exception as exc:
+                log(f"GetTechnologies failed: {exc}")
+
+            manager_props["WirelessHardwareEnabled"] = dbus.Boolean(wifi_available)
+            manager_props["WirelessEnabled"] = dbus.Boolean(wifi_enabled and not offline_mode)
+
+            services = connman.GetServices()
+            primary_path = None
+            primary_props = None
+            wifi_services = []
+
+            for spath, sprops in services:
+                stype = _safe_str(sprops.get("Type", ""), "")
+                if stype.lower() == "wifi":
+                    wifi_services.append((spath, sprops))
+
+                sstate = _safe_str(sprops.get("State", ""), "")
+                if sstate == "online":
+                    primary_path = spath
+                    primary_props = sprops
+                    break
+                if sstate == "ready" and primary_props is None:
+                    primary_path = spath
+                    primary_props = sprops
+
+            # Always expose one device if wifi exists, even before active connection.
+            expose_device = wifi_available or primary_props is not None
+            if expose_device:
+                manager_props["Devices"] = dbus.Array([dbus.ObjectPath(DEVICE_PATH)], signature="o")
+                manager_props["AllDevices"] = dbus.Array([dbus.ObjectPath(DEVICE_PATH)], signature="o")
+
+                device_type = NM_DEVICE_TYPE_WIFI if wifi_available else _service_type_to_nm(_safe_str(primary_props.get("Type", ""), ""))
+                iface = "wlan0" if wifi_available else ""
+                hwaddr = ""
+                device_state = NM_DEVICE_STATE_DISCONNECTED
+
+                candidate = primary_props
+                if candidate is None and wifi_services:
+                    candidate = wifi_services[0][1]
+                if candidate is not None:
+                    eth = candidate.get("Ethernet", {})
+                    if isinstance(eth, dict):
+                        iface = _safe_str(eth.get("Interface", iface), iface)
+                        hwaddr = _safe_str(eth.get("Address", ""), "")
+                    device_state = _connman_service_state_to_nm_device_state(_safe_str(candidate.get("State", "idle"), "idle"))
+
+                device_props = {
+                    "Udi": dbus.String(""),
+                    "Interface": dbus.String(iface),
+                    "IpInterface": dbus.String(iface),
+                    "Driver": dbus.String("connman"),
+                    "State": dbus.UInt32(device_state),
+                    "StateReason": dbus.Struct((dbus.UInt32(device_state), dbus.UInt32(0))),
+                    "ActiveConnection": dbus.ObjectPath(ACTIVE_PATH if primary_props is not None else "/"),
+                    "Ip4Config": dbus.ObjectPath(IP4CONFIG_PATH if primary_props is not None else "/"),
+                    "Ip6Config": dbus.ObjectPath("/"),
+                    "Dhcp4Config": dbus.ObjectPath("/"),
+                    "Dhcp6Config": dbus.ObjectPath("/"),
+                    "Managed": dbus.Boolean(True),
+                    "Autoconnect": dbus.Boolean(True),
+                    "FirmwareMissing": dbus.Boolean(False),
+                    "NmPluginMissing": dbus.Boolean(False),
+                    "DeviceType": dbus.UInt32(device_type),
+                    "AvailableConnections": dbus.Array([], signature="o"),
+                    "PhysicalPortId": dbus.String(""),
+                    "Mtu": dbus.UInt32(0),
+                    "Metered": dbus.UInt32(0),
+                    "LldpNeighbors": dbus.Array([], signature="a{sv}"),
+                    "HwAddress": dbus.String(hwaddr),
+                    "PermHwAddress": dbus.String(hwaddr),
+                }
+
+                if wifi_available:
+                    ap_paths = []
+                    active_ap_path = dbus.ObjectPath("/")
+
+                    for spath, sprops in wifi_services:
+                        ap_path = _connman_path_to_ap_path(_safe_str(spath, ""))
+                        ap_paths.append(dbus.ObjectPath(ap_path))
+
+                        name = _safe_str(sprops.get("Name", ""), "")
+                        # Hidden networks can have empty Name; keep empty SSID then.
+                        ssid = _ssid_to_nm_array(name)
+                        state_s = _safe_str(sprops.get("State", "idle"), "idle")
+                        strength = _safe_int(sprops.get("Strength", 0), 0)
+                        if strength < 0:
+                            strength = 0
+                        if strength > 100:
+                            strength = 100
+
+                        eth = sprops.get("Ethernet", {})
+                        hw = ""
+                        if isinstance(eth, dict):
+                            hw = _safe_str(eth.get("Address", ""), "")
+
+                        sec_list = sprops.get("Security", [])
+                        ap_flags, wpa_flags, rsn_flags = _security_to_nm_flags(sec_list)
+
+                        freq = 2412
+                        try:
+                            fv = int(sprops.get("Frequency", 2412))
+                            if fv > 0:
+                                freq = fv
+                        except Exception:
+                            pass
+
+                        ap_props[ap_path] = {
+                            "Flags": ap_flags,
+                            "WpaFlags": wpa_flags,
+                            "RsnFlags": rsn_flags,
+                            "Ssid": ssid,
+                            "Frequency": dbus.UInt32(freq),
+                            "HwAddress": dbus.String(hw),
+                            "Mode": dbus.UInt32(NM_802_11_MODE_INFRA),
+                            "MaxBitrate": dbus.UInt32(54000),
+                            "Strength": dbus.Byte(strength),
+                            "LastSeen": dbus.Int32(0),
+                        }
+
+                        if state_s in ("online", "ready"):
+                            active_ap_path = dbus.ObjectPath(ap_path)
+
+                    wireless_props = {
+                        "HwAddress": dbus.String(_safe_str(device_props.get("HwAddress", ""), "")),
+                        "PermHwAddress": dbus.String(_safe_str(device_props.get("PermHwAddress", ""), "")),
+                        "Mode": dbus.UInt32(NM_802_11_MODE_INFRA),
+                        "Bitrate": dbus.UInt32(54000),
+                        "WirelessCapabilities": dbus.UInt32(0),
+                        "AccessPoints": dbus.Array(ap_paths, signature="o"),
+                        "ActiveAccessPoint": active_ap_path,
+                        "LastScan": dbus.Int64(int(time.time() * 1000)),
+                    }
+
+            if primary_props is not None:
+                svc_type = _safe_str(primary_props.get("Type", ""), "")
+                nm_dev_state = _connman_service_state_to_nm_device_state(_safe_str(primary_props.get("State", ""), ""))
+                active_state = NM_ACTIVE_CONNECTION_STATE_ACTIVATED if nm_dev_state == NM_DEVICE_STATE_ACTIVATED else NM_ACTIVE_CONNECTION_STATE_ACTIVATING
+
+                manager_props["ActiveConnections"] = dbus.Array([dbus.ObjectPath(ACTIVE_PATH)], signature="o")
+                manager_props["PrimaryConnection"] = dbus.ObjectPath(ACTIVE_PATH)
+                manager_props["PrimaryConnectionType"] = dbus.String(_service_type_to_primary_conn_type(svc_type))
+                manager_props["ActivatingConnection"] = dbus.ObjectPath("/")
+
+                ip4 = primary_props.get("IPv4", {})
+                if not isinstance(ip4, dict):
+                    ip4 = {}
+                ip_addr = _safe_str(ip4.get("Address", ""), "")
+                ip_gateway = _safe_str(ip4.get("Gateway", ""), "")
+                ip_prefix = dbus.UInt32(24)
+
+                ip4_address_data = dbus.Array([], signature="a{sv}")
+                if ip_addr:
+                    ip4_address_data = dbus.Array(
+                        [
+                            dbus.Dictionary(
+                                {
+                                    "address": dbus.String(ip_addr),
+                                    "prefix": ip_prefix,
+                                },
+                                signature="sv",
+                            )
+                        ],
+                        signature="a{sv}",
+                    )
+
+                ip4_nameservers = primary_props.get("Nameservers", [])
+                if not isinstance(ip4_nameservers, list):
+                    ip4_nameservers = []
+                parsed = []
+                for ns in ip4_nameservers:
+                    ns_u32 = _to_uint32_ip(_safe_str(ns, ""))
+                    if ns_u32 != 0:
+                        parsed.append(ns_u32)
+
+                ip4_props = {
+                    "AddressData": ip4_address_data,
+                    "Gateway": dbus.String(ip_gateway),
+                    "RouteData": dbus.Array([], signature="a{sv}"),
+                    "NameserverData": dbus.Array(parsed, signature="u"),
+                    "Domains": dbus.Array([], signature="s"),
+                    "Searches": dbus.Array([], signature="s"),
+                    "WinsServerData": dbus.Array([], signature="u"),
+                }
+
+                service_name = _safe_str(primary_props.get("Name", "Connection"), "Connection")
+                active_props = {
+                    "Connection": dbus.ObjectPath("/"),
+                    "SpecificObject": dbus.ObjectPath("/"),
+                    "Id": dbus.String(service_name),
+                    "Uuid": dbus.String(f"connman-{_safe_str(primary_path, 'unknown')}")[:64],
+                    "Type": dbus.String(_service_type_to_primary_conn_type(svc_type)),
+                    "Devices": dbus.Array([dbus.ObjectPath(DEVICE_PATH)], signature="o"),
+                    "State": dbus.UInt32(active_state),
+                    "Default": dbus.Boolean(True),
+                    "Ip4Config": dbus.ObjectPath(IP4CONFIG_PATH),
+                    "Dhcp4Config": dbus.ObjectPath("/"),
+                    "Default6": dbus.Boolean(False),
+                    "Ip6Config": dbus.ObjectPath("/"),
+                    "Dhcp6Config": dbus.ObjectPath("/"),
+                    "Vpn": dbus.Boolean(False),
+                    "Master": dbus.ObjectPath("/"),
+                }
+
+            self._last_connman_error = None
+        except Exception as exc:
+            error = str(exc)
+            if error != self._last_connman_error:
+                log(f"connman snapshot failed: {error}")
+                self._last_connman_error = error
+
+        return {
+            "manager": manager_props,
+            "settings": settings_props,
+            "device": device_props,
+            "wireless": wireless_props,
+            "active": active_props,
+            "ip4": ip4_props,
+            "aps": ap_props,
+        }
+
+    def manager_properties(self):
+        return dict(self._snapshot["manager"])
+
+    def device_properties(self):
+        return None if self._snapshot["device"] is None else dict(self._snapshot["device"])
+
+    def settings_properties(self):
+        return dict(self._snapshot["settings"])
+
+    def wireless_properties(self):
+        return None if self._snapshot["wireless"] is None else dict(self._snapshot["wireless"])
+
+    def active_properties(self):
+        return None if self._snapshot["active"] is None else dict(self._snapshot["active"])
+
+    def ip4_properties(self):
+        return None if self._snapshot["ip4"] is None else dict(self._snapshot["ip4"])
+
+    def access_point_paths(self):
+        return list(self._snapshot["aps"].keys())
+
+    def access_point_properties(self, path: str):
+        props = self._snapshot["aps"].get(path)
+        return None if props is None else dict(props)
+
+    def managed_objects(self):
+        objects = {
+            dbus.ObjectPath(MANAGER_PATH): {
+                "org.freedesktop.NetworkManager": self.manager_properties(),
+            },
+            dbus.ObjectPath(SETTINGS_PATH): {
+                "org.freedesktop.NetworkManager.Settings": self.settings_properties(),
+            },
+        }
+
+        if self._snapshot["device"] is not None:
+            interfaces = {
+                "org.freedesktop.NetworkManager.Device": self.device_properties(),
+            }
+            if self._snapshot["wireless"] is not None:
+                interfaces["org.freedesktop.NetworkManager.Device.Wireless"] = self.wireless_properties()
+            objects[dbus.ObjectPath(DEVICE_PATH)] = interfaces
+
+        if self._snapshot["active"] is not None:
+            objects[dbus.ObjectPath(ACTIVE_PATH)] = {
+                "org.freedesktop.NetworkManager.Connection.Active": self.active_properties(),
+            }
+
+        if self._snapshot["ip4"] is not None:
+            objects[dbus.ObjectPath(IP4CONFIG_PATH)] = {
+                "org.freedesktop.NetworkManager.IP4Config": self.ip4_properties(),
+            }
+
+        for ap_path, props in self._snapshot["aps"].items():
+            objects[dbus.ObjectPath(ap_path)] = {
+                "org.freedesktop.NetworkManager.AccessPoint": dict(props),
+            }
+
+        return objects
+
+
+class PropertiesMixin:
+    def _get_props(self, interface_name):
+        raise NotImplementedError
+
+    @dbus.service.method("org.freedesktop.DBus.Properties", in_signature="ss", out_signature="v")
+    def Get(self, interface_name, property_name):
+        props = self._get_props(interface_name)
+        if property_name not in props:
+            raise dbus.exceptions.DBusException(
+                "org.freedesktop.DBus.Error.InvalidArgs",
+                f"Unknown property {property_name} on {interface_name}",
+            )
+        return props[property_name]
+
+    @dbus.service.method("org.freedesktop.DBus.Properties", in_signature="s", out_signature="a{sv}")
+    def GetAll(self, interface_name):
+        return dbus.Dictionary(self._get_props(interface_name), signature="sv")
+
+    @dbus.service.method("org.freedesktop.DBus.Properties", in_signature="ssv", out_signature="")
+    def Set(self, interface_name, property_name, value):
+        raise dbus.exceptions.DBusException(
+            "org.freedesktop.NetworkManager.NotAuthorized",
+            "Read-only NetworkManager compatibility shim",
+        )
+
+    @dbus.service.signal("org.freedesktop.DBus.Properties", signature="sa{sv}as")
+    def PropertiesChanged(self, interface_name, changed_properties, invalidated_properties):
+        return
+
+
+class RootObjectManager(dbus.service.Object):
+    def __init__(self, bus, shim):
+        super().__init__(bus, ROOT_PATH)
+        self._shim = shim
+
+    @dbus.service.method("org.freedesktop.DBus.ObjectManager", out_signature="a{oa{sa{sv}}}")
+    def GetManagedObjects(self):
+        return self._shim.managed_objects()
+
+    @dbus.service.signal("org.freedesktop.DBus.ObjectManager", signature="oa{sa{sv}}")
+    def InterfacesAdded(self, object_path, interfaces_and_properties):
+        return
+
+    @dbus.service.signal("org.freedesktop.DBus.ObjectManager", signature="oas")
+    def InterfacesRemoved(self, object_path, interfaces):
+        return
+
+
+class ManagerObject(PropertiesMixin, dbus.service.Object):
+    def __init__(self, bus, shim):
+        super().__init__(bus, MANAGER_PATH)
+        self._shim = shim
+
+    def _get_props(self, interface_name):
+        if interface_name != "org.freedesktop.NetworkManager":
+            raise dbus.exceptions.DBusException(
+                "org.freedesktop.DBus.Error.InvalidArgs",
+                f"Unsupported interface {interface_name}",
+            )
+        return self._shim.manager_properties()
+
+    @dbus.service.method("org.freedesktop.NetworkManager", out_signature="ao")
+    def GetDevices(self):
+        return self._shim.manager_properties().get("Devices", dbus.Array([], signature="o"))
+
+    @dbus.service.method("org.freedesktop.NetworkManager", out_signature="ao")
+    def GetAllDevices(self):
+        return self._shim.manager_properties().get("AllDevices", dbus.Array([], signature="o"))
+
+    @dbus.service.method("org.freedesktop.NetworkManager", in_signature="s", out_signature="o")
+    def GetDeviceByIpIface(self, iface):
+        props = self._shim.device_properties()
+        if props is not None and _safe_str(props.get("IpInterface", ""), "") == iface:
+            return dbus.ObjectPath(DEVICE_PATH)
+        raise dbus.exceptions.DBusException(
+            "org.freedesktop.NetworkManager.UnknownDevice",
+            f"Unknown interface {iface}",
+        )
+
+    @dbus.service.method("org.freedesktop.NetworkManager", out_signature="u")
+    def state(self):
+        return self._shim.manager_properties().get("State", dbus.UInt32(NM_STATE_UNKNOWN))
+
+    @dbus.service.method("org.freedesktop.NetworkManager", out_signature="u")
+    def CheckConnectivity(self):
+        return self._shim.manager_properties().get("Connectivity", dbus.UInt32(NM_CONNECTIVITY_UNKNOWN))
+
+    @dbus.service.method("org.freedesktop.NetworkManager", out_signature="a{ss}")
+    def GetPermissions(self):
+        # Keep read-only operations available while explicitly denying write paths.
+        perms = {
+            "org.freedesktop.NetworkManager.enable-disable-network": "yes",
+            "org.freedesktop.NetworkManager.enable-disable-wifi": "yes",
+            "org.freedesktop.NetworkManager.enable-disable-wwan": "no",
+            "org.freedesktop.NetworkManager.sleep-wake": "no",
+            "org.freedesktop.NetworkManager.network-control": "yes",
+            "org.freedesktop.NetworkManager.wifi.share.open": "no",
+            "org.freedesktop.NetworkManager.wifi.share.protected": "no",
+            "org.freedesktop.NetworkManager.settings.modify.system": "no",
+            "org.freedesktop.NetworkManager.settings.modify.own": "no",
+            "org.freedesktop.NetworkManager.settings.modify.hostname": "no",
+            "org.freedesktop.NetworkManager.settings.modify.global-dns": "no",
+            "org.freedesktop.NetworkManager.reload": "no",
+        }
+        return dbus.Dictionary(perms, signature="ss")
+
+    @dbus.service.method("org.freedesktop.NetworkManager", in_signature="b", out_signature="")
+    def Enable(self, enabled):
+        raise dbus.exceptions.DBusException(
+            "org.freedesktop.NetworkManager.NotAuthorized",
+            "Read-only NetworkManager compatibility shim",
+        )
+
+    @dbus.service.method("org.freedesktop.NetworkManager", in_signature="u", out_signature="")
+    def Reload(self, flags):
+        raise dbus.exceptions.DBusException(
+            "org.freedesktop.NetworkManager.NotAuthorized",
+            "Read-only NetworkManager compatibility shim",
+        )
+
+    @dbus.service.method("org.freedesktop.NetworkManager", in_signature="o", out_signature="")
+    def DeactivateConnection(self, active_connection):
+        raise dbus.exceptions.DBusException(
+            "org.freedesktop.NetworkManager.NotAuthorized",
+            "Read-only NetworkManager compatibility shim",
+        )
+
+    @dbus.service.method("org.freedesktop.NetworkManager", in_signature="ooo", out_signature="o")
+    def ActivateConnection(self, connection, device, specific_object):
+        raise dbus.exceptions.DBusException(
+            "org.freedesktop.NetworkManager.NotAuthorized",
+            "Read-only NetworkManager compatibility shim",
+        )
+
+
+class SettingsObject(PropertiesMixin, dbus.service.Object):
+    def __init__(self, bus, shim):
+        super().__init__(bus, SETTINGS_PATH)
+        self._shim = shim
+
+    def _get_props(self, interface_name):
+        if interface_name != "org.freedesktop.NetworkManager.Settings":
+            raise dbus.exceptions.DBusException(
+                "org.freedesktop.DBus.Error.InvalidArgs",
+                f"Unsupported interface {interface_name}",
+            )
+        return self._shim.settings_properties()
+
+    @dbus.service.method("org.freedesktop.NetworkManager.Settings", out_signature="ao")
+    def ListConnections(self):
+        return self._shim.settings_properties().get("Connections", dbus.Array([], signature="o"))
+
+    @dbus.service.method("org.freedesktop.NetworkManager.Settings", in_signature="s", out_signature="o")
+    def GetConnectionByUuid(self, uuid):
+        raise dbus.exceptions.DBusException(
+            "org.freedesktop.NetworkManager.Settings.ConnectionNotFound",
+            f"Unknown connection UUID {uuid}",
+        )
+
+    @dbus.service.method("org.freedesktop.NetworkManager.Settings", in_signature="a{sa{sv}}", out_signature="o")
+    def AddConnection(self, connection):
+        raise dbus.exceptions.DBusException(
+            "org.freedesktop.NetworkManager.NotAuthorized",
+            "Read-only NetworkManager compatibility shim",
+        )
+
+    @dbus.service.method("org.freedesktop.NetworkManager.Settings", in_signature="a{sa{sv}}", out_signature="o")
+    def AddConnectionUnsaved(self, connection):
+        raise dbus.exceptions.DBusException(
+            "org.freedesktop.NetworkManager.NotAuthorized",
+            "Read-only NetworkManager compatibility shim",
+        )
+
+    @dbus.service.method("org.freedesktop.NetworkManager.Settings", in_signature="as", out_signature="bas")
+    def LoadConnections(self, filenames):
+        return dbus.Boolean(False), dbus.Array(filenames, signature="s")
+
+    @dbus.service.method("org.freedesktop.NetworkManager.Settings", out_signature="b")
+    def ReloadConnections(self):
+        return dbus.Boolean(False)
+
+    @dbus.service.method("org.freedesktop.NetworkManager.Settings", in_signature="s", out_signature="")
+    def SaveHostname(self, hostname):
+        raise dbus.exceptions.DBusException(
+            "org.freedesktop.NetworkManager.NotAuthorized",
+            "Read-only NetworkManager compatibility shim",
+        )
+
+
+class DeviceObject(PropertiesMixin, dbus.service.Object):
+    def __init__(self, bus, shim):
+        super().__init__(bus, DEVICE_PATH)
+        self._shim = shim
+
+    def _get_props(self, interface_name):
+        if interface_name == "org.freedesktop.NetworkManager.Device":
+            props = self._shim.device_properties()
+            if props is not None:
+                return props
+        elif interface_name == "org.freedesktop.NetworkManager.Device.Wireless":
+            props = self._shim.wireless_properties()
+            if props is not None:
+                return props
+
+        raise dbus.exceptions.DBusException(
+            "org.freedesktop.DBus.Error.InvalidArgs",
+            f"Unsupported interface {interface_name}",
+        )
+
+    @dbus.service.method("org.freedesktop.NetworkManager.Device", out_signature="")
+    def Disconnect(self):
+        raise dbus.exceptions.DBusException(
+            "org.freedesktop.NetworkManager.NotAuthorized",
+            "Read-only NetworkManager compatibility shim",
+        )
+
+    @dbus.service.method("org.freedesktop.NetworkManager.Device.Wireless", out_signature="ao")
+    def GetAccessPoints(self):
+        props = self._shim.wireless_properties()
+        if props is None:
+            return dbus.Array([], signature="o")
+        return props.get("AccessPoints", dbus.Array([], signature="o"))
+
+    @dbus.service.method("org.freedesktop.NetworkManager.Device.Wireless", out_signature="ao")
+    def GetAllAccessPoints(self):
+        return self.GetAccessPoints()
+
+    @dbus.service.method("org.freedesktop.NetworkManager.Device.Wireless", in_signature="a{sv}", out_signature="")
+    def RequestScan(self, options):
+        # ConnMan handles scans internally; expose as no-op for compatibility.
+        return
+
+    @dbus.service.signal("org.freedesktop.NetworkManager.Device.Wireless", signature="o")
+    def AccessPointAdded(self, access_point):
+        return
+
+    @dbus.service.signal("org.freedesktop.NetworkManager.Device.Wireless", signature="o")
+    def AccessPointRemoved(self, access_point):
+        return
+
+
+class AccessPointObject(PropertiesMixin, dbus.service.Object):
+    def __init__(self, bus, shim, path):
+        super().__init__(bus, path)
+        self._shim = shim
+        self._path = path
+
+    def _get_props(self, interface_name):
+        props = self._shim.access_point_properties(self._path)
+        if props is None or interface_name != "org.freedesktop.NetworkManager.AccessPoint":
+            raise dbus.exceptions.DBusException(
+                "org.freedesktop.DBus.Error.InvalidArgs",
+                f"Unsupported interface {interface_name}",
+            )
+        return props
+
+
+class ActiveConnectionObject(PropertiesMixin, dbus.service.Object):
+    def __init__(self, bus, shim):
+        super().__init__(bus, ACTIVE_PATH)
+        self._shim = shim
+
+    def _get_props(self, interface_name):
+        props = self._shim.active_properties()
+        if props is None or interface_name != "org.freedesktop.NetworkManager.Connection.Active":
+            raise dbus.exceptions.DBusException(
+                "org.freedesktop.DBus.Error.InvalidArgs",
+                f"Unsupported interface {interface_name}",
+            )
+        return props
+
+
+class IP4ConfigObject(PropertiesMixin, dbus.service.Object):
+    def __init__(self, bus, shim):
+        super().__init__(bus, IP4CONFIG_PATH)
+        self._shim = shim
+
+    def _get_props(self, interface_name):
+        props = self._shim.ip4_properties()
+        if props is None or interface_name != "org.freedesktop.NetworkManager.IP4Config":
+            raise dbus.exceptions.DBusException(
+                "org.freedesktop.DBus.Error.InvalidArgs",
+                f"Unsupported interface {interface_name}",
+            )
+        return props
+
+
+def _dict_changes(old, new):
+    if old is None or new is None:
+        return {}
+    changed = {}
+    for key, value in new.items():
+        if old.get(key) != value:
+            changed[key] = value
+    return changed
+
+
+def periodic_refresh(shim, root_obj, manager_obj, settings_obj, device_obj, active_obj, ip4_obj, ap_objects, bus):
+    old_manager = shim.manager_properties()
+    old_settings = shim.settings_properties()
+    old_device = shim.device_properties()
+    old_wireless = shim.wireless_properties()
+    old_active = shim.active_properties()
+    old_ip4 = shim.ip4_properties()
+    old_ap_paths = set(shim.access_point_paths())
+    old_ap_props = {p: shim.access_point_properties(p) for p in old_ap_paths}
+
+    shim.refresh()
+
+    new_manager = shim.manager_properties()
+    new_settings = shim.settings_properties()
+    new_device = shim.device_properties()
+    new_wireless = shim.wireless_properties()
+    new_active = shim.active_properties()
+    new_ip4 = shim.ip4_properties()
+    new_ap_paths = set(shim.access_point_paths())
+
+    changed_manager = _dict_changes(old_manager, new_manager)
+    if changed_manager:
+        manager_obj.PropertiesChanged("org.freedesktop.NetworkManager", changed_manager, [])
+
+    changed_settings = _dict_changes(old_settings, new_settings)
+    if changed_settings:
+        settings_obj.PropertiesChanged("org.freedesktop.NetworkManager.Settings", changed_settings, [])
+
+    if old_device is not None and new_device is not None:
+        changed_device = _dict_changes(old_device, new_device)
+        if changed_device:
+            device_obj.PropertiesChanged("org.freedesktop.NetworkManager.Device", changed_device, [])
+
+    if old_wireless is not None and new_wireless is not None:
+        changed_wireless = _dict_changes(old_wireless, new_wireless)
+        if changed_wireless:
+            device_obj.PropertiesChanged("org.freedesktop.NetworkManager.Device.Wireless", changed_wireless, [])
+
+    if old_active is not None and new_active is not None:
+        changed_active = _dict_changes(old_active, new_active)
+        if changed_active:
+            active_obj.PropertiesChanged("org.freedesktop.NetworkManager.Connection.Active", changed_active, [])
+
+    if old_ip4 is not None and new_ip4 is not None:
+        changed_ip4 = _dict_changes(old_ip4, new_ip4)
+        if changed_ip4:
+            ip4_obj.PropertiesChanged("org.freedesktop.NetworkManager.IP4Config", changed_ip4, [])
+
+    added_paths = new_ap_paths - old_ap_paths
+    removed_paths = old_ap_paths - new_ap_paths
+
+    for path in sorted(added_paths):
+        ap_obj = AccessPointObject(bus, shim, path)
+        ap_objects[path] = ap_obj
+        props = shim.access_point_properties(path)
+        if props is not None:
+            root_obj.InterfacesAdded(dbus.ObjectPath(path), {"org.freedesktop.NetworkManager.AccessPoint": props})
+            device_obj.AccessPointAdded(dbus.ObjectPath(path))
+
+    for path in sorted(removed_paths):
+        ap_obj = ap_objects.pop(path, None)
+        if ap_obj is not None:
+            try:
+                ap_obj.remove_from_connection()
+            except Exception:
+                pass
+        root_obj.InterfacesRemoved(dbus.ObjectPath(path), ["org.freedesktop.NetworkManager.AccessPoint"])
+        device_obj.AccessPointRemoved(dbus.ObjectPath(path))
+
+    for path in sorted(new_ap_paths & old_ap_paths):
+        old_props = old_ap_props.get(path)
+        new_props = shim.access_point_properties(path)
+        if old_props is None or new_props is None:
+            continue
+        changed_ap = _dict_changes(old_props, new_props)
+        if changed_ap and path in ap_objects:
+            ap_objects[path].PropertiesChanged("org.freedesktop.NetworkManager.AccessPoint", changed_ap, [])
+
+    return True
+
+
+def main() -> int:
+    try:
+        ensure_system_bus_env()
+        dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
+        bus = dbus.SystemBus()
+        result = bus.request_name(BUS_NAME, dbus.bus.NAME_FLAG_DO_NOT_QUEUE)
+        if result != dbus.bus.REQUEST_NAME_REPLY_PRIMARY_OWNER:
+            log(f"cannot own {BUS_NAME}, result={result}")
+            return 0
+
+        shim = NetworkManagerShim(bus)
+        manager_obj = ManagerObject(bus, shim)
+        settings_obj = SettingsObject(bus, shim)
+        device_obj = DeviceObject(bus, shim)
+        active_obj = ActiveConnectionObject(bus, shim)
+        ip4_obj = IP4ConfigObject(bus, shim)
+        root_obj = RootObjectManager(bus, shim)
+
+        ap_objects = {}
+        for path in shim.access_point_paths():
+            ap_objects[path] = AccessPointObject(bus, shim, path)
+
+        GLib.timeout_add_seconds(
+            5,
+            periodic_refresh,
+            shim,
+            root_obj,
+            manager_obj,
+            settings_obj,
+            device_obj,
+            active_obj,
+            ip4_obj,
+            ap_objects,
+            bus,
+        )
+
+        log("NetworkManager compatibility shim running")
+        GLib.MainLoop().run()
+        return 0
+    except Exception as exc:
+        log(f"NetworkManager compatibility shim failed: {exc}")
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

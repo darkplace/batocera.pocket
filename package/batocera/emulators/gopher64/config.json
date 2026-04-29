@@ -1,0 +1,54 @@
+{
+  "input": {
+    "input_profiles": {
+      "default": {
+        "keys": [],
+        "controller_buttons": [],
+        "controller_axis": [],
+        "joystick_buttons": [],
+        "joystick_hat": [],
+        "joystick_axis": [],
+        "dinput": false,
+        "deadzone": 5
+      }
+    },
+    "input_profile_binding": [
+      "default",
+      "default",
+      "default",
+      "default"
+    ],
+    "controller_assignment": [
+      null,
+      null,
+      null,
+      null
+    ],
+    "controller_enabled": [
+      true,
+      false,
+      false,
+      false
+    ],
+    "transfer_pak": [
+      false,
+      false,
+      false,
+      false
+    ],
+    "emulate_vru": false
+  },
+  "video": {
+    "upscale": 1,
+    "integer_scaling": false,
+    "fullscreen": false,
+    "widescreen": false,
+    "crt": false
+  },
+  "emulation": {
+    "overclock": false,
+    "disable_expansion_pak": false,
+    "usb": false
+  },
+  "rom_dir": "/userdata/roms/n64"
+}

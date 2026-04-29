@@ -1,0 +1,16 @@
+#!/bin/bash
+
+# Declare default runners
+def=(wine-tkg wine-proton)
+
+if [[ "$(uname -m)" == "x86_64" ]]; then
+    def+=(proton-ge)
+fi
+
+# Check if the directory /userdata/system/wine/custom exists
+if [ -d "/userdata/system/wine/custom" ]; then
+    printf '%s\n' ${def[@]}
+    find -L /userdata/system/wine/custom -mindepth 1 -maxdepth 1 -type d -printf '%P\n' | sort
+else
+    printf '%s\n' ${def[@]}
+fi

@@ -1,0 +1,81 @@
+#!/bin/bash
+#
+# S31box64-binfmt - Register box64/box32 binfmt_misc handlers.
+#
+
+BOX64_INTERPRETER="/usr/bin/box64"
+BINFMT_DIR="/proc/sys/fs/binfmt_misc"
+BOX64_RULE=':box64:M::\x7fELF\x02\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\x3e\x00:\xff\xff\xff\xff\xff\xff\xff\x00\x00\x00\x00\xff\xff\xff\xff\xff\xfe\xff\xff\xff:/usr/bin/box64:'
+BOX32_RULE=':box32:M::\x7fELF\x01\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\x03\x00:\xff\xff\xff\xff\xff\xff\xff\x00\xff\xff\xff\xff\xff\xff\xff\xff\xfe\xff\xff\xff:/usr/bin/box64:'
+
+start() {
+    printf "Setting up box64 binfmt_misc: "
+
+    if [ ! -x "$BOX64_INTERPRETER" ]; then
+        echo "SKIP (box64 not found)"
+        return 0
+    fi
+
+    if [ ! -d "$BINFMT_DIR" ] || [ ! -f "$BINFMT_DIR/status" ]; then
+        mount binfmt_misc -t binfmt_misc "$BINFMT_DIR" 2>/dev/null
+    fi
+
+    if [ ! -f "$BINFMT_DIR/register" ]; then
+        echo "FAIL (binfmt_misc not available)"
+        return 1
+    fi
+
+    if [ "$(cat "$BINFMT_DIR/status" 2>/dev/null)" = "disabled" ]; then
+        echo 1 > "$BINFMT_DIR/status"
+    fi
+
+    if [ ! -f "$BINFMT_DIR/box64" ]; then
+        echo "$BOX64_RULE" > "$BINFMT_DIR/register" 2>/dev/null
+    fi
+
+    if [ ! -f "$BINFMT_DIR/box32" ]; then
+        echo "$BOX32_RULE" > "$BINFMT_DIR/register" 2>/dev/null
+    fi
+
+    echo "OK"
+}
+
+stop() {
+    printf "Removing box64 binfmt_misc handlers: "
+
+    [ -f "$BINFMT_DIR/box64" ] && echo -1 > "$BINFMT_DIR/box64" 2>/dev/null
+    [ -f "$BINFMT_DIR/box32" ] && echo -1 > "$BINFMT_DIR/box32" 2>/dev/null
+
+    echo "OK"
+}
+
+status() {
+    echo "=== box64 binfmt_misc Status ==="
+    if [ -f "$BINFMT_DIR/box64" ]; then
+        echo "box64: REGISTERED"
+        cat "$BINFMT_DIR/box64"
+    else
+        echo "box64: NOT REGISTERED"
+    fi
+
+    echo ""
+    if [ -f "$BINFMT_DIR/box32" ]; then
+        echo "box32: REGISTERED"
+        cat "$BINFMT_DIR/box32"
+    else
+        echo "box32: NOT REGISTERED"
+    fi
+}
+
+case "$1" in
+    start)   start ;;
+    stop)    stop ;;
+    restart) stop; start ;;
+    status)  status ;;
+    *)
+        echo "Usage: $0 {start|stop|restart|status}"
+        exit 1
+        ;;
+esac
+
+exit $?

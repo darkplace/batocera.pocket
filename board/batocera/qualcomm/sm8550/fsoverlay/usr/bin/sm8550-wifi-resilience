@@ -1,0 +1,32 @@
+#!/bin/sh
+
+# WCN7850 can become unreliable after idle/resume with power save enabled.
+
+disable_power_save() {
+    iface="$1"
+
+    [ -n "${iface}" ] || return 0
+    [ -d "/sys/class/net/${iface}" ] || return 0
+
+    if /usr/sbin/iw dev "${iface}" set power_save off >/dev/null 2>&1; then
+        echo "*** SM8550 wifi: disabled power save on ${iface} ***" > /dev/kmsg
+    fi
+}
+
+if command -v rfkill >/dev/null 2>&1; then
+    rfkill unblock wifi >/dev/null 2>&1
+fi
+
+if [ "$#" -gt 0 ]; then
+    for iface in "$@"; do
+        disable_power_save "${iface}"
+    done
+    exit 0
+fi
+
+for netdev in /sys/class/net/wlan* /sys/class/net/wlp* /sys/class/net/wlx*; do
+    [ -e "${netdev}" ] || continue
+    disable_power_save "${netdev##*/}"
+done
+
+exit 0

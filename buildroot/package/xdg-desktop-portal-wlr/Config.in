@@ -1,0 +1,29 @@
+config BR2_PACKAGE_XDG_DESKTOP_PORTAL_WLR
+	bool "xdg-desktop-portal-wlr"
+	depends on BR2_TOOLCHAIN_HAS_THREADS # wayland
+	depends on BR2_USE_MMU # wayland
+	depends on !BR2_STATIC_LIBS # wayland
+	depends on BR2_PACKAGE_HAS_LIBGBM # gbm
+	depends on BR2_PACKAGE_XDG_DESKTOP_PORTAL
+	select BR2_PACKAGE_BASU
+	select BR2_PACKAGE_INIH
+	select BR2_PACKAGE_LIBDRM
+	select BR2_PACKAGE_PIPEWIRE
+	select BR2_PACKAGE_WAYLAND
+	select BR2_PACKAGE_WAYLAND_PROTOCOLS
+	help
+	  xdg-desktop-portal-wlr is a wlroots backend for
+	  xdg-desktop-portal.
+
+	  https://github.com/emersion/xdg-desktop-portal-wlr
+
+comment "xdg-desktop-portal-wlr needs a toolchain w/ threads, dynamic library, MMU and libgbm"
+	depends on !BR2_TOOLCHAIN_HAS_THREADS || BR2_STATIC_LIBS || !BR2_USE_MMU || \
+		!BR2_PACKAGE_HAS_LIBGBM
+
+comment "xdg-desktop-portal-wlr needs xdg-desktop-portal"
+	depends on BR2_TOOLCHAIN_HAS_THREADS
+	depends on BR2_USE_MMU
+	depends on !BR2_STATIC_LIBS
+	depends on BR2_PACKAGE_HAS_LIBGBM
+	depends on !BR2_PACKAGE_XDG_DESKTOP_PORTAL

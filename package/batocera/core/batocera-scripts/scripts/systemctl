@@ -1,0 +1,119 @@
+#!/bin/bash
+
+# Compatibility shim for scripts expecting systemd's systemctl on Batocera.
+# Batocera uses sysvinit + batocera-services.
+
+strip_unit_suffix() {
+    local unit="${1}"
+    unit="${unit%.service}"
+    echo "${unit}"
+}
+
+service_exists_in_batocera() {
+    local unit="${1}"
+    find -L /userdata/system/services /usr/share/batocera/services \
+        -maxdepth 1 -type f -name "${unit}" 2>/dev/null | grep -q .
+}
+
+run_batocera_service() {
+    local action="${1}"
+    local unit="${2}"
+    if ! command -v /usr/bin/batocera-services >/dev/null 2>&1; then
+        return 1
+    fi
+    if ! service_exists_in_batocera "${unit}"; then
+        return 1
+    fi
+    /usr/bin/batocera-services "${action}" "${unit}"
+}
+
+run_sysv_service() {
+    local action="${1}"
+    local unit="${2}"
+    local script
+
+    for script in "/etc/init.d/${unit}" /etc/init.d/S??"${unit}"; do
+        [ -x "${script}" ] || continue
+        "${script}" "${action}"
+        return $?
+    done
+    return 1
+}
+
+is_batocera_enabled() {
+    local unit="${1}"
+    local enabled
+    if ! command -v /usr/bin/batocera-settings-get >/dev/null 2>&1; then
+        return 1
+    fi
+    enabled="$(/usr/bin/batocera-settings-get system.services 2>/dev/null)"
+    for svc in ${enabled}; do
+        [ "${svc}" = "${unit}" ] && return 0
+    done
+    return 1
+}
+
+# Ignore common systemctl flags we don't need for compatibility.
+while [ $# -gt 0 ]; do
+    case "${1}" in
+        --user|--system|--no-pager|--no-legend|--plain|--quiet|-q)
+            shift
+            ;;
+        *)
+            break
+            ;;
+    esac
+done
+
+action="${1:-}"
+shift || true
+unit_raw="${1:-}"
+unit="$(strip_unit_suffix "${unit_raw}")"
+
+case "${action}" in
+    start|stop|restart|status|reload)
+        if [ -n "${unit}" ] && run_batocera_service "${action}" "${unit}"; then
+            exit $?
+        fi
+        if [ -n "${unit}" ] && run_sysv_service "${action}" "${unit}"; then
+            exit $?
+        fi
+        # For compatibility scripts, a missing unit should not be fatal.
+        exit 0
+        ;;
+    enable|disable)
+        if [ -n "${unit}" ] && command -v /usr/bin/batocera-services >/dev/null 2>&1; then
+            /usr/bin/batocera-services "${action}" "${unit}" >/dev/null 2>&1
+            exit $?
+        fi
+        exit 0
+        ;;
+    is-enabled)
+        if [ -n "${unit}" ] && is_batocera_enabled "${unit}"; then
+            exit 0
+        fi
+        exit 1
+        ;;
+    is-active)
+        if [ -n "${unit}" ] && run_batocera_service status "${unit}" >/dev/null 2>&1; then
+            exit 0
+        fi
+        if [ -n "${unit}" ] && run_sysv_service status "${unit}" >/dev/null 2>&1; then
+            exit 0
+        fi
+        # Match systemctl's inactive return code.
+        exit 3
+        ;;
+    daemon-reload|reset-failed)
+        exit 0
+        ;;
+    "")
+        echo "Usage: systemctl <command> [unit]" >&2
+        exit 1
+        ;;
+    *)
+        # Unknown commands are treated as no-op for compatibility.
+        exit 0
+        ;;
+esac
+

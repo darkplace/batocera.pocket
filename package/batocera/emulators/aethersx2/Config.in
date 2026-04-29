@@ -1,0 +1,14 @@
+config BR2_PACKAGE_AETHERSX2
+    bool "aethersx2"
+    depends on BR2_aarch64
+    depends on BR2_PACKAGE_HAS_GLES3 || BR2_PACKAGE_BATOCERA_VULKAN
+
+ 
+
+    help
+      Aethersx2 is an aarch64 closed source fork of PCSX2 Playstaion 2 emulator.
+
+      This package installs the official prebuilt Aethersx2 AppImage
+      instead of building aethersx2 from source.
+
+     

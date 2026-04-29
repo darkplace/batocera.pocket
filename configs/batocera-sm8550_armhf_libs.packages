@@ -1,0 +1,5 @@
+# SPDX-FileCopyrightText: Added/modified by suckbluefrog
+# batocera-sm8550_armhf_libs.packages
+# 32-bit library package set for SM8550 / PortMaster compatibility
+
+include batocera-sm8250_armhf_libs.packages

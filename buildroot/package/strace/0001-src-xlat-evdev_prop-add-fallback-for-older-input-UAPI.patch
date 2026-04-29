@@ -1,0 +1,48 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Sat, 25 Apr 2026 00:00:00 +0000
+Subject: [PATCH] src/xlat/evdev_prop: add fallback for older input UAPI
+
+Older kernel headers expose property bit 0x07 as
+INPUT_PROP_PRESSUREPAD instead of INPUT_PROP_HAPTIC_TOUCHPAD.
+Teach both the xlat generator input and the shipped generated header
+to fall back so strace builds against those headers without depending
+on xlat regeneration during the package build.
+
+Upstream: pending
+Signed-off-by: suckbluefrog <suckbluefrog@proton.me>
+---
+ src/xlat/evdev_prop.h  | 7 +++++++
+ src/xlat/evdev_prop.in | 2 +-
+ 2 files changed, 8 insertions(+), 1 deletion(-)
+
+diff --git a/src/xlat/evdev_prop.h b/src/xlat/evdev_prop.h
+index 3c6a481..438fb8b 100644
+--- a/src/xlat/evdev_prop.h
++++ b/src/xlat/evdev_prop.h
+@@ -12,6 +12,13 @@
+ 
+ # else
+ 
++#  if !defined(INPUT_PROP_HAPTIC_TOUCHPAD) && defined(INPUT_PROP_PRESSUREPAD)
++#   define INPUT_PROP_HAPTIC_TOUCHPAD INPUT_PROP_PRESSUREPAD
++#  endif
++#  if !defined(INPUT_PROP_HAPTIC_TOUCHPAD) && !defined(INPUT_PROP_PRESSUREPAD)
++#   define INPUT_PROP_HAPTIC_TOUCHPAD 0x07
++#  endif
++
+ DIAG_PUSH_IGNORE_TAUTOLOGICAL_CONSTANT_COMPARE
+ static const struct xlat_data evdev_prop_xdata[] = {
+  [INPUT_PROP_POINTER] = XLAT(INPUT_PROP_POINTER),
+diff --git a/src/xlat/evdev_prop.in b/src/xlat/evdev_prop.in
+index e475f16..325646b 100644
+--- a/src/xlat/evdev_prop.in
++++ b/src/xlat/evdev_prop.in
+@@ -9,4 +9,4 @@ INPUT_PROP_SEMI_MT
+ INPUT_PROP_TOPBUTTONPAD
+ INPUT_PROP_POINTING_STICK
+ INPUT_PROP_ACCELEROMETER
+-INPUT_PROP_HAPTIC_TOUCHPAD
++INPUT_PROP_HAPTIC_TOUCHPAD INPUT_PROP_PRESSUREPAD
+-- 
+2.49.0

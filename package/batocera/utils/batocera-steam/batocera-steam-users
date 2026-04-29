@@ -1,0 +1,295 @@
+#!/bin/bash
+set -euo pipefail
+
+command="${1:-list}"
+selection="${2:-}"
+
+python3 - "${command}" "${selection}" <<'PY'
+from __future__ import annotations
+
+import os
+import sys
+from pathlib import Path
+
+STEAM_ROOTS = [
+    Path("/userdata/system/steam"),
+    Path("/userdata/system/.steam/steam"),
+    Path("/userdata/system/.local/share/Steam"),
+]
+
+
+def _q(value: object) -> str:
+    return '"' + str(value).replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def _tokenize(text: str) -> list[str]:
+    tokens: list[str] = []
+    index = 0
+    length = len(text)
+
+    while index < length:
+        char = text[index]
+
+        if char.isspace():
+            index += 1
+            continue
+
+        if char == "/" and index + 1 < length and text[index + 1] == "/":
+            while index < length and text[index] != "\n":
+                index += 1
+            continue
+
+        if char in "{}":
+            tokens.append(char)
+            index += 1
+            continue
+
+        if char == '"':
+            index += 1
+            buffer: list[str] = []
+            while index < length:
+                current = text[index]
+                if current == "\\" and index + 1 < length:
+                    buffer.append(text[index + 1])
+                    index += 2
+                    continue
+                if current == '"':
+                    index += 1
+                    break
+                buffer.append(current)
+                index += 1
+            tokens.append("".join(buffer))
+            continue
+
+        start = index
+        while index < length and not text[index].isspace() and text[index] not in '{}':
+            index += 1
+        tokens.append(text[start:index])
+
+    return tokens
+
+
+def _parse_object(tokens: list[str], index: int = 0) -> tuple[dict[str, object], int]:
+    data: dict[str, object] = {}
+
+    while index < len(tokens):
+        token = tokens[index]
+        if token == "}":
+            return data, index + 1
+
+        key = token
+        index += 1
+        if index >= len(tokens):
+            data[key] = ""
+            break
+
+        token = tokens[index]
+        if token == "{":
+            value, index = _parse_object(tokens, index + 1)
+            data[key] = value
+        else:
+            data[key] = token
+            index += 1
+
+    return data, index
+
+
+def _load_vdf(path: Path) -> dict[str, object]:
+    if not path.exists():
+        return {}
+
+    tokens = _tokenize(path.read_text(encoding="utf-8", errors="ignore"))
+    if not tokens:
+        return {}
+
+    data, _ = _parse_object(tokens)
+    return data
+
+
+def _dump_object(node: dict[str, object], indent: str = "") -> list[str]:
+    lines: list[str] = []
+
+    for key, value in node.items():
+        if isinstance(value, dict):
+            lines.append(f"{indent}{_q(key)}")
+            lines.append(f"{indent}" + "{")
+            lines.extend(_dump_object(value, indent + "\t"))
+            lines.append(f"{indent}" + "}")
+        else:
+            lines.append(f"{indent}{_q(key)}\t\t{_q(value)}")
+
+    return lines
+
+
+def _write_vdf(path: Path, data: dict[str, object]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(_dump_object(data)) + "\n", encoding="utf-8")
+
+
+def _steam_roots() -> list[Path]:
+    candidates: list[Path] = []
+
+    env_home = os.environ.get("BATOCERA_STEAM_HOME")
+    if env_home:
+        candidates.append(Path(env_home))
+
+    roots: list[Path] = []
+    seen: set[str] = set()
+
+    candidates.extend(STEAM_ROOTS)
+
+    for root in candidates:
+        if root is None:
+            continue
+        root = Path(root)
+        key = str(root.resolve(strict=False))
+        if key in seen:
+            continue
+        seen.add(key)
+        roots.append(root)
+
+    return roots
+
+
+def _find_root_for_listing() -> Path | None:
+    for root in _steam_roots():
+        if (root / "config" / "loginusers.vdf").exists():
+            return root
+    return None
+
+
+def _find_root_for_apply() -> Path:
+    for root in _steam_roots():
+        if root == Path(""):
+            continue
+        if root.exists() or (root / "config" / "loginusers.vdf").exists() or (root / "registry.vdf").exists():
+            return root
+    return STEAM_ROOTS[0]
+
+
+def _get_users(data: dict[str, object]) -> list[dict[str, str]]:
+    users = data.get("users")
+    if not isinstance(users, dict):
+        return []
+
+    items: list[dict[str, str]] = []
+    for steamid, raw in users.items():
+        if not isinstance(raw, dict):
+            continue
+        account = str(raw.get("AccountName", "")).strip()
+        if not account:
+            continue
+        persona = str(raw.get("PersonaName", "")).strip()
+        label = account
+        if persona and persona.casefold() != account.casefold():
+            label = f"{persona} ({account})"
+
+        items.append(
+            {
+                "steamid": str(steamid),
+                "account": account,
+                "persona": persona,
+                "label": label,
+                "most_recent": str(raw.get("MostRecent", "0")),
+                "remember_password": str(raw.get("RememberPassword", "0")),
+            }
+        )
+
+    items.sort(key=lambda item: (item["most_recent"] != "1", item["label"].casefold(), item["account"].casefold()))
+    return items
+
+
+def _ensure_dict(parent: dict[str, object], key: str) -> dict[str, object]:
+    current = parent.get(key)
+    if isinstance(current, dict):
+        return current
+    created: dict[str, object] = {}
+    parent[key] = created
+    return created
+
+
+def _select_user(users: list[dict[str, str]], selection: str) -> dict[str, str] | None:
+    lowered = selection.casefold()
+    for user in users:
+        if lowered == user["account"].casefold():
+            return user
+    for user in users:
+        if lowered == user["steamid"].casefold():
+            return user
+    for user in users:
+        if user["persona"] and lowered == user["persona"].casefold():
+            return user
+    return None
+
+
+def _apply_selection(selection: str) -> int:
+    normalized = selection.strip()
+    lowered = normalized.casefold()
+    root = _find_root_for_apply()
+    loginusers_path = root / "config" / "loginusers.vdf"
+    registry_path = root / "registry.vdf"
+
+    loginusers = _load_vdf(loginusers_path)
+    users_dict = loginusers.get("users")
+    if not isinstance(users_dict, dict):
+        print(f"Steam users: no loginusers.vdf found under {root}", file=sys.stderr)
+        return 0
+
+    users = _get_users(loginusers)
+    if lowered == "prompt":
+        for raw in users_dict.values():
+            if not isinstance(raw, dict):
+                continue
+            raw["MostRecent"] = "0"
+            raw["AllowAutoLogin"] = "0"
+
+        registry = _load_vdf(registry_path)
+        steam_key = _ensure_dict(_ensure_dict(_ensure_dict(_ensure_dict(_ensure_dict(registry, "Registry"), "HKCU"), "Software"), "Valve"), "Steam")
+        steam_key.pop("AutoLoginUser", None)
+        _write_vdf(loginusers_path, loginusers)
+        _write_vdf(registry_path, registry)
+        print("prompt")
+        return 0
+
+    selected = _select_user(users, normalized)
+    if selected is None:
+        print(f"Steam users: selection '{normalized}' not found", file=sys.stderr)
+        return 1
+
+    for steamid, raw in users_dict.items():
+        if not isinstance(raw, dict):
+            continue
+        raw["MostRecent"] = "1" if str(steamid) == selected["steamid"] else "0"
+
+    selected_raw = users_dict.get(selected["steamid"])
+    if isinstance(selected_raw, dict) and str(selected_raw.get("RememberPassword", "0")) == "1":
+        selected_raw["AllowAutoLogin"] = "1"
+
+    registry = _load_vdf(registry_path)
+    steam_key = _ensure_dict(_ensure_dict(_ensure_dict(_ensure_dict(_ensure_dict(registry, "Registry"), "HKCU"), "Software"), "Valve"), "Steam")
+    steam_key["AutoLoginUser"] = selected["account"]
+
+    _write_vdf(loginusers_path, loginusers)
+    _write_vdf(registry_path, registry)
+    print(selected["account"])
+    return 0
+
+
+command = sys.argv[1] if len(sys.argv) > 1 else "list"
+selection = sys.argv[2] if len(sys.argv) > 2 else ""
+
+if command == "list":
+    root = _find_root_for_listing()
+    if root is None:
+        raise SystemExit(0)
+    users = _get_users(_load_vdf(root / "config" / "loginusers.vdf"))
+    for user in users:
+        print(f"{user['account']}:{user['label']}")
+    raise SystemExit(0)
+
+if command == "apply":
+    raise SystemExit(_apply_selection(selection))
+
+print(f"Unknown command: {command}", file=sys.stderr)
+raise SystemExit(1)
+PY

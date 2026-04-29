@@ -1,0 +1,73 @@
+#!/bin/sh
+
+system_app="${BATOCERA_LUTRIS_SYSTEM_APPIMAGE:-/usr/share/lutris/lutris.AppImage}"
+lutris_home="${BATOCERA_LUTRIS_HOME:-/userdata/saves/lutris}"
+app="${BATOCERA_LUTRIS_APPIMAGE:-$lutris_home/lutris.AppImage}"
+log="${BATOCERA_LUTRIS_LOG:-/userdata/system/logs/lutris-runimage.log}"
+
+export HOME="$lutris_home"
+export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
+export XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
+export XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
+mkdir -p "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_CACHE_HOME"
+mkdir -p "${XDG_DATA_HOME}/applications" "${HOME}/Desktop"
+
+if [ -f "$log" ] && [ "$(stat -c%s "$log" 2>/dev/null || echo 0)" -gt 5242880 ]; then
+	mv -f "$log" "$log.1"
+fi
+mkdir -p "$(dirname "$log")"
+
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+mkdir -p "$XDG_RUNTIME_DIR" 2>/dev/null || true
+
+if [ ! -x "$app" ] && [ -f "$system_app" ]; then
+	cp -f "$system_app" "$app"
+	chmod 0755 "$app" 2>/dev/null || true
+fi
+export RIM_ALLOW_ROOT="${RIM_ALLOW_ROOT:-1}"
+export APPIMAGE_ALLOW_ROOT="${APPIMAGE_ALLOW_ROOT:-1}"
+export RUNIMAGE_EXTRACT_AND_RUN="${RUNIMAGE_EXTRACT_AND_RUN:-1}"
+export APPIMAGE_EXTRACT_AND_RUN="${APPIMAGE_EXTRACT_AND_RUN:-1}"
+export LUTRIS_SKIP_INIT="${LUTRIS_SKIP_INIT:-1}"
+
+export RIM_OVERFS_MODE="${RIM_OVERFS_MODE:-1}"
+export RIM_KEEP_OVERFS="${RIM_KEEP_OVERFS:-1}"
+export RIM_OVERFS_ID="${RIM_OVERFS_ID:-batocera-lutris}"
+export RIM_CACHEDIR="${RIM_CACHEDIR:-$XDG_CACHE_HOME/runimage}"
+export RIM_OVERFSDIR="${RIM_OVERFSDIR:-$XDG_CACHE_HOME/runimage-overlay}"
+export RIM_PORTABLE_HOME="${RIM_PORTABLE_HOME:-1}"
+export RIM_PORTABLE_HOME_DIR="${RIM_PORTABLE_HOME_DIR:-$HOME}"
+mkdir -p "$RIM_CACHEDIR" "$RIM_OVERFSDIR"
+
+stamp_id="$(printf '%s' "$RIM_OVERFS_ID" | tr '/ ' '__')"
+patch_stamp="$XDG_CACHE_HOME/lutris/.rootcheck_patched_${stamp_id}"
+mkdir -p "$(dirname "$patch_stamp")"
+
+if [ ! -f "$patch_stamp" ] || [ "${BATOCERA_LUTRIS_FORCE_PATCH:-0}" = "1" ]; then
+	"$app" rim-shell -c '
+found=0
+patched=0
+for pattern in \
+	/usr/lib/python*/site-packages/lutris/gui/application.py \
+	/opt/lutris/lib/python*/site-packages/lutris/gui/application.py
+do
+	for f in $pattern; do
+		[ -f "$f" ] || continue
+		found=1
+		if grep -q "os.geteuid() == 0" "$f"; then
+			sed -i "s/os.geteuid() == 0/os.geteuid() == 888/g" "$f"
+		fi
+		if grep -q "os.geteuid() == 888" "$f"; then
+			patched=1
+		fi
+	done
+done
+[ "$found" -eq 1 ] && [ "$patched" -eq 1 ]
+' >>"$log" 2>&1 && touch "$patch_stamp"
+fi
+
+if [ "${BATOCERA_LUTRIS_PATCH_ONLY:-0}" = "1" ]; then
+	exit 0
+fi
+
+exec "$app" "$@" >>"$log" 2>&1

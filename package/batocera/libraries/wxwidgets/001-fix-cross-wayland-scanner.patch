@@ -1,0 +1,19 @@
+diff --git a/build/cmake/init.cmake b/build/cmake/init.cmake
+index 2dc255f098..963924dcfa 100644
+--- a/build/cmake/init.cmake
++++ b/build/cmake/init.cmake
+@@ -462,6 +462,14 @@ function(wx_init_project)
+                 pkg_check_modules(WAYLAND_CLIENT wayland-client)
+                 if(WAYLAND_CLIENT_FOUND)
+                     pkg_get_variable(WAYLAND_SCANNER wayland-scanner wayland_scanner)
++                    if(CMAKE_CROSSCOMPILING)
++                        find_program(WAYLAND_SCANNER_HOST
++                            NAMES wayland-scanner
++                            NO_CMAKE_FIND_ROOT_PATH)
++                        if(WAYLAND_SCANNER_HOST)
++                            set(WAYLAND_SCANNER ${WAYLAND_SCANNER_HOST})
++                        endif()
++                    endif()
+                     if(WAYLAND_SCANNER)
+                         set(wx_protocols_input_dir ${wxSOURCE_DIR}/src/unix/protocols)
+                         set(wx_protocols_temp_dir ${wxOUTPUT_DIR}/wx/protocols)

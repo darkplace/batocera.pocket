@@ -1,0 +1,16 @@
+config BR2_PACKAGE_PYTHON_GBINDER
+	bool "python-gbinder"
+	depends on !BR2_STATIC_LIBS
+	depends on BR2_USE_WCHAR
+	depends on BR2_TOOLCHAIN_HAS_THREADS
+	depends on BR2_PACKAGE_PYTHON3
+	select BR2_PACKAGE_HOST_PYTHON_CYTHON
+	select BR2_PACKAGE_LIBGBINDER
+	help
+	  Python bindings for libgbinder used by Waydroid.
+
+	  https://github.com/waydroid/gbinder-python
+
+comment "python-gbinder needs a toolchain w/ wchar, threads, dynamic library"
+	depends on BR2_PACKAGE_PYTHON3
+	depends on BR2_STATIC_LIBS || !BR2_USE_WCHAR || !BR2_TOOLCHAIN_HAS_THREADS

@@ -1,0 +1,29 @@
+From 1d51ce33eb946c1b03db3d0c34b8932169958f38 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Fri, 20 Mar 2026 13:27:00 +0200
+Subject: [PATCH] rename bus DMA state to avoid GCC 13 name clash
+
+GCC 13 rejects the nested Bus::DMA declaration because DMA is already used
+in the surrounding scope for the hardware DMA engine type.
+
+Signed-off-by: suckbluefrog <suckbluefrog@proton.me>
+---
+ src/nba/src/bus/bus.hpp | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/nba/src/bus/bus.hpp b/src/nba/src/bus/bus.hpp
+index 3f77217..fdc7118 100644
+--- a/src/nba/src/bus/bus.hpp
++++ b/src/nba/src/bus/bus.hpp
+@@ -109,7 +109,7 @@ struct Bus {
+     int duty;
+   } prefetch;
+ 
+-  struct DMA {
++  struct DMAState {
+     bool active = false;
+     bool openbus = false;
+   } dma;
+-- 
+2.43.0
+

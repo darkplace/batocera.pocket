@@ -1,0 +1,18 @@
+#!/bin/bash
+
+# Check if DISPLAY is not set
+if [ -z "${DISPLAY}" ]; then
+    DISPLAY=$(getLocalXDisplay)
+fi
+
+# Check if Wayland is available
+if [ -n "${WAYLAND_DISPLAY}" ]; then
+    QT_QPA_PLATFORM=wayland
+else
+    QT_QPA_PLATFORM=xcb
+fi
+
+XDG_CONFIG_HOME=/userdata/system/configs \
+LD_LIBRARY_PATH=/usr/stenzek-shaderc/lib:/usr/lib \
+QT_QPA_PLATFORM="$QT_QPA_PLATFORM" \
+/usr/bin/duckstation-qt

@@ -1,0 +1,19 @@
+# SPDX-FileCopyrightText: Added/modified by suckbluefrog
+# batocera-zen3_i386_libs.board
+# 32-bit i386 library build for zen3 x86_64 targets
+# Produces libraries to be injected at /lib32 on the 64-bit image.
+
+include batocera-board.i386.libs
+
+# Target definition - 32-bit x86 userspace
+BR2_x86_i686=y
+BR2_PACKAGE_BATOCERA_TARGET_X86=y
+BR2_TARGET_OPTIMIZATION="-pipe -fsigned-char"
+BR2_TARGET_GENERIC_GETTY_BAUDRATE_115200=y
+BR2_GLOBAL_PATCH_DIR="$(BR2_EXTERNAL_BATOCERA_PATH)/board/batocera/patches $(BR2_EXTERNAL_BATOCERA_PATH)/board/batocera/x86/patches"
+
+# Keep ABI in sync with zen3 base image
+BR2_KERNEL_HEADERS_6_18=y
+BR2_INSTALL_LIBSTDCPP=y
+
+include batocera-zen3_i386_libs.packages

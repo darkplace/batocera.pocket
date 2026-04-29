@@ -1,0 +1,89 @@
+menu "CLI Power Tools"
+
+config BR2_PACKAGE_CLITOOLS
+	bool "CLI power tools bundle"
+	help
+	  Meta-package that enables a curated set of modern
+	  CLI productivity, debugging, and system inspection tools.
+
+	  This package installs no files itself.
+
+	select BR2_PACKAGE_ZSH
+	select BR2_PACKAGE_FISH
+	select BR2_PACKAGE_GIT
+    select BR2_PACKAGE_MAKE
+	
+	# Modern replacements
+	select BR2_PACKAGE_EZA
+	select BR2_PACKAGE_BAT
+
+	# Monitoring / performance
+	select BR2_PACKAGE_BTOP
+	select BR2_PACKAGE_GLANCES
+	select BR2_PACKAGE_BANDWHICH
+	select BR2_PACKAGE_DUA
+	select BR2_PACKAGE_DUF
+	select BR2_PACKAGE_PROCS
+
+	# Search / navigation
+	select BR2_PACKAGE_FZF
+	select BR2_PACKAGE_RIPGREP
+	select BR2_PACKAGE_RIP
+	select BR2_PACKAGE_SCC
+	select BR2_PACKAGE_ZOXIDE
+	select BR2_PACKAGE_SD
+
+	# Utilities
+	select BR2_PACKAGE_P7ZIP
+	select BR2_PACKAGE_CUPS
+	select BR2_PACKAGE_ARIA2
+	select BR2_PACKAGE_LIBFUSE3
+	select BR2_PACKAGE_HYPERFINE
+	select BR2_PACKAGE_ICDIFF
+	select BR2_PACKAGE_MICRO
+	select BR2_PACKAGE_RANGER
+	select BR2_PACKAGE_TREE
+	select BR2_PACKAGE_TLDR
+	select BR2_PACKAGE_TRE
+	select BR2_PACKAGE_XMLSTARLET
+	select BR2_PACKAGE_SCREENFETCH
+	select BR2_PACKAGE_NEOFETCH
+	select BR2_PACKAGE_SPEEDTEST_CLI
+
+
+	# Debugging / introspection
+	select BR2_PACKAGE_STRACE
+	select BR2_PACKAGE_PAX_UTILS
+	select BR2_PACKAGE_PKGCONF
+	select BR2_PACKAGE_FILE
+	select BR2_PACKAGE_LSOF
+	select BR2_PACKAGE_PATCHELF
+	select BR2_PACKAGE_JQ
+
+	# QoL
+	select BR2_PACKAGE_TMUX
+	select BR2_PACKAGE_NCDU
+	select BR2_PACKAGE_HTOP
+	select BR2_PACKAGE_RSYNC
+    select BR2_PACKAGE_LIBNSS
+	select BR2_PACKAGE_LIBNSPR
+	select BR2_PACKAGE_NODEJS
+	select BR2_PACKAGE_NODEJS_NPM
+
+	# Containers
+	select BR2_PACKAGE_BATOCERA_DOCKER			if BR2_PACKAGE_HOST_GO_TARGET_ARCH_SUPPORTS && \
+											   BR2_PACKAGE_HOST_GO_TARGET_CGO_LINKING_SUPPORTS && \
+											   BR2_TOOLCHAIN_HAS_THREADS && \
+											   !BR2_TOOLCHAIN_USES_UCLIBC && \
+											   BR2_USE_MMU && \
+											   BR2_PACKAGE_LIBSECCOMP_ARCH_SUPPORTS && \
+											   BR2_TOOLCHAIN_HEADERS_AT_LEAST_3_17
+	select BR2_PACKAGE_BATOCERA_DISTROBOX		if BR2_PACKAGE_HOST_GO_TARGET_ARCH_SUPPORTS && \
+											   BR2_PACKAGE_HOST_GO_TARGET_CGO_LINKING_SUPPORTS && \
+											   BR2_TOOLCHAIN_HAS_THREADS && \
+											   !BR2_TOOLCHAIN_USES_UCLIBC && \
+											   BR2_USE_MMU && \
+											   BR2_PACKAGE_LIBSECCOMP_ARCH_SUPPORTS && \
+											   BR2_TOOLCHAIN_HEADERS_AT_LEAST_3_17
+
+endmenu

@@ -1,0 +1,93 @@
+#!/usr/bin/python
+
+import sys
+import pyudev
+import evdev
+import hashlib
+from os.path import basename
+from os.path import dirname
+import re
+
+def findParent(ctx, child, childtype, parenttype):
+    for device in ctx.list_devices(subsystem=childtype):
+        if basename(device.device_path) == child:
+            return device.find_parent(parenttype)
+    raise Exception("unable to find the parent for " + child + " (" + childtype + ", " + parenttype + ")")
+
+def findChildren(ctx, parenthash, childtype, parenttype):
+    children = []
+    for device in ctx.list_devices(subsystem=childtype):
+        curparent = findParent(ctx, basename(device.device_path), childtype, parenttype)
+        if curparent is not None:
+            if parent2hash(curparent) == parenthash:
+                cname = basename(device.device_path)
+                if childtype == "input":
+                    if cname[0:5] == "event":
+                        event = evdev.InputDevice('/dev/input/' + cname)
+                        children.append({ "event": "/dev/input/"+cname, "name": event.name })
+                elif childtype == "video":
+                    if cname[0:5] == "video":
+                        children.append({ "video": "/dev/"+cname})
+                elif childtype == "hidraw":
+                    if cname[0:6] == "hidraw":
+                        children.append({ "hidraw": "/dev/"+cname})
+    return children
+
+def parent2hash(parent):
+    return hashlib.md5(devicepathWithoutConf(parent.device_path).encode('utf-8')).hexdigest()
+
+def devicepathWithoutConf(path):
+    # 2 cases:
+    # usb : /devices/pci0000:00/0000:00:08.1/0000:04:00.4/usb3/3-3/3-3:1.2
+    # bt  : /devices/virtual/misc/uhid/0005:057E:0330.000C
+    # for usb, we must remove the last node, cause it includes the n-1 + the version, and it differs sometimes for the usb version
+    lastNode = basename(path)
+    previouslastNode = basename(dirname(path))
+
+    # if last node is like previous node + :number.number => usb
+    if lastNode[0:len(previouslastNode)+1] == previouslastNode+":" and re.search(r"^[0-9]+\.[0-9]+$", lastNode[len(previouslastNode)+1:]) is not None:
+        return dirname(path)
+    else:
+        return path
+
+def do_help():
+    print("evsieve-helper parent   <object> <child type> <parent type>",  file=sys.stderr)
+    print("evsieve-helper children <parent> <child type> <parent type>",  file=sys.stderr)
+
+# evsieve-helper parent /dev/input/event18 input usb
+# evsieve-helper parent-raw /dev/input/event18 input usb
+# evsieve-helper children 6ad2d2e6ce89b1e736c39f8d359b4623 input usb
+
+if len(sys.argv) != 5:
+    do_help()
+    sys.exit(1)
+
+ctx = pyudev.Context()
+action     = sys.argv[1]
+obj        = sys.argv[2]
+childtype  = sys.argv[3]
+parenttype = sys.argv[4]
+
+if action == "parent":
+    print(parent2hash(findParent(ctx, basename(obj), childtype, parenttype)))
+    exit(0)
+elif action == "parent-raw":
+    parent = findParent(ctx, basename(obj), childtype, parenttype)
+    print(devicepathWithoutConf(parent.device_path))
+    exit(0)
+elif action == "children":
+    if childtype == "input":
+        parenthash = sys.argv[2]
+        children = findChildren(ctx, parenthash, childtype, parenttype)
+        for child in children:
+            print("{}\t{}".format(child["event"], child["name"]))
+        exit(0)
+    elif childtype == "video" or childtype == "hidraw":
+        parenthash = sys.argv[2]
+        children = findChildren(ctx, parenthash, childtype, parenttype)
+        for child in children:
+            print("{}".format(child[childtype]))
+        exit(0)
+else:
+    do_help()
+    sys.exit(1)

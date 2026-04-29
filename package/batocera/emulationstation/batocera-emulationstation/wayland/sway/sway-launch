@@ -1,0 +1,327 @@
+#!/bin/sh
+
+# Allow startup from a user session where WAYLAND_DISPLAY is set,
+# e.g. to restart via /etc/init.d/S31emulationstation start
+unset WAYLAND_DISPLAY
+
+# Log and configuration file paths
+LOG_FILE="/userdata/system/logs/display.log"
+SWAY_CONF_FILE="/var/run/sway-display.conf"
+SWAY_LOG_FILE="/var/log/sway.log"
+
+mkdir -p /userdata/system/logs
+mkdir -p /var/run
+mkdir -p /var/log
+
+# Log function for cleaner output
+log_message() {
+    echo "$1" >> "$LOG_FILE"
+}
+
+settings_get() {
+    value=$(batocera-settings-get-master "$1" 2>/dev/null)
+    if [ -z "$value" ]; then
+        value=$(batocera-settings-get "$1" 2>/dev/null)
+    fi
+    echo "$value"
+}
+
+is_number() {
+    case "$1" in
+        ""|*[!0-9]*)
+            return 1
+            ;;
+    esac
+    return 0
+}
+
+resolution_width() {
+    resolution=$(echo "$1" | cut -d'.' -f1)
+    case "$resolution" in
+        *x*) ;;
+        *) return 0 ;;
+    esac
+    width=$(echo "$resolution" | cut -d'x' -f1)
+    if is_number "$width"; then
+        echo "$width"
+    fi
+}
+
+resolution_height() {
+    resolution=$(echo "$1" | cut -d'.' -f1)
+    case "$resolution" in
+        *x*) ;;
+        *) return 0 ;;
+    esac
+    height=$(echo "$resolution" | cut -d'x' -f2)
+    if is_number "$height"; then
+        echo "$height"
+    fi
+}
+
+resolution_effective_width() {
+    resolution="$1"
+    transform="$2"
+    width=$(resolution_width "$resolution")
+    height=$(resolution_height "$resolution")
+
+    case "$transform" in
+        90|270)
+            if is_number "$height"; then
+                echo "$height"
+            fi
+            ;;
+        *)
+            if is_number "$width"; then
+                echo "$width"
+            fi
+            ;;
+    esac
+}
+
+resolution_effective_height() {
+    resolution="$1"
+    transform="$2"
+    width=$(resolution_width "$resolution")
+    height=$(resolution_height "$resolution")
+
+    case "$transform" in
+        90|270)
+            if is_number "$width"; then
+                echo "$width"
+            fi
+            ;;
+        *)
+            if is_number "$height"; then
+                echo "$height"
+            fi
+            ;;
+    esac
+}
+
+rotation_to_transform() {
+    case "$1" in
+        1)
+            echo 90
+            ;;
+        2)
+            echo 180
+            ;;
+        3)
+            echo 270
+            ;;
+        *)
+            echo normal
+            ;;
+    esac
+}
+
+display_rotation() {
+    output="$1"
+    role="$2"
+
+    rotation=
+    if [ "$role" = "secondary" ]; then
+        rotation=$(settings_get "display.rotate2.${output}")
+    fi
+    if [ -z "$rotation" ]; then
+        rotation=$(settings_get "display.rotate.${output}")
+    fi
+    if [ -z "$rotation" ]; then
+        rotation=$(settings_get display.rotate)
+    fi
+
+    rotation_to_transform "$rotation"
+}
+
+thor_panel_toggle() {
+    model=$(batocera-model 2>/dev/null)
+    display_position=$(settings_get display.position)
+    primary=$(settings_get global.videooutput)
+    secondary=$(settings_get global.videooutput2)
+
+    if [ "$model" != "AYN_Thor" ] || [ "$display_position" != "top-bottom" ] || [ "$primary" != "DSI-2" ] || [ "$secondary" != "DSI-1" ]; then
+        return 0
+    fi
+
+    log_message "Applying AYN Thor panel toggle before Sway starts."
+    touch /tmp/no-hotplug
+
+    for status_path in /sys/class/drm/card*-DSI-2/status; do
+        [ -e "$status_path" ] || continue
+        echo off > "$status_path" 2>/dev/null
+        sleep 0.1
+        echo on > "$status_path" 2>/dev/null
+    done
+
+    sleep 0.1
+    for status_path in /sys/class/drm/card*-DSI-1/status; do
+        [ -e "$status_path" ] || continue
+        echo on > "$status_path" 2>/dev/null
+    done
+}
+
+# Function to gather all connected displays
+get_connected_displays() {
+    connected_displays=""
+    for drm_path in /sys/class/drm/card*/card*-*/status; do
+        [ -e "$drm_path" ] || continue
+        if [ "$(cat "$drm_path")" = "connected" ]; then
+            # Extract the display name by removing the card prefix (e.g., "card2-")
+            drm_display=$(basename "$(dirname "$drm_path")" | cut -d'-' -f2-)
+            connected_displays="$connected_displays $drm_display"
+        fi
+    done
+    echo "$connected_displays"
+}
+
+display_is_connected() {
+    wanted="$1"
+    for display in $connected_displays; do
+        if [ "$display" = "$wanted" ]; then
+            return 0
+        fi
+    done
+    return 1
+}
+
+write_output_block() {
+    output="$1"
+    role="$2"
+    pos_x="$3"
+    pos_y="$4"
+    transform=$(display_rotation "$output" "$role")
+
+    echo "output ${output} {"
+    echo "    enable"
+    if [ "$transform" != "normal" ]; then
+        echo "    transform ${transform}"
+    fi
+    if [ -n "$pos_x" ] && [ -n "$pos_y" ]; then
+        echo "    pos ${pos_x} ${pos_y}"
+    fi
+    echo "}"
+    echo
+}
+
+thor_panel_toggle
+
+preferred_display=$(settings_get global.videooutput)
+secondary_display=$(settings_get global.videooutput2)
+display_position=$(settings_get display.position)
+model=$(batocera-model 2>/dev/null)
+
+connected_displays=$(get_connected_displays)
+log_message "Connected displays = ${connected_displays}"
+
+if [ -z "$preferred_display" ] || ! display_is_connected "$preferred_display"; then
+    set -- $connected_displays
+    preferred_display="$1"
+fi
+
+if [ -z "$preferred_display" ]; then
+    log_message "Error: Failed to retrieve preferred display setting."
+    {
+        echo "set \$primary_output \"\""
+        echo "set \$secondary_output \"\""
+    } > "$SWAY_CONF_FILE"
+else
+    if [ -n "$secondary_display" ] && [ "$secondary_display" != "$preferred_display" ] && ! display_is_connected "$secondary_display"; then
+        log_message "Secondary display ${secondary_display} is not connected; disabling dual-output layout."
+        secondary_display=
+    fi
+
+    primary_x=0
+    primary_y=0
+    secondary_x=
+    secondary_y=
+
+    if [ -n "$secondary_display" ]; then
+        case "$display_position" in
+            top-bottom)
+                primary_resolution=$(settings_get es.resolution)
+                primary_transform=$(display_rotation "$preferred_display" primary)
+                primary_width=$(resolution_effective_width "$primary_resolution" "$primary_transform")
+                primary_height=$(resolution_effective_height "$primary_resolution" "$primary_transform")
+                secondary_resolution=$(settings_get es.resolution2)
+                secondary_transform=$(display_rotation "$secondary_display" secondary)
+                secondary_width=$(resolution_effective_width "$secondary_resolution" "$secondary_transform")
+                if ! is_number "$primary_width" && [ "$model" = "AYN_Thor" ] && [ "$preferred_display" = "DSI-2" ] && [ "$secondary_display" = "DSI-1" ]; then
+                    primary_width=1920
+                fi
+                if ! is_number "$primary_height" && [ "$model" = "AYN_Thor" ] && [ "$preferred_display" = "DSI-2" ] && [ "$secondary_display" = "DSI-1" ]; then
+                    primary_height=1080
+                fi
+                if ! is_number "$secondary_width" && [ "$model" = "AYN_Thor" ] && [ "$preferred_display" = "DSI-2" ] && [ "$secondary_display" = "DSI-1" ]; then
+                    secondary_width=1240
+                fi
+                if ! is_number "$primary_width"; then
+                    primary_width=0
+                fi
+                if ! is_number "$primary_height"; then
+                    primary_height=0
+                fi
+                if is_number "$secondary_width" && [ "$primary_width" -gt "$secondary_width" ]; then
+                    secondary_x=$(( (primary_width - secondary_width) / 2 ))
+                else
+                    secondary_x=0
+                fi
+                secondary_y="$primary_height"
+                ;;
+            *)
+                primary_resolution=$(settings_get es.resolution)
+                primary_transform=$(display_rotation "$preferred_display" primary)
+                primary_width=$(resolution_effective_width "$primary_resolution" "$primary_transform")
+                if ! is_number "$primary_width"; then
+                    primary_width=0
+                fi
+                secondary_x="$primary_width"
+                secondary_y=0
+                ;;
+        esac
+    fi
+
+    log_message "Preferred display = ${preferred_display}"
+    log_message "Secondary display = ${secondary_display:-none}"
+    log_message "Display position = ${display_position:-default}"
+    log_message "Writing display configuration to ${SWAY_CONF_FILE}"
+
+    {
+        echo "set \$primary_output ${preferred_display}"
+        if [ -n "$secondary_display" ]; then
+            echo "set \$secondary_output ${secondary_display}"
+        else
+            echo "set \$secondary_output ${preferred_display}"
+        fi
+        echo
+
+        write_output_block "$preferred_display" primary "$primary_x" "$primary_y"
+
+        if [ -n "$secondary_display" ]; then
+            write_output_block "$secondary_display" secondary "$secondary_x" "$secondary_y"
+        fi
+
+        for display in $connected_displays; do
+            if [ "$display" != "$preferred_display" ] && [ "$display" != "$secondary_display" ]; then
+                log_message "Disabling display ${display}"
+                echo "output ${display} {"
+                echo "    disable"
+                echo "}"
+                echo
+            fi
+        done
+    } > "$SWAY_CONF_FILE"
+fi
+
+# Start Sway with specified environment variable, logging output
+log_message "Starting Sway..."
+case "${XKB_LAYOUT:-}" in
+    ""|en)
+        export XKB_LAYOUT=us
+        ;;
+esac
+export XKB_DEFAULT_LAYOUT="${XKB_DEFAULT_LAYOUT:-$XKB_LAYOUT}"
+export XKB_VARIANT="${XKB_VARIANT:-}"
+# Use -d for debugging
+#WLR_LIBINPUT_NO_DEVICES=1 /usr/bin/sway -d > "$SWAY_LOG_FILE" 2>&1
+WLR_LIBINPUT_NO_DEVICES=1 /usr/bin/sway > "$SWAY_LOG_FILE" 2>&1

@@ -1,0 +1,11 @@
+--- a/ruby/cmake/os-linux.cmake
++++ b/ruby/cmake/os-linux.cmake
+@@ -122,7 +122,7 @@ target_link_libraries(
+   PRIVATE
+     $<$<BOOL:${SDL_FOUND}>:SDL::SDL>
+     $<$<BOOL:${OpenAL_FOUND}>:OpenAL::OpenAL>
+-    $<$<BOOL:TRUE>:librashader::librashader>
++    $<$<BOOL:${ARES_ENABLE_LIBRASHADER}>:librashader::librashader>
+     $<$<BOOL:${OSS_FOUND}>:OSS::OSS>
+     $<$<BOOL:${ALSA_FOUND}>:ALSA::ALSA>
+     $<$<BOOL:${PulseAudio_FOUND}>:PulseAudio::PulseAudio>

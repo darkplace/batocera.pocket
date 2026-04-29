@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Icon=/usr/share/icons/batocera/86box.png
+Exec=/usr/bin/86Box.sh
+Terminal=false
+Type=Application
+Categories=Game;batocera.linux;
+Name=86Box
+GenericName=IBM PC Emulator
+Comment=Run classic IBM PC compatible systems in 86Box

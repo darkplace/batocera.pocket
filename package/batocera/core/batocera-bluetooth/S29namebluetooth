@@ -1,0 +1,34 @@
+#!/bin/bash
+
+MAIN_CONF_FILE="/etc/bluetooth/main.conf"
+
+case "$1" in
+    start)
+        # Get the current adapter name from the config file
+        current_name=$(grep -Po '(?<=^Name = ).*' "$MAIN_CONF_FILE")
+
+        # Get the desired adapter name from batocera-model
+        model_output=$(batocera-model)
+
+        if [ -n "$model_output" ]; then
+            if [ "$current_name" == "$model_output" ]; then
+                echo "Bluetooth adapter name is already set to $model_output. Exiting..."
+                exit 0
+            fi
+
+            sed -i '/^\[General\]/a Name = '"$model_output" "$MAIN_CONF_FILE"
+            echo "Bluetooth adapter name has been set to: $model_output"
+        else
+            # fallback to a default naming scheme if no model is found
+            if [ "$current_name" == "%h-%d" ]; then
+                echo "Bluetooth adapter name is already set to the fallback scheme. Exiting..."
+                exit 0
+            fi
+
+            sed -i '/^\[General\]/a Name = %h-%d' "$MAIN_CONF_FILE"
+            echo "Falling back to hostname & adapter"
+        fi
+        ;;
+esac
+
+exit 0

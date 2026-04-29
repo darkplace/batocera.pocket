@@ -1,0 +1,54 @@
+#!/bin/sh
+
+PIDFILE=/var/run/sunshine.pid
+LOGFILE=/userdata/system/logs/sunshine.log
+
+start() {
+	echo -n "Starting sunshine service: "
+	mkdir -p /userdata/system/logs /userdata/system/.config/sunshine /userdata/system/.local/share/sunshine /userdata/saves/sunshine
+	start-stop-daemon -S -b -q -m -p "$PIDFILE" --exec /usr/bin/batocera-sunshine >>"$LOGFILE" 2>&1
+	RETVAL=$?
+	echo "done"
+	return $RETVAL
+}
+
+stop() {
+	echo -n "Stopping sunshine service: "
+	start-stop-daemon -K -q -p "$PIDFILE"
+	RETVAL=$?
+	echo "done"
+	return $RETVAL
+}
+
+status() {
+	if start-stop-daemon --status -q -p "$PIDFILE"; then
+		echo "started"
+	else
+		echo "stopped"
+	fi
+}
+
+restart() {
+	stop
+	start
+}
+
+case "$1" in
+	start)
+		start
+		;;
+	stop)
+		stop
+		;;
+	status)
+		status
+		;;
+	restart)
+		restart
+		;;
+	*)
+		echo "Usage: $0 {start|stop|status|restart}"
+		;;
+esac
+
+exit $?

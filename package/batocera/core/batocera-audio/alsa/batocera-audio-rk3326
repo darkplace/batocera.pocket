@@ -1,0 +1,122 @@
+#!/bin/bash
+
+do_usage() {
+	echo "$1 list"
+	echo "$1 get"
+	echo "$1 set {auto|<device>}"
+	echo "$1 list-profiles"
+	echo "$1 get-profile"
+	echo "$1 set-profile {auto|<profile>}"
+	echo "$1 getSystemVolume"
+	echo "$1 setSystemVolume {mute|unmute|mute-toggle|[+-]<0...100>}"
+	echo "$1 getSystemMute"
+	echo "$1 test"
+}
+
+# Export XDG for PW
+export XDG_RUNTIME_DIR=/var/run
+
+# Set variables
+MAX_VOLUME="$(/usr/bin/batocera-settings-get audio.volume.boost)" || MAX_VOLUME=100
+DEFAULT_SINK=$(LC_ALL=C pactl info | grep -E '^Default Sink: ' | sed -e s+"^Default Sink: "+""+ | head -1)
+DETECT_VOLUME=$(LC_ALL=C pactl list sinks-raw | grep -E '^[^ ]* name="'"${DEFAULT_SINK}"'"' | sed -e s+"^.* volume=\"\([0-9]*\)\" .*$"+'\1'+)
+
+ACTION="$1"
+
+case "${ACTION}" in
+    list)
+	printf "auto\tauto\n"
+	printf "speakers\tspeakers\n"
+	printf "headphone\theadphone\n"
+	LC_ALL=C pactl list sinks-raw | sed -e s+"^sink=\"[0-9]*\" name=\"\([^ ]*\)\" .* description=\"\(.*\)\"$"+"\1\t\2"+
+	;;
+
+    get)
+	/usr/bin/batocera-settings-get audio.device
+	;;
+
+    set)
+	MODE="$2"
+	case "${MODE}" in
+	    auto | speakers)
+		LC_ALL=C pactl set-default-sink INTERNAL
+		amixer -c 0 cset name='Playback Path' SPK
+		;;
+
+	    headphone)
+		LC_ALL=C pactl set-default-sink INTERNAL
+		amixer -c 0 cset name='Playback Path' HP
+		;;
+	    *)
+		LC_ALL=C pactl set-default-sink "${MODE}"
+	esac
+	;;
+
+    list-profiles)
+	printf "auto\tauto\n"
+	LC_ALL=C pactl list cards-profiles-raw | grep "available=\"1\"" | sed -e s+"^card=\"[0-9]*\" name=\"\(.*\)\" profile=\"\(.*\)\" available=\"[01]\" active=\"[01]\" description=\"\(.*\)\"$"+"\2@\1\t\3"+
+	;;
+
+    get-profile)
+	/usr/bin/batocera-settings-get audio.profile
+	;;
+
+    set-profile)
+	MODE="$2"
+	if test "${MODE}" != "auto"
+	then
+	    PROFILE_NAME=$(echo "${MODE}" | cut -d @ -f 1)
+	    CARD_NAME=$(echo "${MODE}" | cut -d @ -f 2)
+	    LC_ALL=C pactl set-card-profile "${CARD_NAME}" "${PROFILE_NAME}" || exit 1
+	fi
+	;;
+
+    getSystemVolume)
+	echo "${DETECT_VOLUME}"
+	;;
+
+    getSystemMute)
+	    LC_ALL=C pactl get-sink-mute @DEFAULT_SINK@ | sed 's/.*: *\(.*\)/\1/' || exit 1
+        ;;
+
+    setSystemVolume)
+	VOLUME="$2"
+	case "${VOLUME}" in
+	    "mute")
+		LC_ALL=C pactl set-sink-mute @DEFAULT_SINK@ 1
+		;;
+	    "unmute")
+		LC_ALL=C pactl set-sink-mute @DEFAULT_SINK@ 0
+		;;
+	    "mute-toggle")
+		LC_ALL=C pactl set-sink-mute @DEFAULT_SINK@ toggle
+		;;
+	    *)
+		if echo "${VOLUME}" | grep -qE '^[0-9]+$'
+		then
+		    if test "${VOLUME}" -ge 0 -a "${VOLUME}" -le "${MAX_VOLUME}"
+		    then
+		        LC_ALL=C pactl set-sink-volume @DEFAULT_SINK@ "${VOLUME}%"
+		        exit 0
+		    fi
+		else
+		    if echo "${VOLUME}" | grep -qE '^[+-][0-9]+$'
+		    then
+		        let NEWVOLUME=${DETECT_VOLUME}${VOLUME}
+		        test "${NEWVOLUME}" -lt 0 && NEWVOLUME=0
+		        test "${NEWVOLUME}" -gt "${MAX_VOLUME}" && NEWVOLUME=${MAX_VOLUME}
+		        LC_ALL=C pactl set-sink-volume @DEFAULT_SINK@ "${NEWVOLUME}%"
+		        exit 0
+		    fi
+		    echo "invalid volume value" >&2
+		    exit 1
+		fi
+	esac
+	;;
+
+    test)
+		aplay "/usr/share/sounds/Mallet.wav"
+	;;
+	*)
+		do_usage $(basename $0)
+esac

@@ -1,0 +1,91 @@
+diff --git a/gpcal/gamedata/GPcal.py b/gpcal/gamedata/GPcal.py
+index 4bba11f..b6ec6d8 100644
+--- a/gpcal/gamedata/GPcal.py
++++ b/gpcal/gamedata/GPcal.py
+@@ -18,7 +18,7 @@ TRIGGER_DEADZONE_PERCENT=105    # correction after calc (error margin)
+ TRIGGER_ANTIDEADZONE_PERCENT=80 # 0 to 100 (> 50 to avoid big first step)
+ FPS=60
+ CALIBRATION_DETECTION_FPS = FPS//2    # 0.5s : minimum time to maintain a stick / trigger in a position
+ 
+-TITLE="Kdog GPcal for RP 5/Mini"
++TITLE="Batocera GPcal for SM8550"
+ 
+ class GPCalibrate:
+     def __init__(self):
+@@ -138,11 +138,11 @@ class GPCalibrate:
+         self.draw_control_hint(14,225)
+         
+     def save_calibration(self):
+-        savepath = Path.home() / ".config" / "autostart"
++        savepath = Path("/userdata/system/configs/rsinput")
+         savepath.mkdir(parents=True,exist_ok=True)
+-        savepath = savepath / "GPcal.sh"
++        savepath = savepath / "rsinput-calibration.conf"
+         self.ui_gamepad.calibration.save_configuration(savepath)
+-        savepath.chmod(0o777)
++        savepath.chmod(0o644)
+         self.ui_textbox_info.settext(f"Calibration data saved to")
+         self.ui_textbox_info.settext(f"{savepath}")
+         self.ui_textbox_info.settext("Where to sail now captain ?")
+diff --git a/gpcal/gamedata/Klib/RPocket.py b/gpcal/gamedata/Klib/RPocket.py
+index a88872b..8454483 100644
+--- a/gpcal/gamedata/Klib/RPocket.py
++++ b/gpcal/gamedata/Klib/RPocket.py
+@@ -23,7 +23,7 @@ DEFAULT_AXIS_MAX=0x580
+ # It's better to chose a too big value which will be lowered during
+ # the calibration procedure.
+ DEFAULT_TRIGGER_MAX=0x755
+ 
+-PARAMETERS_DIR_PATH="/sys/module/retroid/parameters"
++PARAMETERS_DIR_PATH="/sys/module/rsinput/parameters"
+ 
+ class Axis:
+     def __init__(self,calibration,pname="leftx",name="Left X", orientation="h"):
+@@ -191,9 +191,9 @@ class RPCalibrationControl:
+ 
+     def save_configuration(self, savefile):
+         
+-        savefile.write(f"echo {self.antideadzone} > {self.parameters_dir}/{self.name}_antideadzone\n")
+-        savefile.write(f"echo {self.deadzone} > {self.parameters_dir}/{self.name}_deadzone\n")
+-        savefile.write(f"echo {self.max} > {self.parameters_dir}/{self.name}_max\n")
++        savefile.write(f"{self.name}_antideadzone={self.antideadzone}\n")
++        savefile.write(f"{self.name}_deadzone={self.deadzone}\n")
++        savefile.write(f"{self.name}_max={self.max}\n")
+     
+     def write_parameters(self):
+         
+@@ -254,8 +254,8 @@ class RPCalibrationAxis(RPCalibrationControl):
+     
+     def save_configuration(self, savefile):
+         super().save_configuration(savefile)
+-        savefile.write(f"echo {self.center} > {self.parameters_dir}/{self.name}_center\n")
+-        savefile.write(f"echo {self.min} > {self.parameters_dir}/{self.name}_min\n")
++        savefile.write(f"{self.name}_center={self.center}\n")
++        savefile.write(f"{self.name}_min={self.min}\n")
+     
+     def write_parameters(self):
+         super().write_parameters()
+@@ -349,19 +349,18 @@ class RPCalibration:
+ 
+     def save_configuration(self, savepath):
+         with open(savepath,"w") as savefile:
+-            savefile.write("#!/usr/bin/env bash\n")
+             savefile.write("#\n")
+-            savefile.write("# Retroid Pocket 5/Mini gamepad calibration\n")
+-            savefile.write("# Made with the Kdog GPcal tool\n")
++            savefile.write("# Batocera SM8550 gamepad calibration\n")
++            savefile.write("# Apply with /etc/init.d/S32gamepadcalibration start\n")
+             savefile.write("# SPDX-License-Identifier: MIT\n")
+             savefile.write("#\n")
+             self.axis_leftx.save_configuration(savefile)
+             self.axis_lefty.save_configuration(savefile)
+             self.axis_rightx.save_configuration(savefile)
+             self.axis_righty.save_configuration(savefile)
+             self.trigger_left.save_configuration(savefile)
+             self.trigger_right.save_configuration(savefile)
+-            savefile.write(f"echo 1 > {self.parameters_dir}/update_params\n")
++            savefile.write("update_params=1\n")
+ 
+     def write_parameters(self):
+         self.axis_leftx.write_parameters()
+         self.axis_lefty.write_parameters()

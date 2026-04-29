@@ -1,0 +1,6 @@
+config BR2_PACKAGE_OSINFO_DB
+	bool "osinfo-db"
+	help
+	  Operating system metadata database for libosinfo.
+
+	  https://libosinfo.org/

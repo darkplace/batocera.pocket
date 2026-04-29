@@ -1,0 +1,10 @@
+# SPDX-FileCopyrightText: Added/modified by suckbluefrog
+# batocera-sm8250_armhf_libs.packages
+# 32-bit library package set for SM8250 / PortMaster compatibility
+
+include batocera-h700_armhf_libs.packages
+BR2_PACKAGE_WINE_MONO
+BR2_PACKAGE_MF
+BR2_PACKAGE_RTKIT
+BR2_PACKAGE_DXVK
+BR2_PACKAGE_DXVK_NVAPI

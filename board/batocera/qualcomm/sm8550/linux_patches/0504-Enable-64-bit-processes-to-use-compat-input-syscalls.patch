@@ -1,0 +1,119 @@
+From 47137e491dfaab023f3235949332467b282ff1f4 Mon Sep 17 00:00:00 2001
+From: Sergio Lopez <slp@redhat.com>
+Date: Tue, 8 Oct 2024 11:24:25 +0200
+Subject: [PATCH] Enable 64 bit processes to use compat input syscalls
+
+---
+ drivers/input/input-compat.c |  6 +++---
+ drivers/input/input-compat.h |  2 +-
+ include/linux/sched.h        |  6 ++++++
+ include/uapi/linux/prctl.h   |  5 +++++
+ kernel/sys.c                 | 15 +++++++++++++++
+ 5 files changed, 30 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/input/input-compat.c b/drivers/input/input-compat.c
+index a5043193e..a3c0c7012 100644
+--- a/drivers/input/input-compat.c
++++ b/drivers/input/input-compat.c
+@@ -15,7 +15,7 @@
+ int input_event_from_user(const char __user *buffer,
+ 			  struct input_event *event)
+ {
+-	if (in_compat_syscall() && !COMPAT_USE_64BIT_TIME) {
++	if (current->compat_input || (in_compat_syscall() && !COMPAT_USE_64BIT_TIME)) {
+ 		struct input_event_compat compat_event;
+ 
+ 		if (copy_from_user(&compat_event, buffer,
+@@ -39,7 +39,7 @@ int input_event_from_user(const char __user *buffer,
+ int input_event_to_user(char __user *buffer,
+ 			const struct input_event *event)
+ {
+-	if (in_compat_syscall() && !COMPAT_USE_64BIT_TIME) {
++	if (current->compat_input || (in_compat_syscall() && !COMPAT_USE_64BIT_TIME)) {
+ 		struct input_event_compat compat_event;
+ 
+ 		compat_event.sec = event->input_event_sec;
+@@ -63,7 +63,7 @@ int input_event_to_user(char __user *buffer,
+ int input_ff_effect_from_user(const char __user *buffer, size_t size,
+ 			      struct ff_effect *effect)
+ {
+-	if (in_compat_syscall()) {
++	if (current->compat_input || (in_compat_syscall() && !COMPAT_USE_64BIT_TIME)) {
+ 		struct ff_effect_compat *compat_effect;
+ 
+ 		if (size != sizeof(struct ff_effect_compat))
+diff --git a/drivers/input/input-compat.h b/drivers/input/input-compat.h
+index 99c87ceb9..e0e078306 100644
+--- a/drivers/input/input-compat.h
++++ b/drivers/input/input-compat.h
+@@ -53,7 +53,7 @@ struct ff_effect_compat {
+ 
+ static inline size_t input_event_size(void)
+ {
+-	return (in_compat_syscall() && !COMPAT_USE_64BIT_TIME) ?
++	return (current->compat_input || (in_compat_syscall() && !COMPAT_USE_64BIT_TIME)) ?
+ 		sizeof(struct input_event_compat) : sizeof(struct input_event);
+ }
+ 
+diff --git a/include/linux/sched.h b/include/linux/sched.h
+index 5a5d3dbc9..de89c7fdf 100644
+--- a/include/linux/sched.h
++++ b/include/linux/sched.h
+@@ -1537,6 +1537,12 @@ struct task_struct {
+ 	struct obj_cgroup		*objcg;
+ #endif
+ 
++	/*
++	 * Whether the task wants to use compat input syscalls even if it's
++	 * a 64-bit process.
++	 */
++	bool				compat_input;
++
+ #ifdef CONFIG_BLK_CGROUP
+ 	struct gendisk			*throttle_disk;
+ #endif
+diff --git a/include/uapi/linux/prctl.h b/include/uapi/linux/prctl.h
+index b6ec6f693..bf39f8d0e 100644
+--- a/include/uapi/linux/prctl.h
++++ b/include/uapi/linux/prctl.h
+@@ -316,6 +316,11 @@ struct prctl_mm_map {
+ #define PR_SET_MEMORY_MERGE		67
+ #define PR_GET_MEMORY_MERGE		68
+ 
++#define PR_GET_COMPAT_INPUT    0x63494e50
++#define PR_SET_COMPAT_INPUT    0x43494e50
++# define PR_SET_COMPAT_INPUT_DISABLE  0
++# define PR_SET_COMPAT_INPUT_ENABLE   1
++
+ #define PR_RISCV_V_SET_CONTROL		69
+ #define PR_RISCV_V_GET_CONTROL		70
+ # define PR_RISCV_V_VSTATE_CTRL_DEFAULT		0
+diff --git a/kernel/sys.c b/kernel/sys.c
+index 62e842055..8688034b6 100644
+--- a/kernel/sys.c
++++ b/kernel/sys.c
+@@ -2799,6 +2799,21 @@ SYSCALL_DEFINE5(prctl, int, option, unsigned long, arg2, unsigned long, arg3,
+ 
+ 		error = (current->flags & PR_IO_FLUSHER) == PR_IO_FLUSHER;
+ 		break;
++	case PR_GET_COMPAT_INPUT:
++		if (arg2 || arg3 || arg4 || arg5)
++			return -EINVAL;
++		error = current->compat_input;
++		break;
++	case PR_SET_COMPAT_INPUT:
++		if (arg3 || arg4 || arg5)
++			return -EINVAL;
++		if (arg2 == PR_SET_COMPAT_INPUT_DISABLE)
++			current->compat_input = false;
++		else if (arg2 == PR_SET_COMPAT_INPUT_ENABLE)
++			current->compat_input = true;
++		else
++			return -EINVAL;
++		break;
+ 	case PR_SET_SYSCALL_USER_DISPATCH:
+ 		error = set_syscall_user_dispatch(arg2, arg3, arg4,
+ 						  (char __user *) arg5);
+-- 
+2.43.0
+

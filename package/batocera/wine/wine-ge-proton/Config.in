@@ -1,0 +1,8 @@
+config BR2_PACKAGE_WINE_GE_PROTON
+	bool "wine-ge-proton"
+
+	help
+	  Proton GE packaged as a built-in Batocera Wine runner.
+	  This is primarily intended for use through umu-launcher.
+
+	  https://github.com/GloriousEggroll/proton-ge-custom

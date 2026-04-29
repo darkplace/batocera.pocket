@@ -1,0 +1,71 @@
+#!/bin/bash
+# SPDX-FileCopyrightText: Added/modified by suckbluefrog
+set -euo pipefail
+
+log="/userdata/system/logs/steam.log"
+mkdir -p "$(dirname "${log}")"
+
+repo_api="https://api.github.com/repos/SteamDeckHomebrew/decky-loader/releases/latest"
+repo_dl_base="https://github.com/SteamDeckHomebrew/decky-loader/releases/download"
+
+dest_dir="/userdata/system/homebrew/services"
+dest_bin="${dest_dir}/PluginLoader"
+
+resolve_tag() {
+    local requested="${1:-latest}"
+    local latest_tag
+
+    if [[ "${requested}" != "latest" ]]; then
+        printf '%s\n' "${requested}"
+        return
+    fi
+
+    latest_tag="$(
+        curl -fsSL "${repo_api}" \
+        | sed -n -E 's/^[[:space:]]*"tag_name":[[:space:]]*"([^"]+)".*/\1/p' \
+        | head -n 1
+    )"
+    if [[ -z "${latest_tag}" ]]; then
+        echo "ERROR: Failed to resolve latest Decky tag from GitHub API." >&2
+        exit 1
+    fi
+
+    printf '%s\n' "${latest_tag}"
+}
+
+setup_cef_remote_debugging() {
+    local marker
+    local -a candidates=(
+        "/userdata/system/steam/.cef-enable-remote-debugging"
+        "/userdata/system/.steam/steam/.cef-enable-remote-debugging"
+        "/userdata/system/.local/share/Steam/.cef-enable-remote-debugging"
+    )
+
+    for marker in "${candidates[@]}"; do
+        mkdir -p "$(dirname "${marker}")"
+        touch "${marker}"
+    done
+}
+
+main() {
+    local requested_tag="${1:-latest}"
+    local tag
+    local url
+    local tmp
+
+    tag="$(resolve_tag "${requested_tag}")"
+    url="${repo_dl_base}/${tag}/PluginLoader"
+    tmp="$(mktemp)"
+
+    mkdir -p "${dest_dir}"
+    echo "Downloading Decky PluginLoader (${tag})..." | tee -a "${log}"
+    curl -fL --retry 3 --retry-delay 2 -o "${tmp}" "${url}"
+    install -m 0755 "${tmp}" "${dest_bin}"
+    rm -f "${tmp}"
+
+    setup_cef_remote_debugging
+    echo "Installed Decky PluginLoader to ${dest_bin}" | tee -a "${log}"
+    echo "Decky will auto-start when launching Steam via Batocera." | tee -a "${log}"
+}
+
+main "${1:-latest}"

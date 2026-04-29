@@ -1,0 +1,28 @@
+config BR2_PACKAGE_LUTRIS_APPIMAGE
+	bool "lutris-appimage (AppImage, legacy alternative)"
+	depends on BR2_x86_64
+	depends on !BR2_PACKAGE_LUTRIS
+	# Baseline runtime coverage for native Linux Lutris titles.
+	select BR2_PACKAGE_BATOCERA_STEAM_REQUIREMENTS
+	select BR2_PACKAGE_SDL2_IMAGE
+	select BR2_PACKAGE_SDL2_MIXER
+	select BR2_PACKAGE_SDL2_TTF
+	select BR2_PACKAGE_PULSEAUDIO
+	select BR2_PACKAGE_OPENSSL
+	select BR2_PACKAGE_OPENSSL_FORCE_LIBOPENSSL
+	select BR2_PACKAGE_WEBP
+	select BR2_PACKAGE_WEBP_DEMUX
+	select BR2_PACKAGE_WEBP_MUX
+	select BR2_PACKAGE_FAUDIO
+	select BR2_PACKAGE_UTIL_LINUX_LIBUUID
+	select BR2_PACKAGE_IRRLICHT			if BR2_PACKAGE_XORG7 && BR2_PACKAGE_HAS_LIBGL
+	help
+	  Lutris packaged as an AppImage runtime wrapper.
+	  This is kept as an optional legacy alternative; native BR2_PACKAGE_LUTRIS
+	  is the default path.
+
+comment "lutris-appimage needs an x86_64 target"
+	depends on !BR2_x86_64
+
+comment "lutris-appimage conflicts with native lutris"
+	depends on BR2_x86_64 && BR2_PACKAGE_LUTRIS

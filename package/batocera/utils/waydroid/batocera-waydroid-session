@@ -1,0 +1,161 @@
+#!/bin/bash
+set -e
+
+LOG_FILE="/userdata/system/logs/waydroid-session.log"
+RUNTIME_DIR="/userdata/system/.runtime-waydroid"
+DBUS_ENV_FILE="${RUNTIME_DIR}/dbus-session.env"
+
+mkdir -p /userdata/system/logs
+mkdir -p "${RUNTIME_DIR}"
+chmod 700 "${RUNTIME_DIR}"
+
+export XDG_RUNTIME_DIR="${RUNTIME_DIR}"
+export WAYLAND_DISPLAY="/run/wayland-0"
+export PULSE_RUNTIME_PATH="/run/pulse"
+
+APP_ID=""
+INTENT_ACTION=""
+INTENT_URI=""
+if [ "${1:-}" = "--app" ]; then
+    APP_ID="${2:-}"
+    shift 2 || true
+elif [ "${1:-}" = "--intent" ]; then
+    INTENT_ACTION="${2:-}"
+    INTENT_URI="${3:-}"
+    shift 3 || true
+fi
+
+if [ -z "${DISPLAY:-}" ] && command -v getLocalXDisplay >/dev/null 2>&1; then
+    export DISPLAY="$(getLocalXDisplay)"
+fi
+
+/etc/init.d/S22waydroid-host start >>"${LOG_FILE}" 2>&1 || true
+
+cleanup_waydroid() {
+    /usr/bin/waydroid session stop >>"${LOG_FILE}" 2>&1 || true
+    /usr/bin/waydroid container stop >>"${LOG_FILE}" 2>&1 || true
+}
+
+trap cleanup_waydroid EXIT INT TERM
+
+/usr/bin/batocera-waydroid-init >>"${LOG_FILE}" 2>&1 || exit 1
+
+if ! pgrep -f '/usr/bin/waydroid container start' >/dev/null 2>&1; then
+    /usr/bin/waydroid container start >>"${LOG_FILE}" 2>&1 &
+    sleep 2
+fi
+
+if [ -n "${APP_ID}" ] || { [ -n "${INTENT_ACTION}" ] && [ -n "${INTENT_URI}" ]; }; then
+    rm -f "${DBUS_ENV_FILE}"
+
+    DBUS_ENV_FILE="${DBUS_ENV_FILE}" APP_ID="${APP_ID}" INTENT_ACTION="${INTENT_ACTION}" INTENT_URI="${INTENT_URI}" LOG_FILE="${LOG_FILE}" \
+        dbus-run-session -- /bin/sh -s <<'EOF'
+umask 077
+{
+    printf "export DBUS_SESSION_BUS_ADDRESS=%s\n" "${DBUS_SESSION_BUS_ADDRESS}"
+    printf "export DBUS_SESSION_BUS_PID=%s\n" "${DBUS_SESSION_BUS_PID}"
+} > "${DBUS_ENV_FILE}"
+
+/usr/bin/waydroid show-full-ui >>"${LOG_FILE}" 2>&1 &
+if [ "${BATOCERA_WAYDROID_DISABLE_GAMEPAD:-0}" != "1" ] && [ -x /usr/bin/batocera-waydroid-postboot ]; then
+    /usr/bin/batocera-waydroid-postboot >>"${LOG_FILE}" 2>&1 &
+fi
+launched=0
+app_seen_foreground=0
+app_left_foreground=0
+
+for _ in $(seq 1 90); do
+    status="$(/usr/bin/waydroid status 2>/dev/null || true)"
+    if printf "%s\n" "${status}" | grep -q "^Container:[[:space:]]\+STOPPED"; then
+        exit 1
+    fi
+
+    if /usr/bin/waydroid app list >/dev/null 2>&1; then
+        # Let show-full-ui finish its initial focus/launcher work before
+        # launching the requested package on top.
+        sleep 3
+
+        if [ -n "${APP_ID}" ]; then
+            for launch_try in $(seq 1 8); do
+                printf '[%s] App launch attempt %s for %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "${launch_try}" "${APP_ID}" >>"${LOG_FILE}"
+                if /usr/bin/batocera-waydroid-platform-launch --app "${APP_ID}" >>"${LOG_FILE}" 2>&1; then
+                    launched=1
+                fi
+
+                sleep 2
+
+                if /usr/bin/waydroid shell -- dumpsys activity activities 2>/dev/null | grep -q "topResumedActivity=.* ${APP_ID}/"; then
+                    printf '[%s] App %s reached foreground\n' "$(date '+%Y-%m-%d %H:%M:%S')" "${APP_ID}" >>"${LOG_FILE}"
+                    app_seen_foreground=1
+                    break
+                fi
+            done
+        else
+            if /usr/bin/batocera-waydroid-platform-launch --intent "${INTENT_ACTION}" "${INTENT_URI}" >>"${LOG_FILE}" 2>&1; then
+                launched=1
+                sleep 2
+                /usr/bin/batocera-waydroid-platform-launch --intent "${INTENT_ACTION}" "${INTENT_URI}" >>"${LOG_FILE}" 2>&1 || true
+            fi
+        fi
+        break
+    fi
+
+    sleep 1
+done
+
+if [ "${launched}" -ne 1 ]; then
+    exit 1
+fi
+
+while :; do
+    status="$(/usr/bin/waydroid status 2>/dev/null || true)"
+    if printf "%s\n" "${status}" | grep -q "^Container:[[:space:]]\+STOPPED"; then
+        exit 0
+    fi
+
+    if [ -n "${APP_ID}" ]; then
+        activity_dump="$(/usr/bin/waydroid shell -- dumpsys activity activities 2>/dev/null || true)"
+
+        if printf '%s\n' "${activity_dump}" | grep -q "topResumedActivity=.* ${APP_ID}/"; then
+            app_seen_foreground=1
+            app_left_foreground=0
+        elif [ "${app_seen_foreground}" -eq 1 ]; then
+            if ! printf '%s\n' "${activity_dump}" | grep -q "${APP_ID}/"; then
+                app_left_foreground=$((app_left_foreground + 1))
+            else
+                app_left_foreground=0
+            fi
+            if [ "${app_left_foreground}" -ge 3 ]; then
+                printf '[%s] App %s no longer present in activity stack; ending Waydroid session for ES app launch\n' "$(date '+%Y-%m-%d %H:%M:%S')" "${APP_ID}" >>"${LOG_FILE}"
+                exit 0
+            fi
+        fi
+    fi
+
+    sleep 1
+done
+EOF
+else
+    rm -f "${DBUS_ENV_FILE}"
+
+    DBUS_ENV_FILE="${DBUS_ENV_FILE}" dbus-run-session -- /bin/sh -c '
+        umask 077
+        {
+            printf "export DBUS_SESSION_BUS_ADDRESS=%s\n" "${DBUS_SESSION_BUS_ADDRESS}"
+            printf "export DBUS_SESSION_BUS_PID=%s\n" "${DBUS_SESSION_BUS_PID}"
+        } > "${DBUS_ENV_FILE}"
+
+        /usr/bin/waydroid show-full-ui >>"'"${LOG_FILE}"'" 2>&1 &
+        if [ "'"${BATOCERA_WAYDROID_DISABLE_GAMEPAD:-0}"'" != "1" ] && [ -x /usr/bin/batocera-waydroid-postboot ]; then
+            /usr/bin/batocera-waydroid-postboot >>"'"${LOG_FILE}"'" 2>&1 &
+        fi
+
+        while :; do
+            status="$(/usr/bin/waydroid status 2>/dev/null || true)"
+            if printf "%s\n" "${status}" | grep -q "^Container:[[:space:]]\+STOPPED"; then
+                exit 0
+            fi
+            sleep 1
+        done
+    '
+fi

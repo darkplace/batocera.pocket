@@ -1,0 +1,12 @@
+# Anbernic RG351M advance default values
+
+# default resolution
+es.resolution=480x320
+
+# default DRM rotation
+display.rotate.DSI=3
+# wayland labwc rotation
+display.rotate.DSI-1=1
+
+# suspend mode
+system.suspendmode=suspend

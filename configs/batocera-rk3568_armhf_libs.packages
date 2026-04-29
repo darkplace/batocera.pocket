@@ -1,0 +1,8 @@
+# SPDX-FileCopyrightText: Added/modified by suckbluefrog
+# batocera-rk3568_armhf_libs.packages
+# 32-bit library package set for RK3568 / PortMaster compatibility
+#
+# Keep this aligned with the known-good aarch64+armhf stack already used by
+# rk3588. If rk3568-specific deltas are needed later, append overrides below.
+
+include batocera-rk3588_armhf_libs.packages

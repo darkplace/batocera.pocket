@@ -1,0 +1,5 @@
+config BR2_PACKAGE_LIBVIRT_SERVICE
+    bool "libvirt-service"
+    depends on BR2_PACKAGE_LIBVIRT_DAEMON
+    help
+      Batocera service wrapper for libvirt/virtlogd.

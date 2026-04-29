@@ -1,0 +1,24 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Batocera local fixes <noreply@batocera.org>
+Date: Fri, 10 Apr 2026 00:00:00 +0000
+Subject: [PATCH] ucm2: qcs6490: add Dragon Q6A long-name alias
+
+ALSA UCM2 probes conf.d/${CardDriver}/${CardLongName}.conf.  On the
+Radxa Dragon Q6A, the card long name is
+RadxaComputerCo.Ltd.-RadxaDragonQ6A-1.0, so the short
+QCS6490-Radxa-Dragon-Q6A alias is not found.
+---
+ ucm2/conf.d/qcs6490/RadxaComputerCo.Ltd.-RadxaDragonQ6A-1.0.conf | 1 +
+ 1 file changed, 1 insertion(+)
+ create mode 120000 ucm2/conf.d/qcs6490/RadxaComputerCo.Ltd.-RadxaDragonQ6A-1.0.conf
+
+diff --git a/ucm2/conf.d/qcs6490/RadxaComputerCo.Ltd.-RadxaDragonQ6A-1.0.conf b/ucm2/conf.d/qcs6490/RadxaComputerCo.Ltd.-RadxaDragonQ6A-1.0.conf
+new file mode 120000
+index 0000000..0683c36
+--- /dev/null
++++ b/ucm2/conf.d/qcs6490/RadxaComputerCo.Ltd.-RadxaDragonQ6A-1.0.conf
+@@ -0,0 +1 @@
++../../Qualcomm/qcs6490/QCS6490-Radxa-Dragon-Q6A/QCS6490-Radxa-Dragon-Q6A.conf
+\ No newline at end of file
+-- 
+2.30.2

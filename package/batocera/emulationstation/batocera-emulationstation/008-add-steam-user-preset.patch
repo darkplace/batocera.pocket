@@ -1,0 +1,61 @@
+--- a/es-app/src/ApiSystem.h
++++ b/es-app/src/ApiSystem.h
+@@ -259,6 +259,7 @@
+     std::vector<BiosSystem> getBiosInformations(const std::string system = "");
+     virtual std::vector<std::string> getVideoModes(const std::string output = "");
+ 	std::vector<std::string> getCustomRunners();
++	std::vector<std::string> getSteamUsers();
+ 
+ 	virtual std::vector<std::string> getAvailableStorageDevices();
+ 	virtual std::vector<std::string> getSystemInformations();
+--- a/es-app/src/ApiSystem.cpp
++++ b/es-app/src/ApiSystem.cpp
+@@ -571,6 +571,11 @@
+ std::vector<std::string> ApiSystem::getCustomRunners() 
+ {
+ 	return executeEnumerationScript("batocera-wine-runners");
++}
++
++std::vector<std::string> ApiSystem::getSteamUsers()
++{
++	return executeEnumerationScript("batocera-steam-users");
+ }
+ 
+ std::vector<std::string> ApiSystem::getAvailableBackupDevices() 
+--- a/es-app/src/guis/GuiMenu.cpp
++++ b/es-app/src/guis/GuiMenu.cpp
+@@ -2443,6 +2443,34 @@
+ 		for (auto customRunner : runners)
+ 		{
+ 			item->add(_(customRunner.c_str()), customRunner, storedValue == customRunner);
++		}
++	}
++	else if (feat.preset == "steamusers")
++	{
++		item->add(_("AUTO"), "auto", storedValue.empty() || storedValue == "auto");
++		item->add(_("ASK EACH TIME"), "prompt", storedValue == "prompt");
++
++		auto users = ApiSystem::getInstance()->getSteamUsers();
++		for (auto steamUser : users)
++		{
++			std::vector<std::string> tokens = Utils::String::split(steamUser, ':');
++			if (tokens.size() == 0)
++				continue;
++
++			std::string value = tokens.at(0);
++			std::string label = value;
++			if (tokens.size() > 1)
++			{
++				label.clear();
++				for (unsigned int i = 1; i < tokens.size(); i++)
++				{
++					if (i > 1)
++						label += ":";
++					label += tokens.at(i);
++				}
++			}
++
++			item->add(label, value, storedValue == value);
+ 		}
+ 	}
+ 	else

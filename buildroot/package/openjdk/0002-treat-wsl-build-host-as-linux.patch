@@ -1,0 +1,40 @@
+From 3efbd45f361540d6af9d08b06f0bf7d9c5930dd2 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Fri, 20 Mar 2026 11:34:00 +0200
+Subject: [PATCH] make/autoconf: treat WSL build hosts as Linux
+
+Buildroot can run inside WSL while cross-compiling OpenJDK for a Linux
+target. Upstream OpenJDK classifies `*wsl*` as a Windows build host,
+which then forces Windows path import/verification through fixpath.sh.
+
+That path handling is only appropriate when actually building OpenJDK
+for Windows. In this package we are building for Linux, and the WSL
+classification causes configure to fail before the build starts.
+
+Treat WSL as a Linux/Unix host in this context so configure uses normal
+Unix path handling.
+
+Signed-off-by: suckbluefrog <suckbluefrog@proton.me>
+---
+ make/autoconf/platform.m4 | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/make/autoconf/platform.m4 b/make/autoconf/platform.m4
+index 37602bff454..a43e6dd4f26 100644
+--- a/make/autoconf/platform.m4
++++ b/make/autoconf/platform.m4
+@@ -196,8 +196,8 @@ AC_DEFUN([PLATFORM_EXTRACT_VARS_FROM_OS],
+       VAR_OS=windows
+       VAR_OS_ENV=windows.cygwin
+       ;;
+-    *wsl*)
+-      VAR_OS=windows
+-      VAR_OS_ENV=windows.wsl
++    *wsl*)
++      VAR_OS=linux
++      VAR_OS_TYPE=unix
+       ;;
+     *msys* | *mingw*)
+       VAR_OS=windows
+-- 
+2.43.0

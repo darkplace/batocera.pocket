@@ -1,0 +1,3 @@
+#!/bin/bash
+
+emulatorlauncher -system gba -emulator skyemu -core skyemu -rom config

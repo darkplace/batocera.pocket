@@ -1,0 +1,107 @@
+--- a/ruby/video/opengl/opengl.hpp
++++ b/ruby/video/opengl/opengl.hpp
+@@ -16,7 +16,10 @@
+   #error "ruby::OpenGL3: unsupported platform"
+ #endif
+ 
++#if defined(LIBRA_RUNTIME_OPENGL) && __has_include(<librashader/librashader_ld.h>)
++#define ARES_HAVE_LIBRASHADER_OPENGL
+ #include <librashader/librashader_ld.h>
++#endif
+ 
+ #include "bind.hpp"
+ #include "utility.hpp"
+@@ -47,10 +50,12 @@ struct OpenGLSurface : OpenGLTexture {
+   GLuint framebufferHeight = 0;
+   u32* buffer = nullptr;
+ 
++#if defined(ARES_HAVE_LIBRASHADER_OPENGL)
+   libra_instance_t _libra;
+   libra_shader_preset_t _preset = NULL;
+   libra_gl_filter_chain_t  _chain = NULL;
+   u32 frameCount = 0;
++#endif
+ };
+ 
+ struct OpenGL : OpenGLSurface {
+--- a/ruby/video/opengl/main.hpp
++++ b/ruby/video/opengl/main.hpp
+@@ -9,6 +9,7 @@ auto OpenGL::setShader(const string& pathname) -> void {
+   wrap = GL_CLAMP_TO_BORDER;
+   absoluteWidth = 0, absoluteHeight = 0;
+ 
++#if defined(ARES_HAVE_LIBRASHADER_OPENGL)
+   if(_chain != NULL) {
+     _libra.gl_filter_chain_free(&_chain);
+   }
+@@ -31,6 +32,7 @@ auto OpenGL::setShader(const string& pathname) -> void {
+       return;
+     }
+   }
++#endif
+ }
+ 
+ auto OpenGL::clear() -> void {
+@@ -66,6 +68,7 @@ auto OpenGL::output() -> void {
+   u32 x = (outputWidth - targetWidth) / 2;
+   u32 y = (outputHeight - targetHeight) / 2;
+ 
++#if defined(ARES_HAVE_LIBRASHADER_OPENGL)
+   if(_chain != NULL) {
+     // Shader path: our intermediate framebuffer matches the target size (final composited game area size)
+     if(!framebuffer || framebufferWidth != targetWidth || framebufferHeight != targetHeight) {
+@@ -91,6 +94,7 @@ auto OpenGL::output() -> void {
+       glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, framebufferTexture, 0);
+     }
+   } else {
++#endif
+     // Non-shader path: our intermediate framebuffer matches the source size and re-uses the source texture
+     if(!framebuffer || framebufferWidth != width || framebufferHeight != height) {
+       if(framebuffer) {
+@@ -108,7 +112,9 @@ auto OpenGL::output() -> void {
+       glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
+       glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texture, 0);
+     }
++#if defined(ARES_HAVE_LIBRASHADER_OPENGL)
+   }
++#endif
+ 
+   render(sources[0].width, sources[0].height, outputX + x, outputY + y, targetWidth, targetHeight);
+ }
+@@ -122,10 +128,12 @@ auto OpenGL::initialize(const string& shader) -> bool {
+   glDisable(GL_STENCIL_TEST);
+   glEnable(GL_DITHER);
+ 
++#if defined(ARES_HAVE_LIBRASHADER_OPENGL)
+   _libra = librashader_load_instance();
+   if(!_libra.instance_loaded) {
+     print("OpenGL: Failed to load librashader: shaders will be disabled\n");
+   }
++#endif
+ 
+   setShader(shader);
+   return initialized = true;
+--- a/ruby/video/opengl/surface.hpp
++++ b/ruby/video/opengl/surface.hpp
+@@ -22,6 +22,7 @@ auto OpenGLSurface::render(u32 sourceWidth, u32 sourceHeight, u32 targetX, u32 t
+   glBindTexture(GL_TEXTURE_2D, texture);
+   glBindFramebuffer(GL_FRAMEBUFFER, 0);
+ 
++#if defined(ARES_HAVE_LIBRASHADER_OPENGL)
+   if(_chain != NULL) {
+     libra_image_gl_t input = {texture, format, sourceWidth, sourceHeight};
+     libra_image_gl_t output = {framebufferTexture, framebufferFormat, targetWidth, targetHeight};
+@@ -35,11 +36,14 @@ auto OpenGLSurface::render(u32 sourceWidth, u32 sourceHeight, u32 targetX, u32 t
+     glBlitFramebuffer(0, framebufferHeight, framebufferWidth, 0, targetX, targetY, framebufferWidth + targetX, framebufferHeight + targetY, GL_COLOR_BUFFER_BIT, filter);
+     glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+   } else {
++#endif
+     glBindFramebuffer(GL_READ_FRAMEBUFFER, framebuffer);
+     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+     glBlitFramebuffer(0, framebufferHeight, framebufferWidth, 0, targetX, targetY, targetWidth + targetX, targetHeight + targetY, GL_COLOR_BUFFER_BIT, filter);
+     glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
++#if defined(ARES_HAVE_LIBRASHADER_OPENGL)
+   }
++#endif
+ 
+ }

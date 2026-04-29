@@ -1,0 +1,6 @@
+config BR2_PACKAGE_SQUASHFUSE
+    bool "squashfuse"
+    depends on BR2_PACKAGE_LIBFUSE3
+    help
+      Userspace SquashFS mounting tool using FUSE.
+      Required by FEX-Emu for mounting rootfs images.

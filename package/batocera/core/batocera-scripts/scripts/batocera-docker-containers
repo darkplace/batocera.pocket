@@ -1,0 +1,902 @@
+#!/bin/bash
+
+set -u
+
+TITLE="Batocera Docker Containers"
+DATA_ROOT="/userdata/system/docker-data"
+LOG_DIR="/userdata/system/logs"
+LOG_FILE="${LOG_DIR}/batocera-docker-containers.log"
+PORTAINER_TEMPLATE_DST="${DATA_ROOT}/portainer/templates.json"
+
+HAS_DIALOG=0
+if command -v dialog >/dev/null 2>&1; then
+    HAS_DIALOG=1
+fi
+
+mkdir -p "${LOG_DIR}" >/dev/null 2>&1 || true
+
+log() {
+    printf '[%s] %s\n' "$(date '+%F %T')" "$*" >>"${LOG_FILE}"
+}
+
+show_msg() {
+    local text="$1"
+
+    if [ "${HAS_DIALOG}" -eq 1 ]; then
+        dialog --title "${TITLE}" --msgbox "${text}" 18 88
+        clear
+    else
+        echo
+        echo "${text}"
+        echo
+    fi
+}
+
+show_info() {
+    local text="$1"
+
+    if [ "${HAS_DIALOG}" -eq 1 ]; then
+        dialog --title "${TITLE}" --infobox "${text}" 8 78
+        sleep 1
+        clear
+    else
+        echo "${text}"
+    fi
+}
+
+ask_yesno() {
+    local text="$1"
+
+    if [ "${HAS_DIALOG}" -eq 1 ]; then
+        dialog --title "${TITLE}" --yesno "${text}" 12 88
+        local rc=$?
+        clear
+        return "${rc}"
+    fi
+
+    printf "%s [y/N]: " "${text}"
+    read -r answer
+    case "${answer}" in
+        y|Y|yes|YES)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+prompt_input() {
+    local prompt="$1"
+    local default_value="$2"
+    local out=""
+
+    if [ "${HAS_DIALOG}" -eq 1 ]; then
+        out="$(dialog --stdout --inputbox "${prompt}" 10 78 "${default_value}")"
+        if [ $? -ne 0 ]; then
+            echo ""
+            return 1
+        fi
+        clear
+        echo "${out}"
+        return 0
+    fi
+
+    printf "%s [%s]: " "${prompt}" "${default_value}"
+    read -r out
+    if [ -z "${out}" ]; then
+        out="${default_value}"
+    fi
+    echo "${out}"
+    return 0
+}
+
+get_timezone() {
+    cat /etc/timezone 2>/dev/null || echo "Etc/UTC"
+}
+
+is_x86_64() {
+    [ "$(uname -m)" = "x86_64" ]
+}
+
+require_x86_64() {
+    if ! is_x86_64; then
+        show_msg "This option requires x86_64 hardware. Current architecture: $(uname -m)"
+        return 1
+    fi
+    return 0
+}
+
+port_in_use() {
+    local port="$1"
+
+    if command -v ss >/dev/null 2>&1; then
+        ss -lntu 2>/dev/null | awk '{print $5}' | grep -qE "[:.]${port}$"
+        return $?
+    fi
+
+    if command -v netstat >/dev/null 2>&1; then
+        netstat -tuln 2>/dev/null | awk '{print $4}' | grep -qE "[:.]${port}$"
+        return $?
+    fi
+
+    return 1
+}
+
+find_free_port() {
+    local port="$1"
+    while port_in_use "${port}"; do
+        port=$((port + 1))
+    done
+    echo "${port}"
+}
+
+service_exists() {
+    local marker
+    marker="$(batocera-services list all 2>/dev/null | awk -F';' '$1=="docker" { print $2; exit }')"
+    [ -n "${marker}" ]
+}
+
+service_enabled() {
+    local marker
+    marker="$(batocera-services list all 2>/dev/null | awk -F';' '$1=="docker" { print $2; exit }')"
+    [ "${marker}" = "*" ]
+}
+
+service_started() {
+    batocera-services status docker 2>/dev/null | grep -q '^started$'
+}
+
+ensure_docker_ready() {
+    if ! command -v docker >/dev/null 2>&1; then
+        show_msg "Docker CLI is not installed. Enable/install Docker first from Batocera services/settings."
+        return 1
+    fi
+
+    if service_exists; then
+        if ! service_enabled; then
+            if ask_yesno "Docker service is disabled in Services. Enable it now?"; then
+                log "Enabling docker service"
+                batocera-services enable docker >/dev/null 2>&1 || true
+            else
+                show_msg "Docker service must be enabled before container installation."
+                return 1
+            fi
+        fi
+
+        if ! service_started; then
+            show_info "Starting Docker service..."
+            log "Starting docker service"
+            batocera-services start docker >/dev/null 2>&1 || true
+            sleep 2
+        fi
+    fi
+
+    if ! docker info >/dev/null 2>&1; then
+        show_msg "Docker daemon is not reachable. Enable/start Docker in System Settings > Services, then retry."
+        return 1
+    fi
+
+    return 0
+}
+
+remove_container_if_exists() {
+    local name="$1"
+
+    if docker ps -a --format '{{.Names}}' | grep -Fxq "${name}"; then
+        log "Removing existing container ${name}"
+        docker rm -f "${name}" >/dev/null 2>&1 || true
+    fi
+}
+
+find_templates_json() {
+    local candidate
+
+    for candidate in \
+        "/userdata/system/pro/linux/apps/docker/templates.json" \
+        "/userdata/system/apps/docker/templates.json" \
+        "/userdata/system/docker/templates.json" \
+        "/userdata/system/profork/apps/docker/templates.json" \
+        "/apps/docker/templates.json"; do
+        if [ -f "${candidate}" ]; then
+            echo "${candidate}"
+            return 0
+        fi
+    done
+
+    return 1
+}
+
+find_next_windows_dir() {
+    local base_dir="/userdata/system/windows"
+    local idx=2
+
+    if [ ! -d "${base_dir}" ] || [ -z "$(ls -A "${base_dir}" 2>/dev/null)" ]; then
+        echo "${base_dir}"
+        return 0
+    fi
+
+    while [ -d "${base_dir}${idx}" ] && [ -n "$(ls -A "${base_dir}${idx}" 2>/dev/null)" ]; do
+        idx=$((idx + 1))
+    done
+
+    echo "${base_dir}${idx}"
+}
+
+deploy_portainer() {
+    local templates_src=""
+    local run_rc=0
+
+    mkdir -p "${DATA_ROOT}/portainer" >/dev/null 2>&1 || true
+    remove_container_if_exists portainer
+    docker volume create portainer_data >/dev/null 2>&1 || true
+
+    if templates_src="$(find_templates_json)"; then
+        cp -f "${templates_src}" "${PORTAINER_TEMPLATE_DST}" >/dev/null 2>&1 || true
+        log "Using Portainer templates from ${templates_src}"
+    else
+        log "No templates.json found; installing Portainer without template override"
+    fi
+
+    if [ -f "${PORTAINER_TEMPLATE_DST}" ]; then
+        docker run \
+            --privileged \
+            --net host \
+            --ipc host \
+            -d \
+            --name portainer \
+            --restart=always \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v /media:/media \
+            -v portainer_data:/data \
+            -v "${PORTAINER_TEMPLATE_DST}:/templates/templates.json:ro" \
+            portainer/portainer-ce:latest \
+            --templates "file:///templates/templates.json" >/dev/null || run_rc=$?
+
+        if [ "${run_rc}" -ne 0 ]; then
+            log "Portainer template flag failed, retrying without --templates"
+            remove_container_if_exists portainer
+            docker run \
+                --privileged \
+                --net host \
+                --ipc host \
+                -d \
+                --name portainer \
+                --restart=always \
+                -v /var/run/docker.sock:/var/run/docker.sock \
+                -v /media:/media \
+                -v portainer_data:/data \
+                -v "${PORTAINER_TEMPLATE_DST}:/templates/templates.json:ro" \
+                portainer/portainer-ce:latest >/dev/null || return 1
+        fi
+    else
+        docker run \
+            --privileged \
+            --net host \
+            --ipc host \
+            -d \
+            --name portainer \
+            --restart=always \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v /media:/media \
+            -v portainer_data:/data \
+            portainer/portainer-ce:latest >/dev/null || return 1
+    fi
+
+    DEPLOY_NOTE="Portainer: https://<batocera-ip>:9443"
+    return 0
+}
+
+deploy_casa2() {
+    local host_port
+    host_port="$(find_free_port 8080)"
+
+    mkdir -p /userdata/system/casaos >/dev/null 2>&1 || true
+    remove_container_if_exists casa
+
+    docker run -d \
+        --name casa \
+        -p "${host_port}:8080" \
+        -v /userdata/system/casaos:/DATA \
+        -v /var/run/docker.sock:/var/run/docker.sock \
+        --stop-timeout 60 \
+        --restart unless-stopped \
+        dockurr/casa >/dev/null || return 1
+
+    DEPLOY_NOTE="CasaOS: http://<batocera-ip>:${host_port}"
+    return 0
+}
+
+deploy_emby() {
+    local port_http port_https tz
+    local -a dri_arg=()
+
+    port_http="$(find_free_port 8096)"
+    port_https="$(find_free_port 8920)"
+    tz="$(get_timezone)"
+    if [ -e /dev/dri ]; then
+        dri_arg=(--device /dev/dri:/dev/dri)
+    fi
+
+    mkdir -p /userdata/system/emby/config /userdata/system/emby/data/tvshows /userdata/system/emby/data/movies
+    remove_container_if_exists emby
+
+    docker run -d \
+        --name emby \
+        -e PUID="$(id -u)" \
+        -e PGID="$(id -g)" \
+        -e TZ="${tz}" \
+        -p "${port_http}:8096" \
+        -p "${port_https}:8920" \
+        -v /userdata/system/emby/config:/config \
+        -v /userdata/system/emby/data/tvshows:/data/tvshows \
+        -v /userdata/system/emby/data/movies:/data/movies \
+        "${dri_arg[@]}" \
+        --restart unless-stopped \
+        lscr.io/linuxserver/emby:latest >/dev/null || return 1
+
+    DEPLOY_NOTE="Emby: http://<batocera-ip>:${port_http}"
+    return 0
+}
+
+deploy_jellyfin() {
+    local port_http port_https port_udp1 port_udp2 tz
+    local -a dri_arg=()
+
+    port_http="$(find_free_port 8096)"
+    port_https="$(find_free_port 8920)"
+    port_udp1="$(find_free_port 7359)"
+    port_udp2="$(find_free_port 1900)"
+    tz="$(get_timezone)"
+    if [ -e /dev/dri ]; then
+        dri_arg=(--device /dev/dri:/dev/dri)
+    fi
+
+    mkdir -p /userdata/system/jellyfin/config /userdata/system/jellyfin/data/tvshows /userdata/system/jellyfin/data/movies
+    remove_container_if_exists jellyfin
+
+    docker run -d \
+        --name jellyfin \
+        -e PUID="$(id -u)" \
+        -e PGID="$(id -g)" \
+        -e TZ="${tz}" \
+        -p "${port_http}:8096" \
+        -p "${port_https}:8920" \
+        -p "${port_udp1}:7359/udp" \
+        -p "${port_udp2}:1900/udp" \
+        -v /userdata/system/jellyfin/config:/config \
+        -v /userdata/system/jellyfin/data/tvshows:/data/tvshows \
+        -v /userdata/system/jellyfin/data/movies:/data/movies \
+        "${dri_arg[@]}" \
+        --restart unless-stopped \
+        lscr.io/linuxserver/jellyfin:latest >/dev/null || return 1
+
+    DEPLOY_NOTE="Jellyfin: http://<batocera-ip>:${port_http}"
+    return 0
+}
+
+deploy_nextcloud() {
+    local port_web
+
+    port_web="$(find_free_port 8888)"
+    mkdir -p /userdata/system/nextcloud/config /userdata/system/nextcloud/data
+    remove_container_if_exists nextcloud
+
+    docker run -d \
+        --privileged \
+        --name nextcloud \
+        -p "${port_web}:80" \
+        -v /userdata/system/nextcloud/config:/config \
+        -v /userdata/system/nextcloud/data:/data \
+        --restart unless-stopped \
+        nextcloud >/dev/null || return 1
+
+    DEPLOY_NOTE="Nextcloud: http://<batocera-ip>:${port_web}"
+    return 0
+}
+
+deploy_plex() {
+    local tz
+    local -a dri_arg=()
+
+    tz="$(get_timezone)"
+    if [ -e /dev/dri ]; then
+        dri_arg=(--device /dev/dri:/dev/dri)
+    fi
+    mkdir -p /userdata/system/plex/config /userdata/system/plex/tv /userdata/system/plex/movies
+    remove_container_if_exists plex
+
+    docker run -d \
+        --name plex \
+        --net host \
+        -e PUID="$(id -u)" \
+        -e PGID="$(id -g)" \
+        -e TZ="${tz}" \
+        -e VERSION=docker \
+        -v /userdata/system/plex/config:/config \
+        -v /userdata/system/plex/tv:/tv \
+        -v /userdata/system/plex/movies:/movies \
+        "${dri_arg[@]}" \
+        --restart unless-stopped \
+        lscr.io/linuxserver/plex:latest >/dev/null || return 1
+
+    DEPLOY_NOTE="Plex: http://<batocera-ip>:32400/web"
+    return 0
+}
+
+deploy_sabnzbd() {
+    local port_web tz
+
+    port_web="$(find_free_port 8080)"
+    tz="$(get_timezone)"
+
+    mkdir -p /userdata/system/sabnzbd/config /userdata/system/sabnzbd/downloads /userdata/system/sabnzbd/incomplete-downloads
+    remove_container_if_exists sabnzbd
+
+    docker run -d \
+        --name sabnzbd \
+        -e PUID="$(id -u)" \
+        -e PGID="$(id -g)" \
+        -e TZ="${tz}" \
+        -p "${port_web}:8080" \
+        -v /userdata/system/sabnzbd/config:/config \
+        -v /userdata/system/sabnzbd/downloads:/downloads \
+        -v /userdata/system/sabnzbd/incomplete-downloads:/incomplete-downloads \
+        --restart unless-stopped \
+        lscr.io/linuxserver/sabnzbd:latest >/dev/null || return 1
+
+    DEPLOY_NOTE="SABnzbd: http://<batocera-ip>:${port_web}"
+    return 0
+}
+
+deploy_systools() {
+    local glances_port wetty_port fb_port uid gid
+
+    glances_port="$(find_free_port 61208)"
+    wetty_port="$(find_free_port 3000)"
+    fb_port="$(find_free_port 8080)"
+    uid="$(id -u)"
+    gid="$(id -g)"
+
+    mkdir -p /userdata/system/docker_services/filebrowser_data
+
+    remove_container_if_exists glances
+    remove_container_if_exists wetty
+    remove_container_if_exists filemanager
+
+    docker run -d \
+        --name glances \
+        --pid host \
+        -p "${glances_port}:61208" \
+        -v /var/run/docker.sock:/var/run/docker.sock:ro \
+        -v /etc/os-release:/etc/os-release:ro \
+        --restart unless-stopped \
+        nicolargo/glances:latest glances -w >/dev/null || return 1
+
+    docker run -d \
+        --name wetty \
+        --user "${uid}:${gid}" \
+        -p "${wetty_port}:3000" \
+        -e SSL=false \
+        -e FORCE_SSH=true \
+        -e ALLOW_IFRAME=true \
+        -v /etc/localtime:/etc/localtime:ro \
+        -v /etc/passwd:/etc/passwd:ro \
+        -v /etc/group:/etc/group:ro \
+        -v /tmp:/tmp \
+        --restart unless-stopped \
+        wettyoss/wetty:latest >/dev/null || return 1
+
+    docker run -d \
+        --name filemanager \
+        --user "${uid}:${gid}" \
+        -p "${fb_port}:80" \
+        -e FB_NOAUTH=true \
+        -v /userdata/system/docker_services/filebrowser_data:/config \
+        -v /:/srv \
+        --restart unless-stopped \
+        filebrowser/filebrowser:latest >/dev/null || return 1
+
+    DEPLOY_NOTE="Glances: http://<batocera-ip>:${glances_port} | Wetty: http://<batocera-ip>:${wetty_port}/wetty | Filemanager: http://<batocera-ip>:${fb_port}"
+    return 0
+}
+
+deploy_umbrel() {
+    local host_port
+
+    host_port="$(find_free_port 80)"
+    mkdir -p /userdata/system/umbrel
+    remove_container_if_exists umbrel
+
+    docker run -d \
+        --name umbrel \
+        -p "${host_port}:80" \
+        -v /userdata/system/umbrel:/data \
+        -v /var/run/docker.sock:/var/run/docker.sock \
+        --pid=host \
+        --stop-timeout 60 \
+        --restart unless-stopped \
+        dockurr/umbrel >/dev/null || return 1
+
+    DEPLOY_NOTE="Umbrel: http://<batocera-ip>:${host_port}"
+    return 0
+}
+
+deploy_webtop() {
+    local http_port https_port flavor tz
+    local -a dri_arg=()
+
+    require_x86_64 || return 1
+
+    http_port="$(find_free_port 3000)"
+    https_port="$(find_free_port 3001)"
+    flavor="latest"
+    tz="$(get_timezone)"
+    if [ -e /dev/dri ]; then
+        dri_arg=(--device /dev/dri:/dev/dri)
+    fi
+
+    if [ "${HAS_DIALOG}" -eq 1 ]; then
+        http_port="$(prompt_input "Enter Webtop HTTP port" "${http_port}")" || return 1
+        https_port="$(prompt_input "Enter Webtop HTTPS port" "${https_port}")" || return 1
+
+        flavor="$(dialog --stdout --menu "Choose Webtop flavor" 20 70 14 \
+            "latest" "XFCE Alpine (default)" \
+            "ubuntu-xfce" "XFCE Ubuntu" \
+            "fedora-xfce" "XFCE Fedora" \
+            "arch-xfce" "XFCE Arch" \
+            "alpine-kde" "KDE Alpine" \
+            "ubuntu-kde" "KDE Ubuntu" \
+            "fedora-kde" "KDE Fedora" \
+            "arch-kde" "KDE Arch" \
+            "alpine-mate" "MATE Alpine" \
+            "ubuntu-mate" "MATE Ubuntu" \
+            "fedora-mate" "MATE Fedora" \
+            "arch-mate" "MATE Arch" \
+            "alpine-i3" "i3 Alpine" \
+            "ubuntu-i3" "i3 Ubuntu")"
+        if [ $? -ne 0 ] || [ -z "${flavor}" ]; then
+            return 1
+        fi
+        clear
+    fi
+
+    mkdir -p /userdata/system/webtop
+    remove_container_if_exists webtop
+
+    docker run -d \
+        --name webtop \
+        --security-opt seccomp=unconfined \
+        -e PUID="$(id -u)" \
+        -e PGID="$(id -g)" \
+        -e TZ="${tz}" \
+        -e SUBFOLDER=/ \
+        -e TITLE="Webtop" \
+        -p "${http_port}:3000" \
+        -p "${https_port}:3001" \
+        -v /userdata/system/webtop:/config \
+        -v /var/run/docker.sock:/var/run/docker.sock \
+        "${dri_arg[@]}" \
+        --shm-size="1gb" \
+        --restart unless-stopped \
+        "lscr.io/linuxserver/webtop:${flavor}" >/dev/null || return 1
+
+    DEPLOY_NOTE="Webtop: http://<batocera-ip>:${http_port}"
+    return 0
+}
+
+deploy_netboot() {
+    local iface dhcp_start container_ip gateway subnet
+
+    require_x86_64 || return 1
+
+    iface="$(ip route | awk '/default/ { print $5; exit }')"
+    gateway="$(ip route | awk '/default/ { print $3; exit }')"
+
+    iface="$(prompt_input "Network interface" "${iface}")" || return 1
+    dhcp_start="$(prompt_input "DHCP range start IP" "192.168.0.10")" || return 1
+    container_ip="$(prompt_input "Container IP" "192.168.0.250")" || return 1
+    gateway="$(prompt_input "Gateway IP" "${gateway}")" || return 1
+    subnet="$(prompt_input "Subnet CIDR" "192.168.0.0/24")" || return 1
+
+    remove_container_if_exists netbootxyz
+
+    docker run -d \
+        --name netbootxyz \
+        --net=host \
+        --cap-add=NET_ADMIN \
+        -e INTERFACE="${iface}" \
+        -e DHCP_RANGE_START="${dhcp_start}" \
+        -e GATEWAY="${gateway}" \
+        -e SUBNET="${subnet}" \
+        -e CONTAINER_IP="${container_ip}" \
+        samdbmg/dhcp-netboot.xyz >/dev/null || return 1
+
+    DEPLOY_NOTE="Netboot.xyz running on interface ${iface}"
+    return 0
+}
+
+deploy_windows() {
+    local rdp_port vnc_port version ram_size disk_size cpu_cores windows_dir container_name
+
+    require_x86_64 || return 1
+
+    if [ ! -e /dev/kvm ]; then
+        show_msg "Windows container requires /dev/kvm. KVM is not available on this system."
+        return 1
+    fi
+
+    rdp_port="$(find_free_port 3389)"
+    vnc_port="$(find_free_port 8006)"
+
+    if [ "${HAS_DIALOG}" -eq 1 ]; then
+        version="$(dialog --stdout --menu "Choose Windows version" 22 70 14 \
+            "11" "Windows 11 Pro" \
+            "11l" "Windows 11 LTSC" \
+            "11e" "Windows 11 Enterprise" \
+            "10" "Windows 10 Pro" \
+            "10l" "Windows 10 LTSC" \
+            "10e" "Windows 10 Enterprise" \
+            "2025" "Windows Server 2025" \
+            "2022" "Windows Server 2022" \
+            "2019" "Windows Server 2019" \
+            "2016" "Windows Server 2016" \
+            "2012" "Windows Server 2012 R2" \
+            "2008" "Windows Server 2008 R2" \
+            "2003" "Windows Server 2003" \
+            "xp" "Windows XP Pro")"
+        if [ $? -ne 0 ] || [ -z "${version}" ]; then
+            return 1
+        fi
+        clear
+
+        ram_size="$(dialog --stdout --menu "RAM size" 14 40 7 \
+            "4G" "4 GB" \
+            "8G" "8 GB" \
+            "12G" "12 GB" \
+            "16G" "16 GB" \
+            "24G" "24 GB" \
+            "32G" "32 GB")"
+        if [ $? -ne 0 ] || [ -z "${ram_size}" ]; then
+            return 1
+        fi
+        clear
+
+        disk_size="$(dialog --stdout --menu "Disk size" 14 40 7 \
+            "64G" "64 GB" \
+            "128G" "128 GB" \
+            "256G" "256 GB" \
+            "512G" "512 GB" \
+            "1024G" "1 TB")"
+        if [ $? -ne 0 ] || [ -z "${disk_size}" ]; then
+            return 1
+        fi
+        clear
+
+        cpu_cores="$(dialog --stdout --menu "CPU cores" 12 40 4 \
+            "2" "2 cores" \
+            "4" "4 cores" \
+            "6" "6 cores" \
+            "8" "8 cores")"
+        if [ $? -ne 0 ] || [ -z "${cpu_cores}" ]; then
+            return 1
+        fi
+        clear
+
+        rdp_port="$(prompt_input "RDP port" "${rdp_port}")" || return 1
+        vnc_port="$(prompt_input "VNC/Web port" "${vnc_port}")" || return 1
+    else
+        version="11"
+        ram_size="8G"
+        disk_size="128G"
+        cpu_cores="4"
+    fi
+
+    windows_dir="$(find_next_windows_dir)"
+    mkdir -p "${windows_dir}"
+
+    container_name="windows_${version}"
+    remove_container_if_exists "${container_name}"
+
+    docker run -d \
+        --name "${container_name}" \
+        -e VERSION="${version}" \
+        -e RAM_SIZE="${ram_size}" \
+        -e DISK_SIZE="${disk_size}" \
+        -e CPU_CORES="${cpu_cores}" \
+        --device /dev/kvm \
+        --cap-add NET_ADMIN \
+        -p "${rdp_port}:3389/tcp" \
+        -p "${rdp_port}:3389/udp" \
+        -p "${vnc_port}:8006/tcp" \
+        --stop-timeout 120 \
+        --restart on-failure \
+        -v "${windows_dir}:/storage" \
+        dockurr/windows >/dev/null || return 1
+
+    DEPLOY_NOTE="Windows: VNC http://<batocera-ip>:${vnc_port} | RDP port ${rdp_port} | Storage ${windows_dir}"
+    return 0
+}
+
+deploy_bliss() {
+    local spice_port adb_port ssh_port
+    local -a dri_arg=()
+    local -a snd_arg=()
+
+    require_x86_64 || return 1
+
+    if [ ! -e /dev/kvm ]; then
+        show_msg "Bliss container requires /dev/kvm. KVM is not available on this system."
+        return 1
+    fi
+
+    if ! ask_yesno "Bliss OS container is experimental (no audio/GPU acceleration expected). Continue?"; then
+        return 1
+    fi
+
+    spice_port="$(find_free_port 5930)"
+    adb_port="$(find_free_port 5555)"
+    ssh_port="$(find_free_port 50922)"
+    if [ -e /dev/dri ]; then
+        dri_arg=(--device /dev/dri --group-add video)
+    fi
+    if [ -e /dev/snd ]; then
+        snd_arg=(--device /dev/snd --group-add audio)
+    fi
+
+    remove_container_if_exists bliss
+
+    docker run -d \
+        --name bliss \
+        --privileged \
+        --device /dev/kvm \
+        -v /tmp/.X11-unix:/tmp/.X11-unix \
+        -e DISPLAY="${DISPLAY:-:0.0}" \
+        --net=host \
+        -p "${adb_port}:5555" \
+        -p "${ssh_port}:10022" \
+        "${dri_arg[@]}" \
+        "${snd_arg[@]}" \
+        -e EXTRA="-display gtk,gl=on -vga qxl -spice port=${spice_port},disable-ticketing" \
+        sickcodes/dock-droid:latest >/dev/null || return 1
+
+    DEPLOY_NOTE="Bliss OS container started (SPICE ${spice_port})"
+    return 0
+}
+
+container_label() {
+    case "$1" in
+        portainer) echo "Portainer" ;;
+        casa2) echo "CasaOS (casa2)" ;;
+        emby) echo "Emby" ;;
+        jellyfin) echo "Jellyfin" ;;
+        nextcloud) echo "Nextcloud" ;;
+        plex) echo "Plex" ;;
+        sabnzbd) echo "SABnzbd" ;;
+        systools) echo "System Tools" ;;
+        umbrel) echo "Umbrel" ;;
+        webtop) echo "Webtop" ;;
+        netboot) echo "Netboot.xyz" ;;
+        windows) echo "Windows" ;;
+        bliss) echo "Bliss OS" ;;
+        *) echo "$1" ;;
+    esac
+}
+
+run_choice() {
+    DEPLOY_NOTE=""
+    case "$1" in
+        portainer) deploy_portainer ;;
+        casa2) deploy_casa2 ;;
+        emby) deploy_emby ;;
+        jellyfin) deploy_jellyfin ;;
+        nextcloud) deploy_nextcloud ;;
+        plex) deploy_plex ;;
+        sabnzbd) deploy_sabnzbd ;;
+        systools) deploy_systools ;;
+        umbrel) deploy_umbrel ;;
+        webtop) deploy_webtop ;;
+        netboot) deploy_netboot ;;
+        windows) deploy_windows ;;
+        bliss) deploy_bliss ;;
+        *)
+            log "Unknown choice: $1"
+            return 1
+            ;;
+    esac
+}
+
+choose_with_dialog() {
+    local -a items
+    items=(
+        "portainer" "Portainer CE (9443)" "off"
+        "casa2" "CasaOS (casa2 only)" "off"
+        "emby" "Emby media server" "off"
+        "jellyfin" "Jellyfin media server" "off"
+        "nextcloud" "Nextcloud" "off"
+        "plex" "Plex media server" "off"
+        "sabnzbd" "SABnzbd" "off"
+        "systools" "System tools (Glances/Wetty/Filemanager)" "off"
+        "umbrel" "Umbrel" "off"
+        "webtop" "Webtop desktop" "off"
+        "netboot" "Netboot.xyz" "off"
+        "windows" "Windows container" "off"
+        "bliss" "Bliss OS (experimental)" "off"
+    )
+
+    dialog --stdout --separate-output --checklist \
+        "Select Docker containers to deploy.\n\nSingle-script mode: no external apps/docker scripts are called." \
+        24 90 16 "${items[@]}"
+}
+
+choose_without_dialog() {
+    cat <<'TXT'
+Select one or more (space separated):
+portainer casa2 emby jellyfin nextcloud plex sabnzbd systools umbrel webtop netboot windows bliss
+TXT
+    read -r -a arr
+    printf '%s\n' "${arr[@]}"
+}
+
+main() {
+    local selected
+    local -a choices=()
+    local -a successes=()
+    local -a failures=()
+    local -a notes=()
+    local choice clean_choice
+
+    if ! ensure_docker_ready; then
+        exit 1
+    fi
+
+    if [ "${HAS_DIALOG}" -eq 1 ]; then
+        selected="$(choose_with_dialog)"
+        if [ $? -ne 0 ] || [ -z "${selected}" ]; then
+            clear
+            exit 0
+        fi
+        mapfile -t choices <<<"${selected}"
+    else
+        mapfile -t choices < <(choose_without_dialog)
+        if [ "${#choices[@]}" -eq 0 ]; then
+            exit 0
+        fi
+    fi
+
+    for choice in "${choices[@]}"; do
+        clean_choice="${choice//\"/}"
+        show_info "Deploying $(container_label "${clean_choice}")..."
+        log "Deploy start ${clean_choice}"
+        if run_choice "${clean_choice}"; then
+            successes+=("$(container_label "${clean_choice}")")
+            if [ -n "${DEPLOY_NOTE}" ]; then
+                notes+=("${DEPLOY_NOTE}")
+            fi
+            log "Deploy success ${clean_choice}"
+        else
+            failures+=("$(container_label "${clean_choice}")")
+            log "Deploy failed ${clean_choice}"
+        fi
+    done
+
+    local summary
+    summary="Completed Docker container deployment."
+
+    if [ "${#successes[@]}" -gt 0 ]; then
+        summary+="\n\nSucceeded:\n- $(printf '%s\n- ' "${successes[@]}" | sed 's/- $//')"
+    fi
+
+    if [ "${#failures[@]}" -gt 0 ]; then
+        summary+="\n\nFailed:\n- $(printf '%s\n- ' "${failures[@]}" | sed 's/- $//')"
+    fi
+
+    if [ "${#notes[@]}" -gt 0 ]; then
+        summary+="\n\nEndpoints/Notes:\n- $(printf '%s\n- ' "${notes[@]}" | sed 's/- $//')"
+    fi
+
+    summary+="\n\nLog: ${LOG_FILE}"
+    show_msg "${summary}"
+}
+
+main "$@"

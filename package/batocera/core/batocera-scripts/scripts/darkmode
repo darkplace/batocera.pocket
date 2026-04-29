@@ -1,0 +1,105 @@
+#!/bin/bash
+
+THEME_ROOT="/userdata/system/pro/dark"
+THEME_ZIP="${THEME_ROOT}/Adwaita-dark.zip"
+THEME_NAME="Adwaita-dark"
+THEME_SOURCE_DIR="${THEME_ROOT}/${THEME_NAME}"
+THEME_INSTALL_DIR="/usr/share/themes/${THEME_NAME}"
+PACKAGED_ZIP="/usr/share/batocera/f1-theme/Adwaita-dark.zip"
+LAUNCHER="/usr/bin/filemanagerlauncher"
+THEME_EXPORT='export GTK_THEME=Adwaita-dark'
+
+copy_theme_zip() {
+    mkdir -p "${THEME_ROOT}"
+    if [ ! -f "${THEME_ZIP}" ] && [ -f "${PACKAGED_ZIP}" ]; then
+        cp -f "${PACKAGED_ZIP}" "${THEME_ZIP}"
+    fi
+}
+
+install_theme() {
+    copy_theme_zip
+
+    if [ ! -d "${THEME_SOURCE_DIR}" ]; then
+        if ! command -v unzip >/dev/null 2>&1; then
+            echo "unzip is required to install ${THEME_NAME}."
+            return 1
+        fi
+        if [ ! -f "${THEME_ZIP}" ]; then
+            echo "Missing ${THEME_ZIP}."
+            return 1
+        fi
+        unzip -oq "${THEME_ZIP}" -d "${THEME_ROOT}" || return 1
+    fi
+
+    if [ ! -d "${THEME_SOURCE_DIR}" ]; then
+        echo "Theme source directory is missing: ${THEME_SOURCE_DIR}"
+        return 1
+    fi
+
+    mkdir -p /usr/share/themes
+    rm -rf "${THEME_INSTALL_DIR}"
+    cp -a "${THEME_SOURCE_DIR}" "${THEME_INSTALL_DIR}"
+}
+
+enable_dark_launcher() {
+    if [ ! -f "${LAUNCHER}" ]; then
+        echo "Missing launcher: ${LAUNCHER}"
+        return 1
+    fi
+
+    if grep -Fxq "${THEME_EXPORT}" "${LAUNCHER}"; then
+        return 0
+    fi
+
+    if grep -q '^export XDG_CONFIG_DIRS=/etc/xdg$' "${LAUNCHER}"; then
+        sed -i '/^export XDG_CONFIG_DIRS=\/etc\/xdg$/a export GTK_THEME=Adwaita-dark' "${LAUNCHER}"
+    else
+        sed -i '2i export GTK_THEME=Adwaita-dark' "${LAUNCHER}"
+    fi
+}
+
+disable_dark_launcher() {
+    if [ -f "${LAUNCHER}" ]; then
+        sed -i '\|^export GTK_THEME=Adwaita-dark$|d' "${LAUNCHER}"
+    fi
+}
+
+start_service() {
+    install_theme || return 1
+    enable_dark_launcher || return 1
+}
+
+stop_service() {
+    disable_dark_launcher
+}
+
+status_service() {
+    if [ -f "${LAUNCHER}" ] && grep -Fxq "${THEME_EXPORT}" "${LAUNCHER}"; then
+        echo "started"
+        return 0
+    fi
+    echo "stopped"
+    return 1
+}
+
+case "${1:-}" in
+    start)
+        start_service
+        ;;
+    stop)
+        stop_service
+        ;;
+    status)
+        status_service
+        ;;
+    restart)
+        stop_service
+        start_service
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|status|restart}"
+        exit 1
+        ;;
+esac
+
+exit $?

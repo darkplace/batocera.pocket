@@ -1,0 +1,3 @@
+#!/bin/bash
+
+emulatorlauncher -system gba -emulator nanoboyadvance -core nanoboyadvance -rom config

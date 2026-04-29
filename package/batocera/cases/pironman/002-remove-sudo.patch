@@ -1,0 +1,24 @@
+diff --git a/pironman/main.py b/pironman/main.py
+index c219f17bbe..2e18aa3bf6 100644
+--- a/pironman/main.py
++++ b/pironman/main.py
+@@ -81,8 +81,8 @@ config = ConfigParser()
+ if not os.path.exists(config_file):
+     log('Configuration file does not exist, recreating ...')
+     # create config_file
+-    status, result = run_command(cmd=f'sudo touch {config_file}'
+-        + f' && sudo chmod 774 {config_file}'
++    status, result = run_command(cmd=f'touch {config_file}'
++        + f' && chmod 774 {config_file}'
+     )
+     if status != 0:
+         log('create config_file failed:\n%s'%result)
+@@ -175,7 +175,7 @@ oled_ok = False
+ oled_stat = False
+ 
+ try:
+-    run_command("sudo modprobe i2c-dev")
++    run_command("modprobe i2c-dev")
+     oled = SSD1306_128_64()
+     width = oled.width
+     height = oled.height

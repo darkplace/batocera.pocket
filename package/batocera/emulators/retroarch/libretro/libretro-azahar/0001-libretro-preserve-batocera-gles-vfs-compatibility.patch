@@ -1,0 +1,47 @@
+--- a/src/citra_libretro/CMakeLists.txt
++++ b/src/citra_libretro/CMakeLists.txt
+@@ -58,17 +58,21 @@
+ set_target_properties(azahar_libretro PROPERTIES PREFIX "")
+ target_compile_definitions(azahar_libretro PRIVATE HAVE_LIBRETRO)
+ 
++# Match Batocera's historical libretro-citra behavior on Linux:
++# use the libretro VFS/save-path plumbing and request the GLES context path
++# that Batocera's RetroArch stack has been using for this core.
++target_compile_definitions(citra_common PRIVATE HAVE_LIBRETRO_VFS)
++target_compile_definitions(citra_core PRIVATE HAVE_LIBRETRO_VFS)
++target_compile_definitions(video_core PRIVATE HAVE_LIBRETRO_VFS)
++target_compile_definitions(azahar_libretro_common PRIVATE USING_GLES HAVE_LIBRETRO_VFS)
++target_compile_definitions(azahar_libretro PRIVATE USING_GLES HAVE_LIBRETRO_VFS)
++target_link_libraries(citra_common PRIVATE libretro_common)
++target_link_libraries(citra_core PRIVATE libretro_common)
++target_link_libraries(video_core PRIVATE libretro_common)
++target_link_libraries(azahar_libretro_common PRIVATE libretro_common)
++target_link_libraries(azahar_libretro PRIVATE libretro_common)
++
+ if(ANDROID)
+-  target_compile_definitions(citra_common PRIVATE HAVE_LIBRETRO_VFS)
+-  target_compile_definitions(citra_core PRIVATE HAVE_LIBRETRO_VFS)
+-  target_compile_definitions(video_core PRIVATE HAVE_LIBRETRO_VFS)
+-  target_compile_definitions(azahar_libretro_common PRIVATE USING_GLES HAVE_LIBRETRO_VFS)
+-  target_compile_definitions(azahar_libretro PRIVATE USING_GLES HAVE_LIBRETRO_VFS)
+-  target_link_libraries(citra_common PRIVATE libretro_common)
+-  target_link_libraries(citra_core PRIVATE libretro_common)
+-  target_link_libraries(video_core PRIVATE libretro_common)
+-  target_link_libraries(azahar_libretro_common PRIVATE libretro_common)
+-  target_link_libraries(azahar_libretro PRIVATE libretro_common)
+   # Link Android log library for __android_log_print
+   target_link_libraries(azahar_libretro PRIVATE log)
+ endif()
+--- a/externals/CMakeLists.txt
++++ b/externals/CMakeLists.txt
+@@ -298,9 +298,7 @@
+ if (ENABLE_LIBRETRO)
+   add_library(libretro INTERFACE)
+   target_include_directories(libretro INTERFACE ./libretro-common/libretro-common/include)
+-  if (ANDROID)
+-    add_subdirectory(libretro-common EXCLUDE_FROM_ALL)
+-  endif()
++  add_subdirectory(libretro-common EXCLUDE_FROM_ALL)
+ endif()
+ 
+ # JSON

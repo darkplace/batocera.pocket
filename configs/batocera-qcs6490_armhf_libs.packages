@@ -1,0 +1,6 @@
+# SPDX-FileCopyrightText: Added/modified by suckbluefrog
+# batocera-qcs6490_armhf_libs.packages
+# 32-bit library package set for QCS6490 / PortMaster compatibility
+
+include batocera-h700_armhf_libs.packages
+include batocera-sm8250_armhf_libs.packages

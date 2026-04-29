@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Icon=/usr/share/icons/batocera/chrome.png
+Exec=batocera-app-chrome
+Terminal=false
+Type=Application
+Categories=Network;WebBrowser;batocera.linux;
+Name=Google Chrome
+GenericName=Web Browser
+Comment=Launch Google Chrome

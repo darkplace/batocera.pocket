@@ -1,0 +1,17 @@
+#!/bin/sh
+set -eu
+
+export HOME="/userdata/saves/apps/firefox"
+export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
+export XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
+export XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+
+mkdir -p "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_CACHE_HOME" "$XDG_RUNTIME_DIR" 2>/dev/null || true
+
+if [ -n "${BATOCERA_APPS_EXTRA_ARGS:-}" ]; then
+    # shellcheck disable=SC2086
+    set -- "$@" ${BATOCERA_APPS_EXTRA_ARGS}
+fi
+
+exec /usr/share/batocera/apps/firefox/firefox "$@"

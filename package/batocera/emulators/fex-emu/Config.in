@@ -1,0 +1,41 @@
+config BR2_PACKAGE_FEX_EMU
+	bool "fex-emu"
+	depends on BR2_aarch64
+	select BR2_PACKAGE_ALSA_LIB
+	select BR2_PACKAGE_EROFS_UTILS
+	select BR2_PACKAGE_EROFS_UTILS_EROFSFUSE
+	select BR2_PACKAGE_LIBDRM
+	select BR2_PACKAGE_LIBGLVND
+	select BR2_PACKAGE_MESA3D
+	select BR2_PACKAGE_MESA3D_OPENGL_EGL
+	select BR2_PACKAGE_OPENSSL
+	select BR2_PACKAGE_SQUASHFS
+	select BR2_PACKAGE_LLVM
+	select BR2_PACKAGE_SQUASHFUSE
+	select BR2_PACKAGE_VULKAN_HEADERS
+	select BR2_PACKAGE_WAYLAND
+	help
+	  FEX-Emu is a fast x86 and x86-64 Linux emulator that allows
+	  running x86/x86_64 applications on AArch64 Linux systems.
+
+	  This package restores the host-side FEX runtime for explicit
+	  invocation on Batocera aarch64 systems.
+
+	  It does not enable FEX binfmt_misc registration by default,
+	  allowing existing box64/box32 handlers to remain the default
+	  transparent x86/x86_64 executors.
+
+	  https://github.com/FEX-Emu/FEXS
+
+if BR2_PACKAGE_FEX_EMU
+
+config BR2_PACKAGE_FEX_EMU_BINFMT
+	bool "install optional FEX binfmt init script"
+	help
+	  Install the legacy FEX binfmt_misc init script.
+
+	  This is disabled by default so FEX is only used when called
+	  explicitly, and existing box64/box32 binfmt registrations are
+	  left untouched.
+
+endif

@@ -1,0 +1,2 @@
+#!/bin/bash
+emulatorlauncher -system j2me -emulator freej2me -core freej2me -rom config

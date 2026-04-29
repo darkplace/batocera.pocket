@@ -1,0 +1,49 @@
+#!/bin/sh
+# Start HOTKEY+touchscreen listener for Batocera on-screen keyboard.
+
+NAME=onscreen-keyboard-hotkey-touch
+DAEMON=/usr/bin/$NAME
+PIDFILE=/var/run/$NAME.pid
+
+test -x "$DAEMON" || exit 0
+
+# Allow disabling in batocera.conf:
+# system.onscreen-keyboard.hotkeytouch=0
+OPT="$(batocera-settings-get system.onscreen-keyboard.hotkeytouch 2>/dev/null || true)"
+[ "$OPT" = "0" ] && exit 0
+
+# Avoid launching on systems without touch input.
+if ! touchscreen-detect >/dev/null 2>&1; then
+    exit 0
+fi
+
+start() {
+    printf "Starting $NAME: "
+    start-stop-daemon --start --quiet -m --pidfile "$PIDFILE" --exec "$DAEMON" --background \
+        && echo "OK" || echo "FAIL"
+}
+
+stop() {
+    printf "Stopping $NAME: "
+    start-stop-daemon --stop --quiet --pidfile "$PIDFILE" \
+        && echo "OK" || echo "FAIL"
+}
+
+case "$1" in
+    start)
+        start
+        ;;
+    stop)
+        stop
+        ;;
+    restart|reload)
+        stop
+        start
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|restart}"
+        exit 1
+        ;;
+esac
+
+exit 0

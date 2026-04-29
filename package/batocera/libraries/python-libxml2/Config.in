@@ -1,0 +1,15 @@
+config BR2_PACKAGE_PYTHON_LIBXML2
+	bool "python-libxml2"
+	depends on !BR2_STATIC_LIBS
+	depends on BR2_USE_WCHAR
+	depends on BR2_TOOLCHAIN_HAS_THREADS
+	depends on BR2_PACKAGE_PYTHON3
+	select BR2_PACKAGE_LIBXML2
+	help
+	  Python bindings for libxml2.
+
+	  https://gitlab.gnome.org/GNOME/libxml2
+
+comment "python-libxml2 needs python3, wchar, threads, dynamic library"
+	depends on BR2_PACKAGE_PYTHON3
+	depends on BR2_STATIC_LIBS || !BR2_USE_WCHAR || !BR2_TOOLCHAIN_HAS_THREADS

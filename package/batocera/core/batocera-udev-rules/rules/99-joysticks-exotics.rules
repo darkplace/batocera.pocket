@@ -1,0 +1,31 @@
+# NVidia Shield Controller
+SUBSYSTEM=="input", ATTRS{name}=="NVIDIA Corporation NVIDIA Controller v01.03", MODE="0666", ENV{ID_INPUT_JOYSTICK}="1"
+# IPEGA
+SUBSYSTEM=="input", ATTRS{name}=="ipega Bluetooth Gamepad", MODE="0666", ENV{ID_INPUT_JOYSTICK}="1"
+SUBSYSTEM=="input", ATTRS{name}=="ipega Bluetooth Gamepad   ", MODE="0666", ENV{ID_INPUT_JOYSTICK}="1"
+SUBSYSTEM=="input", ATTRS{name}=="PG-9021", MODE="0666", ENV{ID_INPUT_JOYSTICK}="1"
+SUBSYSTEM=="input", ATTRS{name}=="Gamepad", MODE="0666", ENV{ID_INPUT_JOYSTICK}="1"
+SUBSYSTEM=="input", ATTRS{name}=="GamePad", MODE="0666", ENV{ID_INPUT_JOYSTICK}="1"
+# Neo-Geo X Arcade Stick
+SUBSYSTEM=="input", ATTRS{name}=="TOMMO NEOGEOX Arcade Stick", MODE="0666", ENV{ID_INPUT_JOYSTICK}="1"
+# Mad Catz C.T.R.L.R gamepad
+SUBSYSTEM=="input", ATTRS{name}=="Mad Catz C.T.R.L.R", MODE="0666", ENV{ID_INPUT_JOYSTICK}="1"
+SUBSYSTEM=="input", ATTRS{name}=="SteelSeries Stratus XL", MODE="0666", ENV{ID_INPUT_JOYSTICK}="1"
+# X-Arcade Tankstick
+SUBSYSTEM=="input", ATTRS{name}=="Xarcade-to-Gamepad Device 1", MODE="0666", ENV{ID_INPUT_JOYSTICK}="1"
+SUBSYSTEM=="input", ATTRS{name}=="Xarcade-to-Gamepad Device 2", MODE="0666", ENV{ID_INPUT_JOYSTICK}="1"
+
+# 1 button controller...
+SUBSYSTEM=="input", ATTRS{name}=="Xbox Wireless Controller Consumer Control", MODE="0666", ENV{ID_INPUT_JOYSTICK}="0"
+
+# detected as a joystick (but having a single button) when plugged via usb
+SUBSYSTEM=="input", ATTRS{name}=="Microsoft Xbox Chatpad", MODE="0666", ENV{ID_INPUT_JOYSTICK}="0"
+
+# KADE USB
+SUBSYSTEM=="input", KERNEL=="event*", ACTION=="add", ATTRS{name}=="KADE USB Keyboard Encoder", ENV{ID_INPUT_KEYBOARD}=="1", ENV{ID_INPUT_KEYBOARD}="0", ENV{ID_INPUT_KEY}="0", ENV{ID_INPUT_JOYSTICK}="1"
+
+# Remove flag joystick in Microsoft 2.4GHz Transceiver v8.0 (VID=045e, PID=0745)
+SUBSYSTEM=="input", ATTRS{name}=="Microsoft Microsoft® 2.4GHz Transceiver v8.0 System Control", ENV{ID_INPUT_JOYSTICK}="0"
+
+# Remove flag joystick in "Microsoft Microsoft® Nano Transceiver v2.0 System Control" (VID=045e, PID=0800)
+SUBSYSTEM=="input", ATTRS{idVendor}=="045e", ATTRS{idProduct}=="0800", ENV{ID_INPUT_JOYSTICK}="0"

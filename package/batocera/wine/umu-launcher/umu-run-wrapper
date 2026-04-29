@@ -1,0 +1,7 @@
+#!/bin/sh
+set -eu
+
+export BATOCERA_UMU_FAKE_UID="${BATOCERA_UMU_FAKE_UID:-1000}"
+export PYTHONPATH="/usr/share/batocera/wine/umu${PYTHONPATH:+:$PYTHONPATH}"
+
+exec /usr/libexec/umu/umu-run "$@"

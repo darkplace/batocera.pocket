@@ -1,0 +1,84 @@
+#!/bin/sh
+
+LOG="/userdata/system/logs/waydroid-host.log"
+BINDERFS_DIR="/dev/binderfs"
+
+log_msg() {
+    echo "[$(date '+%F %T')] $*" >> "${LOG}"
+}
+
+start_waydroid_host() {
+    mkdir -p /userdata/system/logs
+    mkdir -p /userdata/system/waydroid/var-lib /userdata/system/waydroid/etc
+
+    log_msg "Waydroid host prep start"
+
+    # Keep waydroid state persistent across reboot.
+    if [ -L /var/lib/waydroid ]; then
+        :
+    else
+        rm -rf /var/lib/waydroid
+        mkdir -p /var/lib
+        ln -snf /userdata/system/waydroid/var-lib /var/lib/waydroid
+    fi
+
+    if [ -L /etc/waydroid ]; then
+        :
+    else
+        rm -rf /etc/waydroid
+        ln -snf /userdata/system/waydroid/etc /etc/waydroid
+    fi
+
+    # Provide default subordinate UID/GID mappings for root if absent.
+    for file in /etc/subuid /etc/subgid; do
+        if [ ! -e "${file}" ]; then
+            : > "${file}"
+            chmod 0644 "${file}"
+        fi
+        if ! grep -q '^root:' "${file}" 2>/dev/null; then
+            echo "root:100000:65536" >> "${file}"
+            log_msg "Added default mapping to ${file}"
+        fi
+    done
+
+    if grep -qwE 'binder|binderfs' /proc/filesystems; then
+        mkdir -p "${BINDERFS_DIR}"
+        if ! grep -q " ${BINDERFS_DIR} " /proc/mounts; then
+            if mount -t binder binder "${BINDERFS_DIR}" 2>>"${LOG}"; then
+                log_msg "Mounted binderfs via -t binder"
+            elif mount -t binderfs binder "${BINDERFS_DIR}" 2>>"${LOG}"; then
+                log_msg "Mounted binderfs via -t binderfs"
+            else
+                log_msg "Failed to mount binderfs"
+            fi
+        fi
+
+        for node in binder hwbinder vndbinder; do
+            if [ -e "${BINDERFS_DIR}/${node}" ]; then
+                ln -sf "${BINDERFS_DIR}/${node}" "/dev/${node}"
+            fi
+        done
+    else
+        log_msg "Kernel has no binder/binderfs filesystem support"
+    fi
+
+    if [ -f /sys/fs/cgroup/cgroup.controllers ]; then
+        log_msg "cgroup mode: unified v2"
+    else
+        log_msg "cgroup mode: legacy/hybrid (v2 not active)"
+    fi
+}
+
+case "${1:-}" in
+    start|restart)
+        start_waydroid_host
+        ;;
+    stop)
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|restart}" >&2
+        exit 1
+        ;;
+esac
+
+exit 0

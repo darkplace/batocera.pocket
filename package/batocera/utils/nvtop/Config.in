@@ -1,0 +1,14 @@
+config BR2_PACKAGE_NVTOP
+	bool "nvtop"
+	depends on BR2_PACKAGE_HAS_UDEV
+	depends on !BR2_STATIC_LIBS
+	depends on BR2_INSTALL_LIBSTDCPP
+	select BR2_PACKAGE_LIBDRM
+	select BR2_PACKAGE_NCURSES
+	help
+	  Interactive GPU process viewer for Linux.
+
+	  https://github.com/Syllo/nvtop
+
+comment "nvtop needs a toolchain w/ C++, dynamic library and udev"
+	depends on !BR2_INSTALL_LIBSTDCPP || BR2_STATIC_LIBS || !BR2_PACKAGE_HAS_UDEV

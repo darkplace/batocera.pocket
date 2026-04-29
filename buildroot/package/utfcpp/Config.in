@@ -1,0 +1,10 @@
+config BR2_PACKAGE_UTFCPP
+	bool "utfcpp"
+	depends on BR2_INSTALL_LIBSTDCPP
+	help
+	  UTF8-CPP is a header-only C++ library for working with UTF-8.
+
+	  https://github.com/nemtrif/utfcpp
+
+comment "utfcpp needs a toolchain w/ C++"
+	depends on !BR2_INSTALL_LIBSTDCPP

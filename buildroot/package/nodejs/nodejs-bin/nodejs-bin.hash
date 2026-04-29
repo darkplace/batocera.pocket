@@ -1,0 +1,7 @@
+# From https://nodejs.org/dist/v24.14.1/SHASUMS256.txt.asc
+sha256  71e427e28b78846f201d4d5ecc30cb13d1508ca099ef3871889a1256c7d6f67e  node-v24.14.1-linux-arm64.tar.xz
+sha256  95bf0c8dbb73144edb79a57399f03c70af6995b78e1c632926e53e6404662ef5  node-v24.14.1-linux-ppc64le.tar.xz
+sha256  84d38715d449447117d05c3e71acd78daa49d5b1bfa8aacf610303920c3322be  node-v24.14.1-linux-x64.tar.xz
+sha256  7822507713f202cf2a551899d250259643f477b671706db421a6fb55c4aa0991  node-v24.14.1.tar.xz
+# Locally calculated
+sha256  e991d81497a85bb24fc6bffae0a3637a6accd6c6bc5ce1f2c5698bd555cf9d49  LICENSE

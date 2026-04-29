@@ -1,0 +1,7 @@
+# From upstream release assets:
+# - VacuumTube v1.5.6
+# - Brave AppImage stable 1.89.143
+# - Firefox 149.0 linux-aarch64 en-US
+sha256  459f9edf4b123d599dc6a1fdb889a88dcf645b9d0dc55054a6aaf7ca6aaf233a  VacuumTube-x86_64.AppImage
+sha256  9dd780923a6ee4a246652d18cf73f504de096c793b4c06d77acc7c452ce72c11  Brave-Web-Browser-stable-1.89.143-aarch64.AppImage
+sha256  a862748867f9c6df7e9868608deffee20111905299854514b7f442205948a5e8  firefox-149.0.tar.xz

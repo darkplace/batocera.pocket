@@ -1,0 +1,4 @@
+# Anbernic RG351V default values
+
+# suspend mode
+system.suspendmode=suspend

@@ -1,0 +1,19 @@
+config BR2_PACKAGE_WAYDROID
+	bool "waydroid"
+	depends on BR2_PACKAGE_PYTHON3
+	depends on BR2_USE_MMU
+	depends on BR2_TOOLCHAIN_HAS_THREADS
+	select BR2_PACKAGE_DBUS
+	select BR2_PACKAGE_DBUS_PYTHON
+	select BR2_PACKAGE_PYTHON_GOBJECT
+	select BR2_PACKAGE_PYTHON_GBINDER
+	select BR2_PACKAGE_LXC
+	select BR2_PACKAGE_IPTABLES
+	select BR2_PACKAGE_DNSMASQ
+	help
+	  Waydroid Android container userspace.
+
+	  https://github.com/waydroid/waydroid
+
+comment "waydroid needs python3, MMU and threads"
+	depends on !BR2_PACKAGE_PYTHON3 || !BR2_USE_MMU || !BR2_TOOLCHAIN_HAS_THREADS

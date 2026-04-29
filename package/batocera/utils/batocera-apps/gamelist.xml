@@ -1,0 +1,53 @@
+<?xml version="1.0"?>
+<gameList>
+  <game>
+    <path>./VacuumTube.sh</path>
+    <name>VacuumTube</name>
+    <image>./images/vacuumtube.png</image>
+  </game>
+  <game>
+    <path>./Chrome.sh</path>
+    <name>Google Chrome</name>
+    <image>./images/chrome.png</image>
+  </game>
+  <game>
+    <path>./Firefox.sh</path>
+    <name>Firefox</name>
+    <image>./images/firefox.png</image>
+  </game>
+  <game>
+    <path>./SteamLink.sh</path>
+    <name>SteamLink</name>
+    <image>./images/steamlink.png</image>
+  </game>
+  <game>
+    <path>./Parsec.sh</path>
+    <name>Parsec</name>
+    <image>./images/parsec.png</image>
+  </game>
+  <game>
+    <path>./GeForceNOW.sh</path>
+    <name>GeForce NOW</name>
+    <image>./images/geforcenow.png</image>
+  </game>
+  <game>
+    <path>./Greenlight.sh</path>
+    <name>Greenlight</name>
+    <image>./images/greenlight.png</image>
+  </game>
+  <game>
+    <path>./Moonlight.sh</path>
+    <name>Moonlight</name>
+    <image>./images/moonlight.png</image>
+  </game>
+  <game>
+    <path>./Chiaki.sh</path>
+    <name>Chiaki</name>
+    <image>./images/chiaki.png</image>
+  </game>
+  <game>
+    <path>./PeaZip.sh</path>
+    <name>PeaZip</name>
+    <image>./images/peazip.png</image>
+  </game>
+</gameList>

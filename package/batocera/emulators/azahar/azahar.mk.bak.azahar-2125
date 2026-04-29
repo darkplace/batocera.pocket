@@ -1,0 +1,78 @@
+################################################################################
+#
+# azahar
+#
+################################################################################
+
+AZAHAR_VERSION = f010863ecec4c03af5b7ad7ffe0a40ab145f9cd7
+AZAHAR_SITE = https://github.com/azahar-emu/azahar
+AZAHAR_SITE_METHOD = git
+AZAHAR_GIT_SUBMODULES = YES
+AZAHAR_LICENSE = GPLv2
+AZAHAR_SUPPORTS_IN_SOURCE_BUILD = NO
+
+AZAHAR_DEPENDENCIES += boost fdk-aac ffmpeg fmt openal sdl2
+
+ifeq ($(BR2_x86_64),y)
+AZAHAR_CMAKE_BACKEND = ninja
+# Use clang for performance
+AZAHAR_CONF_OPTS += -DCMAKE_C_COMPILER=$(HOST_DIR)/bin/clang
+AZAHAR_CONF_OPTS += -DCMAKE_CXX_COMPILER=$(HOST_DIR)/bin/clang++
+AZAHAR_CONF_OPTS += -DCMAKE_EXE_LINKER_FLAGS="-lm -lstdc++"
+endif
+
+AZAHAR_CONF_OPTS += -DCMAKE_BUILD_TYPE=Release
+AZAHAR_CONF_OPTS += -DBUILD_SHARED_LIBS=OFF
+AZAHAR_CONF_OPTS += -DENABLE_TESTS=OFF
+AZAHAR_CONF_OPTS += -DENABLE_ROOM=OFF
+AZAHAR_CONF_OPTS += -DCITRA_WARNINGS_AS_ERRORS=OFF
+AZAHAR_CONF_OPTS += -DENABLE_WEB_SERVICE=OFF
+AZAHAR_CONF_OPTS += -DUSE_DISCORD_PRESENCE=OFF
+AZAHAR_CONF_OPTS += -DENABLE_SOFTWARE_RENDERER=ON
+AZAHAR_CONF_OPTS += -DENABLE_OPENAL=ON
+AZAHAR_CONF_OPTS += -DUSE_SYSTEM_OPENAL=ON
+AZAHAR_CONF_OPTS += -DUSE_SYSTEM_BOOST=OFF
+AZAHAR_CONF_OPTS += -DENABLE_SDL2=ON
+AZAHAR_CONF_OPTS += -DUSE_SYSTEM_SDL2=ON    # important to avoid HIDAPI
+AZAHAR_CONF_OPTS += -DENABLE_LTO=OFF
+
+ifeq ($(BR2_X86_CPU_HAS_SSE42),y)
+    AZAHAR_CONF_OPTS += -DENABLE_SSE42=ON
+else
+    AZAHAR_CONF_OPTS += -DENABLE_SSE42=OFF
+endif
+
+ifeq ($(BR2_PACKAGE_QT6),y)
+    AZAHAR_DEPENDENCIES += qt6base qt6tools qt6multimedia
+    AZAHAR_CONF_OPTS += -DENABLE_QT=ON
+    AZAHAR_CONF_OPTS += -DENABLE_QT_TRANSLATION=ON
+    AZAHAR_CONF_OPTS += -DENABLE_QT_UPDATE_CHECKER=OFF
+else
+    AZAHAR_CONF_OPTS += -DENABLE_QT=OFF
+    AZAHAR_CONF_OPTS += -DENABLE_SDL2_FRONTEND=ON
+endif
+
+ifeq ($(BR2_PACKAGE_BATOCERA_VULKAN),y)
+    AZAHAR_CONF_OPTS += -DENABLE_VULKAN=ON
+    AZAHAR_DEPENDENCIES += vulkan-headers vulkan-loader
+else
+    AZAHAR_CONF_OPTS += -DENABLE_VULKAN=OFF
+endif
+
+AZAHAR_CONF_ENV += LDFLAGS=-lpthread
+
+define AZAHAR_INSTALL_TARGET_CMDS
+    mkdir -p $(TARGET_DIR)/usr/bin
+	$(INSTALL) -D $(@D)/buildroot-build/bin/Release/azahar \
+		$(TARGET_DIR)/usr/bin/
+endef
+
+define AZAHAR_EVMAPY
+	mkdir -p $(TARGET_DIR)/usr/share/evmapy
+	cp -prn $(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/emulators/azahar/3ds.azahar.keys \
+		$(TARGET_DIR)/usr/share/evmapy
+endef
+
+AZAHAR_POST_INSTALL_TARGET_HOOKS = AZAHAR_EVMAPY
+
+$(eval $(cmake-package))

@@ -1,0 +1,9 @@
+config BR2_PACKAGE_BATOCERA_APPS_AARCH64
+	bool "batocera apps aarch64 (AppImage bundle)"
+	depends on BR2_aarch64
+	help
+	  Bundled aarch64 desktop applications exposed through an
+	  EmulationStation "apps" system.
+
+comment "batocera-apps-aarch64 needs an aarch64 target"
+	depends on !BR2_aarch64

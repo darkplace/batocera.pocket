@@ -1,0 +1,89 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Sat, 25 Apr 2026 00:00:00 +0000
+Subject: [PATCH] listmount, statmount: avoid mnt_id_req spare field
+
+Older kernel headers name the 32-bit field after struct mnt_id_req.size
+as mnt_ns_fd/mnt_fd instead of spare.  Read that ABI slot by offset so
+the decoder builds against both header variants while still printing the
+field as spare in strace output.
+
+Upstream: pending
+Signed-off-by: suckbluefrog <suckbluefrog@proton.me>
+---
+ src/listmount.c | 14 ++++++++++++--
+ src/statmount.c | 14 ++++++++++++--
+ 2 files changed, 24 insertions(+), 4 deletions(-)
+
+diff --git a/src/listmount.c b/src/listmount.c
+index 890db84..2cc5a54 100644
+--- a/src/listmount.c
++++ b/src/listmount.c
+@@ -11,6 +11,16 @@
+ #include "xlat/listmount_mnt_id.h"
+ #include "xlat/listmount_flags.h"
+ 
++static uint32_t
++get_mnt_id_req_spare(const struct mnt_id_req *const req)
++{
++	uint32_t spare;
++
++	memcpy(&spare, (const char *) req + offsetofend(struct mnt_id_req, size),
++	       sizeof(spare));
++	return spare;
++}
++
+ static void
+ print_mnt_id_req(struct tcb *const tcp, const kernel_ulong_t addr)
+ {
+@@ -36,9 +46,11 @@ print_mnt_id_req(struct tcb *const tcp, const kernel_ulong_t addr)
+ 		return;
+ 	}
+ 
+-	if (req.spare) {
++	const uint32_t spare = get_mnt_id_req_spare(&req);
++	if (spare) {
+ 		tprint_struct_next();
+-		PRINT_FIELD_X(req, spare);
++		tprints_field_name("spare");
++		PRINT_VAL_X(spare);
+ 	}
+ 
+ 	tprint_struct_next();
+diff --git a/src/statmount.c b/src/statmount.c
+index 476fce2..d7e6872 100644
+--- a/src/statmount.c
++++ b/src/statmount.c
+@@ -11,6 +11,16 @@
+ #include "xlat/statmount_sb_flags.h"
+ #include "xlat/statmount_mnt_propagation.h"
+ 
++static uint32_t
++get_mnt_id_req_spare(const struct mnt_id_req *const req)
++{
++	uint32_t spare;
++
++	memcpy(&spare, (const char *) req + offsetofend(struct mnt_id_req, size),
++	       sizeof(spare));
++	return spare;
++}
++
+ #define PRINT_FIELD_CSTRING_OFFSET(where_, field_, str_buf_, str_size_)		\
+ 	do {									\
+ 		tprints_field_name(#field_);					\
+@@ -94,9 +104,11 @@ print_mnt_id_req(struct tcb *const tcp, const kernel_ulong_t addr)
+ 		return;
+ 	}
+ 
+-	if (req.spare) {
++	const uint32_t spare = get_mnt_id_req_spare(&req);
++	if (spare) {
+ 		tprint_struct_next();
+-		PRINT_FIELD_X(req, spare);
++		tprints_field_name("spare");
++		PRINT_VAL_X(spare);
+ 	}
+ 
+ 	tprint_struct_next();
+-- 
+2.49.0

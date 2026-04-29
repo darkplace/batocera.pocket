@@ -1,0 +1,16 @@
+config BR2_PACKAGE_MELONDS
+    bool "melonDS"
+    select BR2_PACKAGE_BATOCERA_QT6
+    select BR2_PACKAGE_ECM
+    select BR2_PACKAGE_LIBARCHIVE
+    select BR2_PACKAGE_LIBENET
+    select BR2_PACKAGE_LIBEPOXY
+    select BR2_PACKAGE_LIBPCAP
+    select BR2_PACKAGE_SDL2
+    select BR2_PACKAGE_SLIRP
+    select BR2_PACKAGE_ZSTD
+    select BR2_PACKAGE_FAAD2
+    help
+      A Ninteno DS emulator
+
+      http://melonds.kuribo64.net/

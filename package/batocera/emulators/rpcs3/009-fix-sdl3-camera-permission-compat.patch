@@ -1,0 +1,39 @@
+diff --git a/rpcs3/Input/sdl_camera_handler.cpp b/rpcs3/Input/sdl_camera_handler.cpp
+--- a/rpcs3/Input/sdl_camera_handler.cpp
++++ b/rpcs3/Input/sdl_camera_handler.cpp
+@@ -9,6 +9,16 @@
+ 
+ LOG_CHANNEL(camera_log, "Camera");
+ 
++#ifndef SDL_CAMERA_PERMISSION_STATE_DENIED
++#define SDL_CAMERA_PERMISSION_STATE_DENIED -1
++#endif
++#ifndef SDL_CAMERA_PERMISSION_STATE_PENDING
++#define SDL_CAMERA_PERMISSION_STATE_PENDING 0
++#endif
++#ifndef SDL_CAMERA_PERMISSION_STATE_APPROVED
++#define SDL_CAMERA_PERMISSION_STATE_APPROVED 1
++#endif
++
+ template <>
+ void fmt_class_string<SDL_CameraSpec>::format(std::string& out, u64 arg)
+ {
+@@ -358,15 +368,15 @@ void sdl_camera_handler::start_camera()
+ 	const auto camera_permission = SDL_GetCameraPermissionState(m_camera);
+ 	switch (camera_permission)
+ 	{
+-	case SDL_CameraPermissionState::SDL_CAMERA_PERMISSION_STATE_DENIED:
++	case SDL_CAMERA_PERMISSION_STATE_DENIED:
+ 		camera_log.error("Camera permission denied");
+ 		set_state(camera_handler_state::closed);
+ 		reset();
+ 		return;
+-	case SDL_CameraPermissionState::SDL_CAMERA_PERMISSION_STATE_PENDING:
++	case SDL_CAMERA_PERMISSION_STATE_PENDING:
+ 		// TODO: try to get permission
+ 		break;
+-	case SDL_CameraPermissionState::SDL_CAMERA_PERMISSION_STATE_APPROVED:
++	case SDL_CAMERA_PERMISSION_STATE_APPROVED:
+ 		break;
+ 	default:
+ 		fmt::throw_exception("Unknown SDL_CameraPermissionState %d", static_cast<s32>(camera_permission));

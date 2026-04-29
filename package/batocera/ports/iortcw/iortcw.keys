@@ -1,0 +1,10 @@
+{
+    "actions_player1": [
+        {
+            "trigger": ["hotkey"],
+            "type": "key",
+            "target": [ "KEY_ESC" ],
+            "description": "Skip cutscene"
+        }
+    ]
+}

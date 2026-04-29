@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Icon=/usr/share/icons/batocera/vacuumtube.png
+Exec=batocera-app-vacuumtube
+Terminal=false
+Type=Application
+Categories=AudioVideo;Video;batocera.linux;
+Name=VacuumTube
+GenericName=YouTube client
+Comment=Launch VacuumTube

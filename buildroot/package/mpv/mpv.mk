@@ -1,0 +1,278 @@
+################################################################################
+#
+# mpv
+#
+################################################################################
+# batocera - bump for ffmpeg update. remove 0001 patch
+# move from waf to meson package
+MPV_VERSION = v0.41.0
+MPV_SITE = $(call github,mpv-player,mpv,$(MPV_VERSION))
+MPV_DEPENDENCIES = \
+	host-pkgconf ffmpeg libass libdisplay-info libplacebo zlib \
+	$(if $(BR2_PACKAGE_LIBICONV),libiconv)
+MPV_LICENSE = GPL-2.0+
+MPV_LICENSE_FILES = LICENSE.GPL
+MPV_CPE_ID_VENDOR = mpv
+MPV_INSTALL_STAGING = YES
+
+MPV_CONF_OPTS += \
+	-Degl-android=disabled \
+	-Dcaca=disabled \
+	-Dcocoa=disabled \
+	-Dcoreaudio=disabled \
+	-Dopensles=disabled \
+	-Drubberband=disabled \
+	-Duchardet=disabled \
+	-Dvapoursynth=disabled
+
+ifeq ($(BR2_REPRODUCIBLE),y)
+MPV_CONF_OPTS += -Dbuild-date=false
+endif
+
+ifeq ($(BR2_STATIC_LIBS),y)
+MPV_CONF_OPTS += -Dlibmpv=true
+else
+MPV_CONF_OPTS += -Dlibmpv=false
+endif
+
+ifeq ($(BR2_PACKAGE_ALSA_LIB),y)
+MPV_CONF_OPTS += -Dalsa=enabled
+MPV_DEPENDENCIES += alsa-lib
+else
+MPV_CONF_OPTS += -Dalsa=disabled
+endif
+
+ifeq ($(BR2_PACKAGE_MESA3D_GBM),y)
+MPV_CONF_OPTS += -Dgbm=enabled
+MPV_DEPENDENCIES += mesa3d
+ifeq ($(BR2_PACKAGE_LIBDRM),y)
+MPV_CONF_OPTS += -Degl-drm=enabled
+else
+MPV_CONF_OPTS += -Degl-drm=disabled
+endif
+else
+MPV_CONF_OPTS += -Dgbm=disabled -Degl-drm=disabled
+endif
+
+# jack support
+# It also requires 64-bit sync intrinsics
+ifeq ($(BR2_TOOLCHAIN_HAS_SYNC_8)$(BR2_PACKAGE_JACK2),yy)
+MPV_CONF_OPTS += -Djack=enabled
+MPV_DEPENDENCIES += jack2
+else
+MPV_CONF_OPTS += -Djack=disabled
+endif
+
+# jpeg support
+ifeq ($(BR2_PACKAGE_JPEG),y)
+MPV_CONF_OPTS += -Djpeg=enabled
+MPV_DEPENDENCIES += jpeg
+else
+MPV_CONF_OPTS += -Djpeg=disabled
+endif
+
+# lcms2 support
+ifeq ($(BR2_PACKAGE_LCMS2),y)
+MPV_CONF_OPTS += -Dlcms2=enabled
+MPV_DEPENDENCIES += lcms2
+else
+MPV_CONF_OPTS += -Dlcms2=disabled
+endif
+
+# libarchive support
+ifeq ($(BR2_PACKAGE_LIBARCHIVE),y)
+MPV_CONF_OPTS += -Dlibarchive=enabled
+MPV_DEPENDENCIES += libarchive
+else
+MPV_CONF_OPTS += -Dlibarchive=disabled
+endif
+
+# bluray support
+ifeq ($(BR2_PACKAGE_LIBBLURAY),y)
+MPV_CONF_OPTS += -Dlibbluray=enabled
+MPV_DEPENDENCIES += libbluray
+else
+MPV_CONF_OPTS += -Dlibbluray=disabled
+endif
+
+# libcdio-paranoia
+ifeq ($(BR2_PACKAGE_LIBCDIO_PARANOIA),y)
+MPV_CONF_OPTS += -Dcdda=enabled
+MPV_DEPENDENCIES += libcdio-paranoia
+else
+MPV_CONF_OPTS += -Dcdda=disabled
+endif
+
+# libdvdnav
+ifeq ($(BR2_PACKAGE_LIBDVDNAV),y)
+MPV_CONF_OPTS += -Ddvdnav=enabled
+MPV_DEPENDENCIES += libdvdnav
+else
+MPV_CONF_OPTS += -Ddvdnav=disabled
+endif
+
+# libdrm
+ifeq ($(BR2_PACKAGE_LIBDRM),y)
+MPV_CONF_OPTS += -Ddrm=enabled
+MPV_DEPENDENCIES += libdrm
+else
+MPV_CONF_OPTS += -Ddrm=disabled
+endif
+
+# libvdpau
+ifeq ($(BR2_PACKAGE_LIBVDPAU),y)
+MPV_CONF_OPTS += -Dvdpau=enabled
+MPV_DEPENDENCIES += libvdpau
+else
+MPV_CONF_OPTS += -Dvdpau=disabled
+endif
+
+# LUA support, only for lua51/lua52/luajit
+# This enables the controller (OSD) together with libass
+ifeq ($(BR2_PACKAGE_LUA_5_1)$(BR2_PACKAGE_LUAJIT),y)
+MPV_CONF_OPTS += -Dlua=enabled
+MPV_DEPENDENCIES += luainterpreter
+else
+MPV_CONF_OPTS += -Dlua=disabled
+endif
+
+# OpenGL support
+ifeq ($(BR2_PACKAGE_HAS_LIBGL),y)
+MPV_CONF_OPTS += -Dgl=enabled
+MPV_DEPENDENCIES += libgl
+else ifeq ($(BR2_PACKAGE_HAS_LIBGLES),y)
+MPV_CONF_OPTS += -Dgl=enabled
+MPV_DEPENDENCIES += libgles
+else ifeq ($(BR2_PACKAGE_HAS_LIBEGL),y)
+MPV_CONF_OPTS += -Dgl=enabled
+MPV_DEPENDENCIES += libegl
+else
+MPV_CONF_OPTS += -Dgl=disabled
+endif
+
+# pulseaudio support
+ifeq ($(BR2_PACKAGE_PULSEAUDIO),y)
+MPV_CONF_OPTS += -Dpulse=enabled
+MPV_DEPENDENCIES += pulseaudio
+else
+MPV_CONF_OPTS += -Dpulse=disabled
+endif
+
+# SDL support
+# batocera - expand
+# Sdl2 requires 64-bit sync intrinsics
+ifeq ($(BR2_TOOLCHAIN_HAS_SYNC_8)$(BR2_PACKAGE_SDL2)$(BR2_PACKAGE_SDL2_MIXER),yyy)
+MPV_CONF_OPTS += -Dsdl2-gamepad=enabled -Dsdl2-audio=enabled -Dsdl2-video=enabled
+MPV_DEPENDENCIES += sdl2 sdl2_mixer
+else
+MPV_CONF_OPTS += -Dsdl2-gamepad=disabled -Dsdl2-audio=disabled -Dsdl2-video=disabled
+endif
+
+# Raspberry Pi support - batocera: no rpi meson option
+#ifeq ($(BR2_PACKAGE_RPI_USERLAND),y)
+#MPV_CONF_OPTS += --enable-rpi --enable-gl
+#MPV_DEPENDENCIES += rpi-userland
+#else
+#MPV_CONF_OPTS += --disable-rpi
+#endif
+
+# va-api support
+ifeq ($(BR2_PACKAGE_LIBVA)$(BR2_PACKAGE_MPV_SUPPORTS_VAAPI),yy)
+MPV_CONF_OPTS += -Dvaapi=enabled
+MPV_DEPENDENCIES += libva
+ifeq ($(BR2_PACKAGE_LIBDRM)$(BR2_PACKAGE_MESA3D_OPENGL_EGL),yy)
+MPV_CONF_OPTS += -Dvaapi-drm=enabled
+else
+MPV_CONF_OPTS += -Dvaapi-drm=disabled
+endif
+else
+MPV_CONF_OPTS += -Dvaapi=disabled -Dvaapi-drm=disabled
+endif
+
+# wayland support
+ifeq ($(BR2_PACKAGE_WAYLAND),y)
+MPV_CONF_OPTS += -Dwayland=enabled
+MPV_DEPENDENCIES += libxkbcommon wayland wayland-protocols
+else
+MPV_CONF_OPTS += -Dwayland=disabled
+endif
+
+# Base X11 support. Config.in ensures that if BR2_PACKAGE_XORG7 is
+# enabled, xlib_libX11, xlib_libXext, xlib_libXinerama,
+# xlib_libXrandr, xlib_libXScrnSaver.
+ifeq ($(BR2_PACKAGE_XORG7),y)
+MPV_CONF_OPTS += -Dx11=enabled
+MPV_DEPENDENCIES += \
+	xlib_libX11 \
+	xlib_libXext \
+	xlib_libXinerama \
+	xlib_libXpresent \
+	xlib_libXrandr \
+	xlib_libXScrnSaver
+# XVideo
+ifeq ($(BR2_PACKAGE_XLIB_LIBXV),y)
+MPV_CONF_OPTS += -Dxv=enabled
+MPV_DEPENDENCIES += xlib_libXv
+else
+MPV_CONF_OPTS += -Dxv=disabled
+endif
+else
+MPV_CONF_OPTS += -Dx11=disabled
+endif
+
+ifeq ($(BR2_TOOLCHAIN_HAS_LIBATOMIC),y)
+MPV_CONF_ENV += LDFLAGS="$(TARGET_LDFLAGS) -latomic"
+endif
+
+# batocera - add cuda
+ifeq ($(BR2_PACKAGE_NVIDIA_OPEN_DRIVER_CUDA),y)
+MPV_CONF_OPTS += -Dcuda-hwaccel=enabled -Dcuda-interop=enabled
+else
+MPV_CONF_OPTS += -Dcuda-hwaccel=disabled -Dcuda-interop=disabled
+endif
+
+# batocera - add vulkan
+ifeq ($(BR2_PACKAGE_VULKAN_HEADERS)$(BR2_PACKAGE_VULKAN_LOADER),yy)
+MPV_CONF_OPTS += -Dvulkan=enabled
+MPV_DEPENDENCIES += vulkan-headers vulkan-loader
+else
+MPV_CONF_OPTS += -Dvulkan=disabled
+endif
+
+# batocera - add pipewire
+ifeq ($(BR2_PACKAGE_PIPEWIRE),y)
+MPV_CONF_OPTS += -Dpipewire=enabled
+MPV_DEPENDENCIES += pipewire
+else
+MPV_CONF_OPTS += -Dpipewire=disabled
+endif
+
+# batocera - extended va-api support
+ifeq ($(BR2_PACKAGE_LIBVA)$(BR2_PACKAGE_MPV_SUPPORTS_VAAPI),yy)
+ifeq ($(BR2_PACKAGE_WAYLAND),y)
+MPV_CONF_OPTS += -Dvaapi-wayland=enabled
+MPV_DEPENDENCIES += wayland
+else
+MPV_CONF_OPTS += -Dvaapi-wayland=disabled
+endif
+ifeq ($(BR2_PACKAGE_XORG7),y)
+MPV_CONF_OPTS += -Dvaapi-x11=enabled
+MPV_DEPENDENCIES += xlib_libX11 xlib_libXext xlib_libXrender
+else
+MPV_CONF_OPTS += -Dvaapi-x11=disabled
+endif
+endif
+
+# batocera - extend vdpau support
+ifeq ($(BR2_PACKAGE_LIBVDPAU)$(BR2_PACKAGE_XORG7),yy)
+MPV_CONF_OPTS += -Dvdpau=enabled -Dvdpau-gl-x11=enabled
+else
+MPV_CONF_OPTS += -Dvdpau=disabled -Dvdpau-gl-x11=disabled
+endif
+
+$(eval $(meson-package))
+
+# batcoera - add by board type (patched) currently
+ifeq ($(BR2_PACKAGE_BATOCERA_TARGET_RK3568),y)
+MPV_CONF_OPTS += -Dv4l2request=enabled
+endif
