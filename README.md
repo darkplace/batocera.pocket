@@ -95,6 +95,7 @@ These SoCs are limited by:
 - Light DX9 titles possible  
 - Shader-heavy games will struggle
 - Vulkan enabled in libmali mode -- helps especially with PPSSPP (Thanks Sysdarn)
+- Azahar enabled - don't expect fullspeed, usually needs 3gb RAM minimum
 
 Do **NOT** expect:
 - DX10 / DX11 performance  
