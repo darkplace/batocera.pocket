@@ -75,7 +75,7 @@ Includes additional emulators where supported:
 
 ### GPU Stack
 - Mesa + Panfrost  
-- Powkiddy X55 has mali blobs with gpudriver toggle in settings to panfrost
+- Powkiddy X55 & RG-DS have mali blobs with gpudriver toggle in settings to panfrost
   
 ### Wine Expectations
 > “No! It can't run Crysis”
