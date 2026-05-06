@@ -35,6 +35,7 @@ _GENERATOR_MAP: Final[dict[str, tuple[str, str]]] = {
     'gsplus': ('gsplus.gsplusGenerator', 'GSplusGenerator'),
     'openjazz': ('openjazz.openjazzGenerator', 'OpenJazzGenerator'),
     'xenia-canary': ('xenia.xeniaGenerator', 'XeniaGenerator'),
+    'xenia-edge': ('xenia.xeniaGenerator', 'XeniaGenerator'),
     'gzdoom': ('gzdoom.gzdoomGenerator', 'GZDoomGenerator'),
     'eduke32': ('eduke32.eduke32Generator', 'EDuke32Generator'),
     'bigpemu': ('bigpemu.bigpemuGenerator', 'BigPEmuGenerator'),

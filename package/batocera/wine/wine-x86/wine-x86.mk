@@ -4,7 +4,10 @@
 #
 ################################################################################
 
-WINE_X86_VERSION = $(BATOCERA_SYSTEM_VERSION)
+# Custom build suffixes such as "43-community" do not exist in the upstream
+# wine-x86 release asset names. Keep the Batocera display version separate from
+# the binary wine bundle version.
+WINE_X86_VERSION = $(firstword $(subst -, ,$(BATOCERA_SYSTEM_VERSION)))
 WINE_X86_SOURCE = wine-x86-$(WINE_X86_VERSION).tar.lzma
 WINE_X86_SITE = https://github.com/batocera-linux/wine-x86/releases/download/$(WINE_X86_VERSION)
 

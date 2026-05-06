@@ -1,0 +1,30 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Wed, 6 May 2026 12:12:00 +0300
+Subject: [PATCH] export pe-parse symbols
+
+lsfg-vk sets hidden visibility globally before adding its bundled
+pe-parse subproject. The shared pe-parse library then hides the API
+symbols that liblsfg-vk resolves at runtime.
+---
+ thirdparty/pe-parse/pe-parser-library/CMakeLists.txt | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/thirdparty/pe-parse/pe-parser-library/CMakeLists.txt b/thirdparty/pe-parse/pe-parser-library/CMakeLists.txt
+index 75c1178..09ef031 100644
+--- a/thirdparty/pe-parse/pe-parser-library/CMakeLists.txt
++++ b/thirdparty/pe-parse/pe-parser-library/CMakeLists.txt
+@@ -27,5 +27,11 @@ add_library(${PROJECT_NAME} ${PEPARSERLIB_SOURCEFILES})
+ add_library(pe-parse::${PROJECT_NAME} ALIAS ${PROJECT_NAME})
+
++set_target_properties(${PROJECT_NAME} PROPERTIES
++  C_VISIBILITY_PRESET default
++  CXX_VISIBILITY_PRESET default
++  VISIBILITY_INLINES_HIDDEN OFF
++)
++
+ if(PEPARSE_LIBRARY_WARNINGS)
+ 	target_compile_definitions(${PROJECT_NAME} PRIVATE PEPARSE_LIBRARY_WARNINGS=1)
+ endif ()
+--
+2.50.1

@@ -28,6 +28,7 @@ STEAM_FIRST_RUN_WIFI_STAMP="/userdata/system/.steam-first-run-wifi-pending"
 STEAM_FIRST_RUN_PENDING=0
 STEAM_SETUP_KIND="${BATOCERA_STEAM_SETUP_KIND:-}"
 STEAM_INSTALL_CALLOUT_PID=""
+THOR_BRIGHTNESS_WATCH_PID=""
 ALLY_HOTKEY_DIR="/userdata/system/configs/hotkeygen"
 ALLY_ACTIVE_MAP="${ALLY_HOTKEY_DIR}/ASUS_ROG_Ally_Config-b05-1abe.mapping"
 ALLY_ES_MAP="${ALLY_HOTKEY_DIR}/ASUS_ROG_Ally_Config-b05-1abe.mapping.es"
@@ -173,10 +174,131 @@ stop_steam_install_callouts() {
     fi
 }
 
+is_ayn_thor() {
+    local model=""
+
+    if [[ -x /usr/bin/batocera-model ]]; then
+        model="$(/usr/bin/batocera-model 2>/dev/null || true)"
+    elif command -v batocera-model >/dev/null 2>&1; then
+        model="$(batocera-model 2>/dev/null || true)"
+    fi
+
+    [[ "${model}" == "AYN_Thor" ]]
+}
+
+list_backlight_dirs() {
+    local backlight
+
+    for backlight in /sys/class/backlight/*; do
+        [[ -d "${backlight}" ]] || continue
+        [[ -r "${backlight}/brightness" && -w "${backlight}/brightness" && -r "${backlight}/max_brightness" ]] || continue
+        printf '%s\n' "${backlight}"
+    done | sort
+}
+
+backlight_percent() {
+    local backlight="$1"
+    local current max percent
+
+    current="$(cat "${backlight}/brightness" 2>/dev/null || printf '0')"
+    max="$(cat "${backlight}/max_brightness" 2>/dev/null || printf '0')"
+    [[ "${current}" =~ ^[0-9]+$ && "${max}" =~ ^[0-9]+$ && "${max}" -gt 0 ]] || return 1
+
+    percent=$(((current * 100 + max / 2) / max))
+    (( percent < 0 )) && percent=0
+    (( percent > 100 )) && percent=100
+    printf '%s\n' "${percent}"
+}
+
+write_backlight_percent() {
+    local backlight="$1"
+    local percent="$2"
+    local current max target
+
+    max="$(cat "${backlight}/max_brightness" 2>/dev/null || printf '0')"
+    current="$(cat "${backlight}/brightness" 2>/dev/null || printf '0')"
+    [[ "${max}" =~ ^[0-9]+$ && "${max}" -gt 0 ]] || return 0
+    [[ "${current}" =~ ^[0-9]+$ ]] || current=0
+
+    target=$(((percent * max + 50) / 100))
+    (( target < 0 )) && target=0
+    (( target > max )) && target="${max}"
+    [[ "${current}" == "${target}" ]] && return 0
+
+    printf '%s\n' "${target}" > "${backlight}/brightness" 2>/dev/null || true
+}
+
+start_thor_backlight_mirror() {
+    local -a backlights=()
+    local backlight
+
+    [[ "${BATOCERA_STEAM_MIRROR_BACKLIGHTS:-1}" != "0" ]] || return
+    is_ayn_thor || return
+
+    while IFS= read -r backlight; do
+        backlights+=("${backlight}")
+    done < <(list_backlight_dirs)
+
+    (( ${#backlights[@]} > 1 )) || return
+
+    (
+        watch_backlights=("${backlights[@]}")
+        last=()
+        current=()
+
+        for i in "${!watch_backlights[@]}"; do
+            last[$i]="$(cat "${watch_backlights[$i]}/brightness" 2>/dev/null || printf '')"
+        done
+
+        echo "Thor backlight mirror watching: ${watch_backlights[*]}" >> "${log}"
+        while true; do
+            changed=""
+            percent=""
+
+            for i in "${!watch_backlights[@]}"; do
+                current[$i]="$(cat "${watch_backlights[$i]}/brightness" 2>/dev/null || printf '')"
+                if [[ -z "${changed}" && "${current[$i]}" != "${last[$i]:-}" ]]; then
+                    value="$(backlight_percent "${watch_backlights[$i]}" || true)"
+                    if [[ "${value}" =~ ^[0-9]+$ ]]; then
+                        changed="${watch_backlights[$i]}"
+                        percent="${value}"
+                    fi
+                fi
+            done
+
+            if [[ -n "${changed}" && -n "${percent}" ]]; then
+                for backlight in "${watch_backlights[@]}"; do
+                    write_backlight_percent "${backlight}" "${percent}"
+                done
+                for i in "${!watch_backlights[@]}"; do
+                    last[$i]="$(cat "${watch_backlights[$i]}/brightness" 2>/dev/null || printf '')"
+                done
+            else
+                for i in "${!watch_backlights[@]}"; do
+                    last[$i]="${current[$i]:-${last[$i]:-}}"
+                done
+            fi
+
+            sleep "${BATOCERA_STEAM_MIRROR_BACKLIGHTS_INTERVAL:-0.25}"
+        done
+    ) &
+    THOR_BRIGHTNESS_WATCH_PID="$!"
+    echo "Thor backlight mirror started pid=${THOR_BRIGHTNESS_WATCH_PID}" >> "${log}"
+}
+
+stop_thor_backlight_mirror() {
+    if [[ -n "${THOR_BRIGHTNESS_WATCH_PID}" ]]; then
+        kill "${THOR_BRIGHTNESS_WATCH_PID}" 2>/dev/null || true
+        wait "${THOR_BRIGHTNESS_WATCH_PID}" 2>/dev/null || true
+        THOR_BRIGHTNESS_WATCH_PID=""
+    fi
+}
+
 cleanup_hotkeys_on_exit() {
     # "Switch to Desktop" kills the original session outside configgen's normal cleanup path.
     # Restore an explicit default context and ES profile when that happens.
     stop_steam_install_callouts
+    stop_thor_backlight_mirror
     run_ally_hotkey_hook gameStop || true
     if command -v hotkeygen >/dev/null 2>&1; then
         if ! hotkeygen_permanent_running && [ -x /etc/init.d/S90hotkeygen ]; then
@@ -655,6 +777,23 @@ start_uimode_watch() {
     echo "Steam UI mode watcher started" >> "${log}"
 }
 
+
+start_nightmode_watch() {
+    local watcher="/usr/bin/batocera-steam-nightmode-watch"
+    local watcher_pattern='(^|/)batocera-steam-nightmode-watch([[:space:]]|$)'
+
+    if [[ ! -x "${watcher}" ]]; then
+        return
+    fi
+
+    if pgrep -f "${watcher_pattern}" >/dev/null 2>&1; then
+        return
+    fi
+
+    nohup "${watcher}" >> "${log}" 2>&1 &
+    echo "Steam night mode watcher started" >> "${log}"
+}
+
 start_decky_loader
 ensure_system_bus_address
 start_networkmanager_stub
@@ -662,6 +801,7 @@ start_login1_stub
 start_consolekit_stub
 start_displaymanager_stub
 start_uimode_watch
+start_thor_backlight_mirror
 
 if command -v gamescope >/dev/null 2>&1 && [[ "${BATOCERA_STEAM_USE_GAMESCOPE:-1}" != "0" ]]; then
     read -r out_w out_h <<< "$(detect_output_resolution)"
@@ -772,6 +912,7 @@ if command -v gamescope >/dev/null 2>&1 && [[ "${BATOCERA_STEAM_USE_GAMESCOPE:-1
 
     echo "Steam gamescope args: ${gs_args[*]} fake_output_mm=${GAMESCOPE_FAKE_OUTPUT_MM:-unset}" >> "${log}"
     start_steam_install_callouts
+    start_nightmode_watch
     if gamescope "${gs_args[@]}" -- "$@"; then
         exit 0
     fi

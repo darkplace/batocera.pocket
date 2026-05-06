@@ -1,3 +1,5 @@
+# From https://www.kernel.org/pub/linux/kernel/v7.x/sha256sums.asc
+sha256  0bedadbf5788693ddebbcc913c893f1a97349af79ddde7144c2a80b401959f1c  linux-7.0.3.tar.xz
 # From https://www.kernel.org/pub/linux/kernel/v6.x/sha256sums.asc
 sha256  7a8879167b89c4bae077d6f39c4f2130769f05dbdad2aad914adab9afb7d7f9a  linux-6.18.3.tar.xz
 sha256  ddf2ea0d4439e1d57136be3623102af9458f601f5b1cb77e83246e88aea09d0e  linux-6.17.7.tar.xz

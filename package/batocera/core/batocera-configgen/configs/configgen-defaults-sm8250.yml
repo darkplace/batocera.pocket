@@ -98,6 +98,9 @@ vsmile:
 xegs:
   emulator: mame
   core:     mame
+xbox360:
+  emulator: xenia-edge
+  core:     xenia-edge
 atom:
   emulator: mame
   core:     mame

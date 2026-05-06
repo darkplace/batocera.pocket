@@ -1,0 +1,121 @@
+From: Batocera Linux Team <batocera@batocera.linux>
+Date: Wed, 6 May 2026 00:00:00 +0000
+Subject: [PATCH 7/7] build: allow importing host xenia-shader-cc
+
+When cross-compiling, xenia-shader-cc is a build-time tool and must run
+on the build host. Let the package build it natively in a separate CMake
+tree and import that executable into the target build.
+
+---
+ CMakeLists.txt             |  7 +++++++
+ third_party/CMakeLists.txt | 26 +++++++++++++++++++-------
+ 2 files changed, 26 insertions(+), 7 deletions(-)
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -58,6 +58,7 @@
+ option(XENIA_BUILD_TESTS "Build test suites" OFF)
+ option(XENIA_BUILD_MISC "Build misc subprojects (trace viewers, shader compiler, vfs-dump, demos)" OFF)
+ option(XENIA_ENABLE_LTO "Enable link-time optimization in Release (slow link)" ON)
++option(XENIA_BUILD_HOST_TOOLS_ONLY "Only build host tools needed by cross builds" OFF)
+
+ get_property(_is_multi_config GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
+ if(_is_multi_config)
+@@ -116,6 +117,12 @@
+   ${PROJECT_SOURCE_DIR}/third_party
+ )
+
++if(XENIA_BUILD_HOST_TOOLS_ONLY)
++  add_subdirectory(third_party)
++  set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT xenia-shader-cc)
++  return()
++endif()
++
+ add_compile_definitions(
+   VULKAN_HPP_NO_TO_STRING
+   IMGUI_DISABLE_OBSOLETE_FUNCTIONS
+diff --git a/third_party/CMakeLists.txt b/third_party/CMakeLists.txt
+--- a/third_party/CMakeLists.txt
++++ b/third_party/CMakeLists.txt
+@@ -179,10 +179,14 @@
+ # (Windows-on-ARM runs x64 fine via Prism, and macOS handles its own
+ # x86_64↔arm64 via Rosetta — both directions are unaffected).
+ set(_xe_use_host_shader_cc FALSE)
++set(XENIA_HOST_SHADER_CC "" CACHE FILEPATH "Native build-host xenia-shader-cc executable")
+ if(WIN32 AND CMAKE_CROSSCOMPILING AND XE_TARGET_AARCH64
+     AND CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "AMD64|x86_64")
+   set(_xe_use_host_shader_cc TRUE)
+ endif()
++if(XENIA_HOST_SHADER_CC)
++  set(_xe_use_host_shader_cc TRUE)
++endif()
+
+ if(NOT _xe_use_host_shader_cc)
+
+@@ -311,32 +315,42 @@
+   target_compile_options(xenia-shader-cc PRIVATE /EHsc)
+ endif()
+
+-else()  # _xe_use_host_shader_cc: x64→ARM64 cross-compile, use native build's binary
++else()  # _xe_use_host_shader_cc: cross-compile, use native build binary
+
+-# Native x64 build lives at <repo>/build/ (xenia-build.py: get_build_dir(None)).
+-set(_xe_host_shader_cc_dir "${CMAKE_SOURCE_DIR}/build/host_tools")
+-set(_xe_host_shader_cc_any "")
+-foreach(_cfg Release Checked Debug Valgrind)
+-  if(EXISTS "${_xe_host_shader_cc_dir}/${_cfg}/xenia-shader-cc.exe")
+-    set(_xe_host_shader_cc_any "${_xe_host_shader_cc_dir}/${_cfg}/xenia-shader-cc.exe")
+-    break()
++if(XENIA_HOST_SHADER_CC)
++  if(NOT EXISTS "${XENIA_HOST_SHADER_CC}")
++    message(FATAL_ERROR "XENIA_HOST_SHADER_CC does not exist: ${XENIA_HOST_SHADER_CC}")
+   endif()
+-endforeach()
+-if(NOT _xe_host_shader_cc_any)
+-  message(FATAL_ERROR
+-    "Cross-compile to ARM64 needs a host xenia-shader-cc.exe but none was found "
+-    "under ${_xe_host_shader_cc_dir}/<Config>/.\n"
+-    "  Run a native build first to produce it, e.g.:\n"
+-    "    xb build --target xenia-shader-cc --config=release\n"
+-    "  Then re-run the cross-compile.")
++  set(_xe_host_shader_cc_any "${XENIA_HOST_SHADER_CC}")
++  add_executable(xenia-shader-cc IMPORTED GLOBAL)
++  set_target_properties(xenia-shader-cc PROPERTIES
++    IMPORTED_LOCATION "${_xe_host_shader_cc_any}")
++else()
++  # Native x64 build lives at <repo>/build/ (xenia-build.py: get_build_dir(None)).
++  set(_xe_host_shader_cc_dir "${CMAKE_SOURCE_DIR}/build/host_tools")
++  set(_xe_host_shader_cc_any "")
++  foreach(_cfg Release Checked Debug Valgrind)
++    if(EXISTS "${_xe_host_shader_cc_dir}/${_cfg}/xenia-shader-cc.exe")
++      set(_xe_host_shader_cc_any "${_xe_host_shader_cc_dir}/${_cfg}/xenia-shader-cc.exe")
++      break()
++    endif()
++  endforeach()
++  if(NOT _xe_host_shader_cc_any)
++    message(FATAL_ERROR
++      "Cross-compile to ARM64 needs a host xenia-shader-cc.exe but none was found "
++      "under ${_xe_host_shader_cc_dir}/<Config>/.\n"
++      "  Run a native build first to produce it, e.g.:\n"
++      "    xb build --target xenia-shader-cc --config=release\n"
++      "  Then re-run the cross-compile.")
++  endif()
++  add_executable(xenia-shader-cc IMPORTED GLOBAL)
++  set_target_properties(xenia-shader-cc PROPERTIES
++    IMPORTED_LOCATION "${_xe_host_shader_cc_any}"
++    IMPORTED_LOCATION_RELEASE "${_xe_host_shader_cc_dir}/Release/xenia-shader-cc.exe"
++    IMPORTED_LOCATION_CHECKED "${_xe_host_shader_cc_dir}/Checked/xenia-shader-cc.exe"
++    IMPORTED_LOCATION_DEBUG "${_xe_host_shader_cc_dir}/Debug/xenia-shader-cc.exe"
++    IMPORTED_LOCATION_VALGRIND "${_xe_host_shader_cc_dir}/Valgrind/xenia-shader-cc.exe")
+ endif()
+-add_executable(xenia-shader-cc IMPORTED GLOBAL)
+-set_target_properties(xenia-shader-cc PROPERTIES
+-  IMPORTED_LOCATION "${_xe_host_shader_cc_any}"
+-  IMPORTED_LOCATION_RELEASE "${_xe_host_shader_cc_dir}/Release/xenia-shader-cc.exe"
+-  IMPORTED_LOCATION_CHECKED "${_xe_host_shader_cc_dir}/Checked/xenia-shader-cc.exe"
+-  IMPORTED_LOCATION_DEBUG "${_xe_host_shader_cc_dir}/Debug/xenia-shader-cc.exe"
+-  IMPORTED_LOCATION_VALGRIND "${_xe_host_shader_cc_dir}/Valgrind/xenia-shader-cc.exe")
+
+ endif()
+

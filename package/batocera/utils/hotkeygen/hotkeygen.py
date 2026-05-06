@@ -45,12 +45,17 @@ GUSER_DIR: Final     = Path("/userdata/system/configs/hotkeygen")
 GUSERCOMMONCONTEXT_FILE: Final = GUSER_DIR / Path("common_context.conf")
 GUSERDEFAULTMAPPING_FILE: Final = GUSER_DIR / Path("default_mapping.conf")
 
+GFORCEKILL_ACTION: Final = "forcekill"
+GFORCEKILL_COMMAND: Final = "batocera-es-swissknife --emukill 0.5"
+
 gdebug = False
 
 ECODES_NAMES: Final[dict[int, str]] = {
     # add BTN_ to that joysticks buttons can run hotkeys (but keep generating only KEY_ events)
     key_code: key_name for key_name, key_code in ecodes.ecodes.items() if key_name.startswith("KEY_") or key_name.startswith("BTN_")
 }
+
+GFORCEKILL_COMBO: Final = frozenset((ecodes.BTN_TL, ecodes.BTN_SELECT, ecodes.BTN_START))
 
 # default context is for es
 def get_default_context() -> HotkeysContext:
@@ -215,6 +220,10 @@ def get_mapping_associations(mapping: Mapping[int, str], caps: evdev._Capabiliti
     capskeys = set(caps[ecodes.EV_KEY])
     return {key: value for key, value in mapping.items() if key in capskeys}
 
+def has_forcekill_combo(caps: evdev._CapabilitiesWithAbsInfo) -> bool:
+    capskeys = set(caps[ecodes.EV_KEY])
+    return GFORCEKILL_COMBO.issubset(capskeys)
+
 def print_mapping(
     mapping: Mapping[int, str], associations: Mapping[int, str], context: HotkeysContext | None = None
 ) -> None:
@@ -377,11 +386,13 @@ class Daemon:
     input_devices: dict[str, evdev.InputDevice] = field(init=False, default_factory=dict)
     input_devices_by_fd: dict[int, evdev.InputDevice] = field(init=False, default_factory=dict)
     mappings_by_fd: dict[int, dict[int, str]] = field(init=False, default_factory=dict)
+    forcekill_pressed_keys: set[int] = field(init=False, default_factory=set)
     udev_context: pyudev.Context = field(init=False)
     monitor: pyudev.Monitor = field(init=False)
     poll: select.poll = field(init=False)
     target: evdev.UInput = field(init=False)
     require_reconfig: bool = field(init=False, default=False)
+    forcekill_active: bool = field(init=False, default=False)
 
     def __post_init__(self) -> None:
         self.udev_context = pyudev.Context()
@@ -412,8 +423,9 @@ class Daemon:
                     if ecodes.EV_KEY in capabilities:
                         mapping = get_mapping(input_device)
                         associations = get_mapping_associations(mapping, capabilities)
+                        supports_forcekill = has_forcekill_combo(capabilities)
 
-                        if associations:
+                        if associations or supports_forcekill:
                             if gdebug:
                                 print(f"Adding device {device.device_node}: {input_device.name}")
                                 print_mapping(mapping, associations)
@@ -432,6 +444,8 @@ class Daemon:
                     del self.mappings_by_fd[input_device.fileno()]
                     del self.input_devices_by_fd[input_device.fileno()]
                     del self.input_devices[device.device_node]
+                    self.forcekill_pressed_keys.clear()
+                    self.forcekill_active = False
 
     def __handle_event(self, event: evdev.InputEvent, action: str, begin: bool) -> None:
         if self.context is not None and action in self.context["keys"]:
@@ -452,6 +466,33 @@ class Daemon:
                     os.system(keys)
                 else:
                     send_keys(self.target, keys, False)
+
+    def __handle_forcekill_event(self, event: evdev.InputEvent) -> None:
+        if event.code not in GFORCEKILL_COMBO:
+            return
+
+        if event.value == 1:
+            self.forcekill_pressed_keys.add(event.code)
+        elif event.value == 0:
+            self.forcekill_pressed_keys.discard(event.code)
+            self.forcekill_active = False
+            return
+        else:
+            return
+
+        if self.forcekill_active or not GFORCEKILL_COMBO.issubset(self.forcekill_pressed_keys):
+            return
+
+        self.forcekill_active = True
+        command = GFORCEKILL_COMMAND
+        if self.context is not None:
+            keys = self.context["keys"].get(GFORCEKILL_ACTION)
+            if isinstance(keys, str):
+                command = keys
+
+        if gdebug:
+            print(f"forcekill combo pressed, running: {command}")
+        os.system(command)
 
     def __write_pid(self) -> None:
         with GPID_FILE.open("w") as fd:
@@ -510,13 +551,15 @@ class Daemon:
                         event = self.input_devices_by_fd[fd].read_one()
                         if (
                             event is not None and
-                            event.type == ecodes.EV_KEY and
-                            event.code in self.mappings_by_fd[fd]
+                            event.type == ecodes.EV_KEY
                         ):
-                            if event.value == 1:
-                                self.__handle_event(event, self.mappings_by_fd[fd][event.code], True)
-                            elif event.value == 0:
-                                self.__handle_event(event, self.mappings_by_fd[fd][event.code], False)
+                            self.__handle_forcekill_event(event)
+
+                            if event.code in self.mappings_by_fd[fd]:
+                                if event.value == 1:
+                                    self.__handle_event(event, self.mappings_by_fd[fd][event.code], True)
+                                elif event.value == 0:
+                                    self.__handle_event(event, self.mappings_by_fd[fd][event.code], False)
                 #except (OSError, KeyError, FileNotFoundError) as e:
                 except (Exception) as e:
                     if fd == self.monitor.fileno():

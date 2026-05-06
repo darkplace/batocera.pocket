@@ -155,6 +155,8 @@ shared:
     gamescope:
       archs_include:
       - x86-64-v3
+      - qcs6490
+      - sm8250
       - sm8550
       prompt: ENABLE GAMESCOPE
       submenu: GAMESCOPE
@@ -165,6 +167,8 @@ shared:
     gamescope_output_resolution:
       archs_include:
       - x86-64-v3
+      - qcs6490
+      - sm8250
       - sm8550
       prompt: OUTPUT RESOLUTION
       submenu: GAMESCOPE
@@ -195,6 +199,8 @@ shared:
     gamescope_output_resolution_custom:
       archs_include:
       - x86-64-v3
+      - qcs6490
+      - sm8250
       - sm8550
       prompt: CUSTOM OUTPUT RESOLUTION
       submenu: GAMESCOPE
@@ -203,6 +209,8 @@ shared:
     gamescope_nested_resolution:
       archs_include:
       - x86-64-v3
+      - qcs6490
+      - sm8250
       - sm8550
       prompt: GAME RESOLUTION
       submenu: GAMESCOPE
@@ -233,6 +241,8 @@ shared:
     gamescope_nested_resolution_custom:
       archs_include:
       - x86-64-v3
+      - qcs6490
+      - sm8250
       - sm8550
       prompt: CUSTOM GAME RESOLUTION
       submenu: GAMESCOPE
@@ -241,6 +251,8 @@ shared:
     gamescope_nested_refresh:
       archs_include:
       - x86-64-v3
+      - qcs6490
+      - sm8250
       - sm8550
       prompt: REFRESH RATE
       submenu: GAMESCOPE
@@ -249,6 +261,8 @@ shared:
     gamescope_framerate_limit:
       archs_include:
       - x86-64-v3
+      - qcs6490
+      - sm8250
       - sm8550
       prompt: FRAME RATE LIMIT
       submenu: GAMESCOPE
@@ -273,6 +287,8 @@ shared:
     gamescope_framerate_limit_custom:
       archs_include:
       - x86-64-v3
+      - qcs6490
+      - sm8250
       - sm8550
       prompt: CUSTOM FRAME RATE LIMIT
       submenu: GAMESCOPE
@@ -281,6 +297,8 @@ shared:
     gamescope_scaler:
       archs_include:
       - x86-64-v3
+      - qcs6490
+      - sm8250
       - sm8550
       prompt: SCALER
       submenu: GAMESCOPE
@@ -292,6 +310,8 @@ shared:
     gamescope_filter:
       archs_include:
       - x86-64-v3
+      - qcs6490
+      - sm8250
       - sm8550
       prompt: UPSCALER FILTER
       submenu: GAMESCOPE
@@ -304,6 +324,8 @@ shared:
     gamescope_sharpness:
       archs_include:
       - x86-64-v3
+      - qcs6490
+      - sm8250
       - sm8550
       prompt: SHARPNESS
       submenu: GAMESCOPE
@@ -320,6 +342,8 @@ shared:
     gamescope_sharpness_custom:
       archs_include:
       - x86-64-v3
+      - qcs6490
+      - sm8250
       - sm8550
       prompt: CUSTOM SHARPNESS
       submenu: GAMESCOPE
@@ -328,6 +352,8 @@ shared:
     gamescope_hdr:
       archs_include:
       - x86-64-v3
+      - qcs6490
+      - sm8250
       - sm8550
       prompt: HDR
       submenu: GAMESCOPE
@@ -337,6 +363,8 @@ shared:
     gamescope_adaptive_sync:
       archs_include:
       - x86-64-v3
+      - qcs6490
+      - sm8250
       - sm8550
       prompt: ADAPTIVE SYNC
       submenu: GAMESCOPE
@@ -347,6 +375,8 @@ shared:
     gamescope_disable_damage_tracking:
       archs_include:
       - x86-64-v3
+      - qcs6490
+      - sm8250
       - sm8550
       prompt: DISABLE DAMAGE TRACKING
       submenu: GAMESCOPE
@@ -357,6 +387,8 @@ shared:
     gamescope_disable_hw_composition:
       archs_include:
       - x86-64-v3
+      - qcs6490
+      - sm8250
       - sm8550
       prompt: DISABLE HW COMPOSITION
       submenu: GAMESCOPE
@@ -367,6 +399,8 @@ shared:
     gamescope_force_composition_pipeline:
       archs_include:
       - x86-64-v3
+      - qcs6490
+      - sm8250
       - sm8550
       prompt: FORCE COMPOSITION PIPELINE
       submenu: GAMESCOPE
@@ -377,6 +411,8 @@ shared:
     gamescope_backend:
       archs_include:
       - x86-64-v3
+      - qcs6490
+      - sm8250
       - sm8550
       prompt: BACKEND
       submenu: GAMESCOPE
@@ -391,6 +427,8 @@ shared:
     gamescope_xwayland_count:
       archs_include:
       - x86-64-v3
+      - qcs6490
+      - sm8250
       - sm8550
       prompt: XWAYLAND SERVERS
       submenu: GAMESCOPE
@@ -405,6 +443,8 @@ shared:
     gamescope_xwayland_count_custom:
       archs_include:
       - x86-64-v3
+      - qcs6490
+      - sm8250
       - sm8550
       prompt: CUSTOM XWAYLAND COUNT
       submenu: GAMESCOPE
@@ -413,6 +453,8 @@ shared:
     gamescope_prefer_vk_device:
       archs_include:
       - x86-64-v3
+      - qcs6490
+      - sm8250
       - sm8550
       prompt: PREFER VK DEVICE
       submenu: GAMESCOPE
@@ -421,6 +463,8 @@ shared:
     gamescope_mangoapp:
       archs_include:
       - x86-64-v3
+      - qcs6490
+      - sm8250
       - sm8550
       prompt: ENABLE MANGOHUD
       submenu: GAMESCOPE
@@ -431,6 +475,8 @@ shared:
     gamescope_force_windows_fullscreen:
       archs_include:
       - x86-64-v3
+      - qcs6490
+      - sm8250
       - sm8550
       prompt: FORCE WINDOWS FULLSCREEN
       submenu: GAMESCOPE
@@ -441,6 +487,8 @@ shared:
     gamescope_nested_unfocused_refresh:
       archs_include:
       - x86-64-v3
+      - qcs6490
+      - sm8250
       - sm8550
       prompt: UNFOCUSED REFRESH
       submenu: GAMESCOPE
@@ -455,6 +503,8 @@ shared:
     gamescope_nested_unfocused_refresh_custom:
       archs_include:
       - x86-64-v3
+      - qcs6490
+      - sm8250
       - sm8550
       prompt: CUSTOM UNFOCUSED REFRESH
       submenu: GAMESCOPE
@@ -463,6 +513,8 @@ shared:
     gamescope_immediate_flips:
       archs_include:
       - x86-64-v3
+      - qcs6490
+      - sm8250
       - sm8550
       prompt: IMMEDIATE FLIPS
       submenu: GAMESCOPE
@@ -473,6 +525,8 @@ shared:
     gamescope_stats_path:
       archs_include:
       - x86-64-v3
+      - qcs6490
+      - sm8250
       - sm8550
       prompt: STATS PATH
       submenu: GAMESCOPE
@@ -481,6 +535,8 @@ shared:
     gamescope_disable_color_management:
       archs_include:
       - x86-64-v3
+      - qcs6490
+      - sm8250
       - sm8550
       prompt: DISABLE COLOR MANAGEMENT
       submenu: GAMESCOPE
@@ -491,6 +547,8 @@ shared:
     gamescope_disable_xres:
       archs_include:
       - x86-64-v3
+      - qcs6490
+      - sm8250
       - sm8550
       prompt: DISABLE XRES
       submenu: GAMESCOPE
@@ -707,6 +765,35 @@ global:
   - bezel_stretch
   - hud
   - hud_corner
+  - gamescope
+  - gamescope_output_resolution
+  - gamescope_nested_resolution
+  - gamescope_nested_refresh
+  - gamescope_framerate_limit
+  - gamescope_scaler
+  - gamescope_filter
+  - gamescope_sharpness
+  - gamescope_hdr
+  - gamescope_output_resolution_custom
+  - gamescope_nested_resolution_custom
+  - gamescope_framerate_limit_custom
+  - gamescope_sharpness_custom
+  - gamescope_adaptive_sync
+  - gamescope_disable_damage_tracking
+  - gamescope_disable_hw_composition
+  - gamescope_force_composition_pipeline
+  - gamescope_backend
+  - gamescope_xwayland_count
+  - gamescope_xwayland_count_custom
+  - gamescope_prefer_vk_device
+  - gamescope_mangoapp
+  - gamescope_force_windows_fullscreen
+  - gamescope_nested_unfocused_refresh
+  - gamescope_nested_unfocused_refresh_custom
+  - gamescope_immediate_flips
+  - gamescope_stats_path
+  - gamescope_disable_color_management
+  - gamescope_disable_xres
   - bezel.tattoo
   - bezel.tattoo_corner
   - bezel.tattoo_file
@@ -723,6 +810,11 @@ global:
   - vrr_runloop_enable
   - video_threaded
   - rumble_gain
+  cfeatures:
+    secondary_screen_apps:
+      prompt: BOTTOM SCREEN APPS
+      description: 'Comma-separated app IDs, classes, or titles to route to the bottom display. Prefix with app_id:, class:, title:, or instance: for exact matching. Dual-screen emulator windows keep their dedicated layout.'
+      preset: input
 libretro:
   shared:
   - powermode
@@ -13119,6 +13211,96 @@ wine:
       choices:
         'Off': 0
         'On': 1
+    lsfg_vk:
+      archs_include:
+      - x86_64
+      - x86-64-v3
+      - qcs6490
+      - sm8250
+      - sm8550
+      group: ADVANCED OPTIONS
+      prompt: LSFG-VK FRAME GENERATION
+      description: Enables the Lossless Scaling Frame Generation Vulkan layer. Requires
+        Lossless.dll from a purchased Lossless Scaling install.
+      choices:
+        'Off': 0
+        'On': 1
+    lsfg_vk_dll:
+      archs_include:
+      - x86_64
+      - x86-64-v3
+      - qcs6490
+      - sm8250
+      - sm8550
+      group: ADVANCED OPTIONS
+      prompt: LOSSLESS.DLL PATH
+      description: Optional path to Lossless.dll. Default lookup includes /userdata/system/wine/lossless-scaling/Lossless.dll.
+      preset: input
+    lsfg_vk_multiplier:
+      archs_include:
+      - x86_64
+      - x86-64-v3
+      - qcs6490
+      - sm8250
+      - sm8550
+      group: ADVANCED OPTIONS
+      prompt: LSFG MULTIPLIER
+      choices:
+        2x (Default): 2
+        3x: 3
+        4x: 4
+    lsfg_vk_flow_scale:
+      archs_include:
+      - x86_64
+      - x86-64-v3
+      - qcs6490
+      - sm8250
+      - sm8550
+      group: ADVANCED OPTIONS
+      prompt: LSFG FLOW SCALE
+      choices:
+        1.0 (Default x86): '1.0'
+        0.75 (Default ARM): '0.75'
+        0.5: '0.5'
+        0.25: '0.25'
+    lsfg_vk_performance:
+      archs_include:
+      - x86_64
+      - x86-64-v3
+      - qcs6490
+      - sm8250
+      - sm8550
+      group: ADVANCED OPTIONS
+      prompt: LSFG PERFORMANCE MODE
+      choices:
+        'Off': 0
+        'On': 1
+    lsfg_vk_hdr:
+      archs_include:
+      - x86_64
+      - x86-64-v3
+      - qcs6490
+      - sm8250
+      - sm8550
+      group: ADVANCED OPTIONS
+      prompt: LSFG HDR MODE
+      choices:
+        'Off': 0
+        'On': 1
+    lsfg_vk_present_mode:
+      archs_include:
+      - x86_64
+      - x86-64-v3
+      - qcs6490
+      - sm8250
+      - sm8550
+      group: ADVANCED OPTIONS
+      prompt: LSFG PRESENT MODE
+      choices:
+        Auto (Default): ''
+        FIFO: fifo
+        Mailbox: mailbox
+        Immediate: immediate
     dgvoodoo2:
       prompt: DGVOODOO2
       description: Use dgVoodoo2 wrappers for legacy DirectX and Glide games.
@@ -13127,10 +13309,22 @@ wine:
         'On': 1
     fps_limit:
       prompt: FPS LIMITER
-      description: Allows you to limit FPS to 60.
+      description: Limit Wine/DXVK frame rate.
       choices:
         'Off': 0
-        'On': 1
+        30 FPS: 30
+        40 FPS: 40
+        45 FPS: 45
+        50 FPS: 50
+        60 FPS: 60
+        72 FPS: 72
+        90 FPS: 90
+        120 FPS: 120
+        Custom: custom
+    fps_limit_custom:
+      prompt: CUSTOM FPS LIMIT
+      description: Custom Wine/DXVK frame limit in FPS.
+      preset: input
     force_mouse:
       prompt: ENABLE MOUSE
       description: Force mouse in games.
@@ -13159,13 +13353,30 @@ wine:
       choices:
         'Off': 0
         'On': 1
-    ntsync:
+    dxvk_async:
       group: ADVANCED OPTIONS
-      prompt: NTSYNC
-      description: Improves frame rate and responsiveness.
+      prompt: DXVK ASYNC
+      description: Enable DXVK asynchronous pipeline compilation.
       choices:
         'Off': 0
         On (Default): 1
+    wine_d3d12_backend:
+      group: ADVANCED OPTIONS
+      prompt: D3D12 BACKEND
+      description: Choose whether Direct3D 12 uses the bundled Vulkan backend or Wine builtin DLLs.
+      choices:
+        VKD3D-Proton / DXVK Package (Default): auto
+        Wine Builtin: builtin
+    wine_sync:
+      group: ADVANCED OPTIONS
+      prompt: WINE SYNC
+      description: Choose the Wine synchronization backend. NTSYNC is preferred on modern kernels; FSYNC and ESYNC are compatibility fallbacks.
+      choices:
+        Auto / NTSYNC (Default): auto
+        NTSYNC: ntsync
+        FSYNC: fsync
+        ESYNC: esync
+        Disabled: disabled
     pba:
       group: ADVANCED OPTIONS
       prompt: PBA
@@ -13187,6 +13398,26 @@ wine:
       choices:
         'Off': 0
         'On': 1
+    virtual_desktop_size:
+      group: ADVANCED OPTIONS
+      prompt: VIRTUAL DESKTOP SIZE
+      description: Resolution for Wine virtual desktop mode.
+      choices:
+        Current Video Mode (Default): ''
+        640x480: 640x480
+        800x600: 800x600
+        1024x768: 1024x768
+        1280x720: 1280x720
+        1280x800: 1280x800
+        1366x768: 1366x768
+        1600x900: 1600x900
+        1920x1080: 1920x1080
+        Custom: custom
+    virtual_desktop_size_custom:
+      group: ADVANCED OPTIONS
+      prompt: CUSTOM VIRTUAL DESKTOP SIZE
+      description: Custom virtual desktop resolution in WIDTHxHEIGHT format.
+      preset: input
     enable_win32:
       group: ADVANCED OPTIONS
       prompt: ENABLE WIN32
@@ -13206,6 +13437,23 @@ wine:
         Box64 / WoW64 (Default): box64
         FEX-Emu: fex
         Force box86 + 32-bit wine: box86
+    box64_profile:
+      group: ADVANCED OPTIONS
+      prompt: BOX64 PROFILE
+      description: Choose Box64 dynarec compatibility behavior for aarch64 Wine.
+      choices:
+        Balanced (Default): balanced
+        Performance: performance
+        Safe: safe
+        Interpreter / Maximum Compatibility: interpreter
+    fex_rootfs_mode:
+      group: ADVANCED OPTIONS
+      prompt: FEX ROOTFS
+      description: Choose how FEX prepares the shared rootfs when FEX-Emu is selected.
+      choices:
+        Download If Missing (Default): auto
+        Existing Only: existing
+        Force Redownload: redownload
     allow_xim:
       group: ADVANCED OPTIONS
       prompt: ENABLE XIM
@@ -13258,6 +13506,48 @@ wine:
       choices:
         'Off': 0
         'On': 1
+    wine_dll_overrides:
+      group: ADVANCED OPTIONS
+      prompt: DLL OVERRIDE PRESET
+      description: Apply common Wine DLL override presets for problem games.
+      choices:
+        None (Default): none
+        XInput Native Then Builtin: xinput
+        DirectInput Native Then Builtin: dinput
+        XAudio Native Then Builtin: xaudio
+        Media Foundation Native Then Builtin: media
+    wine_runtime_injectors:
+      archs_exclude:
+      - qcs6490
+      - sm8250
+      - sm8550
+      group: ADVANCED OPTIONS
+      prompt: RUNTIME INJECTOR
+      description: Install common winetricks runtimes into this Wine prefix once.
+      choices:
+        None (Default): none
+        DirectX 9: d3dx9
+        DirectPlay: directplay
+        D3D Compiler 47: d3dcompiler_47
+        XAudio / XACT: xact
+        Core Fonts: corefonts
+        VC++ 2022: vcrun2022
+        VC++ 2005-2022: vcrun2005,vcrun2008,vcrun2010,vcrun2012,vcrun2013,vcrun2015,vcrun2022
+        .NET 4.8: dotnet48
+        .NET 4.0: dotnet40
+        .NET 3.5: dotnet35
+        Common DX9 + VC++: d3dx9,d3dcompiler_47,directplay,xact,vcrun2008,vcrun2010,vcrun2013,vcrun2015,vcrun2022
+        Common DX9 + VC++ + .NET 4.8: d3dx9,d3dcompiler_47,directplay,xact,vcrun2010,vcrun2013,vcrun2015,vcrun2022,dotnet48
+        Custom Winetricks Verbs: custom
+    wine_runtime_injectors_custom:
+      archs_exclude:
+      - qcs6490
+      - sm8250
+      - sm8550
+      group: ADVANCED OPTIONS
+      prompt: CUSTOM RUNTIME VERBS
+      description: Custom winetricks verbs separated by spaces or commas.
+      preset: input
     wayland_driver:
       group: ADVANCED OPTIONS
       prompt: WAYLAND DRIVER MODE
@@ -13280,7 +13570,10 @@ wine:
       description: Useful to troubleshoot when your Windows game won't start of crashes.
       choices:
         'Off': 0
-        'On': 1
+        Errors Only: err
+        Errors + Fixmes: fixme
+        Verbose: 1
+        Relay Trace: relay
 solarus:
   shared:
   - powermode
@@ -14313,6 +14606,69 @@ steam:
       prompt: EXTRA STEAM ARGUMENTS
       description: Extra arguments passed to steam.sh.
       preset: input
+    lsfg_vk:
+      archs_include:
+      - x86_64
+      - x86-64-v3
+      prompt: LSFG-VK FRAME GENERATION
+      description: Enables the Lossless Scaling Frame Generation Vulkan layer for
+        Steam-launched Vulkan/DXVK games. Requires Lossless.dll from a purchased
+        Lossless Scaling install.
+      choices:
+        'Off': 0
+        'On': 1
+    lsfg_vk_dll:
+      archs_include:
+      - x86_64
+      - x86-64-v3
+      prompt: LOSSLESS.DLL PATH
+      description: Optional path to Lossless.dll. Default lookup includes /userdata/system/wine/lossless-scaling/Lossless.dll.
+      preset: input
+    lsfg_vk_multiplier:
+      archs_include:
+      - x86_64
+      - x86-64-v3
+      prompt: LSFG MULTIPLIER
+      choices:
+        2x (Default): 2
+        3x: 3
+        4x: 4
+    lsfg_vk_flow_scale:
+      archs_include:
+      - x86_64
+      - x86-64-v3
+      prompt: LSFG FLOW SCALE
+      choices:
+        1.0 (Default x86): '1.0'
+        0.75 (Default ARM): '0.75'
+        0.5: '0.5'
+        0.25: '0.25'
+    lsfg_vk_performance:
+      archs_include:
+      - x86_64
+      - x86-64-v3
+      prompt: LSFG PERFORMANCE MODE
+      choices:
+        'Off': 0
+        'On': 1
+    lsfg_vk_hdr:
+      archs_include:
+      - x86_64
+      - x86-64-v3
+      prompt: LSFG HDR MODE
+      choices:
+        'Off': 0
+        'On': 1
+    lsfg_vk_present_mode:
+      archs_include:
+      - x86_64
+      - x86-64-v3
+      prompt: LSFG PRESENT MODE
+      choices:
+        Auto (Default): ''
+        FIFO: fifo
+        Mailbox: mailbox
+        Immediate: immediate
 heroic:
   features:
   - padtokeyboard
@@ -14446,16 +14802,100 @@ citron:
       choices:
         OpenGL: 0
         Vulkan: 1
+    lsfg_vk:
+      archs_include:
+      - qcs6490
+      - sm8250
+      - sm8550
+      submenu: RENDERING
+      prompt: LSFG-VK FRAME GENERATION
+      description: Enables the Lossless Scaling Frame Generation Vulkan layer when
+        the Vulkan backend is selected. Requires Lossless.dll from a purchased Lossless
+        Scaling install.
+      choices:
+        'Off': 0
+        'On': 1
+    lsfg_vk_dll:
+      archs_include:
+      - qcs6490
+      - sm8250
+      - sm8550
+      submenu: RENDERING
+      prompt: LOSSLESS.DLL PATH
+      description: Optional path to Lossless.dll. Default lookup includes /userdata/system/wine/lossless-scaling/Lossless.dll.
+      preset: input
+    lsfg_vk_multiplier:
+      archs_include:
+      - qcs6490
+      - sm8250
+      - sm8550
+      submenu: RENDERING
+      prompt: LSFG MULTIPLIER
+      choices:
+        2x (Default): 2
+        3x: 3
+        4x: 4
+    lsfg_vk_flow_scale:
+      archs_include:
+      - qcs6490
+      - sm8250
+      - sm8550
+      submenu: RENDERING
+      prompt: LSFG FLOW SCALE
+      choices:
+        1.0 (Default x86): '1.0'
+        0.75 (Default ARM): '0.75'
+        0.5: '0.5'
+        0.25: '0.25'
+    lsfg_vk_performance:
+      archs_include:
+      - qcs6490
+      - sm8250
+      - sm8550
+      submenu: RENDERING
+      prompt: LSFG PERFORMANCE MODE
+      choices:
+        'Off': 0
+        'On': 1
+    lsfg_vk_hdr:
+      archs_include:
+      - qcs6490
+      - sm8250
+      - sm8550
+      submenu: RENDERING
+      prompt: LSFG HDR MODE
+      choices:
+        'Off': 0
+        'On': 1
+    lsfg_vk_present_mode:
+      archs_include:
+      - qcs6490
+      - sm8250
+      - sm8550
+      submenu: RENDERING
+      prompt: LSFG PRESENT MODE
+      choices:
+        Auto (Default): ''
+        FIFO: fifo
+        Mailbox: mailbox
+        Immediate: immediate
+    citron_opengl_shader_backend:
+      submenu: RENDERING
+      prompt: OPENGL SHADER BACKEND
+      choices:
+        GLSL (Default): 0
+        GLASM: 1
+        SPIR-V: 2
     citron_anisotropy:
       submenu: RENDERING
       prompt: ANISOTROPIC FILTERING
       description: Improves clarity of distant textures.
       choices:
-        Default: 1
-        2x: 2
-        4x: 3
-        8x: 4
-        16x: 5
+        Default: 0
+        2x: 1
+        4x: 2
+        8x: 3
+        16x: 4
     citron_vsync:
       submenu: RENDERING
       prompt: VSYNC
@@ -14474,16 +14914,22 @@ citron:
       choices:
         Disabled: 'false'
         Enabled: 'true'
-    citron_aliasing_method:
+    citron_async_gpu:
+      submenu: RENDERING
+      prompt: ASYNC GPU EMULATION
+      choices:
+        Disabled: 'false'
+        Enabled: 'true'
+    citron_anti_aliasing:
       submenu: RENDERING
       prompt: ANTI-ALIASING METHOD
-      description: FXAA has a lower performance impact, goof for low resolutions.
+      description: FXAA has a lower performance impact, good for low resolutions.
         SMAA offers best quality.
       choices:
         None: 0
         FXAA: 1
         SMAA: 2
-    citron_scale_filter:
+    citron_scaling_filter:
       submenu: RENDERING
       prompt: TEXTURE FILTERING
       description: Smooth textures on 3D objects.
@@ -14503,7 +14949,99 @@ citron:
         Normal: 0
         High: 1
         Extreme: 2
-    citron_sound_mode:
+    citron_cpuaccuracy:
+      submenu: CPU
+      prompt: CPU ACCURACY
+      choices:
+        Auto (Default): 0
+        Accurate: 1
+        Unsafe: 2
+    citron_cpu_backend:
+      submenu: CPU
+      prompt: CPU BACKEND (AARCH64 ONLY)
+      description: Select Dynamic or NCE backend on aarch64 targets.
+      choices:
+        Auto (Default): ''
+        Dynamic: 0
+        NCE: 1
+    citron_multicore:
+      submenu: CPU
+      prompt: MULTICORE CPU EMULATION
+      choices:
+        Disabled: 'false'
+        Enabled: 'true'
+    citron_memory:
+      submenu: CPU
+      prompt: MEMORY LAYOUT
+      choices:
+        4GB (Default): 0
+        6GB: 1
+        8GB: 2
+    citron_nvdec_emu:
+      submenu: RENDERING
+      prompt: NVDEC EMULATION
+      choices:
+        Disabled: 0
+        CPU (Default): 1
+        GPU: 2
+    citron_astc:
+      submenu: RENDERING
+      prompt: ASTC DECODING
+      choices:
+        CPU: 0
+        GPU (Default): 1
+    citron_astc_recompression:
+      submenu: RENDERING
+      prompt: ASTC RECOMPRESSION
+      choices:
+        Uncompressed (Default): 0
+        BC1: 1
+        BC3: 2
+    citron_vram_mode:
+      submenu: RENDERING
+      prompt: VRAM USAGE MODE
+      choices:
+        Conservative: 0
+        Aggressive: 1
+    citron_async_presentation:
+      submenu: RENDERING
+      prompt: ASYNC PRESENTATION
+      choices:
+        Auto (Default): ''
+        Disabled: 'false'
+        Enabled: 'true'
+    citron_fast_gpu_time:
+      submenu: RENDERING
+      prompt: FAST GPU TIME
+      choices:
+        Auto (Default): ''
+        Disabled: 'false'
+        Enabled: 'true'
+    citron_single_window:
+      prompt: SINGLE WINDOW MODE
+      choices:
+        Enabled: 'true'
+        Disabled: 'false'
+    citron_rumble:
+      prompt: CONTROLLER RUMBLE
+      choices:
+        Disabled: 'false'
+        Enabled: 'true'
+    citron_rumble_strength:
+      prompt: RUMBLE STRENGTH
+      choices:
+        100%: 100
+        75%: 75
+        50%: 50
+        25%: 25
+    citron_audio_backend:
+      prompt: AUDIO BACKEND
+      choices:
+        Auto (Default): auto
+        Cubeb: cubeb
+        SDL2: sdl2
+        Null: 'null'
+    citron_sound_index:
       prompt: CHOOSE SOUND OUTPUT MODE
       choices:
         Mono: 0
@@ -14552,7 +15090,7 @@ citron:
       prompt: CHOOSE CONSOLE TIMEZONE
       description: Choose your console timezone.
       choices:
-        Default: 1
+        Default: 0
         CET: 2
         CST6CDT: 3
         Cuba: 4
@@ -14620,6 +15158,83 @@ eden:
       choices:
         OpenGL: 0
         Vulkan: 1
+    lsfg_vk:
+      archs_include:
+      - qcs6490
+      - sm8250
+      - sm8550
+      submenu: RENDERING
+      prompt: LSFG-VK FRAME GENERATION
+      description: Enables the Lossless Scaling Frame Generation Vulkan layer when
+        the Vulkan backend is selected. Requires Lossless.dll from a purchased Lossless
+        Scaling install.
+      choices:
+        'Off': 0
+        'On': 1
+    lsfg_vk_dll:
+      archs_include:
+      - qcs6490
+      - sm8250
+      - sm8550
+      submenu: RENDERING
+      prompt: LOSSLESS.DLL PATH
+      description: Optional path to Lossless.dll. Default lookup includes /userdata/system/wine/lossless-scaling/Lossless.dll.
+      preset: input
+    lsfg_vk_multiplier:
+      archs_include:
+      - qcs6490
+      - sm8250
+      - sm8550
+      submenu: RENDERING
+      prompt: LSFG MULTIPLIER
+      choices:
+        2x (Default): 2
+        3x: 3
+        4x: 4
+    lsfg_vk_flow_scale:
+      archs_include:
+      - qcs6490
+      - sm8250
+      - sm8550
+      submenu: RENDERING
+      prompt: LSFG FLOW SCALE
+      choices:
+        1.0 (Default x86): '1.0'
+        0.75 (Default ARM): '0.75'
+        0.5: '0.5'
+        0.25: '0.25'
+    lsfg_vk_performance:
+      archs_include:
+      - qcs6490
+      - sm8250
+      - sm8550
+      submenu: RENDERING
+      prompt: LSFG PERFORMANCE MODE
+      choices:
+        'Off': 0
+        'On': 1
+    lsfg_vk_hdr:
+      archs_include:
+      - qcs6490
+      - sm8250
+      - sm8550
+      submenu: RENDERING
+      prompt: LSFG HDR MODE
+      choices:
+        'Off': 0
+        'On': 1
+    lsfg_vk_present_mode:
+      archs_include:
+      - qcs6490
+      - sm8250
+      - sm8550
+      submenu: RENDERING
+      prompt: LSFG PRESENT MODE
+      choices:
+        Auto (Default): ''
+        FIFO: fifo
+        Mailbox: mailbox
+        Immediate: immediate
     eden_opengl_shader_backend:
       submenu: RENDERING
       prompt: OPENGL SHADER BACKEND
@@ -14856,6 +15471,76 @@ yuzu:
       choices:
         OpenGL: 0
         Vulkan: 1
+    lsfg_vk:
+      archs_include:
+      - x86_64
+      - x86-64-v3
+      submenu: RENDERING
+      prompt: LSFG-VK FRAME GENERATION
+      description: Enables the Lossless Scaling Frame Generation Vulkan layer when
+        the Vulkan backend is selected. Requires Lossless.dll from a purchased Lossless
+        Scaling install.
+      choices:
+        'Off': 0
+        'On': 1
+    lsfg_vk_dll:
+      archs_include:
+      - x86_64
+      - x86-64-v3
+      submenu: RENDERING
+      prompt: LOSSLESS.DLL PATH
+      description: Optional path to Lossless.dll. Default lookup includes /userdata/system/wine/lossless-scaling/Lossless.dll.
+      preset: input
+    lsfg_vk_multiplier:
+      archs_include:
+      - x86_64
+      - x86-64-v3
+      submenu: RENDERING
+      prompt: LSFG MULTIPLIER
+      choices:
+        2x (Default): 2
+        3x: 3
+        4x: 4
+    lsfg_vk_flow_scale:
+      archs_include:
+      - x86_64
+      - x86-64-v3
+      submenu: RENDERING
+      prompt: LSFG FLOW SCALE
+      choices:
+        1.0 (Default x86): '1.0'
+        0.75 (Default ARM): '0.75'
+        0.5: '0.5'
+        0.25: '0.25'
+    lsfg_vk_performance:
+      archs_include:
+      - x86_64
+      - x86-64-v3
+      submenu: RENDERING
+      prompt: LSFG PERFORMANCE MODE
+      choices:
+        'Off': 0
+        'On': 1
+    lsfg_vk_hdr:
+      archs_include:
+      - x86_64
+      - x86-64-v3
+      submenu: RENDERING
+      prompt: LSFG HDR MODE
+      choices:
+        'Off': 0
+        'On': 1
+    lsfg_vk_present_mode:
+      archs_include:
+      - x86_64
+      - x86-64-v3
+      submenu: RENDERING
+      prompt: LSFG PRESENT MODE
+      choices:
+        Auto (Default): ''
+        FIFO: fifo
+        Mailbox: mailbox
+        Immediate: immediate
     yuzu_opengl_shader_backend:
       submenu: RENDERING
       prompt: OPENGL SHADER BACKEND
@@ -16275,6 +16960,97 @@ xenia-edge:
       description: Xenia Edge on Linux uses the native Vulkan renderer.
       choices:
         Native Vulkan (Default): Vulkan
+    lsfg_vk:
+      archs_include:
+      - x86_64
+      - x86-64-v3
+      - qcs6490
+      - sm8250
+      - sm8550
+      group: ADVANCED OPTIONS
+      prompt: LSFG-VK FRAME GENERATION
+      description: Enables the Lossless Scaling Frame Generation Vulkan layer for
+        native Xenia Edge. Requires Lossless.dll from a purchased Lossless Scaling
+        install.
+      choices:
+        'Off': 0
+        'On': 1
+    lsfg_vk_dll:
+      archs_include:
+      - x86_64
+      - x86-64-v3
+      - qcs6490
+      - sm8250
+      - sm8550
+      group: ADVANCED OPTIONS
+      prompt: LOSSLESS.DLL PATH
+      description: Optional path to Lossless.dll. Default lookup includes /userdata/system/wine/lossless-scaling/Lossless.dll.
+      preset: input
+    lsfg_vk_multiplier:
+      archs_include:
+      - x86_64
+      - x86-64-v3
+      - qcs6490
+      - sm8250
+      - sm8550
+      group: ADVANCED OPTIONS
+      prompt: LSFG MULTIPLIER
+      choices:
+        2x (Default): 2
+        3x: 3
+        4x: 4
+    lsfg_vk_flow_scale:
+      archs_include:
+      - x86_64
+      - x86-64-v3
+      - qcs6490
+      - sm8250
+      - sm8550
+      group: ADVANCED OPTIONS
+      prompt: LSFG FLOW SCALE
+      choices:
+        1.0 (Default x86): '1.0'
+        0.75 (Default ARM): '0.75'
+        0.5: '0.5'
+        0.25: '0.25'
+    lsfg_vk_performance:
+      archs_include:
+      - x86_64
+      - x86-64-v3
+      - qcs6490
+      - sm8250
+      - sm8550
+      group: ADVANCED OPTIONS
+      prompt: LSFG PERFORMANCE MODE
+      choices:
+        'Off': 0
+        'On': 1
+    lsfg_vk_hdr:
+      archs_include:
+      - x86_64
+      - x86-64-v3
+      - qcs6490
+      - sm8250
+      - sm8550
+      group: ADVANCED OPTIONS
+      prompt: LSFG HDR MODE
+      choices:
+        'Off': 0
+        'On': 1
+    lsfg_vk_present_mode:
+      archs_include:
+      - x86_64
+      - x86-64-v3
+      - qcs6490
+      - sm8250
+      - sm8550
+      group: ADVANCED OPTIONS
+      prompt: LSFG PRESENT MODE
+      choices:
+        Auto (Default): ''
+        FIFO: fifo
+        Mailbox: mailbox
+        Immediate: immediate
     xenia_vsync:
       prompt: VSYNC
       description: Fix screen tearing. With Some games you need to turn VSync on in

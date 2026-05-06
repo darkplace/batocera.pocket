@@ -24,22 +24,10 @@ define BATOCERA_BACKGLASS_INSTALL_TARGET_CMDS
     $(INSTALL) -m 0755 -D $(BACKGLASS_PATH)/scripts/*.sh \
         $(TARGET_DIR)/usr/share/batocera-backglass/scripts/
 
-    # default web page
-    mkdir -p $(TARGET_DIR)/usr/share/batocera-backglass/www/backglass-default
-    cp -pr $(BACKGLASS_PATH)/www/backglass-default/*.{js,css,htm} \
-        $(TARGET_DIR)/usr/share/batocera-backglass/www/backglass-default/
-    mkdir -p $(TARGET_DIR)/usr/share/batocera-backglass/www/backglass-image
-    cp -pr $(BACKGLASS_PATH)/www/backglass-image/*.{js,css,htm} \
-        $(TARGET_DIR)/usr/share/batocera-backglass/www/backglass-image/
-    mkdir -p $(TARGET_DIR)/usr/share/batocera-backglass/www/backglass-marquee
-    cp -pr $(BACKGLASS_PATH)/www/backglass-marquee/*.{js,css,htm} \
-        $(TARGET_DIR)/usr/share/batocera-backglass/www/backglass-marquee/
-    mkdir -p $(TARGET_DIR)/usr/share/batocera-backglass/www/backglass-boxart
-    cp -pr $(BACKGLASS_PATH)/www/backglass-boxart/*.{js,css,htm} \
-        $(TARGET_DIR)/usr/share/batocera-backglass/www/backglass-boxart/
-    mkdir -p $(TARGET_DIR)/usr/share/batocera-backglass/www/backglass-fanart
-    cp -pr $(BACKGLASS_PATH)/www/backglass-fanart/*.{js,css,htm} \
-        $(TARGET_DIR)/usr/share/batocera-backglass/www/backglass-fanart/
+    # web pages
+    mkdir -p $(TARGET_DIR)/usr/share/batocera-backglass/www
+    cp -pr $(BACKGLASS_PATH)/www/* \
+        $(TARGET_DIR)/usr/share/batocera-backglass/www/
 endef
 
 $(eval $(generic-package))

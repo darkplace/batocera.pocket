@@ -77,20 +77,11 @@ define BATOCERA_ES_SYSTEM_BUILD_CMDS
 		$(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/emulationstation/batocera-es-system/roms \
 		$(@D)/roms $(BATOCERA_SYSTEM_ARCH)
 
-	# translations
-	mkdir -p $(BATOCERA_ES_SYSTEM_LOCALES_DIR)
-	(echo "$(@D)/es_external_translations.h"; echo "$(@D)/es_keys_translations.h") | \
-		xgettext --language=C --add-comments=TRANSLATION -f - -o \
-		$(BATOCERA_ES_SYSTEM_LOCALES_DIR)/batocera-es-system.pot --no-location --keyword=_
-
-	# remove the pot creation date always changing
-	sed -i '/^"POT-Creation-Date: /d' $(BATOCERA_ES_SYSTEM_LOCALES_DIR)/batocera-es-system.pot
-
-	# Merge translations and validate them
+	# Translation files are maintained in-tree; /build/package is read-only.
+	# Validate existing translations without regenerating or merging them.
 	for PO in $(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/emulationstation/batocera-es-system/locales/*/batocera-es-system.po; do \
-		(LANG=C msgmerge -s -U --no-fuzzy-matching $${PO} $(BATOCERA_ES_SYSTEM_LOCALES_DIR)/batocera-es-system.pot && \
 		printf "%s " $$(basename $$(dirname $${PO})) && \
-		LANG=C msgfmt -o /dev/null $${PO} --statistics) || exit 1; \
+		LANG=C msgfmt -o /dev/null $${PO} --statistics || exit 1; \
 	done
 
 	# install staging

@@ -202,6 +202,10 @@ if [[ "\${exec_line}" != flatpak* ]]; then
     mkdir -p "\${XDG_CONFIG_HOME}" "\${XDG_DATA_HOME}" "\${XDG_CACHE_HOME}"
 fi
 
+if [[ "\${BATOCERA_LUTRIS_MODE:-regular}" == "console" ]] && command -v lutrisview >/dev/null 2>&1; then
+    exec lutrisview
+fi
+
 bash -lc "\${exec_line} \${BATOCERA_LUTRIS_EXTRA_ARGS:-}"
 EOF
     chmod 0755 "${script_path}"
@@ -219,6 +223,10 @@ export LUTRIS_SKIP_INIT=1
 extra_args=()
 if [[ -n "${BATOCERA_LUTRIS_EXTRA_ARGS:-}" ]]; then
     read -r -a extra_args <<< "${BATOCERA_LUTRIS_EXTRA_ARGS}"
+fi
+
+if [[ "${BATOCERA_LUTRIS_MODE:-regular}" == "console" ]] && command -v lutrisview >/dev/null 2>&1; then
+    exec lutrisview
 fi
 
 if command -v lutris >/dev/null 2>&1; then

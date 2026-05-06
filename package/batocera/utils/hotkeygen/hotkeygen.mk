@@ -4,7 +4,7 @@
 #
 ################################################################################
 
-HOTKEYGEN_VERSION = 1.1
+HOTKEYGEN_VERSION = 1.2
 HOTKEYGEN_LICENSE = GPL
 HOTKEYGEN_SOURCE=
 HOTKEYGEN_DEPENDENCIES = python-pyudev python-evdev

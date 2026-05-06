@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 from ... import Command
 from ...controller import _DEFAULT_SDL_MAPPING, generate_sdl_game_controller_config
 from ...exceptions import BatoceraException
+from ...utils import lsfg
 from ..Generator import Generator
 
 if TYPE_CHECKING:
@@ -267,6 +268,8 @@ class WineGenerator(Generator):
                         "/usr/share/vulkan/icd.d/nvidia_icd.x86_64.json:"
                         "/usr/share/vulkan/icd.d/nvidia_icd.i686.json"
                 })
+
+            lsfg.apply_lsfg_vk(system, environment, use_wine_layer=True, defer_layer_env=True)
 
             return Command.Command(
                 array=commandArray,

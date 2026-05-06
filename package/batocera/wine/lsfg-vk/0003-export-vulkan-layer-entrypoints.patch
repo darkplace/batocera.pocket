@@ -1,0 +1,59 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Wed, 6 May 2026 16:05:00 +0000
+Subject: [PATCH] Export Vulkan layer entry points
+
+The project builds with hidden symbol visibility, but the visibility
+attribute on the Vulkan layer entry-point declarations is placed before
+extern "C", where GCC ignores it. The resulting shared object keeps
+layer_vkGetInstanceProcAddr and layer_vkGetDeviceProcAddr as local symbols,
+even though the layer JSON asks the Vulkan loader to dlsym those names.
+
+Place the visibility attribute on the C-linkage declarations and definitions
+so the Vulkan loader can resolve the layer hooks.
+---
+ include/layer.hpp | 4 ++--
+ src/layer.cpp     | 4 ++--
+ 2 files changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/include/layer.hpp b/include/layer.hpp
+index be965d7..e74de17 100644
+--- a/include/layer.hpp
++++ b/include/layer.hpp
+@@ -219,8 +219,8 @@ namespace Layer {
+ }
+
+ /// Symbol definition for Vulkan instance layer.
+-__attribute__((visibility("default")))
+-extern "C" PFN_vkVoidFunction layer_vkGetInstanceProcAddr(VkInstance instance, const char* pName);
++extern "C" __attribute__((visibility("default")))
++PFN_vkVoidFunction layer_vkGetInstanceProcAddr(VkInstance instance, const char* pName);
+ /// Symbol definition for Vulkan device layer.
+-__attribute__((visibility("default")))
+-extern "C" PFN_vkVoidFunction layer_vkGetDeviceProcAddr(VkDevice device, const char* pName);
++extern "C" __attribute__((visibility("default")))
++PFN_vkVoidFunction layer_vkGetDeviceProcAddr(VkDevice device, const char* pName);
+diff --git a/src/layer.cpp b/src/layer.cpp
+index e890ec4..171e47b 100644
+--- a/src/layer.cpp
++++ b/src/layer.cpp
+@@ -256,7 +256,7 @@ const std::unordered_map<std::string, PFN_vkVoidFunction> layerFunctions = {
+     },
+ };
+
+-PFN_vkVoidFunction layer_vkGetInstanceProcAddr(VkInstance instance, const char* pName) {
++extern "C" __attribute__((visibility("default"))) PFN_vkVoidFunction layer_vkGetInstanceProcAddr(VkInstance instance, const char* pName) {
+     const std::string name(pName);
+     auto it = layerFunctions.find(name);
+     if (it != layerFunctions.end())
+@@ -269,7 +269,7 @@ PFN_vkVoidFunction layer_vkGetInstanceProcAddr(VkInstance instance, const char*
+     return next_vkGetInstanceProcAddr(instance, pName);
+ }
+
+-PFN_vkVoidFunction layer_vkGetDeviceProcAddr(VkDevice device, const char* pName) {
++extern "C" __attribute__((visibility("default"))) PFN_vkVoidFunction layer_vkGetDeviceProcAddr(VkDevice device, const char* pName) {
+     const std::string name(pName);
+     auto it = layerFunctions.find(name);
+     if (it != layerFunctions.end())
+--
+2.49.0

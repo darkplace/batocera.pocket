@@ -1,9 +1,16 @@
 config BR2_PACKAGE_HEROIC
-	bool "heroic (AppImage)"
-	depends on BR2_x86_64
+	bool "heroic"
+	depends on BR2_x86_64 || BR2_aarch64
+	select BR2_PACKAGE_ALSA_LIB
+	select BR2_PACKAGE_GDK_PIXBUF
+	select BR2_PACKAGE_JPEG
+	select BR2_PACKAGE_LIBGTK3
+	select BR2_PACKAGE_LIBNSS
+	select BR2_PACKAGE_LIBRSVG
+	select BR2_PACKAGE_OPENAL
 	help
-	  Heroic Games Launcher packaged as an AppImage runtime wrapper.
+	  Heroic Games Launcher packaged as an AppImage runtime wrapper
+	  on x86_64 or as a native Electron runtime on aarch64.
 
-comment "heroic needs an x86_64 target"
-	depends on !BR2_x86_64
-
+comment "heroic needs an x86_64 or aarch64 target"
+	depends on !BR2_x86_64 && !BR2_aarch64

@@ -401,6 +401,8 @@ def _create_es_translations(esTranslationFile: Path, toTranslate: dict[str | Non
             # skip empty string
             if tr == '':
                 continue
+            if not isinstance(tr, str):
+                tr = str(tr)
             # skip numbers (8, 10, 500+)
             m = re.search('^[0-9]+[+]?$', tr)
             if m:

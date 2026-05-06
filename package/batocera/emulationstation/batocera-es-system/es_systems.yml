@@ -3081,7 +3081,8 @@ heroic:
   path: heroic
   emulators:
     heroic:
-      heroic: { requireAnyOf: [BR2_PACKAGE_HEROIC] }
+      regular: { requireAnyOf: [BR2_PACKAGE_HEROIC] }
+      console: { requireAnyOf: [BR2_PACKAGE_HEROIC] }
   comment_en: |
           Launch Heroic shortcuts.
           Run batocera-heroic-update to generate launchers from installed .desktop entries.
@@ -3099,7 +3100,8 @@ lutris:
   path: lutris
   emulators:
     lutris:
-      lutris: { requireAnyOf: [BR2_PACKAGE_LUTRIS, BR2_PACKAGE_LUTRIS_APPIMAGE] }
+      regular: { requireAnyOf: [BR2_PACKAGE_LUTRIS, BR2_PACKAGE_LUTRIS_APPIMAGE] }
+      console: { requireAnyOf: [BR2_PACKAGE_LUTRISVIEW] }
   comment_en: |
           Launch Lutris shortcuts.
           Run batocera-lutris-update to generate launchers from installed .desktop entries.

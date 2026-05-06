@@ -1,0 +1,178 @@
+#!/bin/bash
+set -u
+
+LOG="/userdata/system/logs/steam.log"
+STEAM_CONFIG="${STEAM_CONFIG:-/userdata/system/steam/config/config.vdf}"
+RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+STATE_FILE="${RUNTIME_DIR}/batocera-steam-nightmode.state"
+WARM_LOOK="${BATOCERA_STEAM_NIGHTMODE_LOOK:-/usr/share/batocera/steam/looks/night-mode-warm.cube}"
+INTERVAL="${BATOCERA_STEAM_NIGHTMODE_INTERVAL:-2}"
+
+mkdir -p "$(dirname "${LOG}")" "${RUNTIME_DIR}" 2>/dev/null || true
+
+log() {
+    echo "steam-nightmode: $*" >> "${LOG}"
+}
+
+vdf_value() {
+    local key="$1"
+
+    awk -v key="${key}" '
+        $1 == "\"" key "\"" {
+            value = $2
+            gsub(/"/, "", value)
+            print value
+            exit
+        }
+    ' "${STEAM_CONFIG}" 2>/dev/null
+}
+
+positive_float() {
+    awk -v value="${1:-0}" 'BEGIN { exit !((value + 0) > 0) }'
+}
+
+night_mode_enabled() {
+    local override
+    local override_until
+    local now
+    local strength
+
+    [[ -r "${STEAM_CONFIG}" ]] || return 1
+
+    strength="$(vdf_value DisplayNightModeTintStrength)"
+    if [[ -n "${strength}" ]] && ! positive_float "${strength}"; then
+        return 1
+    fi
+
+    override="$(vdf_value DisplayNightModeOverrideValue)"
+    case "${override}" in
+        2|true|True)
+            override_until="$(vdf_value DisplayNightModeOverrideUntil)"
+            if [[ "${override_until}" =~ ^[0-9]+$ ]] && (( override_until > 0 )); then
+                now="$(date +%s)"
+                (( override_until > now )) || return 1
+            fi
+            return 0
+            ;;
+        0|1|false|False)
+            return 1
+            ;;
+    esac
+
+    case "$(vdf_value DisplayNightModeEnabled)" in
+        1|true|True)
+            return 0
+            ;;
+    esac
+
+    return 1
+}
+
+resolve_gamescope_display() {
+    local candidate
+    local socket
+
+    for candidate in "${GAMESCOPE_WAYLAND_DISPLAY:-}" "${WAYLAND_DISPLAY:-}" gamescope-0; do
+        if [[ -n "${candidate}" && -S "${RUNTIME_DIR}/${candidate}" ]]; then
+            printf '%s\n' "${candidate}"
+            return 0
+        fi
+    done
+
+    while IFS= read -r socket; do
+        candidate="$(basename "${socket}")"
+        case "${candidate}" in
+            *mangoapp*|*limiter*)
+                continue
+                ;;
+        esac
+        printf '%s\n' "${candidate}"
+        return 0
+    done < <(find "${RUNTIME_DIR}" -maxdepth 1 -type s -name 'gamescope-*' 2>/dev/null | sort)
+
+    return 1
+}
+
+apply_look() {
+    local display
+    local label="$1"
+
+    display="$(resolve_gamescope_display)" || return 1
+    if [[ "${label}" == "night" ]]; then
+        [[ -r "${WARM_LOOK}" ]] || {
+            log "missing look file ${WARM_LOOK}"
+            return 1
+        }
+
+        XDG_RUNTIME_DIR="${RUNTIME_DIR}" \
+            GAMESCOPE_WAYLAND_DISPLAY="${display}" \
+            gamescopectl composite_force 1 >/dev/null 2>&1 || true
+        XDG_RUNTIME_DIR="${RUNTIME_DIR}" \
+            GAMESCOPE_WAYLAND_DISPLAY="${display}" \
+            gamescopectl set_look "${WARM_LOOK}" "${WARM_LOOK}" >/dev/null 2>&1 || return 1
+    else
+        XDG_RUNTIME_DIR="${RUNTIME_DIR}" \
+            GAMESCOPE_WAYLAND_DISPLAY="${display}" \
+            gamescopectl set_look >/dev/null 2>&1 || true
+        XDG_RUNTIME_DIR="${RUNTIME_DIR}" \
+            GAMESCOPE_WAYLAND_DISPLAY="${display}" \
+            gamescopectl composite_force 0 >/dev/null 2>&1 || true
+    fi
+
+    printf '%s\n' "${label}" > "${STATE_FILE}"
+    log "applied ${label} look on ${display}"
+}
+
+wait_for_gamescope() {
+    local display
+    local i
+
+    for i in $(seq 1 100); do
+        display="$(resolve_gamescope_display || true)"
+        if [[ -n "${display}" ]] && XDG_RUNTIME_DIR="${RUNTIME_DIR}" \
+            GAMESCOPE_WAYLAND_DISPLAY="${display}" \
+            gamescopectl help >/dev/null 2>&1; then
+            return 0
+        fi
+        sleep 0.1
+    done
+
+    return 1
+}
+
+gamescope_running() {
+    pgrep -f '^gamescope ' >/dev/null 2>&1 || pgrep -x gamescope-wl >/dev/null 2>&1
+}
+
+main() {
+    local current
+    local desired
+    local look
+
+    if ! command -v gamescopectl >/dev/null 2>&1; then
+        log "gamescopectl is not installed"
+        return 0
+    fi
+
+    if ! wait_for_gamescope; then
+        log "gamescope display was not available"
+        return 0
+    fi
+
+    while gamescope_running; do
+        if night_mode_enabled; then
+            desired="night"
+        else
+            desired="identity"
+        fi
+
+        current="$(cat "${STATE_FILE}" 2>/dev/null || true)"
+        if [[ "${current}" != "${desired}" ]]; then
+            apply_look "${desired}" || true
+        fi
+
+        sleep "${INTERVAL}"
+    done
+}
+
+main "$@"

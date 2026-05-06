@@ -84,10 +84,15 @@ for_window [title="Batocera OSD"] floating enable
 for_window [title="Batocera OSD"] move position 0px 2px
 for_window [title="Batocera OSD"] border none
 # batocera-controlcenter
+for_window [title="Batocera Control Center"] move to output $primary_output
 for_window [title="Batocera Control Center"] fullscreen disable
 for_window [title="Batocera Control Center"] floating enable
-for_window [title="Batocera Control Center"] move position 50ppt 1ppt
+for_window [title="Batocera Control Center"] sticky enable
+for_window [title="Batocera Control Center"] move position center
 for_window [title="Batocera Control Center"] border none
+for_window [title="Batocera Control Center"] focus
+
+include /var/run/sway-app-routing.conf
 
 # Starts EmulationStation when loading sway
 exec /usr/bin/sway-touch-map

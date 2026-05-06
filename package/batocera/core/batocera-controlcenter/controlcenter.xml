@@ -22,11 +22,10 @@
 	<!-- RECORDING TAB -->
 	<hgroup name="Record" display="Record">
 		<!-- Main Controls Row -->
-		<feature display="Status">
-			<text display="${batocera-record status}" refresh="1" />
-			<!-- Define Stop first so its ID 'rec_active' is known to the Start button's 'if' check -->
-			<button id="rec_active" display="Stop Recording" if="${batocera-record is_running}" action="batocera-record stop" afterclick="bcc_refresh" />
-			<button display="Start Recording" if="!id(rec_active)" action="batocera-record start" afterclick="bcc_refresh" />
+		<feature display="Recording in progress">
+			<switch value='${batocera-record is_running | grep true}'
+				action_on="batocera-record start" action_off="batocera-record stop"
+				afterclick="bcc_close" refresh="2" />
 		</feature>
 
 		<!-- Quality Row: Clicking 'Select' will open the choice popup -->
@@ -63,12 +62,12 @@
 				<text display="${curl http://127.0.0.1:1234/runningGame | jq -r '.systemName' | sed 's/\(.*\)/[\1]/'}" align="left" refresh="3" />
 			</feature>
 			<feature>
-				<text display='${P=$(ps -o etime= -C emulatorlauncher 2>/dev/null | head -1 | tr -d [[:blank:]]) &amp;&amp; [ -n "$P" ] &amp;&amp; echo "Playing for $P."}' align="left" refresh="1" id="playtime" />
+				<text display='${P=$(ps -o etime= -C emulatorlauncher 2>/dev/null | head -1 | tr -d [[:blank:]]) &amp;&amp; [ -n "$P" ] &amp;&amp; echo "Playing for $P"}' align="left" refresh="1" id="playtime" />
 			</feature>
 		</hgroup>
 		<vgroup>
 			<feature>
-				<button_confirm display="Quit game" action="hotkeygen --send exit" />
+				<button_confirm display="Quit game" action="hotkeygen --send exit || true" afterclick="bcc_close" />
 				<doc display="Manual" content='${IMG=$(curl http://127.0.0.1:1234/runningGame | jq -r .manual | sed "s/null//"); [ -n "$IMG" ] &amp;&amp; [ "$IMG" != "null" ] &amp;&amp; echo http://127.0.0.1:1234$IMG}' id="manual" refresh="3"/>
 				<doc display="Map" content='${IMG=$(curl http://127.0.0.1:1234/runningGame | jq -r .map | sed "s/null//"); [ -n "$IMG" ] &amp;&amp; [ "$IMG" != "null" ] &amp;&amp; echo http://127.0.0.1:1234$IMG}' id="map" refresh="3"/>
 			</feature>
@@ -95,6 +94,13 @@
 				<progressbar display="${batocera-brightness}" min="0" max="100" refresh="1" />
 				<button display="Bright +" action="batocera-brightness + 10" />
 		</feature>
+		<feature display="Fan" if='${qcom-fan available &amp;&amp; echo 1}' refresh="2">
+				<button display="Fan -" action="qcom-fan set -10" afterclick="bcc_refresh" />
+				<progressbar display="${qcom-fan percent}" min="0" max="100" refresh="1" />
+				<button display="Fan +" action="qcom-fan set +10" afterclick="bcc_refresh" />
+				<text display="${qcom-fan label}" refresh="1" />
+				<choice display="Auto" action="qcom-fan auto" afterclick="bcc_refresh" />
+		</feature>
 		<feature display="Mute Sound" group="Audio/Video">
 			<switch value="${batocera-audio getSystemMute}" refresh="2"
 				action_on="batocera-audio setSystemVolume mute" action_off="batocera-audio setSystemVolume unmute" />
@@ -110,7 +116,7 @@
 			action_on="batocera-planemode enable" action_off="batocera-planemode disable" refresh="2" align="left"/>
 		</feature>
 		<feature display="Stuck emulator?">
-			<button_confirm display="Kill it!" action="curl http://127.0.0.1:1234/emukill" align="left" />
+			<button_confirm display="Kill it!" action="curl -fsS http://127.0.0.1:1234/emukill || true" align="left" afterclick="bcc_close" />
 		</feature>
 		<feature name="PowerMode" display="Power Mode">
 			<choice display="Default"      action="batocera-power-mode default" />

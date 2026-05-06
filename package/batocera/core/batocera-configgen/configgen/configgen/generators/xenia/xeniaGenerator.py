@@ -16,7 +16,7 @@ import toml
 from ... import Command
 from ...batoceraPaths import CACHE, CONFIGS, SAVES, configure_emulator, mkdir_if_not_exists
 from ...controller import generate_sdl_game_controller_config
-from ...utils import vulkan, wine
+from ...utils import lsfg, vulkan, wine
 from ..Generator import Generator
 
 if TYPE_CHECKING:
@@ -27,6 +27,8 @@ _logger = logging.getLogger(__name__)
 # UCLAMP values (out of 1024) for big.LITTLE optimization
 UCLAMP_MIN = 819
 UCLAMP_MAX = 1024
+_BATOCERA_ACHIEVEMENT_SOUND_ROOT = Path('/usr/share/libretro/assets/sounds')
+_XBOX360_ACHIEVEMENT_SOUND = _BATOCERA_ACHIEVEMENT_SOUND_ROOT / 'xbox360-achievement.ogg'
 
 def _cfg_get(system: Any, key: str, default: Any, *aliases: str) -> Any:
     missing = system.config.MISSING
@@ -56,6 +58,14 @@ def _cfg_get_int(system: Any, key: str, default: int, *aliases: str) -> int:
         if system.config.get(alias, missing) is not missing:
             return system.config.get_int(alias, default)
     return default
+
+def _wine_path_from_unix(path: Path) -> str:
+    return 'Z:\\' + str(path).lstrip('/').replace('/', '\\')
+
+def _xenia_achievement_sound_path(core: str) -> str:
+    if core == 'xenia-edge':
+        return str(_XBOX360_ACHIEVEMENT_SOUND)
+    return _wine_path_from_unix(_XBOX360_ACHIEVEMENT_SOUND)
 
 
 class XeniaGenerator(Generator):
@@ -162,16 +172,19 @@ exit $EXIT_CODE
         os.chmod(wrapper_path, stat.S_IRWXU | stat.S_IRGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH)
 
     def generate(self, system, rom, playersControllers, metadata, guns, wheels, gameResolution):
+        core = system.config.core
+
         # Use wine proton
         wine_runner = wine.Runner("wine-proton", 'xbox360')
 
         xeniaConfig = CONFIGS / 'xenia'
         xeniaCache = CACHE / 'xenia'
         xeniaSaves = SAVES / 'xbox360'
+        xeniaEdgeConfig = CONFIGS / 'xenia-edge'
+        xeniaEdgeCache = CACHE / 'xenia-edge'
         emupath = wine_runner.bottle_dir / 'xenia'
         canarypath = wine_runner.bottle_dir / 'xenia-canary'
-
-        core = system.config.core
+        edgePatchesSource = Path('/usr/share/xenia-edge/patches')
 
         # check Vulkan first before doing anything
         if vulkan.is_available():
@@ -190,65 +203,71 @@ exit $EXIT_CODE
             _logger.debug("*** Vulkan driver required is not available on the system!!! ***")
             sys.exit()
 
-        # set to 64bit environment by default
-        os.environ['WINEARCH'] = 'win64'
+        if core == 'xenia-edge':
+            mkdir_if_not_exists(xeniaEdgeConfig)
+            mkdir_if_not_exists(xeniaEdgeCache)
+            mkdir_if_not_exists(xeniaSaves)
+            mkdir_if_not_exists(xeniaEdgeConfig / 'patches')
+            if edgePatchesSource.exists():
+                self.sync_directories(edgePatchesSource, xeniaEdgeConfig / 'patches')
+        else:
+            # set to 64bit environment by default
+            os.environ['WINEARCH'] = 'win64'
 
-        # make system directories
-        mkdir_if_not_exists(wine_runner.bottle_dir)
-        mkdir_if_not_exists(xeniaConfig)
-        mkdir_if_not_exists(xeniaCache)
-        mkdir_if_not_exists(xeniaSaves)
+            # make system directories
+            mkdir_if_not_exists(wine_runner.bottle_dir)
+            mkdir_if_not_exists(xeniaConfig)
+            mkdir_if_not_exists(xeniaCache)
+            mkdir_if_not_exists(xeniaSaves)
 
-        # create dir & copy xenia exe to wine bottle as necessary
-        if not emupath.exists():
-            shutil.copytree('/usr/xenia', emupath)
-        if not canarypath.exists():
-            shutil.copytree('/usr/xenia-canary', canarypath)
-        # check binary then copy updated xenia exe's as necessary
-        if not filecmp.cmp('/usr/xenia/xenia.exe', emupath / 'xenia.exe'):
-            shutil.copytree('/usr/xenia', emupath, dirs_exist_ok=True)
-        # xenia canary - copy patches directory also
-        if not filecmp.cmp('/usr/xenia-canary/xenia_canary.exe', canarypath / 'xenia_canary.exe'):
-            shutil.copytree('/usr/xenia-canary', canarypath, dirs_exist_ok=True)
-        if not (canarypath / 'patches').exists():
-            shutil.copytree('/usr/xenia-canary', canarypath, dirs_exist_ok=True)
-        # update patches accordingly
-        self.sync_directories(Path('/usr/xenia-canary'), canarypath)
+            # create dir & copy xenia exe to wine bottle as necessary
+            if not emupath.exists():
+                shutil.copytree('/usr/xenia', emupath)
+            if not canarypath.exists():
+                shutil.copytree('/usr/xenia-canary', canarypath)
+            # check binary then copy updated xenia exe's as necessary
+            if not filecmp.cmp('/usr/xenia/xenia.exe', emupath / 'xenia.exe'):
+                shutil.copytree('/usr/xenia', emupath, dirs_exist_ok=True)
+            # xenia canary - copy patches directory also
+            if not filecmp.cmp('/usr/xenia-canary/xenia_canary.exe', canarypath / 'xenia_canary.exe'):
+                shutil.copytree('/usr/xenia-canary', canarypath, dirs_exist_ok=True)
+            if not (canarypath / 'patches').exists():
+                shutil.copytree('/usr/xenia-canary', canarypath, dirs_exist_ok=True)
+            # update patches accordingly
+            self.sync_directories(Path('/usr/xenia-canary'), canarypath)
 
-        # create portable txt file to try & stop file spam
-        if not (emupath / 'portable.txt').exists():
-            with (emupath / 'portable.txt').open('w'):
-                pass
-        if not (canarypath / 'portable.txt').exists():
-            with (canarypath / 'portable.txt').open('w'):
-                pass
+            # create portable txt file to try & stop file spam
+            if not (emupath / 'portable.txt').exists():
+                with (emupath / 'portable.txt').open('w'):
+                    pass
+            if not (canarypath / 'portable.txt').exists():
+                with (canarypath / 'portable.txt').open('w'):
+                    pass
 
-        wine_runner.install_wine_trick('vcrun2022')
+            wine_runner.install_wine_trick('vcrun2022')
 
-        dll_files = ["d3d12.dll", "d3d12core.dll", "d3d11.dll", "d3d10core.dll", "d3d9.dll", "d3d8.dll", "dxgi.dll"]
-        # Create symbolic links for 64-bit DLLs
-        for dll in dll_files:
-            try:
-                src_path = wine.WINE_BASE / "dxvk" / "x64" / dll
-                dest_path = wine_runner.bottle_dir / "drive_c" / "windows" / "system32" / dll
-                # Remove existing link if it already exists
-                if dest_path.exists() or dest_path.is_symlink():
-                    dest_path.unlink()
-                dest_path.symlink_to(src_path)
-            except Exception as e:
-                _logger.debug("Error creating 64-bit link for %s: %s", dll, e)
+            dll_files = ["d3d12.dll", "d3d12core.dll", "d3d11.dll", "d3d10core.dll", "d3d9.dll", "d3d8.dll", "dxgi.dll"]
+            # Create symbolic links for 64-bit DLLs
+            for dll in dll_files:
+                try:
+                    src_path = wine.WINE_BASE / "dxvk" / "x64" / dll
+                    dest_path = wine_runner.bottle_dir / "drive_c" / "windows" / "system32" / dll
+                    if dest_path.exists() or dest_path.is_symlink():
+                        dest_path.unlink()
+                    dest_path.symlink_to(src_path)
+                except Exception as e:
+                    _logger.debug("Error creating 64-bit link for %s: %s", dll, e)
 
-        # Create symbolic links for 32-bit DLLs
-        for dll in dll_files:
-            try:
-                src_path = wine.WINE_BASE / "dxvk" / "x32" / dll
-                dest_path = wine_runner.bottle_dir / "drive_c" / "windows" / "syswow64" / dll
-                # Remove existing link if it already exists
-                if dest_path.exists() or dest_path.is_symlink():
-                    dest_path.unlink()
-                dest_path.symlink_to(src_path)
-            except Exception as e:
-                _logger.debug("Error creating 32-bit link for %s: %s", dll, e)
+            # Create symbolic links for 32-bit DLLs
+            for dll in dll_files:
+                try:
+                    src_path = wine.WINE_BASE / "dxvk" / "x32" / dll
+                    dest_path = wine_runner.bottle_dir / "drive_c" / "windows" / "syswow64" / dll
+                    if dest_path.exists() or dest_path.is_symlink():
+                        dest_path.unlink()
+                    dest_path.symlink_to(src_path)
+                except Exception as e:
+                    _logger.debug("Error creating 32-bit link for %s: %s", dll, e)
 
         # If we got a directory, attempt to resolve the first ISO recursively.
         if rom.is_dir():
@@ -291,6 +310,8 @@ exit $EXIT_CODE
         config: dict[str, dict[str, Any]] = {}
         if core == 'xenia-canary':
             toml_file = canarypath / 'xenia-canary.config.toml'
+        elif core == 'xenia-edge':
+            toml_file = xeniaEdgeConfig / 'xenia-edge.config.toml'
         else:
             toml_file = emupath / 'xenia.config.toml'
         if toml_file.is_file():
@@ -298,8 +319,16 @@ exit $EXIT_CODE
                 config: dict[str, dict[str, Any]] = toml.load(f)
 
         # [ Now adjust the config file defaults & options we want ]
+        xenia_achievement_sound = _cfg_get_bool(system, 'xenia_achievement_sound', True)
+        xenia_achievement_sound_path = ''
+        if xenia_achievement_sound and _cfg_get_bool(system, 'xenia_achievement', False):
+            xenia_achievement_sound_path = _xenia_achievement_sound_path(core)
+
         cpu_cfg = config.setdefault('CPU', {})
         cpu_cfg['break_on_unimplemented_instructions'] = _cfg_get_bool(system, 'break_on_unimplemented_instructions', False)
+        cpu_cfg['disable_context_promotion'] = _cfg_get_bool(
+            system, 'xenia_disable_context_promotion', False, 'disable_context_promotion'
+        )
 
         content_cfg = config.setdefault('Content', {})
         content_cfg['license_mask'] = _cfg_get_int(system, 'license_mask', _cfg_get_int(system, 'xenia_license', 1), 'xenia_license')
@@ -329,15 +358,27 @@ exit $EXIT_CODE
         video_cfg['avpack'] = _cfg_get_int(system, 'xenia_avpack', 8)
         video_cfg['widescreen'] = _cfg_get_bool(system, 'xenia_widescreen', True)
         video_cfg['use_50Hz_mode'] = _cfg_get_bool(system, 'xenia_pal50', False)
-        video_cfg['async_shader_compilation'] = _cfg_get_bool(system, 'async_shader_compilation', False)
+        video_cfg['async_shader_compilation'] = _cfg_get_bool(
+            system, 'xenia_async_shader_compilation', _cfg_get_bool(system, 'async_shader_compilation', False),
+            'async_shader_compilation'
+        )
+
+        apu_cfg = config.setdefault('APU', {})
+        apu_cfg['use_dedicated_xma_thread'] = _cfg_get_bool(
+            system, 'xenia_use_dedicated_xma_thread', True, 'use_dedicated_xma_thread'
+        )
 
         gpu_cfg = config.setdefault('GPU', {})
         gpu_backend = str(_cfg_get(system, 'gpu', _cfg_get(system, 'xenia_api', 'D3D12'), 'xenia_api')).lower()
+        if core == 'xenia-edge' and gpu_backend == 'd3d12':
+            gpu_backend = 'vulkan'
         gpu_cfg['gpu'] = gpu_backend
         gpu_cfg['vsync'] = _cfg_get_bool(system, 'vsync', _cfg_get_bool(system, 'xenia_vsync', True), 'xenia_vsync')
         gpu_cfg['framerate_limit'] = _cfg_get_int(system, 'xenia_framerate_limit', _cfg_get_int(system, 'xenia_vsync_fps', 0), 'xenia_vsync_fps')
         gpu_cfg['clear_memory_page_state'] = _cfg_get_bool(system, 'xenia_clear_memory_page_state', _cfg_get_bool(system, 'xenia_page_state', False), 'xenia_page_state')
-        gpu_cfg['gpu_allow_invalid_fetch_constants'] = _cfg_get_bool(system, 'gpu_allow_invalid_fetch_constants', False)
+        gpu_cfg['gpu_allow_invalid_fetch_constants'] = _cfg_get_bool(
+            system, 'xenia_gpu_allow_invalid_fetch_constants', False, 'gpu_allow_invalid_fetch_constants'
+        )
 
         render_target_path = str(_cfg_get(system, 'render_target_path', _cfg_get(system, 'xenia_target_path', 'rtv'), 'xenia_target_path'))
         gpu_cfg['render_target_path'] = render_target_path
@@ -354,8 +395,12 @@ exit $EXIT_CODE
                 gpu_cfg['render_target_path_vulkan'] = render_target_path
 
         gpu_cfg['query_occlusion_fake_sample_count'] = _cfg_get_int(system, 'query_occlusion_fake_sample_count', _cfg_get_int(system, 'xenia_query_occlusion', 1000), 'xenia_query_occlusion')
-        gpu_cfg['query_occlusion_sample_lower_threshold'] = _cfg_get_int(system, 'query_occlusion_sample_lower_threshold', 80)
-        gpu_cfg['query_occlusion_sample_upper_threshold'] = _cfg_get_int(system, 'query_occlusion_sample_upper_threshold', 100)
+        gpu_cfg['query_occlusion_sample_lower_threshold'] = _cfg_get_int(
+            system, 'xenia_query_occlusion_sample_lower_threshold', 80, 'query_occlusion_sample_lower_threshold'
+        )
+        gpu_cfg['query_occlusion_sample_upper_threshold'] = _cfg_get_int(
+            system, 'xenia_query_occlusion_sample_upper_threshold', 100, 'query_occlusion_sample_upper_threshold'
+        )
         if gpu_cfg['query_occlusion_sample_upper_threshold'] == 0:
             gpu_cfg['query_occlusion_sample_lower_threshold'] = 0
 
@@ -372,6 +417,7 @@ exit $EXIT_CODE
         general_cfg = config.setdefault('General', {})
         general_cfg['discord'] = _cfg_get_bool(system, 'discord', False)
         general_cfg['apply_patches'] = _cfg_get_bool(system, 'xenia_patches', False)
+        general_cfg['controller_hotkeys'] = _cfg_get_bool(system, 'xenia_controller_hotkeys', False)
 
         hid_cfg = config.setdefault('HID', {})
         hid_cfg['hid'] = str(_cfg_get(system, 'xenia_hid', 'sdl'))
@@ -380,19 +426,21 @@ exit $EXIT_CODE
         logging_cfg['log_level'] = 1
 
         memory_cfg = config.setdefault('Memory', {})
-        memory_cfg['protect_zero'] = _cfg_get_bool(system, 'protect_zero', True)
+        memory_cfg['protect_zero'] = _cfg_get_bool(system, 'xenia_protect_zero', True, 'protect_zero')
         memory_cfg['scribble_heap'] = _cfg_get_bool(system, 'scribble_heap', False)
 
         storage_cfg = config.setdefault('Storage', {})
-        storage_cfg['cache_root'] = str(xeniaCache)
+        storage_cfg['cache_root'] = str(xeniaEdgeCache if core == 'xenia-edge' else xeniaCache)
         storage_cfg['content_root'] = str(xeniaSaves)
         storage_cfg['mount_scratch'] = True
-        storage_cfg['storage_root'] = str(xeniaConfig)
+        storage_cfg['storage_root'] = str(xeniaEdgeConfig if core == 'xenia-edge' else xeniaConfig)
         storage_cfg['mount_cache'] = _cfg_get_bool(system, 'mount_cache', _cfg_get_bool(system, 'xenia_cache', True), 'xenia_cache')
 
         ui_cfg = config.setdefault('UI', {})
         ui_cfg['headless'] = _cfg_get_bool(system, 'xenia_headless', False)
         ui_cfg['show_achievement_notification'] = _cfg_get_bool(system, 'xenia_achievement', False)
+        ui_cfg['notification_sound_path'] = xenia_achievement_sound_path
+        ui_cfg['achievement_sound_path'] = xenia_achievement_sound_path
 
         xconfig_cfg = config.setdefault('XConfig', {})
         xconfig_cfg['user_country'] = _cfg_get_int(system, 'xenia_country', 103)  # 103 = US
@@ -419,9 +467,10 @@ exit $EXIT_CODE
         # simplify the name for matching
         rom_name = re.sub(r'\[.*?\]', '', rom_name)
         rom_name = re.sub(r'\(.*?\)', '', rom_name)
+        patch_root = xeniaEdgeConfig / 'patches' if core == 'xenia-edge' else canarypath / 'patches'
         if system.config.get_bool('xenia_patches'):
             # pattern to search for matching .patch.toml files
-            matching_files = [file_path for file_path in (canarypath / 'patches').glob(f'*{rom_name}*.patch.toml') if re.search(rom_name, file_path.name, re.IGNORECASE)]
+            matching_files = [file_path for file_path in patch_root.glob(f'*{rom_name}*.patch.toml') if re.search(rom_name, file_path.name, re.IGNORECASE)]
             if matching_files:
                 for file_path in matching_files:
                     _logger.debug('Enabling patches for: %s', file_path)
@@ -441,11 +490,31 @@ exit $EXIT_CODE
         # Determine the executable path
         if core == 'xenia-canary':
             xenia_exe = canarypath / 'xenia_canary.exe'
+        elif core == 'xenia-edge':
+            xenia_exe = Path('/usr/bin/xenia-edge')
         else:
             xenia_exe = emupath / 'xenia.exe'
 
         # Get wine64 binary path
         wine64_bin = str(wine_runner.wine64)
+
+        # Native Linux xenia-edge path
+        if core == 'xenia-edge':
+            commandArray = [
+                str(xenia_exe),
+                f'--storage_root={xeniaEdgeConfig}',
+                f'--content_root={xeniaSaves}',
+                f'--cache_root={xeniaEdgeCache}',
+            ]
+            if not configure_emulator(rom):
+                commandArray.append(str(rom))
+
+            environment = {
+                'SDL_GAMECONTROLLERCONFIG': generate_sdl_game_controller_config(playersControllers),
+                'SDL_JOYSTICK_HIDAPI': '0',
+            }
+            lsfg.apply_lsfg_vk(system, environment)
+            return Command.Command(array=commandArray, env=environment)
 
         # Check for aarch64 and setup box64 wrapping
         use_box64 = self.is_aarch64()
@@ -529,6 +598,8 @@ exit $EXIT_CODE
                     'VK_LAYER_PATH': '/usr/share/vulkan/explicit_layer.d'
                 }
             )
+
+        lsfg.apply_lsfg_vk(system, environment, use_wine_layer=True)
 
         return Command.Command(array=commandArray, env=environment)
 

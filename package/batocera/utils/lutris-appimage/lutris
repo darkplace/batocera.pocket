@@ -9,6 +9,9 @@ export HOME="$lutris_home"
 export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
 export XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
 export XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
+if [ -f /usr/lib/gdk-pixbuf-2.0/2.10.0/loaders.cache ]; then
+	export GDK_PIXBUF_MODULE_FILE="${GDK_PIXBUF_MODULE_FILE:-/usr/lib/gdk-pixbuf-2.0/2.10.0/loaders.cache}"
+fi
 mkdir -p "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_CACHE_HOME"
 mkdir -p "${XDG_DATA_HOME}/applications" "${HOME}/Desktop"
 
@@ -68,6 +71,10 @@ fi
 
 if [ "${BATOCERA_LUTRIS_PATCH_ONLY:-0}" = "1" ]; then
 	exit 0
+fi
+
+if [ "${BATOCERA_LUTRIS_MODE:-regular}" = "console" ] && [ "$#" -eq 0 ] && command -v lutrisview >/dev/null 2>&1; then
+	exec lutrisview
 fi
 
 exec "$app" "$@" >>"$log" 2>&1

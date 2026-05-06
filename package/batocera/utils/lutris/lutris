@@ -24,6 +24,16 @@ esac
 export XDG_DATA_DIRS
 export GTK_THEME="${GTK_THEME:-Adwaita}"
 export GTK_ICON_THEME="${GTK_ICON_THEME:-Adwaita}"
+if [ -f /usr/lib/gdk-pixbuf-2.0/2.10.0/loaders.cache ]; then
+	export GDK_PIXBUF_MODULE_FILE="${GDK_PIXBUF_MODULE_FILE:-/usr/lib/gdk-pixbuf-2.0/2.10.0/loaders.cache}"
+fi
+
+if [ "${BATOCERA_LUTRIS_SAFE_UI:-0}" = "1" ] || { [ "${BATOCERA_LUTRIS_MODE:-regular}" = "regular" ] && [ "$#" -eq 0 ]; }; then
+	export GDK_BACKEND="${GDK_BACKEND:-x11}"
+	export GDK_GL="${GDK_GL:-disable}"
+	export WEBKIT_DISABLE_COMPOSITING_MODE="${WEBKIT_DISABLE_COMPOSITING_MODE:-1}"
+	export WEBKIT_DISABLE_DMABUF_RENDERER="${WEBKIT_DISABLE_DMABUF_RENDERER:-1}"
+fi
 
 mkdir -p "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_CACHE_HOME" "$XDG_RUNTIME_DIR"
 # Ensure desktop shortcut targets exist for Lutris "Create Shortcut" actions.
@@ -66,6 +76,10 @@ fi
 if [ ! -x "$lutris_bin" ]; then
 	echo "Lutris runtime not found (expected /usr/libexec/lutris-bin)." >&2
 	exit 127
+fi
+
+if [ "${BATOCERA_LUTRIS_MODE:-regular}" = "console" ] && [ "$#" -eq 0 ] && command -v lutrisview >/dev/null 2>&1; then
+	exec lutrisview
 fi
 
 exec "$lutris_bin" "$@"

@@ -82,12 +82,12 @@ emulators:
     hud_support: false
 heroic:
   emulator: heroic
-  core:     heroic
+  core:     regular
   options:
     hud_support: false
 lutris:
   emulator: lutris
-  core:     lutris
+  core:     regular
   options:
     hud_support: false
 apple2:

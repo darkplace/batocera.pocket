@@ -981,7 +981,7 @@ ensure_fex_rootfs() {
     fi
 
     cat > "${fex_config}" <<EOF
-{"Config":{"RootFS":"${BATOCERA_STEAM_FEX_ROOTFS_NAME}"},"ThunksDB":{}}
+{"Config":{"RootFS":"${BATOCERA_STEAM_FEX_ROOTFS_NAME}","DynamicL1Cache":"1","DisableL2Cache":"1"},"ThunksDB":{}}
 EOF
     chmod 0644 "${fex_config}" 2>/dev/null || true
     log_msg "Configured FEX rootfs ${BATOCERA_STEAM_FEX_ROOTFS_NAME}."

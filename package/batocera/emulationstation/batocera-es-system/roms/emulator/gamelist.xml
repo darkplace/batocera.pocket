@@ -61,6 +61,11 @@
     <image>./images/vita3k.png</image>
   </game>
   <game>
+    <path>./Configure_Xenia_Edge.sh</path>
+    <name>Configure Xenia Edge</name>
+    <image>./images/xenia-edge.png</image>
+  </game>
+  <game>
     <path>./File_Manager.sh</path>
     <name>File Manager</name>
     <image>./images/filemanagerlauncher.png</image>

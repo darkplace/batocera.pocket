@@ -51,6 +51,9 @@ define BATOCERA_STEAM_AARCH64_INSTALL_TARGET_CMDS
 		$(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/utils/batocera-steam/batocera-steam-uimode-watch \
 		$(TARGET_DIR)/usr/bin/batocera-steam-uimode-watch
 	install -D -m 0755 \
+		$(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/utils/batocera-steam/batocera-steam-nightmode-watch \
+		$(TARGET_DIR)/usr/bin/batocera-steam-nightmode-watch
+	install -D -m 0755 \
 		$(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/utils/batocera-steam/batocera-displaymanager-stub \
 		$(TARGET_DIR)/usr/bin/batocera-displaymanager-stub
 	install -D -m 0755 \
@@ -76,6 +79,11 @@ define BATOCERA_STEAM_AARCH64_INSTALL_TARGET_CMDS
 	install -m 0644 \
 		$(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/utils/batocera-steam/org.freedesktop.ConsoleKit.conf \
 		$(TARGET_DIR)/etc/dbus-1/system.d/
+
+	mkdir -p $(TARGET_DIR)/usr/share/batocera/steam/looks
+	install -D -m 0644 \
+		$(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/utils/batocera-steam/night-mode-warm.cube \
+		$(TARGET_DIR)/usr/share/batocera/steam/looks/night-mode-warm.cube
 
 	mkdir -p $(TARGET_DIR)/usr/share/emulationstation/hooks
 	ln -sf /usr/bin/batocera-steam-update \

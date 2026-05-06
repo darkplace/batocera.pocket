@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 from ... import Command
 from ...batoceraPaths import BIOS, CONFIGS, SAVES, CACHE, mkdir_if_not_exists, ensure_parents_and_open
 from ...controller import Controllers
-from ...utils import vulkan
+from ...utils import lsfg, vulkan
 from ...utils.configparser import CaseSensitiveRawConfigParser
 from ..Generator import Generator
 from .edenController import build_eden_sdl_game_controller_config, set_eden_controllers
@@ -113,6 +113,8 @@ class EdenGenerator(Generator):
 
         if not launch_menu:
             command_array.extend(["-f", "-g", str(rom)])
+
+        lsfg.apply_lsfg_vk(system, env, backend_key="eden_backend", process_name="eden")
 
         return Command.Command(
             array=command_array,

@@ -1,27 +1,55 @@
 ################################################################################
 #
-# heroic (AppImage)
+# heroic
 #
 ################################################################################
 
-HEROIC_VERSION = 2.20.0
 HEROIC_LICENSE = GPL-3.0
 HEROIC_STRIP = NO
 HEROIC_TOOLCHAIN = manual
-HEROIC_DEPENDENCIES = openal
+HEROIC_DEPENDENCIES = gdk-pixbuf jpeg libgtk3 libnss librsvg openal
 
+ifeq ($(BR2_aarch64),y)
+HEROIC_VERSION = 2.21.0
+HEROIC_SITE = https://codeberg.org/trescenzi/rocknix-ports/raw/branch/main/heroic
+HEROIC_SOURCE = Heroic-$(HEROIC_VERSION)-linux-arm64.tar.xz
+else
+HEROIC_VERSION = 2.20.0
 HEROIC_SITE = https://github.com/Heroic-Games-Launcher/HeroicGamesLauncher/releases/download/v$(HEROIC_VERSION)
 HEROIC_SOURCE = Heroic-$(HEROIC_VERSION)-linux-x86_64.AppImage
+endif
 
+ifeq ($(BR2_aarch64),y)
+define HEROIC_EXTRACT_CMDS
+	mkdir -p $(@D)/heroic-arm64
+	tar -xJf $(DL_DIR)/$(HEROIC_DL_SUBDIR)/$(HEROIC_SOURCE) \
+		-C $(@D)/heroic-arm64
+endef
+else
 define HEROIC_EXTRACT_CMDS
 	cp $(DL_DIR)/$(HEROIC_DL_SUBDIR)/$(HEROIC_SOURCE) \
 		$(@D)/heroic.AppImage
 endef
+endif
+
+ifeq ($(BR2_aarch64),y)
+define HEROIC_INSTALL_RUNTIME
+	rm -rf $(TARGET_DIR)/usr/share/heroic/heroic-arm64
+	mkdir -p $(TARGET_DIR)/usr/share/heroic/heroic-arm64
+	cp -a $(@D)/heroic-arm64/. \
+		$(TARGET_DIR)/usr/share/heroic/heroic-arm64/
+	chmod 0755 $(TARGET_DIR)/usr/share/heroic/heroic-arm64/Heroic-$(HEROIC_VERSION)-linux-arm64/heroic
+endef
+else
+define HEROIC_INSTALL_RUNTIME
+	install -m 0644 $(@D)/heroic.AppImage \
+		$(TARGET_DIR)/usr/share/heroic/heroic.AppImage
+endef
+endif
 
 define HEROIC_INSTALL_TARGET_CMDS
 	mkdir -p $(TARGET_DIR)/usr/share/heroic
-	install -m 0644 $(@D)/heroic.AppImage \
-		$(TARGET_DIR)/usr/share/heroic/heroic.AppImage
+	$(HEROIC_INSTALL_RUNTIME)
 	mkdir -p $(TARGET_DIR)/usr/share/heroic/defaults/store
 	install -m 0644 \
 		$(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/utils/heroic/config.json \
@@ -34,12 +62,17 @@ define HEROIC_INSTALL_TARGET_CMDS
 	printf '%s\n' \
 		'#!/bin/sh' \
 		'src="$${BATOCERA_HEROIC_SYSTEM_APPIMAGE:-/usr/share/heroic/heroic.AppImage}"' \
+		'native_dir="$${BATOCERA_HEROIC_NATIVE_DIR:-/usr/share/heroic/heroic-arm64}"' \
+		'native_app="$${BATOCERA_HEROIC_NATIVE_BIN:-}"' \
 		'home="$${BATOCERA_HEROIC_HOME:-/userdata/saves/heroic}"' \
 		'local_app="$${BATOCERA_HEROIC_LOCAL_APPIMAGE:-$${home}/heroic.AppImage}"' \
 		'py_overrides="$${BATOCERA_HEROIC_PYTHON_OVERRIDES:-/usr/share/heroic/python-overrides}"' \
 		'app="$${src}"' \
+		'if [ -z "$${native_app}" ]; then for candidate in "$${native_dir}"/Heroic*/heroic "$${native_dir}"/heroic; do [ -x "$${candidate}" ] || continue; native_app="$${candidate}"; break; done; fi' \
+		'if [ ! -x "$${app}" ] && [ -x "$${native_app}" ]; then app="$${native_app}"; fi' \
 		'export APPIMAGE_EXTRACT_AND_RUN="$${APPIMAGE_EXTRACT_AND_RUN:-1}"' \
 		'export APPIMAGE_ALLOW_ROOT="$${APPIMAGE_ALLOW_ROOT:-1}"' \
+		'export ELECTRON_OZONE_PLATFORM_HINT="$${ELECTRON_OZONE_PLATFORM_HINT:-wayland}"' \
 		'export BATOCERA_HEROIC_PATCH_LEGENDARY_PERMS="$${BATOCERA_HEROIC_PATCH_LEGENDARY_PERMS:-1}"' \
 		'export USE_FAKE_EPIC_EXE="$${BATOCERA_HEROIC_USE_FAKE_EPIC_EXE:-0}"' \
 		'export HOME="$${home}"' \
@@ -83,6 +116,7 @@ define HEROIC_INSTALL_TARGET_CMDS
 		'fi' \
 		'if [ -d "$${py_overrides}" ]; then export PYTHONPATH="$${py_overrides}$${PYTHONPATH:+:$${PYTHONPATH}}"; fi' \
 		'if [ ! -x "$${app}" ] && [ -f "$${src}" ]; then cp -f "$${src}" "$${local_app}" && chmod 0755 "$${local_app}" 2>/dev/null || true; app="$${local_app}"; fi' \
+		'if [ "$${BATOCERA_HEROIC_MODE:-regular}" = "console" ]; then set -- --console --fullscreen "$$@"; fi' \
 		'need_no_sandbox=0' \
 		'if [ "$${BATOCERA_HEROIC_NO_SANDBOX:-0}" = "1" ] || [ "$${BATOCERA_HEROIC_NO_SANDBOX:-false}" = "true" ]; then need_no_sandbox=1; elif [ "$$(id -u)" = "0" ]; then need_no_sandbox=1; fi' \
 		'run_uid="$${BATOCERA_HEROIC_UID:-1000}"' \
@@ -110,6 +144,7 @@ define HEROIC_INSTALL_TARGET_CMDS
 		"trap 'batocera-mouse hide' EXIT" \
 		'extra_args=()' \
 		'if [[ -n "$${BATOCERA_HEROIC_EXTRA_ARGS:-}" ]]; then read -r -a extra_args <<< "$${BATOCERA_HEROIC_EXTRA_ARGS}"; fi' \
+		'if [[ "$${BATOCERA_HEROIC_MODE:-regular}" == "console" ]]; then extra_args=(--console --fullscreen "$${extra_args[@]}"); fi' \
 		'export HOME="/userdata/saves/heroic"' \
 		'export XDG_CONFIG_HOME="$${HOME}/.config"' \
 		'export XDG_DATA_HOME="$${HOME}/.local/share"' \

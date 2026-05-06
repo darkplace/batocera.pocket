@@ -80,6 +80,9 @@ extra_args=()
 if [[ -n "${BATOCERA_HEROIC_EXTRA_ARGS:-}" ]]; then
     read -r -a extra_args <<< "${BATOCERA_HEROIC_EXTRA_ARGS}"
 fi
+if [[ "${BATOCERA_HEROIC_MODE:-regular}" == "console" ]]; then
+    extra_args=(--console --fullscreen "${extra_args[@]}")
+fi
 
 if command -v heroic >/dev/null 2>&1; then
     export HOME="/userdata/saves/heroic"
@@ -196,48 +199,110 @@ for desktop_file in "${desktop_files[@]}"; do
     game_count=$((game_count + 1))
 done
 
-# Fallback for environments where Heroic logs "shortcut created" but no .desktop
-# files end up on disk: derive launchers from Legendary installed metadata.
-if [[ "${game_count}" -eq 0 ]]; then
-    installed_json="/userdata/saves/heroic/.config/heroic/legendaryConfig/legendary/installed.json"
-    if [[ -f "${installed_json}" ]]; then
-        while IFS=$'\t' read -r app_name title; do
-            [[ -z "${app_name}" || -z "${title}" ]] && continue
+# Supplement desktop shortcuts with Heroic's own store metadata. This covers
+# stores that do not always create usable .desktop files, especially GOG and Nile.
+metadata_dir="/userdata/saves/heroic/.config/heroic"
+while IFS=$'\t' read -r title uri; do
+    [[ -z "${title}" || -z "${uri}" ]] && continue
 
-            slug="$(slugify "${title}")"
-            [[ -z "${slug}" ]] && continue
-            [[ -n "${seen["${slug}"]+x}" ]] && continue
-            seen["${slug}"]=1
+    slug="$(slugify "${title}")"
+    [[ -z "${slug}" ]] && continue
+    [[ -n "${seen["${slug}"]+x}" ]] && continue
+    seen["${slug}"]=1
 
-            script_name="heroic-auto-${slug}.sh"
-            script_path="${roms_dir}/${script_name}"
-            exec_line="heroic \"heroic://launch/${app_name}\""
-            write_game_launcher "${script_path}" "${exec_line}"
-            es_add_game "./${script_name}" "${title}"
-            game_count=$((game_count + 1))
-        done < <(python3 - "${installed_json}" <<'PY'
+    script_name="heroic-auto-${slug}.sh"
+    script_path="${roms_dir}/${script_name}"
+    exec_line="heroic \"${uri}\""
+    write_game_launcher "${script_path}" "${exec_line}"
+    es_add_game "./${script_name}" "${title}"
+    game_count=$((game_count + 1))
+done < <(python3 - "${metadata_dir}" <<'PY'
 import json
 import pathlib
 import sys
+import urllib.parse
 
-path = pathlib.Path(sys.argv[1])
-try:
-    data = json.loads(path.read_text(encoding="utf-8"))
-except Exception:
-    data = {}
+base = pathlib.Path(sys.argv[1])
 
-if isinstance(data, dict):
-    for app_name, meta in data.items():
+
+def load_json(path):
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
+
+def title_lookup(path):
+    data = load_json(path)
+    games = data.get("games") if isinstance(data, dict) else None
+    if not isinstance(games, list):
+        return {}
+
+    lookup = {}
+    for game in games:
+        if not isinstance(game, dict):
+            continue
+        app_id = str(game.get("app_name") or game.get("appName") or game.get("id") or "").strip()
+        title = str(game.get("title") or game.get("name") or "").strip()
+        if app_id and title:
+            lookup[app_id] = title
+    return lookup
+
+
+def iter_installed_records(data):
+    if isinstance(data, list):
+        yield from (item for item in data if isinstance(item, dict))
+    elif isinstance(data, dict):
+        installed = data.get("installed")
+        if isinstance(installed, list):
+            yield from (item for item in installed if isinstance(item, dict))
+        else:
+            for key, value in data.items():
+                if isinstance(value, dict):
+                    record = dict(value)
+                    record.setdefault("_key", key)
+                    yield record
+                elif isinstance(value, list):
+                    yield from (item for item in value if isinstance(item, dict))
+
+
+def emit(title, app_id, runner):
+    title = str(title or app_id).strip()
+    app_id = str(app_id or "").strip()
+    if not title or not app_id:
+        return
+    uri = f"heroic://launch?appName={urllib.parse.quote(app_id)}&runner={runner}"
+    print(f"{title}\t{uri}")
+
+
+legendary = load_json(base / "legendaryConfig/legendary/installed.json")
+if isinstance(legendary, dict):
+    for app_id, meta in legendary.items():
         if not isinstance(meta, dict):
             continue
-        title = str(meta.get("title") or app_name).strip()
-        app_name = str(app_name).strip()
-        if app_name and title:
-            print(f"{app_name}\t{title}")
+        if meta.get("is_installed") is False and not meta.get("install_path"):
+            continue
+        emit(meta.get("title") or app_id, app_id, "legendary")
+
+gog_lookup = title_lookup(base / "store_cache/gog_library.json")
+gog = load_json(base / "gog_store/installed.json")
+for game in iter_installed_records(gog):
+    app_id = game.get("appName") or game.get("app_name") or game.get("id") or game.get("gameId") or game.get("_key")
+    install_path = str(game.get("install_path") or "").strip()
+    fallback = pathlib.PurePosixPath(install_path).name if install_path else app_id
+    title = game.get("title") or game.get("name") or game.get("gameTitle") or gog_lookup.get(str(app_id)) or fallback
+    emit(title, app_id, "gog")
+
+nile_lookup = title_lookup(base / "store_cache/nile_library.json")
+nile = load_json(base / "nile_config/installed.json")
+for game in iter_installed_records(nile):
+    app_id = game.get("app_name") or game.get("appName") or game.get("id") or game.get("_key")
+    install_path = str(game.get("install_path") or "").strip()
+    fallback = pathlib.PurePosixPath(install_path).name if install_path else app_id
+    title = game.get("title") or game.get("name") or nile_lookup.get(str(app_id)) or fallback
+    emit(title, app_id, "nile")
 PY
 )
-    fi
-fi
 
 es_add_game_end
 echo "Heroic launcher update complete: ${game_count} game launcher(s) generated." >> "${log}"

@@ -9,7 +9,7 @@ is_dual_screen_handheld() {
 
 is_dual_screen_emulator() {
     case "$2:$3:$4" in
-        nds:melonds:melonds|n3ds:azahar:azahar|wiiu:cemu:cemu)
+        nds:*:*|n3ds:*:*|3ds:*:*|wiiu:*:*)
             return 0
             ;;
         *)

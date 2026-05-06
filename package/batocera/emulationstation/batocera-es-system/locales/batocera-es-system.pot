@@ -115,7 +115,7 @@ msgctxt "game_options"
 msgid "Core provided"
 msgstr ""
 
-#. TRANSLATION: libretro/gambatte, libretro/mesen, libretro/stella, shared
+#. TRANSLATION: libretro/gambatte, libretro/mesen, libretro/stella, shared, wine
 msgctxt "game_options"
 msgid "Custom"
 msgstr ""
@@ -422,17 +422,17 @@ msgctxt "game_options"
 msgid "Disabled (Default)"
 msgstr ""
 
-#. TRANSLATION: shared, xenia-canary, xenia-edge
+#. TRANSLATION: shared, wine, xenia-canary, xenia-edge
 msgctxt "game_options"
 msgid "30 FPS"
 msgstr ""
 
-#. TRANSLATION: shared
+#. TRANSLATION: shared, wine
 msgctxt "game_options"
 msgid "40 FPS"
 msgstr ""
 
-#. TRANSLATION: shared
+#. TRANSLATION: shared, wine
 msgctxt "game_options"
 msgid "45 FPS"
 msgstr ""
@@ -442,17 +442,17 @@ msgctxt "game_options"
 msgid "48 FPS"
 msgstr ""
 
-#. TRANSLATION: shared, xenia-canary, xenia-edge
+#. TRANSLATION: shared, wine, xenia-canary, xenia-edge
 msgctxt "game_options"
 msgid "50 FPS"
 msgstr ""
 
-#. TRANSLATION: shared, xenia-canary, xenia-edge
+#. TRANSLATION: shared, wine, xenia-canary, xenia-edge
 msgctxt "game_options"
 msgid "60 FPS"
 msgstr ""
 
-#. TRANSLATION: shared
+#. TRANSLATION: shared, wine
 msgctxt "game_options"
 msgid "72 FPS"
 msgstr ""
@@ -462,7 +462,7 @@ msgctxt "game_options"
 msgid "75 FPS"
 msgstr ""
 
-#. TRANSLATION: shared, xenia-canary, xenia-edge
+#. TRANSLATION: shared, wine, xenia-canary, xenia-edge
 msgctxt "game_options"
 msgid "90 FPS"
 msgstr ""
@@ -472,7 +472,7 @@ msgctxt "game_options"
 msgid "100 FPS"
 msgstr ""
 
-#. TRANSLATION: shared, xenia-canary, xenia-edge
+#. TRANSLATION: shared, wine, xenia-canary, xenia-edge
 msgctxt "game_options"
 msgid "120 FPS"
 msgstr ""
@@ -13922,12 +13922,22 @@ msgstr ""
 
 #. TRANSLATION: wine
 msgctxt "game_options"
-msgid "Allows you to limit FPS to 60."
+msgid "Limit Wine/DXVK frame rate."
 msgstr ""
 
 #. TRANSLATION: lindbergh-loader, wine
 msgctxt "game_options"
 msgid "FPS LIMITER"
+msgstr ""
+
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "Custom Wine/DXVK frame limit in FPS."
+msgstr ""
+
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "CUSTOM FPS LIMIT"
 msgstr ""
 
 #. TRANSLATION: wine
@@ -13972,12 +13982,66 @@ msgstr ""
 
 #. TRANSLATION: wine
 msgctxt "game_options"
-msgid "Improves frame rate and responsiveness."
+msgid "Enable DXVK asynchronous pipeline compilation."
+msgstr ""
+
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "DXVK ASYNC"
+msgstr ""
+
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid ""
+"Choose whether Direct3D 12 uses the bundled Vulkan backend or Wine builtin "
+"DLLs."
+msgstr ""
+
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "D3D12 BACKEND"
+msgstr ""
+
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "VKD3D-Proton / DXVK Package (Default)"
+msgstr ""
+
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "Wine Builtin"
+msgstr ""
+
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid ""
+"Choose the Wine synchronization backend. NTSYNC is preferred on modern "
+"kernels; FSYNC and ESYNC are compatibility fallbacks."
+msgstr ""
+
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "WINE SYNC"
+msgstr ""
+
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "Auto / NTSYNC (Default)"
 msgstr ""
 
 #. TRANSLATION: wine
 msgctxt "game_options"
 msgid "NTSYNC"
+msgstr ""
+
+#. TRANSLATION: mugen, wine
+msgctxt "game_options"
+msgid "FSYNC"
+msgstr ""
+
+#. TRANSLATION: mugen, wine
+msgctxt "game_options"
+msgid "ESYNC"
 msgstr ""
 
 #. TRANSLATION: mugen, wine
@@ -14008,6 +14072,31 @@ msgstr ""
 #. TRANSLATION: wine
 msgctxt "game_options"
 msgid "VIRTUAL DESKTOP"
+msgstr ""
+
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "Resolution for Wine virtual desktop mode."
+msgstr ""
+
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "VIRTUAL DESKTOP SIZE"
+msgstr ""
+
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "Current Video Mode (Default)"
+msgstr ""
+
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "Custom virtual desktop resolution in WIDTHxHEIGHT format."
+msgstr ""
+
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "CUSTOM VIRTUAL DESKTOP SIZE"
 msgstr ""
 
 #. TRANSLATION: wine
@@ -14049,6 +14138,61 @@ msgstr ""
 #. TRANSLATION: wine
 msgctxt "game_options"
 msgid "Force box86 + 32-bit wine"
+msgstr ""
+
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "Choose Box64 dynarec compatibility behavior for aarch64 Wine."
+msgstr ""
+
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "BOX64 PROFILE"
+msgstr ""
+
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "Balanced (Default)"
+msgstr ""
+
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "Performance"
+msgstr ""
+
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "Safe"
+msgstr ""
+
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "Interpreter / Maximum Compatibility"
+msgstr ""
+
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "Choose how FEX prepares the shared rootfs when FEX-Emu is selected."
+msgstr ""
+
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "FEX ROOTFS"
+msgstr ""
+
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "Download If Missing (Default)"
+msgstr ""
+
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "Existing Only"
+msgstr ""
+
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "Force Redownload"
 msgstr ""
 
 #. TRANSLATION: wine
@@ -14128,6 +14272,121 @@ msgstr ""
 
 #. TRANSLATION: wine
 msgctxt "game_options"
+msgid "Apply common Wine DLL override presets for problem games."
+msgstr ""
+
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "DLL OVERRIDE PRESET"
+msgstr ""
+
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "XInput Native Then Builtin"
+msgstr ""
+
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "DirectInput Native Then Builtin"
+msgstr ""
+
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "XAudio Native Then Builtin"
+msgstr ""
+
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "Media Foundation Native Then Builtin"
+msgstr ""
+
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "Install common winetricks runtimes into this Wine prefix once."
+msgstr ""
+
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "RUNTIME INJECTOR"
+msgstr ""
+
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "DirectX 9"
+msgstr ""
+
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "DirectPlay"
+msgstr ""
+
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "D3D Compiler 47"
+msgstr ""
+
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "XAudio / XACT"
+msgstr ""
+
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "Core Fonts"
+msgstr ""
+
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "VC++ 2022"
+msgstr ""
+
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "VC++ 2005-2022"
+msgstr ""
+
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid ".NET 4.8"
+msgstr ""
+
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid ".NET 4.0"
+msgstr ""
+
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid ".NET 3.5"
+msgstr ""
+
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "Common DX9 + VC++"
+msgstr ""
+
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "Common DX9 + VC++ + .NET 4.8"
+msgstr ""
+
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "Custom Winetricks Verbs"
+msgstr ""
+
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "Custom winetricks verbs separated by spaces or commas."
+msgstr ""
+
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "CUSTOM RUNTIME VERBS"
+msgstr ""
+
+#. TRANSLATION: wine
+msgctxt "game_options"
 msgid ""
 "Choose the Wayland driver mode if on a handheld device. XWayland has more "
 "compatibility."
@@ -14170,6 +14429,26 @@ msgctxt "game_options"
 msgid "ENABLE DEBUG"
 msgstr ""
 
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "Errors Only"
+msgstr ""
+
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "Errors + Fixmes"
+msgstr ""
+
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "Verbose"
+msgstr ""
+
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "Relay Trace"
+msgstr ""
+
 #. TRANSLATION: solarus
 msgctxt "game_options"
 msgid "Choose which pad to control your hero."
@@ -14202,17 +14481,7 @@ msgstr ""
 
 #. TRANSLATION: mugen
 msgctxt "game_options"
-msgid "ESYNC"
-msgstr ""
-
-#. TRANSLATION: mugen
-msgctxt "game_options"
 msgid "Can improve frame rates and responsiveness."
-msgstr ""
-
-#. TRANSLATION: mugen
-msgctxt "game_options"
-msgid "FSYNC"
 msgstr ""
 
 #. TRANSLATION: drastic

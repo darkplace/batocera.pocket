@@ -33,8 +33,10 @@ class ShGenerator(Generator):
 
         if system.config.emulator == "heroic":
             env["BATOCERA_HEROIC_EXTRA_ARGS"] = system.config.get_str("heroic_extra_args", "")
+            env["BATOCERA_HEROIC_MODE"] = system.config.core
         elif system.config.emulator == "lutris":
             env["BATOCERA_LUTRIS_EXTRA_ARGS"] = system.config.get_str("lutris_extra_args", "")
+            env["BATOCERA_LUTRIS_MODE"] = system.config.core
         elif system.config.emulator == "apps":
             env["BATOCERA_APPS_EXTRA_ARGS"] = system.config.get_str("apps_extra_args", "")
             env["BATOCERA_APPS_NO_SANDBOX"] = system.config.get_bool("apps_no_sandbox", return_values=("1", "0"))

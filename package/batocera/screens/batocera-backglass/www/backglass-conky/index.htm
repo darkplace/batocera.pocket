@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8"/>
+    <link rel="stylesheet" type="text/css" href="backglass-conky.css"/>
+    <script src="backglass-conky.js" type="text/javascript"></script>
+</head>
+<body>
+    <main id="dashboard">
+        <section id="left-panel">
+            <div id="system-card">
+                <div id="system-logo"></div>
+                <div>
+                    <div id="system-name">Batocera</div>
+                    <div id="model-name"></div>
+                </div>
+            </div>
+            <div id="game-art"></div>
+        </section>
+        <section id="right-panel">
+            <div id="top-row">
+                <div>
+                    <div id="game-title">Select a game</div>
+                    <div id="game-meta"></div>
+                </div>
+                <div id="clock-card">
+                    <div id="clock-time">--:--</div>
+                    <div id="clock-date"></div>
+                </div>
+            </div>
+            <div id="game-desc"></div>
+            <div id="graphs-grid">
+                <div class="graph-card">
+                    <div class="graph-head">
+                        <span>CPU</span>
+                        <strong id="cpu-graph-value">--</strong>
+                    </div>
+                    <svg class="history-graph" viewBox="0 0 120 36" preserveAspectRatio="none">
+                        <polyline id="cpu-graph-line"></polyline>
+                    </svg>
+                </div>
+                <div class="graph-card">
+                    <div class="graph-head">
+                        <span>GPU</span>
+                        <strong id="gpu-graph-value">--</strong>
+                    </div>
+                    <svg class="history-graph" viewBox="0 0 120 36" preserveAspectRatio="none">
+                        <polyline id="gpu-graph-line"></polyline>
+                    </svg>
+                </div>
+            </div>
+            <div id="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-label">CPU</div>
+                    <div class="stat-value" id="cpu-value">--</div>
+                    <div class="stat-sub" id="cpu-temp"></div>
+                    <div class="stat-bar"><span id="cpu-bar"></span></div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Load</div>
+                    <div class="stat-value" id="load-value">--</div>
+                    <div class="stat-sub" id="uptime-value"></div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">GPU</div>
+                    <div class="stat-value" id="gpu-value">--</div>
+                    <div class="stat-sub" id="gpu-sub"></div>
+                    <div class="stat-bar"><span id="gpu-bar"></span></div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Fan</div>
+                    <div class="stat-value" id="fan-value">--</div>
+                    <div class="stat-sub" id="fan-sub"></div>
+                    <div class="stat-bar"><span id="fan-bar"></span></div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Memory</div>
+                    <div class="stat-value" id="memory-value">--</div>
+                    <div class="stat-bar"><span id="memory-bar"></span></div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Storage</div>
+                    <div class="stat-value" id="storage-value">--</div>
+                    <div class="stat-bar"><span id="storage-bar"></span></div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Battery</div>
+                    <div class="stat-value" id="battery-value">--</div>
+                    <div class="stat-sub" id="battery-status"></div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Brightness</div>
+                    <div class="stat-value" id="brightness-value">--</div>
+                    <div class="stat-bar"><span id="brightness-bar"></span></div>
+                </div>
+            </div>
+        </section>
+    </main>
+</body>
+</html>

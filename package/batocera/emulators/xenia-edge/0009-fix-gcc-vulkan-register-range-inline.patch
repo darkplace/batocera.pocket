@@ -1,0 +1,12 @@
+diff --git a/src/xenia/gpu/command_processor.h b/src/xenia/gpu/command_processor.h
+index 1b49df859..71f786929 100644
+--- a/src/xenia/gpu/command_processor.h
++++ b/src/xenia/gpu/command_processor.h
+@@ -267,7 +267,6 @@ class CommandProcessor {
+   virtual void WriteRegistersFromMem(uint32_t start_index, uint32_t* base,
+                                      uint32_t num_registers);
+
+-  XE_FORCEINLINE
+   virtual void WriteRegisterRangeFromRing(xe::RingBuffer* ring, uint32_t base,
+                                           uint32_t num_registers);
+

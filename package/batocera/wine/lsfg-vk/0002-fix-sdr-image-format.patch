@@ -1,0 +1,32 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Wed, 6 May 2026 12:30:00 +0000
+Subject: [PATCH] Fix SDR frame generation image format
+
+The swapchain wrapper was creating SDR frame generation images as
+VK_FORMAT_R16G16B16A16_SFLOAT and HDR images as VK_FORMAT_R8G8B8A8_UNORM.
+That is inverted from the framegen backend and benchmark path, so SDR
+games can initialize the layer without useful generated output.
+
+Use RGBA8 for SDR and RGBA16F for HDR.
+---
+ src/context.cpp | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/src/context.cpp b/src/context.cpp
+index 0b140af..f0d2d1d 100644
+--- a/src/context.cpp
++++ b/src/context.cpp
+@@ -65,8 +65,8 @@ LsContext::LsContext(const Hooks::DeviceInfo& info, VkSwapchainKHR swapchain,
+     // we could take the format from the swapchain,
+     // but honestly this is safer.
+     const VkFormat format = conf.hdr
+-        ? VK_FORMAT_R8G8B8A8_UNORM
+-        : VK_FORMAT_R16G16B16A16_SFLOAT;
++        ? VK_FORMAT_R16G16B16A16_SFLOAT
++        : VK_FORMAT_R8G8B8A8_UNORM;
+
+     // prepare textures for lsfg
+     std::array<int, 2> fds{};
+--
+2.49.0

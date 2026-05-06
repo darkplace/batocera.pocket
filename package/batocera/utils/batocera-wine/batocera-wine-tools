@@ -494,6 +494,50 @@ select_prefix() {
     select_single "Select Wineprefix" "Choose a Wineprefix:" "${prefixes[@]}"
 }
 
+collect_windows_games_for_steam() {
+    local path
+
+    [ -d "$ROOT_ROMS_WINDOWS" ] || return 0
+
+    while IFS= read -r -d '' path; do
+        printf '%s\n' "$path"
+    done < <(
+        find "$ROOT_ROMS_WINDOWS" -maxdepth 1 -mindepth 1 \
+            \( \
+                \( -type d \( -iname '*.pc' -o -iname '*.wine' \) \) -o \
+                \( -type f \( -iname '*.exe' -o -iname '*.wsquashfs' -o -iname '*.wtgz' \) \) \
+            \) -print0 2>/dev/null | sort -z
+    )
+}
+
+add_windows_game_to_steam_menu() {
+    require_commands batocera-wine python3 || return 1
+    local games=() line selected output rc
+
+    while IFS= read -r line; do
+        [ -n "$line" ] && games+=("$line")
+    done < <(collect_windows_games_for_steam)
+
+    if [ "${#games[@]}" -eq 0 ]; then
+        msg_box "No Windows games found in ${ROOT_ROMS_WINDOWS}.\n\nSupported formats: .pc, .wine, .exe, .wsquashfs, .wtgz"
+        return 1
+    fi
+
+    selected=$(select_single "Add to Steam" "Choose a Windows game to add as a Steam non-Steam game:" "${games[@]}") || return 1
+
+    info_box "Adding $(basename "$selected") to Steam..."
+    output=$(batocera-wine windows add-to-steam "$selected" 2>&1)
+    rc=$?
+    clear_screen
+
+    if [ "$rc" -eq 0 ]; then
+        msg_box "${output}\n\nRestart Steam to see the new shortcut."
+    else
+        msg_box "Failed to add Steam shortcut:\n\n${output}"
+    fi
+    return "$rc"
+}
+
 create_autorun_cmd_menu() {
     local prefix file exe_dir exe_file files=() rel_files=()
     prefix=$(select_prefix) || return 1
@@ -761,6 +805,7 @@ main_menu() {
             8 "Convert .pc folder to .wine folder"
             9 "Compress .wine folder to .wsquashfs or .wtgz"
             10 "Decompress .wsquashfs / .wtgz back to .wine"
+            11 "Add Windows game to Steam"
             99 "Exit"
         )
 
@@ -786,6 +831,7 @@ main_menu() {
             8) convert_pc_to_wine ;;
             9) compress_wine_folder ;;
             10) decompress_wine_archive ;;
+            11) add_windows_game_to_steam_menu ;;
             99) break ;;
         esac
     done

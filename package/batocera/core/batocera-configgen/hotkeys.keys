@@ -6,10 +6,16 @@
             "target": [ "KEY_EXIT" ],
 	    "description": "Exit emulator"
         },
+        {
+            "trigger": ["pageup", "select", "start"],
+            "type": "exec",
+            "target": "batocera-es-swissknife --emukill 0.5",
+	    "description": "Force close emulator"
+        },
 	{
             "trigger": ["hotkey", "a"],
-            "type": "key",
-            "target": [ "KEY_CONTEXT_MENU" ],
+            "type": "exec",
+            "target": "batocera-controlcenter",
 	    "description": "Batocera Control Center"
         },
 	{

@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
 """
-Retroid Pocket Mini Fan Service Daemon
-Written for Batocera - @lbrpdx
+Qualcomm PWM fan helper for Batocera.
 
-In order to configure your own temperature/fan mapping
-edit a file /userdata/system/configs/fan.conf with:
+The default automatic curve can be overridden in:
+  /userdata/system/configs/fan.conf
 
 # temperatures are in Celsius
-# fan_speed are from 0-100 percent of max speed
-# syntax is: temp_threashold=fan_speed
+# fan speeds are from 0-100 percent of max speed
+# syntax is: temp_threshold=fan_speed
 # default is:
 # 20=0
 # 30=20
@@ -17,20 +16,55 @@ edit a file /userdata/system/configs/fan.conf with:
 # 60=60
 # 70=80
 # 80=100
-
 """
-import os
-import time
-import sys
+
 import glob
-from threading import Thread
+import json
+import os
+import signal
+import subprocess
+import sys
+import time
 
 DEBUG = 0
-CHECK_INTERVAL = 15 # seconds between two temperature checks
+CHECK_INTERVAL = 15
+MANUAL_INTERVAL = 0.2
+CONFIG_FILE = "/userdata/system/configs/fan.conf"
+PID_FILE = "/var/run/qcom-fan.pid"
+MANUAL_PID_FILE = "/var/run/qcom-fan-manual.pid"
+MANUAL_TARGET_FILE = "/var/run/qcom-fan.manual"
+PWM_MAX = 255
+DEFAULT_FAN_CONFIG = ["80=100", "70=80", "60=60", "50=40", "40=30", "30=20", "20=0"]
 
-config_file='/userdata/system/configs/fan.conf'
 
-# Read fan % speed from the config file
+def read_file(path):
+    try:
+        with open(path, "r") as fp:
+            return fp.read().strip()
+    except Exception:
+        return ""
+
+
+def write_file(path, value):
+    with open(path, "w") as fp:
+        fp.write(str(value))
+
+
+def parse_int(value):
+    try:
+        return int(str(value).strip())
+    except Exception:
+        return None
+
+
+def clamp(value, minimum, maximum):
+    return max(minimum, min(maximum, value))
+
+
+def is_writable(path):
+    return bool(path and os.path.exists(path) and os.access(path, os.W_OK))
+
+
 def get_fanspeed(tempval, configlist):
     for curconfig in configlist:
         curpair = curconfig.split("=")
@@ -40,92 +74,508 @@ def get_fanspeed(tempval, configlist):
             return fancfg
     return 0
 
-# Load the config file to memory
+
 def load_config(fname):
     newconfig = []
     try:
         with open(fname, "r") as fp:
             for curline in fp:
-                if not curline:
-                    continue
                 tmpline = curline.strip()
-                if not tmpline:
-                    continue
-                if tmpline[0] == "#":
+                if not tmpline or tmpline[0] == "#":
                     continue
                 tmppair = tmpline.split("=")
                 if len(tmppair) != 2:
                     continue
-                tempval = 0
-                fanval = 0
                 try:
                     tempval = float(tmppair[0])
-                    if tempval < 0 or tempval > 100:
-                        continue
-                except:
-                    continue
-                try:
                     fanval = int(float(tmppair[1]))
-                    if fanval < 0 or fanval > 100:
-                        continue
-                except:
+                except Exception:
+                    continue
+                if tempval < 0 or tempval > 100 or fanval < 0 or fanval > 100:
                     continue
                 newconfig.append("{:5.1f}={}".format(tempval, fanval))
-        if len(newconfig) > 0:
+        if newconfig:
             newconfig.sort(reverse=True)
-    except:
+    except Exception:
         return []
     return newconfig
 
-# Check the current temperature and adjust fan speed
-def temp_check():
-    fanconfig = ["80=100", "70=80", "60=60", "50=40", "40=30", "30=20", "20=0"] # Default values when no config file
-    tmpconfig = load_config(config_file)
-    if len(tmpconfig) > 0:
-        fanconfig = tmpconfig
-    prevblock = 0
-    fan_find = glob.glob("/sys/class/hwmon/hwmon*/pwm1")[0] 
-    if not fan_find:
-        print ("Error: no fan control found.")
-        exit
-    while True:
-        with open("/sys/class/thermal/thermal_zone0/temp","r") as temp:
-            tpp = temp.readline()
-            val = float(int(tpp)/1000)
-            block = get_fanspeed(val, fanconfig)
-            if block < prevblock:
-                time.sleep(CHECK_INTERVAL)
-            prevblock = block
+
+def find_hwmon_fan():
+    candidates = []
+    for base in sorted(glob.glob("/sys/class/hwmon/hwmon*")):
+        fan_inputs = sorted(glob.glob(os.path.join(base, "fan*_input")))
+        pwms = [
+            path for path in sorted(glob.glob(os.path.join(base, "pwm[0-9]*")))
+            if not path.endswith("_enable")
+        ]
+        if not fan_inputs and not pwms:
+            continue
+        name = read_file(os.path.join(base, "name"))
+        score = 0
+        if "fan" in name.lower():
+            score += 20
+        if fan_inputs:
+            score += 5
+        if pwms:
+            score += 5
+        if any(is_writable(path) for path in pwms):
+            score += 5
+        candidates.append({
+            "score": score,
+            "base": base,
+            "name": name,
+            "fan_inputs": fan_inputs,
+            "pwms": pwms,
+        })
+    if not candidates:
+        return None
+    candidates.sort(key=lambda item: item["score"], reverse=True)
+    return candidates[0]
+
+
+def find_cooling_fan():
+    candidates = []
+    for base in sorted(glob.glob("/sys/class/thermal/cooling_device*")):
+        ctype = read_file(os.path.join(base, "type"))
+        if "fan" not in ctype.lower():
+            continue
+        cur_path = os.path.join(base, "cur_state")
+        max_path = os.path.join(base, "max_state")
+        if not os.path.exists(cur_path) or not os.path.exists(max_path):
+            continue
+        candidates.append({"base": base, "type": ctype, "cur": cur_path, "max": max_path})
+    return candidates[0] if candidates else None
+
+
+def get_temp():
+    temps = []
+    for path in glob.glob("/sys/class/thermal/thermal_zone*/temp"):
+        value = parse_int(read_file(path))
+        if value is None:
+            continue
+        if value > 1000:
+            value = value / 1000
+        if value > 0:
+            temps.append(float(value))
+    return max(temps) if temps else None
+
+
+def pid_matches_daemon(pid, modes=None):
+    if pid == os.getpid():
+        return False
+    if modes is None:
+        modes = ("start", "manual-daemon")
+    try:
+        with open("/proc/{}/cmdline".format(pid), "rb") as fp:
+            raw = fp.read().decode("utf-8", "ignore")
+        if "qcom-fan" not in raw:
+            return False
+        return any("\0{}\0".format(mode) in raw or raw.endswith("\0{}".format(mode)) for mode in modes)
+    except Exception:
+        return False
+
+
+def daemon_pids(modes=None):
+    pids = []
+    for pidfile in (PID_FILE, MANUAL_PID_FILE):
+        pid = parse_int(read_file(pidfile))
+        if pid and pid_matches_daemon(pid, modes):
+            pids.append(pid)
+    for path in glob.glob("/proc/[0-9]*"):
+        pid = parse_int(os.path.basename(path))
+        if pid and pid not in pids and pid_matches_daemon(pid, modes):
+            pids.append(pid)
+    return pids
+
+
+def auto_running():
+    return len(daemon_pids(("start",))) > 0
+
+
+def manual_running():
+    return len(daemon_pids(("manual-daemon",))) > 0
+
+
+def daemon_running():
+    return auto_running() or manual_running()
+
+
+def remove_path(path):
+    try:
+        os.unlink(path)
+    except Exception:
+        pass
+
+
+def stop_daemon(reset_speed=False, modes=None):
+    pids = daemon_pids(modes)
+    for pid in pids:
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+        except Exception:
+            pass
+    deadline = time.time() + 2
+    while time.time() < deadline and any(pid_matches_daemon(pid, modes) for pid in pids):
+        time.sleep(0.05)
+    for pid in pids:
+        if pid_matches_daemon(pid, modes):
             try:
-                num = int(block*2.55)
-                if DEBUG:
-                    print(f"Set fan speed {block}% ({num}) for temp {val}C ")
-                with open(fan_find, "w") as fan_file:
-                    fan_file.write("%i"%num)
-            except IOError:
-                temp = ""
+                os.kill(pid, signal.SIGKILL)
+            except Exception:
+                pass
+    if modes is None or "start" in modes:
+        remove_path(PID_FILE)
+    if modes is None or "manual-daemon" in modes:
+        remove_path(MANUAL_PID_FILE)
+    if modes is None or "manual-daemon" in modes:
+        remove_path(MANUAL_TARGET_FILE)
+    if reset_speed:
+        raw_set_speed(0, quiet=True)
+
+
+def helper_path():
+    return "/usr/bin/qcom-fan" if os.path.exists("/usr/bin/qcom-fan") else os.path.abspath(sys.argv[0])
+
+
+def start_daemon():
+    if auto_running():
+        return True
+    try:
+        subprocess.Popen(
+            [helper_path(), "start"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        return True
+    except Exception:
+        return False
+
+
+def start_manual_daemon(percent):
+    write_file(MANUAL_TARGET_FILE, percent)
+    if manual_running():
+        return True
+    try:
+        subprocess.Popen(
+            [helper_path(), "manual-daemon"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        return True
+    except Exception:
+        return False
+
+
+def read_status():
+    hwmon = find_hwmon_fan()
+    cooling = find_cooling_fan()
+    rpm = None
+    pwm = None
+    percent = None
+    enable = None
+    control = False
+    name = ""
+    pwm_path = ""
+    cooling_path = ""
+
+    if hwmon:
+        name = hwmon["name"] or os.path.basename(hwmon["base"])
+        if hwmon["fan_inputs"]:
+            rpm = parse_int(read_file(hwmon["fan_inputs"][0]))
+        if hwmon["pwms"]:
+            pwm_path = hwmon["pwms"][0]
+            pwm = parse_int(read_file(pwm_path))
+            if pwm is not None:
+                percent = round(clamp(pwm, 0, PWM_MAX) * 100 / PWM_MAX)
+            enable = parse_int(read_file(pwm_path + "_enable"))
+            control = is_writable(pwm_path)
+
+    if percent is None and cooling:
+        cur = parse_int(read_file(cooling["cur"]))
+        max_state = parse_int(read_file(cooling["max"]))
+        if cur is not None and max_state and max_state > 0:
+            percent = round(clamp(cur, 0, max_state) * 100 / max_state)
+        control = control or is_writable(cooling["cur"])
+        if not name:
+            name = cooling["type"] or os.path.basename(cooling["base"])
+        cooling_path = cooling["cur"]
+
+    mode = ""
+    manual_target = parse_int(read_file(MANUAL_TARGET_FILE))
+    if auto_running():
+        mode = "auto"
+    elif manual_running() or manual_target is not None:
+        mode = "manual"
+    elif enable == 2:
+        mode = "driver auto"
+    elif control:
+        mode = "manual"
+    elif rpm is not None or percent is not None:
+        mode = "read only"
+
+    return {
+        "available": bool(hwmon or cooling),
+        "control": control,
+        "name": name,
+        "rpm": rpm,
+        "pwm": pwm,
+        "percent": percent,
+        "mode": mode,
+        "target_percent": manual_target,
+        "pwm_path": pwm_path,
+        "cooling_path": cooling_path,
+    }
+
+
+def format_label(status):
+    parts = []
+    if status.get("rpm") is not None:
+        parts.append("{} RPM".format(status["rpm"]))
+    if status.get("percent") is not None:
+        parts.append("{}%".format(status["percent"]))
+    if status.get("mode") == "manual" and status.get("target_percent") is not None:
+        parts.append("target {}%".format(status["target_percent"]))
+    if status.get("mode"):
+        parts.append(status["mode"])
+    return " ".join(parts) if parts else "N/A"
+
+
+def parse_speed_value(value, current):
+    try:
+        if value.startswith(("+", "-")):
+            percent = current + int(float(value))
+        else:
+            percent = int(float(value))
+    except Exception:
+        return None
+    return clamp(percent, 0, 100)
+
+
+def raw_set_speed(percent, quiet=False):
+    status = read_status()
+    if not status["available"] or not status["control"]:
+        if not quiet:
+            print("No writable fan control found.", file=sys.stderr)
+        return 1
+
+    percent = clamp(percent, 0, 100)
+    if status.get("pwm_path") and is_writable(status["pwm_path"]):
+        enable_path = status["pwm_path"] + "_enable"
+        if is_writable(enable_path):
+            try:
+                write_file(enable_path, "2")
+            except Exception:
+                pass
+        write_file(status["pwm_path"], round(percent * PWM_MAX / 100))
+    elif status.get("cooling_path") and is_writable(status["cooling_path"]):
+        max_state = parse_int(read_file(os.path.join(os.path.dirname(status["cooling_path"]), "max_state")))
+        if not max_state or max_state <= 0:
+            return 1
+        write_file(status["cooling_path"], round(percent * max_state / 100))
+    else:
+        return 1
+
+    if not quiet:
+        print(percent)
+    return 0
+
+
+def manual_target():
+    value = parse_int(read_file(MANUAL_TARGET_FILE))
+    if value is None:
+        return None
+    return clamp(value, 0, 100)
+
+
+def manual_check():
+    write_file(MANUAL_PID_FILE, os.getpid())
+    hwmon = find_hwmon_fan()
+    cooling = find_cooling_fan()
+    pwm_path = hwmon["pwms"][0] if hwmon and hwmon["pwms"] else ""
+    enable_path = pwm_path + "_enable" if pwm_path else ""
+    cooling_path = cooling["cur"] if cooling else ""
+    max_state = parse_int(read_file(cooling["max"])) if cooling else None
+
+    while True:
+        target = manual_target()
+        if target is None:
+            return 0
+        current = 0
+        if pwm_path:
+            pwm = parse_int(read_file(pwm_path))
+            if pwm is not None:
+                current = round(clamp(pwm, 0, PWM_MAX) * 100 / PWM_MAX)
+        elif cooling_path and max_state and max_state > 0:
+            cur_state = parse_int(read_file(cooling_path))
+            if cur_state is not None:
+                current = round(clamp(cur_state, 0, max_state) * 100 / max_state)
+
+        if current < target:
+            if pwm_path and is_writable(pwm_path):
+                if is_writable(enable_path):
+                    try:
+                        write_file(enable_path, "2")
+                    except Exception:
+                        pass
+                try:
+                    write_file(pwm_path, round(target * PWM_MAX / 100))
+                except Exception:
+                    pass
+            elif cooling_path and is_writable(cooling_path) and max_state and max_state > 0:
+                try:
+                    write_file(cooling_path, round(target * max_state / 100))
+                except Exception:
+                    pass
+        time.sleep(MANUAL_INTERVAL)
+
+
+def set_speed(value, stop_first=True, quiet=False):
+    status = read_status()
+    if not status["available"] or not status["control"]:
+        if not quiet:
+            print("No writable fan control found.", file=sys.stderr)
+        return 1
+
+    current = status["target_percent"] if status["target_percent"] is not None else status["percent"]
+    current = current if current is not None else 0
+    percent = parse_speed_value(value, current)
+    if percent is None:
+        if not quiet:
+            print("Usage: qcom-fan set <0-100|+N|-N>", file=sys.stderr)
+        return 1
+
+    if stop_first:
+        stop_daemon(reset_speed=False, modes=("start",))
+
+    write_file(MANUAL_TARGET_FILE, percent)
+    raw_set_speed(percent, quiet=True)
+    if stop_first:
+        start_manual_daemon(percent)
+
+    if not quiet:
+        print(percent)
+    return 0
+
+
+def temp_check():
+    fanconfig = DEFAULT_FAN_CONFIG
+    tmpconfig = load_config(CONFIG_FILE)
+    if tmpconfig:
+        fanconfig = tmpconfig
+
+    status = read_status()
+    if not status["available"] or not status["control"]:
+        print("Error: no writable fan control found.", file=sys.stderr)
+        return 1
+
+    prevblock = 0
+    while True:
+        val = get_temp()
+        if val is None:
             time.sleep(CHECK_INTERVAL)
-
-# argument: start, stop, or no argument = show temp
-if len(sys.argv)>1:
-    if str(sys.argv[1]) == "start":
+            continue
+        block = get_fanspeed(val, fanconfig)
+        if block < prevblock:
+            time.sleep(CHECK_INTERVAL)
+        prevblock = block
         try:
-            t = Thread(target=temp_check)
-            t.start()
-        except Exception as e:
-            print (f"Could not launch daemon: {e}")
-            t.stop()
-    elif str(sys.argv[1]) == "stop":
-        try:
-            # force fan stop
-            fan_find = glob.glob("/sys/class/hwmon/hwmon*/pwm1")[0] 
-            with open(fan_find, "w") as fan_file:
-                fan_file.write("0")
-        except Exception as e:
-            print (f"Could not stop fan: {e}")
-else:
-    with open("/sys/class/thermal/thermal_zone0/temp","r") as tp:
-        temp = tp.readline().strip()
-        val = float(int(temp)/1000)
-        print ("Temp: {:5.1f}C".format(val))
+            raw_set_speed(block, quiet=True)
+            if DEBUG:
+                print("Set fan speed {}% for temp {:5.1f}C".format(block, val))
+        except Exception:
+            pass
+        time.sleep(CHECK_INTERVAL)
 
+
+def write_pid():
+    try:
+        write_file(PID_FILE, os.getpid())
+    except Exception:
+        pass
+
+
+def remove_pid(signum=None, frame=None):
+    for path in (PID_FILE, MANUAL_PID_FILE):
+        try:
+            if parse_int(read_file(path)) == os.getpid():
+                os.unlink(path)
+        except Exception:
+            pass
+    sys.exit(0)
+
+
+def print_temp():
+    temp = get_temp()
+    if temp is None:
+        return 1
+    print("Temp: {:5.1f}C".format(temp))
+    return 0
+
+
+def main():
+    if len(sys.argv) == 1:
+        return print_temp()
+
+    command = sys.argv[1]
+    if command == "start":
+        stop_daemon(reset_speed=False, modes=("manual-daemon",))
+        signal.signal(signal.SIGTERM, remove_pid)
+        signal.signal(signal.SIGINT, remove_pid)
+        write_pid()
+        return temp_check()
+    if command == "manual-daemon":
+        stop_daemon(reset_speed=False, modes=("start",))
+        signal.signal(signal.SIGTERM, remove_pid)
+        signal.signal(signal.SIGINT, remove_pid)
+        return manual_check()
+    if command == "stop":
+        stop_daemon(reset_speed=True)
+        return 0
+    if command == "manual":
+        stop_daemon(reset_speed=False, modes=("start",))
+        return 0
+    if command == "auto":
+        stop_daemon(reset_speed=False)
+        return 0 if start_daemon() else 1
+
+    status = read_status()
+    if command == "available":
+        return 0 if status["available"] else 1
+    if command in ("status", "label", "speed"):
+        print(format_label(status))
+        return 0 if status["available"] else 1
+    if command == "json":
+        print(json.dumps(status, sort_keys=True))
+        return 0 if status["available"] else 1
+    if command == "percent":
+        if status["mode"] == "manual" and status["target_percent"] is not None:
+            print(status["target_percent"])
+            return 0
+        if status["percent"] is None:
+            return 1
+        print(status["percent"])
+        return 0
+    if command == "rpm":
+        if status["rpm"] is None:
+            return 1
+        print(status["rpm"])
+        return 0
+    if command == "mode":
+        if not status["mode"]:
+            return 1
+        print(status["mode"])
+        return 0
+    if command == "set" and len(sys.argv) > 2:
+        return set_speed(sys.argv[2])
+
+    print("Usage: qcom-fan [start|stop|auto|manual|available|status|label|json|percent|rpm|mode|set <0-100|+N|-N>]", file=sys.stderr)
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

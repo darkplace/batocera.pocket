@@ -8,14 +8,29 @@ DAEMON_ARGS=--permanent
 # Sanity checks
 test -x $DAEMON || exit 0
 
+running() {
+        [ -f "$PIDFILE" ] || return 1
+        pid="$(cat "$PIDFILE" 2>/dev/null)" || return 1
+        [ -n "$pid" ] || return 1
+        kill -0 "$pid" 2>/dev/null
+}
+
 start() {
         printf "Starting $NAME: "
+        if [ -f "$PIDFILE" ] && ! running; then
+                rm -f "$PIDFILE"
+        fi
         start-stop-daemon --start --quiet -m --pidfile $PIDFILE --exec $DAEMON --background -- $DAEMON_ARGS > /var/log/hotkeygen.log 2>&1 \
                 && echo "OK" || echo "FAIL"
 }
 
 stop() {
         printf "Stopping $NAME: "
+        if [ -f "$PIDFILE" ] && ! running; then
+                rm -f "$PIDFILE"
+                echo "OK"
+                return
+        fi
         start-stop-daemon --stop --quiet --pidfile $PIDFILE \
                 && echo "OK" || echo "FAIL"
 }

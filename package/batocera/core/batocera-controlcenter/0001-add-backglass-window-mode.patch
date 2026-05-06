@@ -1,0 +1,115 @@
+From 4e4cb20f00b5f7f06f01d969a4381264f8d1c3fd Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Wed, 6 May 2026 00:00:00 +0000
+Subject: [PATCH] add backglass window mode
+
+---
+ ui_core.py | 51 +++++++++++++++++++++++++++++++++++++++------------
+ 1 file changed, 39 insertions(+), 12 deletions(-)
+
+diff --git a/ui_core.py b/ui_core.py
+index d16f5fa..d6e4ce1 100755
+--- a/ui_core.py
++++ b/ui_core.py
+@@ -230,6 +230,11 @@ class UICore:
+         self.css_path = css_path
+         self.fullscreen = fullscreen
+         self.window_size = window_size
++        self._backglass_mode = os.environ.get("BCC_BACKGLASS") == "1"
++        try:
++            self._startup_ignore_duration = float(os.environ.get("BCC_STARTUP_IGNORE_SECONDS", "0.3"))
++        except ValueError:
++            self._startup_ignore_duration = 0.3
+         self.window: Gtk.Window | None = None
+         self.focus_rows: list[Gtk.EventBox] = []
+         self.focus_index: int = 0
+@@ -240,7 +240,9 @@ class UICore:
+         self._inactivity_timeout_seconds = 0
+         self.rendered_ids: set[str] = set()  # Track IDs of rendered elements
+         self._conditional_widgets = []  # Track widgets with !id() conditions for dynamic updates
+-        self.quit_mode = "hide" # versus close
++        self.quit_mode = os.environ.get("BCC_QUIT_MODE", "hide")
++        if self.quit_mode not in ("hide", "close"):
++            self.quit_mode = "hide"
+         self._handle_gamepad_action = self._handle_gamepad_action_main
+         self._tab_switching_in_progress = False  # Prevent recursive tab switching
+
+@@ -336,6 +338,7 @@ class UICore:
+         display = Gdk.Display.get_default()
+         backend = (display.get_name() or "").lower()
+         is_wayland = "wayland" in backend
++        backglass_mode = self._backglass_mode
+
+         win = Gtk.Window(type=Gtk.WindowType.TOPLEVEL)
+         win.set_title(WINDOW_TITLE)
+@@ -378,7 +381,7 @@ class UICore:
+             else:
+                 if self.window_size:
+                     width, height = self.window_size
+-                    scale_class = "full" if width >= 1280 and max_height >= 720 else "small"
++                    scale_class = "full" if width >= 1280 and height >= 720 else "small"
+                     sw, sh = width, height
+                 else:
+                     width, height = geometry.width, geometry.height
+@@ -584,13 +587,17 @@ class UICore:
+
+                     # Manipulate the window to make it visible
+                     try:
+-                        if self.fullscreen:
+-                            # For fullscreen mode on Wayland
++                        if self.fullscreen or backglass_mode:
++                            if backglass_mode:
++                                target_output = os.environ.get("BCC_BACKGLASS_OUTPUT")
++                                if target_output:
++                                    subprocess.run(['swaymsg', f'[app_id="{app_id}"]', 'move', 'to', 'output', target_output],
++                                                 capture_output=True, timeout=1)
+                             subprocess.run(['swaymsg', f'[app_id="{app_id}"]', 'fullscreen', 'enable'],
+                                          capture_output=True, timeout=1)
+                         else:
+                             # Make it floating
+                             subprocess.run(['swaymsg', f'[app_id="{app_id}"]', 'floating', 'enable'],
+                                          capture_output=True, timeout=1)
+
+                             # Remove decorations (border)
+@@ -641,12 +653,13 @@ class UICore:
+         self._dialog_allows_timeout = False
+         # Track startup time to ignore initial gamepad input
+         self._startup_time = time.time()
+-        self._startup_ignore_duration = 0.3  # Ignore gamepad input for 300ms after startup
+
+         # Track when we're about to show a dialog (set by button callbacks)
+         self._about_to_show_dialog = False
+
+         def on_focus_out(_w, ev):
++            if self._backglass_mode:
++                return False
+             # If we're about to show a dialog or have one open, ignore this focus-out
+             if self._about_to_show_dialog or self._dialog_open:
+                 return False
+@@ -1401,6 +1413,9 @@ class UICore:
+         self.focus_rows.append(row)
+
+     def hide(self, *_a):
++        if self.quit_mode == "close":
++            self.quit()
++            return
+         self.pause_animations()  # Pause GIF animations to save CPU
+         self.window.hide()
+         self._gamepads.stopThread()
+@@ -1527,8 +1542,13 @@ class UICore:
+             self._gamepads.startThread(self._handle_gamepad_action_call)
+             return False
+
++        try:
++            delay_ms = int(float(os.environ.get("BCC_GAMEPAD_START_DELAY_SECONDS", "0.05")) * 1000)
++        except ValueError:
++            delay_ms = 50
++
+         # Start gamepad after window is shown
+-        GLib.timeout_add(50, start_gamepad_delayed)
++        GLib.timeout_add(max(0, delay_ms), start_gamepad_delayed)
+
+     def enable_gamepad_continuous_actions(self):
+         """Enable continuous gamepad actions (for document viewer)"""
+--
+2.50.1

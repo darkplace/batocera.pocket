@@ -16,8 +16,11 @@ LUTRIS_DEPENDENCIES = \
 	adwaita-icon-theme \
 	dbus-python \
 	font-awesome \
+	gdk-pixbuf \
 	hicolor-icon-theme \
+	jpeg \
 	libgtk3 \
+	librsvg \
 	openal \
 	python-distro \
 	python-evdev \
@@ -114,6 +117,7 @@ define LUTRIS_INSTALL_BATOCERA_DATAS
 		'batocera-mouse show' \
 		"trap 'batocera-mouse hide' EXIT" \
 		'export LUTRIS_SKIP_INIT=1' \
+		'export BATOCERA_LUTRIS_SAFE_UI=1' \
 		'extra_args=()' \
 		'if [[ -n "$${BATOCERA_LUTRIS_EXTRA_ARGS:-}" ]]; then read -r -a extra_args <<< "$${BATOCERA_LUTRIS_EXTRA_ARGS}"; fi' \
 		'export HOME="/userdata/saves/lutris"' \

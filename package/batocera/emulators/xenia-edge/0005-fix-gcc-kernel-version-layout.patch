@@ -1,0 +1,36 @@
+From: Batocera Linux Team <batocera@batocera.linux>
+Date: Tue, 5 May 2026 00:00:00 +0000
+Subject: [PATCH 5/5] fix: avoid non-trivial fields in anonymous aggregate
+
+GCC rejects the anonymous struct/union because xe::be has constructors.
+Keep the same 8-byte big-endian layout with explicit fields.
+
+---
+ src/xenia/kernel/kernel_state.h | 12 ++++--------
+ 1 file changed, 4 insertions(+), 8 deletions(-)
+
+diff --git a/src/xenia/kernel/kernel_state.h b/src/xenia/kernel/kernel_state.h
+--- a/src/xenia/kernel/kernel_state.h
++++ b/src/xenia/kernel/kernel_state.h
+@@ -150,17 +150,10 @@ struct DPCImpersonationScope {
+ };
+
+ struct KernelVersion {
+-  union {
+-    xe::be<uint64_t> value;
+-
+-    struct {
+-      xe::be<uint16_t> major;
+-      xe::be<uint16_t> minor;
+-      xe::be<uint16_t> build;
+-      xe::be<uint16_t> qfe;
+-    };
+-  };
+-
++  xe::be<uint16_t> major;
++  xe::be<uint16_t> minor;
++  xe::be<uint16_t> build;
++  xe::be<uint16_t> qfe;
+   KernelVersion(uint16_t build_ver = kBaseKernelBuildVersion) {
+     major = 2;
+     minor = 0;

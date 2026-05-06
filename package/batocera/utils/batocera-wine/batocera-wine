@@ -55,6 +55,7 @@ BATOCERA_FEX_ROOTFS_NAME="${BATOCERA_FEX_ROOTFS_NAME:-${BATOCERA_STEAM_FEX_ROOTF
 BATOCERA_FEX_ROOTFS_URL="${BATOCERA_FEX_ROOTFS_URL:-${BATOCERA_STEAM_FEX_ROOTFS_URL:-https://rootfs.fex-emu.gg/Fedora_43/2026-01-20/Fedora_43.sqsh}}"
 BATOCERA_FEX_ROOTFS_DOWNLOAD_TIMEOUT="${BATOCERA_FEX_ROOTFS_DOWNLOAD_TIMEOUT:-3600}"
 BATOCERA_FEX_ROOTFS_STALL_TIMEOUT="${BATOCERA_FEX_ROOTFS_STALL_TIMEOUT:-120}"
+FEX_ROOTFS_MODE="${BATOCERA_FEX_ROOTFS_MODE:-auto}"
 FEX_CONFIG="/userdata/system/.config/fex-emu/Config.json"
 FEX_ROOTFS_DIR="/userdata/system/.local/share/fex-emu/RootFS"
 FEX_BINFMT_PREPARED=0
@@ -80,6 +81,189 @@ run_with_download_timeout() {
     fi
 }
 
+is_uint() {
+    [[ "${1}" =~ ^[0-9]+$ ]]
+}
+
+is_resolution() {
+    [[ "${1}" =~ ^[0-9]+x[0-9]+$ ]]
+}
+
+append_wine_dll_override() {
+    local override="$1"
+
+    [[ -z "${override}" ]] && return 0
+    if [[ -n "${WINEDLLOVERRIDES:-}" ]]; then
+        export WINEDLLOVERRIDES="${WINEDLLOVERRIDES};${override}"
+    else
+        export WINEDLLOVERRIDES="${override}"
+    fi
+}
+
+append_colon_env() {
+    local name="$1"
+    local value="$2"
+    local current="${!name:-}"
+    local -a items
+    local existing
+
+    [[ -z "${value}" ]] && return 0
+    IFS=":" read -ra items <<< "${current}"
+    for existing in "${items[@]}"; do
+        [[ "${existing}" == "${value}" ]] && return 0
+    done
+
+    if [[ -n "${current}" ]]; then
+        export "${name}=${value}:${current}"
+    else
+        export "${name}=${value}"
+    fi
+}
+
+lsfg_vk_dll_candidates() {
+    local configured="$1"
+    local game_dir="${GAMENAME:-}"
+    local game_base="${ROMBASEDIR:-}"
+    local prefix="${WINEPOINT:-}"
+
+    if [[ -n "${configured}" ]]; then
+        if [[ "${configured}" == "~/"* ]]; then
+            printf '%s\n' "/userdata/system/${configured#~/}"
+        elif [[ "${configured}" == /* ]]; then
+            printf '%s\n' "${configured}"
+        else
+            printf '%s\n' "${configured}" "/userdata/system/${configured}"
+        fi
+    fi
+
+    if [[ -n "${game_dir}" && -d "${game_dir}" ]]; then
+        printf '%s\n' \
+            "${game_dir}/Lossless.dll" \
+            "${game_dir}/lossless-scaling/Lossless.dll" \
+            "${game_dir}/Lossless Scaling/Lossless.dll"
+    fi
+
+    if [[ -n "${game_base}" && -d "${game_base}" ]]; then
+        printf '%s\n' \
+            "${game_base}/Lossless.dll" \
+            "${game_base}/lossless-scaling/Lossless.dll" \
+            "${game_base}/Lossless Scaling/Lossless.dll"
+    fi
+
+    if [[ -n "${prefix}" && -d "${prefix}" ]]; then
+        printf '%s\n' \
+            "${prefix}/Lossless.dll" \
+            "${prefix}/drive_c/Program Files/Lossless Scaling/Lossless.dll" \
+            "${prefix}/drive_c/Program Files (x86)/Lossless Scaling/Lossless.dll" \
+            "${prefix}/drive_c/Program Files/Steam/steamapps/common/Lossless Scaling/Lossless.dll" \
+            "${prefix}/drive_c/Program Files (x86)/Steam/steamapps/common/Lossless Scaling/Lossless.dll"
+    fi
+
+    printf '%s\n' \
+        "/userdata/system/wine/lossless-scaling/Lossless.dll" \
+        "/userdata/system/wine/.local/share/Steam/steamapps/common/Lossless Scaling/Lossless.dll" \
+        "/userdata/system/.local/share/Steam/steamapps/common/Lossless Scaling/Lossless.dll" \
+        "/userdata/roms/windows/Lossless Scaling/Lossless.dll"
+}
+
+resolve_lsfg_vk_dll() {
+    local configured="$1"
+    local candidate
+
+    while IFS= read -r candidate; do
+        [[ -f "${candidate}" ]] && { echo "${candidate}"; return 0; }
+    done < <(lsfg_vk_dll_candidates "${configured}" | awk 'NF && !seen[$0]++')
+
+    return 1
+}
+
+log_lsfg_vk_dll_candidates() {
+    local configured="$1"
+    local candidate
+
+    echo "LSFG-VK checked Lossless.dll candidates:"
+    while IFS= read -r candidate; do
+        echo "  ${candidate}"
+    done < <(lsfg_vk_dll_candidates "${configured}" | awk 'NF && !seen[$0]++')
+}
+
+enable_lsfg_vk() {
+    local lsfg_root="/usr/wine/lsfg-vk/x64"
+    local lsfg_layer_dir="${lsfg_root}/share/vulkan/explicit_layer.d"
+    local lsfg_library="${lsfg_root}/lib/liblsfg-vk.so"
+    local lsfg_ld_library_dir="${lsfg_root}/lib"
+    local dll_path
+
+    [[ "${LSFG_VK}" =~ ^(1|true|on|enabled)$ ]] || return 0
+
+    # Box64/WoW64 uses the native Vulkan loader on aarch64. Feed that loader
+    # the native layer; the private x64 layer is for x86_64 loader stacks.
+    if [[ "$(uname -m)" == "aarch64" && "${AARCH64_WINE_MODE:-box64}" != "fex" ]]; then
+        lsfg_root="/usr"
+        lsfg_layer_dir="/usr/share/vulkan/explicit_layer.d"
+        lsfg_library="/usr/lib/liblsfg-vk.so"
+        lsfg_ld_library_dir="/usr/lib"
+    fi
+
+    if [[ ! -f "${lsfg_library}" || ! -d "${lsfg_layer_dir}" ]]; then
+        flash_msg 4 "LSFG-VK is enabled but the Vulkan layer is not installed"
+        echo "LSFG-VK requested but ${lsfg_library} is missing"
+        return 0
+    fi
+
+    if ! dll_path="$(resolve_lsfg_vk_dll "${LSFG_VK_DLL}")"; then
+        flash_msg 5 "LSFG-VK needs Lossless.dll in /userdata/system/wine/lossless-scaling"
+        echo "LSFG-VK requested but Lossless.dll was not found"
+        log_lsfg_vk_dll_candidates "${LSFG_VK_DLL}"
+        return 0
+    fi
+
+    [[ -z "${LSFG_VK_MULTIPLIER}" ]] && LSFG_VK_MULTIPLIER=2
+    if [[ -z "${LSFG_VK_FLOW_SCALE}" ]]; then
+        if [[ "$(uname -m)" == "aarch64" ]]; then
+            LSFG_VK_FLOW_SCALE=0.75
+        else
+            LSFG_VK_FLOW_SCALE=1.0
+        fi
+    fi
+
+    export ENABLE_LSFG=1
+    export LSFG_LEGACY=1
+    export LSFG_DLL_PATH="${dll_path}"
+    export LSFG_MULTIPLIER="${LSFG_VK_MULTIPLIER}"
+    export LSFG_FLOW_SCALE="${LSFG_VK_FLOW_SCALE}"
+    export LSFG_PERFORMANCE_MODE=0
+    [[ "$(uname -m)" == "aarch64" ]] && export LSFG_PERFORMANCE_MODE=1
+    [[ "${LSFG_VK_PERFORMANCE}" =~ ^(0|false|off|disabled)$ ]] && export LSFG_PERFORMANCE_MODE=0
+    export LSFG_HDR_MODE=0
+    [[ "${LSFG_VK_PERFORMANCE}" =~ ^(1|true|on|enabled)$ ]] && LSFG_PERFORMANCE_MODE=1
+    [[ "${LSFG_VK_HDR}" =~ ^(1|true|on|enabled)$ ]] && LSFG_HDR_MODE=1
+
+    case "${LSFG_VK_PRESENT_MODE}" in
+        fifo|vsync|mailbox|immediate)
+            export LSFG_EXPERIMENTAL_PRESENT_MODE="${LSFG_VK_PRESENT_MODE}"
+            ;;
+    esac
+
+    append_colon_env VK_LAYER_PATH "${lsfg_layer_dir}"
+    append_colon_env LD_LIBRARY_PATH "${lsfg_ld_library_dir}"
+    append_colon_env VK_INSTANCE_LAYERS "VK_LAYER_LS_frame_generation"
+    echo "LSFG-VK enabled using ${dll_path}"
+}
+
+ensure_winetricks() {
+    if [[ -e "${WINETRICKS}" ]]; then
+        echo "Winetricks is installed"
+        return 0
+    fi
+
+    echo "Winetricks is downloading"
+    mkdir -p "$(dirname "${WINETRICKS}")" || return 1
+    wget -O "${WINETRICKS}" "https://raw.githubusercontent.com/Winetricks/winetricks/master/src/winetricks" &>/dev/null || return 1
+    chmod +x "${WINETRICKS}" || return 1
+    echo "Winetricks is now installed"
+}
+
 stopWineServer() {
     [[ -z "${WINESERVER}" || -z "${WINEPOINT}" ]] && exit 0
 
@@ -97,7 +281,7 @@ stopWineServer() {
 
     # find all process with wineprefix environement
     for PID in $(ps -e -o pid=); do
-        if grep -z "WINEPREFIX=${WINEPOINT}" "/proc/$PID/environ" 2>/dev/null; then
+        if proc_env_has_wineprefix "${PID}" "${WINEPOINT}"; then
             PIDS+=("$PID")
         fi
     done
@@ -113,6 +297,20 @@ stopWineServer() {
 # Arguments: key, system, game
 get_setting() {
     /usr/bin/batocera-settings-get "$2[\"$3\"].$1" "$2.$1" "global.$1"
+}
+
+proc_env_has_wineprefix() {
+    local pid="$1"
+    local prefix="$2"
+
+    [[ -n "${pid}" && -n "${prefix}" ]] || return 1
+    grep -Fzqx -- "WINEPREFIX=${prefix}" "/proc/${pid}/environ" 2>/dev/null
+}
+
+proc_cmdline() {
+    local pid="$1"
+
+    cat "/proc/${pid}/cmdline" 2>/dev/null | tr '\0' ' '
 }
 
 find_wine_dir() {
@@ -287,15 +485,34 @@ ensure_fex_rootfs() {
     command -v FEX >/dev/null 2>&1 || { echo "FEX is required for aarch64_wine_mode=fex." >&2; return 1; }
     command -v squashfuse >/dev/null 2>&1 || { echo "squashfuse is required for the FEX rootfs." >&2; return 1; }
 
-    fex_rootfs_configured && return 0
-
     mkdir -p "${FEX_ROOTFS_DIR}" "$(dirname "${FEX_CONFIG}")" || return 1
+
+    case "${FEX_ROOTFS_MODE:-auto}" in
+        redownload)
+            echo "*** FEX: forcing rootfs redownload ***"
+            rm -f "${target}" "${FEX_CONFIG}"
+            ;;
+        existing)
+            if fex_rootfs_configured; then
+                return 0
+            fi
+            if [[ ! -f "${target}" ]]; then
+                flash_msg 7 "FEX rootfs missing. Returning to EmulationStation." 18
+                echo "FEX rootfs mode is existing-only, but ${target} is missing." >&2
+                return 1
+            fi
+            ;;
+        auto|*)
+            fex_rootfs_configured && return 0
+            ;;
+    esac
+
     if [[ ! -f "${target}" ]]; then
         download_fex_rootfs "${target}" || { echo "Failed to download FEX rootfs." >&2; return 1; }
     fi
 
     cat > "${FEX_CONFIG}" <<EOF
-{"Config":{"RootFS":"${BATOCERA_FEX_ROOTFS_NAME}"},"ThunksDB":{}}
+{"Config":{"RootFS":"${BATOCERA_FEX_ROOTFS_NAME}","DynamicL1Cache":"1","DisableL2Cache":"1"},"ThunksDB":{}}
 EOF
     chmod 0644 "${FEX_CONFIG}" 2>/dev/null || true
     echo "*** FEX: configured shared rootfs ${BATOCERA_FEX_ROOTFS_NAME} ***"
@@ -506,8 +723,8 @@ waitWineServer() {
         local p cmdline
         for p in /proc/[0-9]*; do
             [[ -r "${p}/environ" ]] || continue
-            if tr '\0' '\n' < "${p}/environ" 2>/dev/null | grep -qx "WINEPREFIX=${WINEPOINT}"; then
-                cmdline="$(tr '\0' ' ' < "${p}/cmdline" 2>/dev/null || true)"
+            if proc_env_has_wineprefix "${p##*/}" "${WINEPOINT}"; then
+                cmdline="$(proc_cmdline "${p##*/}")"
                 if [[ "${cmdline}" == *wineserver* ]]; then
                     pid="${p##*/}"
                     break
@@ -536,8 +753,8 @@ cleanupWinePrefixProcesses() {
     for p in /proc/[0-9]*; do
         pid="${p##*/}"
         [[ -r "${p}/environ" ]] || continue
-        if tr '\0' '\n' < "${p}/environ" 2>/dev/null | grep -qx "WINEPREFIX=${prefix}"; then
-            cmdline="$(tr '\0' ' ' < "${p}/cmdline" 2>/dev/null || true)"
+        if proc_env_has_wineprefix "${pid}" "${prefix}"; then
+            cmdline="$(proc_cmdline "${pid}")"
             if [[ "${cmdline}" == *wine* || "${cmdline}" == *wineserver* || "${cmdline}" == *box64* || "${cmdline}" == *box86* ]]; then
                 pids+=("${pid}")
             fi
@@ -553,9 +770,11 @@ cleanupWinePrefixProcesses() {
 wine_options() {
     WINEPOINT=$1
     NTSYNC="$(get_setting ntsync "${SYSTEM}" "${ROMGAMENAME}")"
+    WINE_SYNC="$(get_setting wine_sync "${SYSTEM}" "${ROMGAMENAME}")"
     PBA="$(get_setting pba "${SYSTEM}" "${ROMGAMENAME}")"
     FSR="$(get_setting fsr "${SYSTEM}" "${ROMGAMENAME}")"
     FPS_LIMIT="$(get_setting fps_limit "${SYSTEM}" "${ROMGAMENAME}")"
+    FPS_LIMIT_CUSTOM="$(get_setting fps_limit_custom "${SYSTEM}" "${ROMGAMENAME}")"
     ALLOW_XIM="$(get_setting allow_xim "${SYSTEM}" "${ROMGAMENAME}")"
     NO_WRITE_WATCH="$(get_setting no_write_watch "${SYSTEM}" "${ROMGAMENAME}")"
     FORCE_LARGE_ADRESS="$(get_setting force_large_adress "${SYSTEM}" "${ROMGAMENAME}")"
@@ -563,13 +782,32 @@ wine_options() {
     HIDE_NVIDIA_GPU="$(get_setting hide_nvidia_gpu "${SYSTEM}" "${ROMGAMENAME}")"
     ENABLE_NVAPI="$(get_setting enable_nvapi "${SYSTEM}" "${ROMGAMENAME}")"
     ENABLE_HIDRAW="$(get_setting enable_hidraw "${SYSTEM}" "${ROMGAMENAME}")"
+    DXVK_ASYNC_SETTING="$(get_setting dxvk_async "${SYSTEM}" "${ROMGAMENAME}")"
+    WINE_D3D12_BACKEND="$(get_setting wine_d3d12_backend "${SYSTEM}" "${ROMGAMENAME}")"
     DXVK_RESET_CACHE="$(get_setting dxvk_reset_cache "${SYSTEM}" "${ROMGAMENAME}")"
     WINE_NTFS="$(get_setting wine_ntfs "${SYSTEM}" "${ROMGAMENAME}")"
     WINE_DEBUG="$(get_setting wine_debug "${SYSTEM}" "${ROMGAMENAME}")"
+    WINE_DLL_OVERRIDES="$(get_setting wine_dll_overrides "${SYSTEM}" "${ROMGAMENAME}")"
+    WINE_RUNTIME_INJECTORS="$(get_setting wine_runtime_injectors "${SYSTEM}" "${ROMGAMENAME}")"
+    WINE_RUNTIME_INJECTORS_CUSTOM="$(get_setting wine_runtime_injectors_custom "${SYSTEM}" "${ROMGAMENAME}")"
+    LSFG_VK="$(get_setting lsfg_vk "${SYSTEM}" "${ROMGAMENAME}")"
+    LSFG_VK_DLL="$(get_setting lsfg_vk_dll "${SYSTEM}" "${ROMGAMENAME}")"
+    LSFG_VK_MULTIPLIER="$(get_setting lsfg_vk_multiplier "${SYSTEM}" "${ROMGAMENAME}")"
+    LSFG_VK_FLOW_SCALE="$(get_setting lsfg_vk_flow_scale "${SYSTEM}" "${ROMGAMENAME}")"
+    LSFG_VK_PERFORMANCE="$(get_setting lsfg_vk_performance "${SYSTEM}" "${ROMGAMENAME}")"
+    LSFG_VK_HDR="$(get_setting lsfg_vk_hdr "${SYSTEM}" "${ROMGAMENAME}")"
+    LSFG_VK_PRESENT_MODE="$(get_setting lsfg_vk_present_mode "${SYSTEM}" "${ROMGAMENAME}")"
     KEYBOARD="$(/usr/bin/batocera-settings-get system.kblayout)"
     VIRTUAL_DESKTOP="$(get_setting virtual_desktop "${SYSTEM}" "${ROMGAMENAME}")"
-    VIRTUAL_DESKTOP_SIZE="$(get_setting videomode "${SYSTEM}" "${ROMGAMENAME}" || batocera-resolution currentResolution)"
+    VIRTUAL_DESKTOP_SIZE="$(get_setting virtual_desktop_size "${SYSTEM}" "${ROMGAMENAME}")"
+    VIRTUAL_DESKTOP_SIZE_CUSTOM="$(get_setting virtual_desktop_size_custom "${SYSTEM}" "${ROMGAMENAME}")"
     WAYLAND_DRIVER="$(get_setting wayland_driver "${SYSTEM}" "${ROMGAMENAME}")"
+
+    [[ -z "${WINE_SYNC}" ]] && { [[ "${NTSYNC}" = "0" ]] && WINE_SYNC="disabled" || WINE_SYNC="auto"; }
+    [[ -z "${DXVK_ASYNC_SETTING}" ]] && DXVK_ASYNC_SETTING=1
+    [[ -z "${WINE_D3D12_BACKEND}" ]] && WINE_D3D12_BACKEND=auto
+    [[ -z "${WINE_DLL_OVERRIDES}" ]] && WINE_DLL_OVERRIDES=none
+    [[ -z "${WINE_RUNTIME_INJECTORS}" ]] && WINE_RUNTIME_INJECTORS=none
 
     safe_setxkbmap() {
         if command -v setxkbmap >/dev/null 2>&1; then
@@ -580,7 +818,20 @@ wine_options() {
     }
 
     if [[ "${VIRTUAL_DESKTOP}" = 1 ]]; then
+        case "${VIRTUAL_DESKTOP_SIZE}" in
+            custom)
+                VIRTUAL_DESKTOP_SIZE="${VIRTUAL_DESKTOP_SIZE_CUSTOM}"
+                ;;
+            "")
+                VIRTUAL_DESKTOP_SIZE="$(get_setting videomode "${SYSTEM}" "${ROMGAMENAME}")"
+                ;;
+        esac
+        if ! is_resolution "${VIRTUAL_DESKTOP_SIZE}"; then
+            VIRTUAL_DESKTOP_SIZE="$(batocera-resolution currentResolution)"
+        fi
         VDESKTOP="explorer /desktop=Wine,${VIRTUAL_DESKTOP_SIZE}"
+    else
+        VDESKTOP=""
     fi
 
     # Handle Wayland driver option only if the system is running Wayland
@@ -598,51 +849,81 @@ wine_options() {
         safe_setxkbmap
     fi
 
-    # ESYNC and FSYNC are deprecated in favor of NTSYNC with modern Wine and kernel.
-    # NTSYNC is often enabled by default when supported.
-    # The option is provided to explicitly disable it if needed.
-    if [ "$NTSYNC" = "0" ]; then
-        # Disable ntsync module if loaded
-        if lsmod | grep -q ^ntsync; then
-            echo "Removing ntsync module..."
-            rmmod ntsync
-        else
-            echo "Ntsync module already not loaded"
-        fi
-        export WINEDISABLEFASTSYNC=1
-        echo "Ntsync disabled for Wine"
-    else
-        # Enable ntsync module if available and accessible
-        if lsmod | grep -q ^ntsync; then
-            echo "Ntsync module already loaded"
-        else
-            echo "Loading ntsync module..."
-            modprobe ntsync
-        fi
-
-        if [ -e /dev/ntsync ] && [ -r /dev/ntsync ]; then
-            export WINEDISABLEFASTSYNC=0
-            echo "Ntsync enabled for Wine"
-        else
-            echo "Warning: /dev/ntsync not accessible after module load, disabling ntsync in Wine"
+    export WINEFSYNC=0
+    export WINEESYNC=0
+    case "${WINE_SYNC}" in
+        disabled|off|0)
             export WINEDISABLEFASTSYNC=1
-        fi
-    fi
+            echo "Wine sync disabled"
+            ;;
+        fsync)
+            export WINEDISABLEFASTSYNC=1
+            export WINEFSYNC=1
+            echo "FSYNC enabled for Wine"
+            ;;
+        esync)
+            export WINEDISABLEFASTSYNC=1
+            export WINEESYNC=1
+            echo "ESYNC enabled for Wine"
+            ;;
+        auto|ntsync|1|*)
+            if lsmod | grep -q ^ntsync; then
+                echo "Ntsync module already loaded"
+            else
+                echo "Loading ntsync module..."
+                modprobe ntsync 2>/dev/null || true
+            fi
+
+            if [ -e /dev/ntsync ] && [ -r /dev/ntsync ]; then
+                export WINEDISABLEFASTSYNC=0
+                echo "NTSYNC enabled for Wine"
+            else
+                echo "Warning: /dev/ntsync not accessible after module load, disabling ntsync in Wine"
+                export WINEDISABLEFASTSYNC=1
+            fi
+            ;;
+    esac
 
     export PBA_ENABLE=0
     [[ "${PBA}" = 1 ]] && PBA_ENABLE=1
 
     export DXVK_FRAME_RATE=0
-    [[ "${FPS_LIMIT}" = 1 ]] && DXVK_FRAME_RATE=60
+    case "${FPS_LIMIT}" in
+        1)
+            DXVK_FRAME_RATE=60
+            ;;
+        custom)
+            is_uint "${FPS_LIMIT_CUSTOM}" && DXVK_FRAME_RATE="${FPS_LIMIT_CUSTOM}"
+            ;;
+        ""|0|off)
+            DXVK_FRAME_RATE=0
+            ;;
+        *)
+            is_uint "${FPS_LIMIT}" && DXVK_FRAME_RATE="${FPS_LIMIT}"
+            ;;
+    esac
 
     export WINEDEBUG="-all"
-    [[ "${WINE_DEBUG}" = 1 ]] && WINEDEBUG="err+all,fixme+all"
+    case "${WINE_DEBUG}" in
+        err|errors)
+            WINEDEBUG="err+all"
+            ;;
+        fixme)
+            WINEDEBUG="err+all,fixme+all"
+            ;;
+        1|all|verbose)
+            WINEDEBUG="err+all,fixme+all"
+            ;;
+        relay)
+            WINEDEBUG="+relay,+seh,+tid"
+            ;;
+    esac
 
     export DXVK_LOG_LEVEL=none
-    [[ "${WINE_DEBUG}" = 1 ]] && unset DXVK_LOG_LEVEL
+    [[ "${WINE_DEBUG}" != "" && "${WINE_DEBUG}" != 0 ]] && unset DXVK_LOG_LEVEL
 
     export VKD3D_DEBUG=none
-    [[ "${WINE_DEBUG}" = 1 ]] && unset VKD3D_DEBUG
+    [[ "${WINE_DEBUG}" != "" && "${WINE_DEBUG}" != 0 ]] && unset VKD3D_DEBUG
 
     export VKD3D_SHADER_CACHE_PATH="/userdata/system/cache"
 
@@ -684,6 +965,7 @@ wine_options() {
     export STAGING_SHARED_MEMORY=1
     export ULIMIT_SIZE=1048576
     export USE_BUILTIN_VKD3D=0
+    [[ "${WINE_D3D12_BACKEND}" == "builtin" ]] && export USE_BUILTIN_VKD3D=1
 
     # Nvidia variables
     if [[ -e "/userdata/system/cache" ]]; then
@@ -700,6 +982,8 @@ wine_options() {
     if ! ulimit -n "${ULIMIT_SIZE}" 2>/dev/null; then
         echo "Warning: could not set file limit, which may impact performance." >&2
     fi
+
+    enable_lsfg_vk
 }
 
 redist_install() {
@@ -842,6 +1126,10 @@ fonts_install() {
 dxvk_install() {
     export WINEDLLOVERRIDES="winemenubuilder.exe="
     WINEPREFIX=$1
+    local dxvk_root
+    local dll
+    local -a dxvk_x64_dlls
+    local -a dxvk_x32_dlls
 
     # install dxvk only on system where it is available (aka, not x86)
     [[ -e "/usr/wine/dxvk" ]] || return 0
@@ -857,13 +1145,23 @@ dxvk_install() {
         mkdir -p "${WINEPREFIX}/drive_c/windows/system32" "${WINEPREFIX}/drive_c/windows/syswow64" || return 1
         if [[ -e "/userdata/system/wine/dxvk" ]]; then
             echo "Creating links using /userdata, Linux File System required !!!"
-            ln -sf "/userdata/system/wine/dxvk/x64/"{d3d12.dll,d3d12core.dll,d3d11.dll,d3d10core.dll,d3d9.dll,dxgi.dll,nvapi64.dll} "${WINEPREFIX}/drive_c/windows/system32" || return 1
-            ln -sf "/userdata/system/wine/dxvk/x32/"{d3d8.dll,d3d12.dll,d3d12core.dll,d3d11.dll,d3d10core.dll,d3d9.dll,dxgi.dll,nvapi.dll} "${WINEPREFIX}/drive_c/windows/syswow64" || return 1
+            dxvk_root="/userdata/system/wine/dxvk"
         else
             echo "Creating links using /usr/wine/dxvk/, Linux File System required !!!"
-            ln -sf "/usr/wine/dxvk/x64/"{d3d12.dll,d3d12core.dll,d3d11.dll,d3d10core.dll,d3d9.dll,dxgi.dll,nvapi64.dll} "${WINEPREFIX}/drive_c/windows/system32" || return 1
-            ln -sf "/usr/wine/dxvk/x32/"{d3d8.dll,d3d12.dll,d3d12core.dll,d3d11.dll,d3d10core.dll,d3d9.dll,dxgi.dll,nvapi.dll} "${WINEPREFIX}/drive_c/windows/syswow64" || return 1
+            dxvk_root="/usr/wine/dxvk"
         fi
+        dxvk_x64_dlls=(d3d11.dll d3d10core.dll d3d9.dll dxgi.dll nvapi64.dll)
+        dxvk_x32_dlls=(d3d8.dll d3d11.dll d3d10core.dll d3d9.dll dxgi.dll nvapi.dll)
+        if [[ "${WINE_D3D12_BACKEND:-auto}" != "builtin" ]]; then
+            dxvk_x64_dlls=(d3d12.dll d3d12core.dll "${dxvk_x64_dlls[@]}")
+            dxvk_x32_dlls=(d3d12.dll d3d12core.dll "${dxvk_x32_dlls[@]}")
+        fi
+        for dll in "${dxvk_x64_dlls[@]}"; do
+            ln -sf "${dxvk_root}/x64/${dll}" "${WINEPREFIX}/drive_c/windows/system32" || return 1
+        done
+        for dll in "${dxvk_x32_dlls[@]}"; do
+            ln -sf "${dxvk_root}/x32/${dll}" "${WINEPREFIX}/drive_c/windows/syswow64" || return 1
+        done
     else
         mkdir -p "${WINEPREFIX}/drive_c/windows/system32" "${WINEPREFIX}/drive_c/windows/syswow64" || return 1
         echo "Creating links using ${DIR}/${WINE_VERSION}, Linux File System required !!!"
@@ -872,9 +1170,16 @@ dxvk_install() {
     fi
 
     if [[ "${DXVK}" = 1 ]]; then
-        export DXVK_ASYNC=1
+        export DXVK_ASYNC=0
+        [[ "${DXVK_ASYNC_SETTING:-1}" = 1 ]] && export DXVK_ASYNC=1
         export DXVK_CONFIG_FILE="/userdata/system/wine/dxvk.conf"
-        export WINEDLLOVERRIDES="${WINEDLLOVERRIDES};dxgi,d3d8,d3d9,d3d10core,d3d11,d3d12,d3d12core=n"
+        if [[ "${WINE_D3D12_BACKEND:-auto}" == "builtin" ]]; then
+            export USE_BUILTIN_VKD3D=1
+            export WINEDLLOVERRIDES="${WINEDLLOVERRIDES};dxgi,d3d8,d3d9,d3d10core,d3d11=n;d3d12,d3d12core=b"
+        else
+            export USE_BUILTIN_VKD3D=0
+            export WINEDLLOVERRIDES="${WINEDLLOVERRIDES};dxgi,d3d8,d3d9,d3d10core,d3d11,d3d12,d3d12core=n"
+        fi
         export DXVK_STATE_CACHE_PATH="/userdata/system/cache"
     else
         export DXVK_ASYNC=0
@@ -914,6 +1219,24 @@ dgvoodoo2_install() {
 
     export WINEDLLOVERRIDES="${WINEDLLOVERRIDES};ddraw,d3d8,d3d9,d3dimm,glide,glide2x,glide3x=n"
     return 0
+}
+
+apply_user_dll_overrides() {
+    case "${WINE_DLL_OVERRIDES:-none}" in
+        xinput)
+            append_wine_dll_override "xinput1_1,xinput1_2,xinput1_3,xinput1_4=n,b"
+            ;;
+        dinput)
+            append_wine_dll_override "dinput,dinput8=n,b"
+            ;;
+        xaudio)
+            append_wine_dll_override "xaudio2_0,xaudio2_1,xaudio2_2,xaudio2_3,xaudio2_4,xaudio2_5,xaudio2_6,xaudio2_7,xaudio2_8,xaudio2_9=n,b"
+            ;;
+        media)
+            append_wine_dll_override "mf,mediafoundation,evr,quartz=n,b"
+            ;;
+    esac
+    [[ -n "${WINEDLLOVERRIDES:-}" ]] && echo "WINEDLLOVERRIDES=${WINEDLLOVERRIDES}"
 }
 
 sandboxing_prefix() {
@@ -1042,6 +1365,7 @@ play_wine() {
 
     setPrefixArch "${WINEPOINT}" "${WINE_VERSION}"
     wine_options "${WINEPOINT}"
+    runtime_injectors_install "${WINEPOINT}" || return 1
     redist_install "${WINEPOINT}" || return 1
     msi_install "${WINEPOINT}" || return 1
     reg_install "${WINEPOINT}" || return 1
@@ -1049,6 +1373,7 @@ play_wine() {
     sandboxing_prefix "${WINEPOINT}" || return 1
     dxvk_install "${WINEPOINT}" || return 1
     dgvoodoo2_install "${WINEPOINT}" || return 1
+    apply_user_dll_overrides
     saveFilesToUserdata "${ROMGAMENAME}" "${WINE_SAVEDIR}" "${WINE_SAVEFILES}" || return 1
 
     if [[ "${WINE_LAUNCHER}" == "umu" ]]; then
@@ -1084,6 +1409,7 @@ play_pc() {
     setPrefixArch "${WINEPOINT}" "${WINE_VERSION}"
     wine_options "${WINEPOINT}"
     createWineDirectory "${WINEPOINT}" || return 1
+    runtime_injectors_install "${WINEPOINT}" || return 1
     redist_install "${WINEPOINT}" || return 1
     msi_install "${WINEPOINT}" || return 1
     reg_install "${WINEPOINT}" || return 1
@@ -1091,6 +1417,7 @@ play_pc() {
     sandboxing_prefix "${WINEPOINT}" || return 1
     dxvk_install "${WINEPOINT}" || return 1
     dgvoodoo2_install "${WINEPOINT}" || return 1
+    apply_user_dll_overrides
     saveFilesToUserdata "${ROMGAMENAME}" "${WINE_SAVEDIR}" "${WINE_SAVEFILES}" || return 1
 
     env
@@ -1109,15 +1436,59 @@ trick_wine() {
     shift
     TRICK=("$@")
 
-    if [[ -e "${WINETRICKS}" ]]; then
-        echo "Winetricks is installed"
+    ensure_winetricks || return 1
+    flash_msg 5 "Running winetricks: ${TRICK[*]}" 18
+    if WINEPREFIX=${WINEPOINT} ${CMD_PREFIX} "${WINETRICKS}" "${TRICK[@]}"; then
+        flash_msg 4 "Winetricks complete." 18
     else
-        echo "Winetricks is downloading"
-        wget -O "${WINETRICKS}" "https://raw.githubusercontent.com/Winetricks/winetricks/master/src/winetricks" &>/dev/null
-        chmod +x "${WINETRICKS}"
-        echo "Winetricks is now installed"
+        flash_msg 6 "Winetricks failed." 18
+        return 1
     fi
-    WINEPREFIX=${WINEPOINT} ${CMD_PREFIX} "${WINETRICKS}" "${TRICK[@]}"
+}
+
+runtime_injectors_install() {
+    WINEPREFIX=$1
+    local runtime="${WINE_RUNTIME_INJECTORS:-none}"
+    local verbs_string verb stamp safe_verb
+    local -a verbs=()
+
+    [[ "${runtime}" == "none" || "${runtime}" == "0" || -z "${runtime}" ]] && return 0
+
+    if [[ "${runtime}" == "custom" ]]; then
+        verbs_string="${WINE_RUNTIME_INJECTORS_CUSTOM}"
+    else
+        verbs_string="${runtime}"
+    fi
+    [[ -z "${verbs_string}" ]] && return 0
+
+    verbs_string="${verbs_string//,/ }"
+    read -r -a verbs <<< "${verbs_string}"
+    [[ "${#verbs[@]}" -eq 0 ]] && return 0
+
+    ensure_winetricks || {
+        flash_msg 5 "Could not prepare winetricks. Launching game." 18
+        return 0
+    }
+
+    mkdir -p "${WINEPREFIX}/.batocera-runtime-stamps" || return 0
+    for verb in "${verbs[@]}"; do
+        [[ -z "${verb}" ]] && continue
+        safe_verb="${verb//[^A-Za-z0-9_.-]/_}"
+        stamp="${WINEPREFIX}/.batocera-runtime-stamps/${safe_verb}"
+        [[ -e "${stamp}" ]] && { echo "Runtime '${verb}' already injected for ${WINEPREFIX}"; continue; }
+
+        flash_msg 5 "Installing Windows runtime: ${verb}" 18
+        echo "Installing winetricks runtime '${verb}' into ${WINEPREFIX}"
+        if WINEPREFIX=${WINEPREFIX} ${CMD_PREFIX} "${WINETRICKS}" -q "${verb}"; then
+            "${WINESERVER}" -w
+            date '+%F %T' > "${stamp}"
+            flash_msg 4 "Installed runtime: ${verb}" 18
+            echo "Installed winetricks runtime '${verb}' into ${WINEPREFIX}"
+        else
+            flash_msg 5 "Runtime install failed: ${verb}" 18
+            echo "Warning: winetricks runtime '${verb}' failed; launching game anyway." >&2
+        fi
+    done
 }
 
 #play_iso() {
@@ -1132,6 +1503,7 @@ play_exe() {
     setPrefixArch "${WINEPOINT}" "${WINE_VERSION}"
     wine_options "${WINEPOINT}"
     createWineDirectory "${WINEPOINT}" || return 1
+    runtime_injectors_install "${WINEPOINT}" || return 1
     redist_install "${WINEPOINT}" || return 1
     msi_install "${WINEPOINT}" || return 1
     reg_install "${WINEPOINT}" || return 1
@@ -1139,6 +1511,7 @@ play_exe() {
     sandboxing_prefix "${WINEPOINT}" || return 1
     dxvk_install "${WINEPOINT}" || return 1
     dgvoodoo2_install "${WINEPOINT}" || return 1
+    apply_user_dll_overrides
 
     if [[ "${WINE_LAUNCHER}" == "umu" ]]; then
         play_with_umu "${ROMBASEDIR}" "\"${ROMGAMENAME}\"" "" "" "${WINEPOINT}"
@@ -1167,6 +1540,7 @@ play_winetgz() {
     WINE_SAVEDIR=$(getWine_var "${WINEPOINT}" "SAVEDIR" "")
     WINE_SAVEFILES=$(getWine_var "${WINEPOINT}" "SAVEFILES" "")
 
+    runtime_injectors_install "${WINEPOINT}" || return 1
     redist_install "${WINEPOINT}" || return 1
     msi_install "${WINEPOINT}" || return 1
     reg_install "${WINEPOINT}" || return 1
@@ -1174,6 +1548,7 @@ play_winetgz() {
     sandboxing_prefix "${WINEPOINT}" || return 1
     dxvk_install "${WINEPOINT}" || return 1
     dgvoodoo2_install "${WINEPOINT}" || return 1
+    apply_user_dll_overrides
     saveFilesToUserdata "${ROMGAMENAME}" "${WINE_SAVEDIR}" "${WINE_SAVEFILES}" || return 1
 
     if [[ "${WINE_LAUNCHER}" == "umu" ]]; then
@@ -1260,10 +1635,12 @@ play_squashfs() {
     WINE_SAVEDIR=$(getWine_var "${WINEPOINT}" "SAVEDIR" "")
     WINE_SAVEFILES=$(getWine_var "${WINEPOINT}" "SAVEFILES" "")
 
+    runtime_injectors_install "${WINEPOINT}" || return 1
     reg_install "${WINEPOINT}" || return 1
     fonts_install "${WINEPOINT}" || return 1
     dxvk_install "${WINEPOINT}" || return 1
     dgvoodoo2_install "${WINEPOINT}" || return 1
+    apply_user_dll_overrides
     saveFilesToUserdata "${ROMGAMENAME}" "${WINE_SAVEDIR}" "${WINE_SAVEFILES}" || return 1
 
     if [[ "${WINE_LAUNCHER}" == "umu" ]]; then
@@ -1376,6 +1753,274 @@ wine2winetgz() {
     echo "Building compressed file: $(basename "${WINETGZFILE}") <- ${GAMEDIR}"
     (cd "${GAMEDIR}" && tar cf - * | gzip -c > "${WINETGZFILE}") && echo "File: $(basename "${WINETGZFILE}") build..." || return 1
     return 0
+}
+
+add_wine_rom_to_steam() {
+    local rom="$1"
+    local rom_dir rom_path ext
+
+    [[ "${SYSTEM}" == "windows" ]] || { echo "Add to Steam is only supported for the windows system." >&2; return 1; }
+    [[ -n "${rom}" ]] || { echo "Missing Windows game path." >&2; return 1; }
+
+    rom_dir="$(cd "$(dirname "${rom}")" 2>/dev/null && pwd -P)" || { echo "Cannot find game directory: ${rom}" >&2; return 1; }
+    rom_path="${rom_dir}/$(basename "${rom}")"
+    ext="${rom_path##*.}"
+
+    case "${ext,,}" in
+        pc|wine)
+            [[ -d "${rom_path}" ]] || { echo "Expected a .${ext} folder: ${rom_path}" >&2; return 1; }
+            ;;
+        exe|wsquashfs|wtgz)
+            [[ -f "${rom_path}" ]] || { echo "Expected a .${ext} file: ${rom_path}" >&2; return 1; }
+            ;;
+        *)
+            echo "Unsupported Windows game type for Steam shortcut: .${ext}" >&2
+            return 1
+            ;;
+    esac
+
+    command -v python3 >/dev/null 2>&1 || { echo "python3 is required to update Steam shortcuts." >&2; return 1; }
+
+    flash_msg 4 "Adding Windows game to Steam..." 18
+
+    if python3 - "${rom_path}" <<'PY'
+from __future__ import annotations
+
+import os
+import struct
+import sys
+import zlib
+from pathlib import Path
+
+ROM_PATH = Path(sys.argv[1])
+STEAM_ROOTS = [
+    Path("/userdata/system/steam"),
+    Path("/userdata/system/.local/share/Steam"),
+    Path("/userdata/system/.steam/steam"),
+]
+TARGET_EXE = "/usr/bin/batocera-wine"
+TAGS = ("Batocera", "Wine", "Windows")
+
+
+def fail(message: str) -> int:
+    print(message, file=sys.stderr)
+    return 1
+
+
+def steam_quote(value: str) -> str:
+    return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def display_name(path: Path) -> str:
+    name = path.name
+    for suffix in (".wsquashfs", ".wine", ".wtgz", ".pc", ".exe"):
+        if name.casefold().endswith(suffix):
+            name = name[: -len(suffix)]
+            break
+    return name.strip() or path.stem or "Windows Game"
+
+
+def cstring(value: str) -> bytes:
+    return value.encode("utf-8", errors="surrogateescape") + b"\x00"
+
+
+def read_cstring(data: bytes, pos: int) -> tuple[str, int]:
+    end = data.find(b"\x00", pos)
+    if end < 0:
+        raise ValueError("unterminated string")
+    return data[pos:end].decode("utf-8", errors="replace"), end + 1
+
+
+def parse_object(data: bytes, pos: int = 0) -> tuple[dict[str, object], int]:
+    node: dict[str, object] = {}
+    while pos < len(data):
+        kind = data[pos]
+        pos += 1
+        if kind == 0x08:
+            return node, pos
+        key, pos = read_cstring(data, pos)
+        if kind == 0x00:
+            value, pos = parse_object(data, pos)
+        elif kind == 0x01:
+            value, pos = read_cstring(data, pos)
+        elif kind == 0x02:
+            if pos + 4 > len(data):
+                raise ValueError("short int32 value")
+            value = struct.unpack_from("<i", data, pos)[0]
+            pos += 4
+        elif kind == 0x07:
+            if pos + 8 > len(data):
+                raise ValueError("short uint64 value")
+            value = struct.unpack_from("<Q", data, pos)[0]
+            pos += 8
+        else:
+            raise ValueError(f"unsupported binary VDF type 0x{kind:02x}")
+        node[key] = value
+    return node, pos
+
+
+def load_shortcuts(path: Path) -> dict[str, object]:
+    if not path.exists() or path.stat().st_size == 0:
+        return {"shortcuts": {}}
+    data = path.read_bytes()
+    parsed, _ = parse_object(data)
+    if not isinstance(parsed.get("shortcuts"), dict):
+        parsed["shortcuts"] = {}
+    return parsed
+
+
+def write_object(node: dict[str, object]) -> bytes:
+    out = bytearray()
+    for key, value in node.items():
+        if isinstance(value, dict):
+            out.append(0x00)
+            out.extend(cstring(key))
+            out.extend(write_object(value))
+        elif isinstance(value, int):
+            out.append(0x02)
+            out.extend(cstring(key))
+            number = value
+            if number > 0x7FFFFFFF:
+                number -= 0x100000000
+            if number < -0x80000000 or number > 0x7FFFFFFF:
+                number = 0
+            out.extend(struct.pack("<i", number))
+        else:
+            out.append(0x01)
+            out.extend(cstring(key))
+            out.extend(cstring(str(value)))
+    out.append(0x08)
+    return bytes(out)
+
+
+def save_shortcuts(path: Path, data: dict[str, object]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_bytes(write_object(data))
+    tmp.replace(path)
+
+
+def steam_roots() -> list[Path]:
+    env_roots: list[Path] = []
+    for env_name in ("BATOCERA_STEAM_HOME", "BATOCERA_STEAM_ROOT"):
+        value = os.environ.get(env_name)
+        if value:
+            env_roots.append(Path(value))
+
+    candidates = env_roots if env_roots else list(STEAM_ROOTS)
+
+    roots: list[Path] = []
+    seen: set[str] = set()
+    for root in candidates:
+        key = str(root.resolve(strict=False))
+        if key in seen:
+            continue
+        seen.add(key)
+        roots.append(root)
+    return roots
+
+
+def steam_user_config_dirs() -> list[Path]:
+    configs: list[Path] = []
+    seen: set[str] = set()
+    for root in steam_roots():
+        userdata = root / "userdata"
+        if not userdata.is_dir():
+            continue
+        for config in userdata.glob("*/config"):
+            if not config.is_dir():
+                continue
+            key = str(config.resolve(strict=False))
+            if key in seen:
+                continue
+            seen.add(key)
+            configs.append(config)
+    return configs
+
+
+def shortcut_appid(exe: str, app_name: str) -> int:
+    crc = zlib.crc32((exe + app_name).encode("utf-8")) & 0xFFFFFFFF
+    appid = crc | 0x80000000
+    if appid >= 0x80000000:
+        appid -= 0x100000000
+    return appid
+
+
+def shortcut_entry(app_name: str, launch_options: str) -> dict[str, object]:
+    return {
+        "appid": shortcut_appid(TARGET_EXE, app_name),
+        "AppName": app_name,
+        "Exe": steam_quote(TARGET_EXE),
+        "StartDir": steam_quote(str(ROM_PATH.parent)),
+        "icon": "",
+        "ShortcutPath": "",
+        "LaunchOptions": launch_options,
+        "IsHidden": 0,
+        "AllowDesktopConfig": 1,
+        "AllowOverlay": 1,
+        "OpenVR": 0,
+        "Devkit": 0,
+        "DevkitGameID": "",
+        "DevkitOverrideAppID": 0,
+        "LastPlayTime": 0,
+        "FlatpakAppID": "",
+        "tags": {str(index): tag for index, tag in enumerate(TAGS)},
+    }
+
+
+def upsert_shortcut(shortcuts: dict[str, object], entry: dict[str, object], launch_options: str) -> str:
+    for key, raw in shortcuts.items():
+        if not isinstance(raw, dict):
+            continue
+        if raw.get("LaunchOptions") == launch_options:
+            raw.update(entry)
+            return key
+
+    used = [int(key) for key in shortcuts.keys() if str(key).isdigit()]
+    key = str(max(used, default=-1) + 1)
+    shortcuts[key] = entry
+    return key
+
+
+def main() -> int:
+    app_name = display_name(ROM_PATH)
+    launch_options = f'windows play "{str(ROM_PATH).replace(chr(34), chr(92) + chr(34))}"'
+    configs = steam_user_config_dirs()
+    if not configs:
+        return fail("No Steam user configs found. Launch Steam and log in once before adding Windows games.")
+
+    entry = shortcut_entry(app_name, launch_options)
+    updated: list[Path] = []
+    for config in configs:
+        shortcuts_path = config / "shortcuts.vdf"
+        data = load_shortcuts(shortcuts_path)
+        shortcuts = data.get("shortcuts")
+        if not isinstance(shortcuts, dict):
+            shortcuts = {}
+            data["shortcuts"] = shortcuts
+        upsert_shortcut(shortcuts, entry, launch_options)
+        save_shortcuts(shortcuts_path, data)
+        updated.append(shortcuts_path)
+
+    print(f"Added Steam shortcut: {app_name}")
+    for path in updated:
+        print(f"Updated: {path}")
+    print("Restart Steam to see the new non-Steam game. If Steam was open, rerun this after closing Steam if the shortcut does not appear.")
+    return 0
+
+
+try:
+    raise SystemExit(main())
+except Exception as exc:
+    raise SystemExit(fail(f"Failed to update Steam shortcuts: {exc}"))
+PY
+    then
+        flash_msg 7 "Steam shortcut added. Restart Steam to see it." 18
+        return 0
+    fi
+
+    flash_msg 7 "Failed to add Steam shortcut." 18
+    return 1
 }
 
 requestFileSystem() {
@@ -1499,6 +2144,10 @@ init_wine() {
         AARCH64_WINE_MODE_IS_SET=0
     fi
     FEX_WINE_SETTING="$(get_setting fex "${SYSTEM}" "${ROMGAMENAME}")"
+    FEX_ROOTFS_MODE="$(get_setting fex_rootfs_mode "${SYSTEM}" "${ROMGAMENAME}")"
+    [[ -z "${FEX_ROOTFS_MODE}" ]] && FEX_ROOTFS_MODE="${BATOCERA_FEX_ROOTFS_MODE:-auto}"
+    BOX64_PROFILE="$(get_setting box64_profile "${SYSTEM}" "${ROMGAMENAME}")"
+    [[ -z "${BOX64_PROFILE}" ]] && BOX64_PROFILE="balanced"
     if [[ "${HOST_ARCH}" == "aarch64" ]] && \
        ([[ "${BATOCERA_WINE_USE_FEX}" == "1" ]] || [[ "${FEX_WINE_SETTING}" == "1" ]] || [[ "${AARCH64_WINE_MODE}" == "fex" ]]); then
         AARCH64_WINE_MODE="fex"
@@ -1601,7 +2250,26 @@ init_wine() {
                 export BOX64_DYNAREC_FASTROUND=1
                 export BOX64_DYNAREC_FASTNAN=1
                 export BOX64_DYNAREC_SAFEFLAGS=1
-                echo "*** Running on aarch64 - box64 emulation enabled (WoW64 mode) ***"
+                case "${BOX64_PROFILE}" in
+                    performance)
+                        export BOX64_DYNAREC_STRONGMEM=1
+                        export BOX64_DYNAREC_SAFEFLAGS=0
+                        ;;
+                    safe)
+                        export BOX64_DYNAREC_BIGBLOCK=0
+                        export BOX64_DYNAREC_FASTROUND=0
+                        export BOX64_DYNAREC_FASTNAN=0
+                        export BOX64_DYNAREC_SAFEFLAGS=2
+                        ;;
+                    interpreter)
+                        export BOX64_DYNAREC=0
+                        export BOX64_DYNAREC_BIGBLOCK=0
+                        export BOX64_DYNAREC_FASTROUND=0
+                        export BOX64_DYNAREC_FASTNAN=0
+                        export BOX64_DYNAREC_SAFEFLAGS=2
+                        ;;
+                esac
+                echo "*** Running on aarch64 - box64 emulation enabled (WoW64 mode, profile ${BOX64_PROFILE}) ***"
             else
                 echo "ERROR: Running on aarch64 but box64 is not installed!" >&2
                 echo "Please install box64 to run Wine on this architecture." >&2
@@ -1811,7 +2479,14 @@ EOF
         export BOX86_PATH="${BOX64_WRAPPER_DIR}:${DIR}/${WINE_VERSION}/bin:${WINE_LIB32_DIR}/i386-unix:/usr/bin"
         export BOX86_LD_LIBRARY_PATH="/lib32:/usr/lib32:${WINE_LIB32_DIR}/i386-unix:/usr/lib/box86-i386-linux-gnu"
     fi
+    local previous_ld_library_path="${LD_LIBRARY_PATH:-}"
     export LD_LIBRARY_PATH="/lib32:/usr/lib32:${WINE_LIB32_DIR}/i386-unix:/lib:/usr/lib:${WINE_LIB64_DIR}/x86_64-unix"
+    if [[ -n "${previous_ld_library_path}" ]]; then
+        export LD_LIBRARY_PATH="${previous_ld_library_path}:${LD_LIBRARY_PATH}"
+    fi
+    if [[ ":${LD_LIBRARY_PATH}:" == *":/usr/wine/lsfg-vk/x64/lib:"* ]]; then
+        append_colon_env BOX64_LD_LIBRARY_PATH "/usr/wine/lsfg-vk/x64/lib"
+    fi
     export GST_PLUGIN_SYSTEM_PATH_1_0="/usr/lib/gstreamer-1.0:/usr/lib32/gstreamer-1.0:/lib32/gstreamer-1.0"
     export GST_REGISTRY_1_0="/userdata/system/.cache/gstreamer-1.0/registry.x86_64.bin:/userdata/system/.cache/gstreamer-1.0/registry..bin"
     export LIBGL_DRIVERS_PATH="/lib32/dri:/usr/lib32/dri:/usr/lib/dri"
@@ -1923,6 +2598,11 @@ case "${ACTION}" in
 	exit $?
 	;;
 
+    "add-to-steam")
+        add_wine_rom_to_steam "${GAMENAME}"
+        exit $?
+        ;;
+
     "autorun"|"autorun-list"|"autorun-count")
         # Create autorunfile, works only in SSH mode, recommended is arg1=gamepath, arg2=searchmask
         # It's held small: "batocera-wine windows autorun . bin" will search current directory in dir bin
@@ -1974,6 +2654,7 @@ case "${ACTION}" in
         echo "${0} windows createprefix  <game>"                 >&2
         echo "${0} windows wine2squashfs <game.wine>"            >&2
         echo "${0} windows wine2winetgz  <game.wine>"            >&2
+        echo "${0} windows add-to-steam  <game>"                 >&2
         echo "${0} windows autorun       <game>.*    drive_c/P*" >&2
         echo "${0} windows autorun-list  <game>"                 >&2
         echo "${0} windows autorun-count <game>"                 >&2

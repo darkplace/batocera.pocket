@@ -23,6 +23,8 @@ define WXWIDGETS_FIXUP_WXWIDGET_CONFIG
 		$(STAGING_DIR)/usr/bin/wx-config
 	$(SED) 's%^exec_prefix=.*%exec_prefix=$${prefix}%' \
 		$(STAGING_DIR)/usr/bin/wx-config
+	rm -rf $(STAGING_DIR)/usr/lib/cmake/wxWidgets
+	ln -snf wxWidgets-3.3 $(STAGING_DIR)/usr/lib/cmake/wxWidgets
 endef
 
 WXWIDGETS_POST_INSTALL_STAGING_HOOKS += WXWIDGETS_FIXUP_WXWIDGET_CONFIG

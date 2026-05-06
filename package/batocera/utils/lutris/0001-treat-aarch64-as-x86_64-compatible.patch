@@ -1,0 +1,27 @@
+From 1a42fd21a0d7375f3b1e8fbf5ae01f94c88c0a49 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Wed, 6 May 2026 00:00:00 +0000
+Subject: [PATCH] Treat aarch64 as x86_64-compatible
+
+Batocera's ARM build uses the native Lutris client to launch x86_64
+Wine/Box64 content, so use the x86_64 runner architecture when the host
+machine is aarch64.
+---
+ lutris/util/linux.py | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/lutris/util/linux.py b/lutris/util/linux.py
+index 81d886f..761b586 100644
+--- a/lutris/util/linux.py
++++ b/lutris/util/linux.py
+@@ -197,7 +197,7 @@ class LinuxSystem:
+         with the supported architectures from the Lutris API
+         """
+         machine = platform.machine()
+-        if machine == "x86_64":
++        if machine in ("x86_64", "aarch64"):
+             return "x86_64"
+         if machine in ("i386", "i686"):
+             return "i386"
+--
+2.43.0

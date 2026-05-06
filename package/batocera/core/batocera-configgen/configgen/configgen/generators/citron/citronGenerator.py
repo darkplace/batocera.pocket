@@ -4,17 +4,17 @@ import logging
 import os
 import shutil
 import stat
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ... import Command
 from ...batoceraPaths import BIOS, CONFIGS, SAVES, CACHE, mkdir_if_not_exists, ensure_parents_and_open
 from ...controller import Controller, generate_sdl_game_controller_config
-from ...utils import vulkan
+from ...utils import lsfg, vulkan
 from ...utils.configparser import CaseSensitiveRawConfigParser
 from ..Generator import Generator
 
 if TYPE_CHECKING:
-    from pathlib import Path
     from ...Emulator import Emulator
     from ...controller import Controllers
     from ...input import Input, InputMapping
@@ -23,6 +23,7 @@ _logger = logging.getLogger(__name__)
 
 CITRON_CONFIG = CONFIGS / "citron"
 CITRON_SAVE = SAVES / "switch" / "citron"
+CITRON_CACHE = CACHE.parent / "cache" / "citron"
 SWITCH_BIOS = BIOS / "switch"
 _SWITCH_KEYS = ("prod.keys", "title.keys")
 
@@ -123,6 +124,11 @@ class CitronGenerator(Generator):
 
         mkdir_if_not_exists(CITRON_SAVE)
         mkdir_if_not_exists(CITRON_SAVE / "keys")
+        mkdir_if_not_exists(CITRON_SAVE / "sdmc")
+        mkdir_if_not_exists(CITRON_SAVE / "dump")
+        mkdir_if_not_exists(CITRON_SAVE / "tas")
+        mkdir_if_not_exists(CITRON_SAVE / "screenshots")
+        mkdir_if_not_exists(CITRON_CACHE)
 
         CitronGenerator._sync_bios_keys(CITRON_SAVE / "keys")
         CitronGenerator._sync_bios_firmware(CITRON_CONFIG / "nand" / "system" / "Contents" / "registered")
@@ -151,18 +157,18 @@ class CitronGenerator(Generator):
         if not launch_menu:
             command_array.extend(["-f", "-g", rom])
 
-        return Command.Command(
-            array=command_array,
-            env={
-                "XDG_CONFIG_HOME": CONFIGS,
-                # Citron appends its own "citron" subdir under XDG roots.
-                # Keep these roots aligned with the working desktop launcher.
-                "XDG_DATA_HOME": SAVES / "switch",
-                "XDG_CACHE_HOME": CACHE.parent / "cache",
-                "QT_QPA_PLATFORM": "xcb",
-                "SDL_GAMECONTROLLERCONFIG": CitronGenerator._build_sdl_game_controller_config(playersControllers),
-            }
-        )
+        env = {
+            "XDG_CONFIG_HOME": CONFIGS,
+            # Citron appends its own "citron" subdir under XDG roots.
+            # Keep these roots aligned with the working desktop launcher.
+            "XDG_DATA_HOME": SAVES / "switch",
+            "XDG_CACHE_HOME": CACHE.parent / "cache",
+            "QT_QPA_PLATFORM": "xcb",
+            "SDL_GAMECONTROLLERCONFIG": CitronGenerator._build_sdl_game_controller_config(playersControllers),
+        }
+        lsfg.apply_lsfg_vk(system, env, backend_key="citron_backend", process_name="citron")
+
+        return Command.Command(array=command_array, env=env)
 
     @staticmethod
     def _sync_bios_keys(target_keys_dir: Path) -> None:
@@ -299,47 +305,57 @@ exit $EXIT_CODE
         if cfg.exists():
             c.read(cfg)
 
+        def set_override(section: str, option: str, value: str) -> None:
+            c.set(section, f"{option}\\default", "false")
+            c.set(section, option, value)
+
         # ---------- UI ----------
         if not c.has_section("UI"):
             c.add_section("UI")
 
-        c.set("UI", "fullscreen", "true")
-        c.set("UI", "singleWindowMode", system.config.get("citron_single_window", "true"))
-        c.set("UI", "enable_discord_presence", "false")
-        c.set("UI", "confirmClose", "false")
-        c.set("UI", "confirmStop\\default", "false")
-        c.set("UI", "confirmStop", "2")
-        c.set("UI", "UIGameList\\cache_game_list", "false")
+        set_override("UI", "fullscreen", "true")
+        set_override("UI", "singleWindowMode", system.config.get("citron_single_window", "true"))
+        set_override("UI", "enable_discord_presence", "false")
+        set_override("UI", "confirmClose", "false")
+        set_override("UI", "confirmStop", "2")
+        set_override("UI", "UIGameList\\cache_game_list", "false")
 
-        c.set("UI", "Paths\\gamedirs\\1\\path", "/userdata/roms/switch")
-        c.set("UI", "Paths\\gamedirs\\size", "1")
+        set_override("UI", "Paths\\gamedirs\\1\\path", "/userdata/roms/switch")
+        set_override("UI", "Paths\\gamedirs\\size", "1")
 
         # ---------- Data Storage ----------
         if not c.has_section("Data%20Storage"):
             c.add_section("Data%20Storage")
 
-        c.set("Data%20Storage", "nand_directory", str(CITRON_CONFIG / "nand"))
-        c.set("Data%20Storage", "load_directory", str(CITRON_CONFIG / "load"))
-        c.set("Data%20Storage", "use_virtual_sd", "true")
+        set_override("Data%20Storage", "nand_directory", str(CITRON_CONFIG / "nand"))
+        set_override("Data%20Storage", "load_directory", str(CITRON_CONFIG / "load"))
+        set_override("Data%20Storage", "sdmc_directory", str(CITRON_SAVE / "sdmc"))
+        set_override("Data%20Storage", "dump_directory", str(CITRON_SAVE / "dump"))
+        set_override("Data%20Storage", "tas_directory", str(CITRON_SAVE / "tas"))
+        set_override("Data%20Storage", "use_virtual_sd", "true")
+
+        if not c.has_section("Screenshots"):
+            c.add_section("Screenshots")
+        set_override("Screenshots", "screenshot_path", str(CITRON_SAVE / "screenshots"))
 
         # ---------- Core ----------
         if not c.has_section("Core"):
             c.add_section("Core")
 
-        c.set("Core", "use_multi_core", "true")
+        set_override("Core", "use_multi_core", system.config.get("citron_multicore", "true"))
+        set_override("Core", "memory_layout_mode", system.config.get("citron_memory", "0"))
 
         # ---------- Cpu ----------
         if not c.has_section("Cpu"):
             c.add_section("Cpu")
 
-        c.set("Cpu", "cpu_accuracy",
-              system.config.get("citron_cpuaccuracy", "0"))
+        set_override("Cpu", "cpu_accuracy",
+                     system.config.get("citron_cpuaccuracy", "0"))
 
         # CPU Backend: 0 = Dynarmic, 1 = NCE
         cpu_backend = system.config.get("citron_cpu_backend", "")
         if cpu_backend in ("0", "1"):
-            c.set("Cpu", "cpu_backend", cpu_backend)
-            c.set("Cpu", "cpu_backend\\default", "false")
+            set_override("Cpu", "cpu_backend", cpu_backend)
         else:
             c.set("Cpu", "cpu_backend\\default", "true")
 
@@ -349,104 +365,97 @@ exit $EXIT_CODE
 
         # Graphics Backend: 0 = OpenGL, 1 = Vulkan
         backend = system.config.get("citron_backend", "1")
-        c.set("Renderer", "backend", backend)
+        set_override("Renderer", "backend", backend)
+        set_override("Renderer", "shader_backend",
+                     system.config.get("citron_opengl_shader_backend", "0"))
 
         if backend == "1" and vulkan.is_available():
             if vulkan.has_discrete_gpu():
                 idx = vulkan.get_discrete_gpu_index()
                 if idx is not None:
-                    c.set("Renderer", "vulkan_device", str(idx))
+                    set_override("Renderer", "vulkan_device", str(idx))
 
-        c.set("Renderer", "use_asynchronous_gpu_emulation",
-              system.config.get("citron_async_gpu", "true"))
-        c.set("Renderer", "use_asynchronous_shaders",
-              system.config.get("citron_async_shaders", "true"))
-        c.set("Renderer", "nvdec_emulation",
-              system.config.get("citron_nvdec_emu", "2"))
-        c.set("Renderer", "gpu_accuracy",
-              system.config.get("citron_accuracy", "0"))
-        c.set("Renderer", "resolution_setup",
-              system.config.get("citron_scale", "2"))
-        c.set("Renderer", "accelerate_astc",
-              system.config.get("citron_astc", "1"))
+        set_override("Renderer", "use_asynchronous_gpu_emulation",
+                     system.config.get("citron_async_gpu", "true"))
+        set_override("Renderer", "use_asynchronous_shaders",
+                     system.config.get("citron_async_shaders", "true"))
+        set_override("Renderer", "nvdec_emulation",
+                     system.config.get("citron_nvdec_emu", "2"))
+        set_override("Renderer", "gpu_accuracy",
+                     system.config.get("citron_accuracy", "0"))
+        set_override("Renderer", "resolution_setup",
+                     system.config.get("citron_scale", "2"))
+        set_override("Renderer", "accelerate_astc",
+                     system.config.get("citron_astc", "1"))
 
         # VSync: 0 = Off, 1 = Mailbox, 2 = FIFO, 3 = FIFO Relaxed
         vsync = system.config.get("citron_vsync", "")
         if vsync in ("0", "1", "2", "3"):
-            c.set("Renderer", "use_vsync", vsync)
-            c.set("Renderer", "use_vsync\\default", "false")
+            set_override("Renderer", "use_vsync", vsync)
         else:
             c.set("Renderer", "use_vsync\\default", "true")
 
         # Aspect Ratio: 0-5
         ratio = system.config.get("citron_ratio", "")
         if ratio in ("0", "1", "2", "3", "4", "5"):
-            c.set("Renderer", "aspect_ratio", ratio)
-            c.set("Renderer", "aspect_ratio\\default", "false")
+            set_override("Renderer", "aspect_ratio", ratio)
         else:
             c.set("Renderer", "aspect_ratio\\default", "true")
 
         # Scaling Filter: 0-5
-        scaling_filter = system.config.get("citron_scaling_filter", "")
+        scaling_filter = system.config.get("citron_scaling_filter",
+                                           system.config.get("citron_scale_filter", ""))
         if scaling_filter in ("0", "1", "2", "3", "4", "5"):
-            c.set("Renderer", "scaling_filter", scaling_filter)
-            c.set("Renderer", "scaling_filter\\default", "false")
+            set_override("Renderer", "scaling_filter", scaling_filter)
         else:
             c.set("Renderer", "scaling_filter\\default", "true")
 
         # Anti-Aliasing: 0 = None, 1 = FXAA, 2 = SMAA
-        anti_aliasing = system.config.get("citron_anti_aliasing", "")
+        anti_aliasing = system.config.get("citron_anti_aliasing",
+                                          system.config.get("citron_aliasing_method", ""))
         if anti_aliasing in ("0", "1", "2"):
-            c.set("Renderer", "anti_aliasing", anti_aliasing)
-            c.set("Renderer", "anti_aliasing\\default", "false")
+            set_override("Renderer", "anti_aliasing", anti_aliasing)
         else:
             c.set("Renderer", "anti_aliasing\\default", "true")
 
         # Anisotropic Filtering: 0-4
         anisotropy = system.config.get("citron_anisotropy", "")
         if anisotropy in ("0", "1", "2", "3", "4"):
-            c.set("Renderer", "max_anisotropy", anisotropy)
-            c.set("Renderer", "max_anisotropy\\default", "false")
+            set_override("Renderer", "max_anisotropy", anisotropy)
         else:
             c.set("Renderer", "max_anisotropy\\default", "true")
 
         # ASTC Recompression: 0 = Uncompressed, 1 = BC1, 2 = BC3
         astc_recomp = system.config.get("citron_astc_recompression", "")
         if astc_recomp in ("0", "1", "2"):
-            c.set("Renderer", "astc_recompression", astc_recomp)
-            c.set("Renderer", "astc_recompression\\default", "false")
+            set_override("Renderer", "astc_recompression", astc_recomp)
         else:
             c.set("Renderer", "astc_recompression\\default", "true")
 
         # VRAM Usage Mode: 0 = Conservative, 1 = Aggressive
         vram_mode = system.config.get("citron_vram_mode", "")
         if vram_mode in ("0", "1"):
-            c.set("Renderer", "vram_usage_mode", vram_mode)
-            c.set("Renderer", "vram_usage_mode\\default", "false")
+            set_override("Renderer", "vram_usage_mode", vram_mode)
         else:
             c.set("Renderer", "vram_usage_mode\\default", "true")
 
         # Async Presentation (Vulkan)
         async_pres = system.config.get("citron_async_presentation", "")
         if async_pres == "true":
-            c.set("Renderer", "async_presentation", "true")
-            c.set("Renderer", "async_presentation\\default", "false")
+            set_override("Renderer", "async_presentation", "true")
         elif async_pres == "false":
-            c.set("Renderer", "async_presentation", "false")
-            c.set("Renderer", "async_presentation\\default", "false")
+            set_override("Renderer", "async_presentation", "false")
         else:
             c.set("Renderer", "async_presentation\\default", "true")
 
         # Fast GPU Time
         fast_gpu = system.config.get("citron_fast_gpu_time", "")
         if fast_gpu == "true":
-            c.set("Renderer", "use_fast_gpu_time", "true")
-            c.set("Renderer", "fast_gpu_time", "1")
-            c.set("Renderer", "use_fast_gpu_time\\default", "false")
+            set_override("Renderer", "use_fast_gpu_time", "true")
+            set_override("Renderer", "fast_gpu_time", "1")
         elif fast_gpu == "false":
-            c.set("Renderer", "use_fast_gpu_time", "false")
-            c.set("Renderer", "fast_gpu_time", "0")
-            c.set("Renderer", "use_fast_gpu_time\\default", "false")
+            set_override("Renderer", "use_fast_gpu_time", "false")
+            set_override("Renderer", "fast_gpu_time", "0")
         else:
             c.set("Renderer", "use_fast_gpu_time\\default", "true")
 
@@ -464,18 +473,15 @@ exit $EXIT_CODE
 
         rumble = system.config.get("citron_rumble", "")
         if rumble == "true":
-            c.set("Controls", "vibration_enabled", "true")
-            c.set("Controls", "vibration_enabled\\default", "false")
+            set_override("Controls", "vibration_enabled", "true")
         elif rumble == "false":
-            c.set("Controls", "vibration_enabled", "false")
-            c.set("Controls", "vibration_enabled\\default", "false")
+            set_override("Controls", "vibration_enabled", "false")
         else:
             c.set("Controls", "vibration_enabled\\default", "true")
 
         rumble_str = system.config.get("citron_rumble_strength", "")
         if rumble_str in ("100", "75", "50", "25"):
-            c.set("Controls", "player_0_vibration_strength", rumble_str)
-            c.set("Controls", "player_0_vibration_strength\\default", "false")
+            set_override("Controls", "player_0_vibration_strength", rumble_str)
         else:
             c.set("Controls", "player_0_vibration_strength\\default", "true")
 
@@ -536,29 +542,38 @@ exit $EXIT_CODE
         if not c.has_section("System"):
             c.add_section("System")
 
-        c.set("System", "language_index",
-              system.config.get("citron_language", "1"))
-        c.set("System", "region_index",
-              system.config.get("citron_region", "2"))
+        set_override("System", "language_index",
+                     system.config.get("citron_language", "1"))
+        set_override("System", "region_index",
+                     system.config.get("citron_region", "2"))
+        set_override("System", "time_zone_index",
+                     system.config.get("citron_timezone", "0"))
+        set_override("System", "sound_index",
+                     system.config.get("citron_sound_index", system.config.get("citron_sound_mode", "1")))
 
         # Docked Mode: 0-1
         dock_mode = system.config.get("citron_dock_mode", "")
         if dock_mode in ("0", "1"):
-            c.set("System", "use_docked_mode", dock_mode)
-            c.set("System", "use_docked_mode\\default", "false")
+            set_override("System", "use_docked_mode", dock_mode)
         elif dock_mode in ("true", "false"):
             # Citron persists this field as 0/1, not false/true.
-            c.set("System", "use_docked_mode", "1" if dock_mode == "true" else "0")
-            c.set("System", "use_docked_mode\\default", "false")
+            set_override("System", "use_docked_mode", "1" if dock_mode == "true" else "0")
         else:
             c.set("System", "use_docked_mode", "true")
             c.set("System", "use_docked_mode\\default", "true")
+
+        # ---------- Audio ----------
+        if not c.has_section("Audio"):
+            c.add_section("Audio")
+
+        set_override("Audio", "output_engine",
+                     system.config.get("citron_audio_backend", "auto"))
 
         # ---------- Telemetry ----------
         if not c.has_section("WebService"):
             c.add_section("WebService")
 
-        c.set("WebService", "enable_telemetry", "false")
+        set_override("WebService", "enable_telemetry", "false")
 
         with ensure_parents_and_open(cfg, "w") as f:
             c.write(f)

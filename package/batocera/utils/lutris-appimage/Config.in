@@ -14,8 +14,12 @@ config BR2_PACKAGE_LUTRIS_APPIMAGE
 	select BR2_PACKAGE_WEBP_DEMUX
 	select BR2_PACKAGE_WEBP_MUX
 	select BR2_PACKAGE_FAUDIO
+	select BR2_PACKAGE_GDK_PIXBUF
+	select BR2_PACKAGE_JPEG
+	select BR2_PACKAGE_LIBRSVG
 	select BR2_PACKAGE_UTIL_LINUX_LIBUUID
 	select BR2_PACKAGE_IRRLICHT			if BR2_PACKAGE_XORG7 && BR2_PACKAGE_HAS_LIBGL
+	select BR2_PACKAGE_LUTRISVIEW
 	help
 	  Lutris packaged as an AppImage runtime wrapper.
 	  This is kept as an optional legacy alternative; native BR2_PACKAGE_LUTRIS

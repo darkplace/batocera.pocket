@@ -1,0 +1,28 @@
+From: Batocera Linux Team <batocera@batocera.linux>
+Date: Tue, 5 May 2026 00:00:00 +0000
+Subject: [PATCH 4/4] fix: use GCC inline asm for arm64 clock registers
+
+__arm_rsr64 is a Clang intrinsic. GCC can read the same system registers
+with inline assembly.
+
+---
+ src/xenia/base/clock_arm64.cc | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/src/xenia/base/clock_arm64.cc b/src/xenia/base/clock_arm64.cc
+--- a/src/xenia/base/clock_arm64.cc
++++ b/src/xenia/base/clock_arm64.cc
+@@ -19,9 +19,13 @@ constexpr uint32_t CNTFRQ_EL0 = ARM64_SYSREG(3, 3, 14, 0, 0);
+ constexpr uint32_t CNTVCT_EL0 = ARM64_SYSREG(3, 3, 14, 0, 2);
+ #define xe_cpu_mrs(reg) _ReadStatusReg(reg)
+-#elif XE_COMPILER_CLANG || XE_COMPILER_GNUC
++#elif XE_COMPILER_CLANG
+ #include <arm_acle.h>
+ #define xe_cpu_mrs(reg) __arm_rsr64(#reg)
++#elif XE_COMPILER_GNUC
++#define xe_cpu_mrs(reg) []() -> uint64_t { \
++  uint64_t value; asm volatile("mrs %0, " #reg : "=r"(value)); return value; \
++}()
+ #else
+ #error "No cpu instruction wrappers for current compiler implemented."
+ #endif

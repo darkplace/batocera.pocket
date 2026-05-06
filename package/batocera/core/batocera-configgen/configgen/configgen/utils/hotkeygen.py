@@ -4,6 +4,7 @@ import json
 import logging
 import subprocess
 from contextlib import contextmanager
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -13,6 +14,30 @@ if TYPE_CHECKING:
     from ..generators.Generator import Generator
 
 _logger = logging.getLogger(__name__)
+
+
+_HOTKEYGEN_INIT = Path("/etc/init.d/S90hotkeygen")
+_HOTKEYGEN_PID = Path("/var/run/hotkeygen.pid")
+
+
+def _hotkeygen_permanent_running() -> bool:
+    try:
+        pid = int(_HOTKEYGEN_PID.read_text().strip())
+        cmdline = Path(f"/proc/{pid}/cmdline").read_text().replace("\0", " ")
+    except (FileNotFoundError, ProcessLookupError, ValueError):
+        return False
+
+    return "hotkeygen" in cmdline and "--permanent" in cmdline
+
+
+def _ensure_hotkeygen_running() -> None:
+    if _hotkeygen_permanent_running():
+        return
+
+    _HOTKEYGEN_PID.unlink(missing_ok=True)
+    if _HOTKEYGEN_INIT.exists():
+        subprocess.call([_HOTKEYGEN_INIT, "start"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
 
 @contextmanager
 def set_hotkeygen_context(generator: Generator, system: Emulator, /) -> Iterator[None]:
@@ -35,6 +60,7 @@ def set_hotkeygen_context(generator: Generator, system: Emulator, /) -> Iterator
         del hkc["keys"]["menu"]
 
     _logger.debug("hotkeygen: updating context to %s", hkc["name"])
+    _ensure_hotkeygen_running()
 
     cmd = ["hotkeygen", "--new-context", hkc["name"], json.dumps(hkc["keys"])]
 

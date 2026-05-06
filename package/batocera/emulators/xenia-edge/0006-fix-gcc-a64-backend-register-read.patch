@@ -1,0 +1,29 @@
+From: Batocera Linux Team <batocera@batocera.linux>
+Date: Tue, 5 May 2026 00:00:00 +0000
+Subject: [PATCH 6/6] fix: use GCC inline asm for a64 backend register reads
+
+__arm_rsr64 is a Clang intrinsic. GCC can read the same system register
+with inline assembly.
+
+---
+ src/xenia/cpu/backend/a64/a64_seq_util.h | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/src/xenia/cpu/backend/a64/a64_seq_util.h b/src/xenia/cpu/backend/a64/a64_seq_util.h
+--- a/src/xenia/cpu/backend/a64/a64_seq_util.h
++++ b/src/xenia/cpu/backend/a64/a64_seq_util.h
+@@ -23,9 +23,13 @@
+ #include <intrin.h>
+ constexpr uint32_t DCZID_EL0 = ARM64_SYSREG(0b11, 0b011, 0b0000, 0b0000, 0b111);
+ #define xe_cpu_mrs(reg) _ReadStatusReg(reg)
+-#elif XE_COMPILER_CLANG || XE_COMPILER_GNUC
++#elif XE_COMPILER_CLANG
+ #include <arm_acle.h>
+ #define xe_cpu_mrs(reg) __arm_rsr64(#reg)
++#elif XE_COMPILER_GNUC
++#define xe_cpu_mrs(reg) []() -> uint64_t { \
++  uint64_t value; asm volatile("mrs %0, " #reg : "=r"(value)); return value; \
++}()
+ #else
+ #error "No MRS wrapper available for current compiler implemented."
+ #endif

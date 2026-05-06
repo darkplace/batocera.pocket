@@ -1,0 +1,26 @@
+From: Batocera Linux Team <batocera@batocera.linux>
+Date: Wed, 6 May 2026 00:00:00 +0000
+Subject: [PATCH 8/8] build: skip runtime third-party libs for host tools
+
+The host-tools-only configure only needs xenia-shader-cc and its shader
+compiler dependencies. Return before runtime-only third-party libraries
+such as SDL are configured.
+
+---
+ third_party/CMakeLists.txt | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/third_party/CMakeLists.txt b/third_party/CMakeLists.txt
+--- a/third_party/CMakeLists.txt
++++ b/third_party/CMakeLists.txt
+@@ -341,6 +341,10 @@ if(XENIA_HOST_SHADER_CC)
+
+ endif()
+
++if(XENIA_BUILD_HOST_TOOLS_ONLY)
++  return()
++endif()
++
+ # ==============================================================================
+ # imgui
+ # ==============================================================================

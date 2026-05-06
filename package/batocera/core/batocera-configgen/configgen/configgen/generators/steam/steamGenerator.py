@@ -5,6 +5,7 @@ import shlex
 from typing import TYPE_CHECKING
 
 from ... import Command
+from ...utils import lsfg
 from ..Generator import Generator
 
 if TYPE_CHECKING:
@@ -253,6 +254,8 @@ class SteamGenerator(Generator):
             env["BATOCERA_SKIP_GAMESCOPE"] = "1"
         if is_aarch64 and mode == "steamos" and use_gamescope:
             env["BATOCERA_SKIP_GAMESCOPE"] = "1"
+
+        lsfg.apply_lsfg_vk(system, env, process_name="steam", use_wine_layer=True)
 
         return Command.Command(array=commandArray, env=env)
 

@@ -32,6 +32,21 @@ msgctxt "game_options"
 msgid "(FDS) FAST FORWARD DISK LOADING"
 msgstr "(FDS) ÎNCĂRCARE RAPIDĂ DE PE DISC"
 
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid ".NET 3.5"
+msgstr ""
+
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid ".NET 4.0"
+msgstr ""
+
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid ".NET 4.8"
+msgstr ""
+
 #. TRANSLATION: flatpak
 msgctxt "game_options"
 msgid "/RUN/UDEV READ-ONLY"
@@ -427,7 +442,7 @@ msgctxt "game_options"
 msgid "12 MHz"
 msgstr "12 MHz"
 
-#. TRANSLATION: shared, xenia-canary, xenia-edge
+#. TRANSLATION: shared, wine, xenia-canary, xenia-edge
 msgctxt "game_options"
 msgid "120 FPS"
 msgstr ""
@@ -1292,7 +1307,7 @@ msgctxt "game_options"
 msgid "3.5x Native"
 msgstr "3.5x Nativ"
 
-#. TRANSLATION: shared, xenia-canary, xenia-edge
+#. TRANSLATION: shared, wine, xenia-canary, xenia-edge
 msgctxt "game_options"
 msgid "30 FPS"
 msgstr ""
@@ -1557,7 +1572,7 @@ msgctxt "game_options"
 msgid "4.5x (2880x2160)"
 msgstr "4.5x (2880x2160)"
 
-#. TRANSLATION: shared
+#. TRANSLATION: shared, wine
 msgctxt "game_options"
 msgid "40 FPS"
 msgstr ""
@@ -1602,7 +1617,7 @@ msgctxt "game_options"
 msgid "42.56 MHz"
 msgstr "42,56 MHz"
 
-#. TRANSLATION: shared
+#. TRANSLATION: shared, wine
 msgctxt "game_options"
 msgid "45 FPS"
 msgstr ""
@@ -1797,7 +1812,7 @@ msgctxt "game_options"
 msgid "50 (Default)"
 msgstr "50 (Implicit)"
 
-#. TRANSLATION: shared, xenia-canary, xenia-edge
+#. TRANSLATION: shared, wine, xenia-canary, xenia-edge
 msgctxt "game_options"
 msgid "50 FPS"
 msgstr ""
@@ -1937,7 +1952,7 @@ msgctxt "game_options"
 msgid "6 threads"
 msgstr "6 fire"
 
-#. TRANSLATION: shared, xenia-canary, xenia-edge
+#. TRANSLATION: shared, wine, xenia-canary, xenia-edge
 msgctxt "game_options"
 msgid "60 FPS"
 msgstr ""
@@ -2067,7 +2082,7 @@ msgctxt "game_options"
 msgid "7 Frames"
 msgstr "7 Cadre"
 
-#. TRANSLATION: shared
+#. TRANSLATION: shared, wine
 msgctxt "game_options"
 msgid "72 FPS"
 msgstr ""
@@ -2287,7 +2302,7 @@ msgctxt "game_options"
 msgid "9 MHz (Underclock)"
 msgstr "9 MHz (Underclock)"
 
-#. TRANSLATION: shared, xenia-canary, xenia-edge
+#. TRANSLATION: shared, wine, xenia-canary, xenia-edge
 msgctxt "game_options"
 msgid "90 FPS"
 msgstr ""
@@ -3369,11 +3384,6 @@ msgctxt "game_options"
 msgid "Allows user replaceable textures."
 msgstr "Permite texturi înlocuibile de utilizator."
 
-#. TRANSLATION: wine
-msgctxt "game_options"
-msgid "Allows you to limit FPS to 60."
-msgstr "Îți permite să limitezi FPS la 60."
-
 #. TRANSLATION: libretro/opera
 msgctxt "game_options"
 msgid "Alone in the Dark"
@@ -3612,6 +3622,11 @@ msgctxt "game_options"
 msgid "Apply automatic per-game compatibility fixes."
 msgstr ""
 
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "Apply common Wine DLL override presets for problem games."
+msgstr ""
+
 #. TRANSLATION: libretro/kronos
 msgctxt "game_options"
 msgid "Apply gouraud shading instead of flat shading."
@@ -3834,6 +3849,11 @@ msgstr ""
 #. TRANSLATION: aethersx2, armsx2
 msgctxt "game_options"
 msgid "Auto / 4:3"
+msgstr ""
+
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "Auto / NTSYNC (Default)"
 msgstr ""
 
 #. TRANSLATION: shared
@@ -4184,6 +4204,11 @@ msgctxt "game_options"
 msgid "BOTTOM RIGHT (SE)"
 msgstr "DREAPTA JOS (SE)"
 
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "BOX64 PROFILE"
+msgstr ""
+
 #. TRANSLATION: bigpemu
 msgctxt "game_options"
 msgid "BRETT HULL HOCKEY"
@@ -4248,6 +4273,11 @@ msgstr "Bahrain"
 msgctxt "game_options"
 msgid "Balanced"
 msgstr "Echilibrat"
+
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "Balanced (Default)"
+msgstr ""
 
 #. TRANSLATION: libretro/mame, mame
 msgctxt "game_options"
@@ -5353,6 +5383,11 @@ msgctxt "game_options"
 msgid "CUSTOM CONTROLLER"
 msgstr "CONTROLER PERSONALIZAT"
 
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "CUSTOM FPS LIMIT"
+msgstr ""
+
 #. TRANSLATION: shared
 msgctxt "game_options"
 msgid "CUSTOM FRAME RATE LIMIT"
@@ -5383,6 +5418,11 @@ msgctxt "game_options"
 msgid "CUSTOM OUTPUT RESOLUTION"
 msgstr ""
 
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "CUSTOM RUNTIME VERBS"
+msgstr ""
+
 #. TRANSLATION: shared
 msgctxt "game_options"
 msgid "CUSTOM SHARPNESS"
@@ -5391,6 +5431,11 @@ msgstr ""
 #. TRANSLATION: shared
 msgctxt "game_options"
 msgid "CUSTOM UNFOCUSED REFRESH"
+msgstr ""
+
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "CUSTOM VIRTUAL DESKTOP SIZE"
 msgstr ""
 
 #. TRANSLATION: shared
@@ -5763,6 +5808,11 @@ msgctxt "game_options"
 msgid "Chinese (Traditional) [Big5]"
 msgstr "Chineză (Tradițională) [Big5]"
 
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "Choose Box64 dynarec compatibility behavior for aarch64 Wine."
+msgstr ""
+
 #. TRANSLATION: openjkdf2
 msgctxt "game_options"
 msgid "Choose Screen Space Ambient Occlusion for better lighting."
@@ -5802,6 +5852,11 @@ msgstr "Alege metoda de downscale."
 msgctxt "game_options"
 msgid "Choose hardware for the memory expansion slot"
 msgstr "Alege hardware-ul pentru slotul de expansiune a memoriei"
+
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "Choose how FEX prepares the shared rootfs when FEX-Emu is selected."
+msgstr ""
 
 #. TRANSLATION: pcsx2
 msgctxt "game_options"
@@ -5856,6 +5911,13 @@ msgid ""
 msgstr ""
 "Alege modul de driver Wayland dacă ești pe un dispozitiv portabil. XWayland "
 "are o compatibilitate mai mare."
+
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid ""
+"Choose the Wine synchronization backend. NTSYNC is preferred on modern "
+"kernels; FSYNC and ESYNC are compatibility fallbacks."
+msgstr ""
 
 #. TRANSLATION: openjkdf2
 msgctxt "game_options"
@@ -6048,6 +6110,13 @@ msgstr "Alege limba vocii."
 msgctxt "game_options"
 msgid "Choose when to enable subtitles."
 msgstr "Alege când să activezi subtitrările."
+
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid ""
+"Choose whether Direct3D 12 uses the bundled Vulkan backend or Wine builtin "
+"DLLs."
+msgstr ""
 
 #. TRANSLATION: citron, eden, ryujinx, yuzu
 msgctxt "game_options"
@@ -6302,6 +6371,16 @@ msgctxt "game_options"
 msgid "Color Computer 3 (PAL)"
 msgstr "Color Computer 3 (PAL)"
 
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "Common DX9 + VC++"
+msgstr ""
+
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "Common DX9 + VC++ + .NET 4.8"
+msgstr ""
+
 #. TRANSLATION: libretro/snes9x, libretro/snes9x_next
 msgctxt "game_options"
 msgid "Compatible"
@@ -6416,6 +6495,11 @@ msgctxt "game_options"
 msgid "Copy to texture"
 msgstr "Copiază în textură"
 
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "Core Fonts"
+msgstr ""
+
 #. TRANSLATION: shared
 msgctxt "game_options"
 msgid "Core provided"
@@ -6527,6 +6611,11 @@ msgctxt "game_options"
 msgid "Current Display (Default)"
 msgstr ""
 
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "Current Video Mode (Default)"
+msgstr ""
+
 #. TRANSLATION: cemu
 msgctxt "game_options"
 msgid "Current language"
@@ -6544,7 +6633,7 @@ msgstr ""
 "Timpul limită al cursorului în secunde când se utilizează Modul cursor - "
 "Până la expirarea timpului."
 
-#. TRANSLATION: libretro/gambatte, libretro/mesen, libretro/stella, shared
+#. TRANSLATION: libretro/gambatte, libretro/mesen, libretro/stella, shared, wine
 msgctxt "game_options"
 msgid "Custom"
 msgstr "Personalizat"
@@ -6553,6 +6642,16 @@ msgstr "Personalizat"
 msgctxt "game_options"
 msgid "Custom Keyboard Binds (best for Pad2Key)"
 msgstr "Asocieri tastatură personalizate (potrivite pentru Pad2Key)"
+
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "Custom Wine/DXVK frame limit in FPS."
+msgstr ""
+
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "Custom Winetricks Verbs"
+msgstr ""
 
 #. TRANSLATION: shared
 msgctxt "game_options"
@@ -6582,6 +6681,16 @@ msgstr ""
 #. TRANSLATION: shared
 msgctxt "game_options"
 msgid "Custom unfocused refresh rate in Hz."
+msgstr ""
+
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "Custom virtual desktop resolution in WIDTHxHEIGHT format."
+msgstr ""
+
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "Custom winetricks verbs separated by spaces or commas."
 msgstr ""
 
 #. TRANSLATION: libretro/mednafen_psx
@@ -6614,10 +6723,20 @@ msgctxt "game_options"
 msgid "Czech Republic"
 msgstr "Republica Cehă"
 
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "D3D Compiler 47"
+msgstr ""
+
 #. TRANSLATION: xenia, xenia-canary
 msgctxt "game_options"
 msgid "D3D12 (Default)"
 msgstr "D3D12 (Implicit)"
+
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "D3D12 BACKEND"
+msgstr ""
 
 #. TRANSLATION: xenia, xenia-canary, xenia-edge
 msgctxt "game_options"
@@ -6879,6 +6998,11 @@ msgctxt "game_options"
 msgid "DK Bongos"
 msgstr "DK Bongos"
 
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "DLL OVERRIDE PRESET"
+msgstr ""
+
 #. TRANSLATION: libretro/mednafen_psx
 msgctxt "game_options"
 msgid "DMA Only (Slightly Faster)"
@@ -6978,6 +7102,11 @@ msgstr ""
 msgctxt "game_options"
 msgid "DUALSHOCK MOTION CONTROL"
 msgstr "CONTROL MIȘCARE DUALSHOCK"
+
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "DXVK ASYNC"
+msgstr ""
 
 #. TRANSLATION: wine
 msgctxt "game_options"
@@ -7234,6 +7363,21 @@ msgctxt "game_options"
 msgid "Direct Runner (Default)"
 msgstr ""
 
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "DirectInput Native Then Builtin"
+msgstr ""
+
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "DirectPlay"
+msgstr ""
+
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "DirectX 9"
+msgstr ""
+
 #. TRANSLATION: flatpak, mupen64plus, ppsspp
 msgctxt "game_options"
 msgid "Disable"
@@ -7441,6 +7585,11 @@ msgstr "Jos"
 msgctxt "keys_files"
 msgid "Down/Crouch"
 msgstr "Jos/Ghemuire"
+
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "Download If Missing (Default)"
+msgstr ""
 
 #. TRANSLATION: xroar
 msgctxt "game_options"
@@ -7862,7 +8011,7 @@ msgctxt "game_options"
 msgid "EST5EDT"
 msgstr "EST5EDT"
 
-#. TRANSLATION: mugen
+#. TRANSLATION: mugen, wine
 msgctxt "game_options"
 msgid "ESYNC"
 msgstr "ESYNC"
@@ -8060,6 +8209,11 @@ msgstr "Activează iMuse Digital Audio cu 16 canale."
 msgctxt "game_options"
 msgid "Enable Cemu's performance overlay."
 msgstr "Activează afișajul de performanță Cemu."
+
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "Enable DXVK asynchronous pipeline compilation."
+msgstr ""
 
 #. TRANSLATION: dolphin
 msgctxt "game_options"
@@ -8845,6 +8999,16 @@ msgctxt "game_options"
 msgid "Epoch Game Pocket Computer cartridges"
 msgstr "Cartele Epoch Game Pocket Computer"
 
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "Errors + Fixmes"
+msgstr ""
+
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "Errors Only"
+msgstr ""
+
 #. TRANSLATION: xenia, xenia-canary, xenia-edge
 msgctxt "game_options"
 msgid "Estonia"
@@ -8879,6 +9043,11 @@ msgstr "Pixelii pari"
 msgctxt "game_options"
 msgid "Exclusive Ubershaders"
 msgstr "Ubershadere exclusive"
+
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "Existing Only"
+msgstr ""
 
 #. TRANSLATION: hotkeys.keys
 msgctxt "keys_files"
@@ -9006,6 +9175,11 @@ msgstr ""
 msgctxt "game_options"
 msgid "FAVOURITE COLOUR"
 msgstr "CULOAREA FAVORITĂ"
+
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "FEX ROOTFS"
+msgstr ""
 
 #. TRANSLATION: wine
 msgctxt "game_options"
@@ -9242,7 +9416,7 @@ msgctxt "game_options"
 msgid "FSR"
 msgstr ""
 
-#. TRANSLATION: mugen
+#. TRANSLATION: mugen, wine
 msgctxt "game_options"
 msgid "FSYNC"
 msgstr "FSYNC"
@@ -9683,6 +9857,11 @@ msgid ""
 msgstr ""
 "Forțează GPU-urile Nvidia să fie raportate mereu ca AMD pentru a preveni "
 "probleme cu unele jocuri."
+
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "Force Redownload"
+msgstr ""
 
 #. TRANSLATION: wine
 msgctxt "game_options"
@@ -11185,11 +11364,6 @@ msgctxt "game_options"
 msgid "Improves clarity of distant textures."
 msgstr "Îmbunătățește claritatea texturilor îndepărtate."
 
-#. TRANSLATION: wine
-msgctxt "game_options"
-msgid "Improves frame rate and responsiveness."
-msgstr "Îmbunătățește rata de cadre și receptivitatea."
-
 #. TRANSLATION: shared
 msgctxt "game_options"
 msgid "Improves performance at the cost of latency and more video stuttering."
@@ -11317,6 +11491,11 @@ msgstr ""
 "Introduce CD-ul în timpul animației de boot pentru a preveni încărcarea "
 "nereușită."
 
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "Install common winetricks runtimes into this Wine prefix once."
+msgstr ""
+
 #. TRANSLATION: libretro/mame
 msgctxt "game_options"
 msgid ""
@@ -11361,6 +11540,11 @@ msgstr ""
 msgctxt "game_options"
 msgid "Interpreter (Slowest)"
 msgstr "Interpretor (Lent)"
+
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "Interpreter / Maximum Compatibility"
+msgstr ""
 
 #. TRANSLATION: duckstation
 msgctxt "game_options"
@@ -12158,6 +12342,11 @@ msgctxt "game_options"
 msgid "Limit FPS to reduce high CPU usage."
 msgstr "Limitează FPS pentru a reduce utilizarea CPU-ului."
 
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "Limit Wine/DXVK frame rate."
+msgstr ""
+
 #. TRANSLATION: xenia
 msgctxt "game_options"
 msgid "Limit emulator framerate. Set 0 for uncapped."
@@ -12885,6 +13074,11 @@ msgstr ""
 msgctxt "game_options"
 msgid "May result in a sharper image in some 2D games."
 msgstr "Poate rezulta într-o imagine mai clară în unele jocuri 2D."
+
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "Media Foundation Native Then Builtin"
+msgstr ""
 
 #. TRANSLATION: aethersx2, armsx2, libretro/mesen, libretro/mesen-s, libretro/pcsx2, ...
 msgctxt "game_options"
@@ -14908,6 +15102,11 @@ msgctxt "game_options"
 msgid "Per-game"
 msgstr "Per joc"
 
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "Performance"
+msgstr "Performanță"
+
 #. TRANSLATION: xenia, xenia-canary, xenia-edge
 msgctxt "game_options"
 msgid "Peru"
@@ -15670,6 +15869,11 @@ msgctxt "game_options"
 msgid "RUN-AHEAD FRAMES"
 msgstr "PRE-RULEAZĂ CADRELE"
 
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "RUNTIME INJECTOR"
+msgstr ""
+
 #. TRANSLATION: flatpak
 msgctxt "game_options"
 msgid "RUNTIME PERMISSIONS"
@@ -15784,6 +15988,11 @@ msgctxt "game_options"
 msgid "Relaxed XFloat"
 msgstr "XFloat relaxat"
 
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "Relay Trace"
+msgstr ""
+
 #. TRANSLATION: mohaa.keys
 msgctxt "keys_files"
 msgid "Reload weapon"
@@ -15897,6 +16106,11 @@ msgstr ""
 msgctxt "game_options"
 msgid "Resize automatically screen height."
 msgstr "Redimensionează automat înălțimea ecranului."
+
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "Resolution for Wine virtual desktop mode."
+msgstr ""
 
 #. TRANSLATION: shared
 msgctxt "game_options"
@@ -16857,6 +17071,11 @@ msgstr "CONTROLERE DE SISTEM"
 msgctxt "game_options"
 msgid "SYSTEM MEMORY"
 msgstr "MEMORIE SISTEM"
+
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "Safe"
+msgstr ""
 
 #. TRANSLATION: rpcs3
 msgctxt "game_options"
@@ -20183,6 +20402,16 @@ msgctxt "game_options"
 msgid "VBI SKIP"
 msgstr "OMITERE VBI"
 
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "VC++ 2005-2022"
+msgstr ""
+
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "VC++ 2022"
+msgstr ""
+
 #. TRANSLATION: libretro/mame078plus, mame
 msgctxt "game_options"
 msgid "VERTICAL ROTATION (TATE)"
@@ -20308,6 +20537,11 @@ msgctxt "game_options"
 msgid "VIRTUAL DESKTOP"
 msgstr "DESKTOP VIRTUAL"
 
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "VIRTUAL DESKTOP SIZE"
+msgstr ""
+
 #. TRANSLATION: amiberry
 msgctxt "game_options"
 msgid "VIRTUAL KEYBOARD"
@@ -20317,6 +20551,11 @@ msgstr "TASTATURĂ VIRTUALĂ"
 msgctxt "game_options"
 msgid "VISUAL NUDGE STRENGTH"
 msgstr "INTENSITATE VIZUALĂ ÎNGHIONTIRE"
+
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "VKD3D-Proton / DXVK Package (Default)"
+msgstr ""
 
 #. TRANSLATION: openjk
 msgctxt "game_options"
@@ -20372,6 +20611,11 @@ msgstr "Îmbunătățește mult viteza asocierilor de buffer."
 msgctxt "game_options"
 msgid "Venezuela"
 msgstr "Venezuela"
+
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "Verbose"
+msgstr ""
 
 #. TRANSLATION: drastic, libretro/fceumm, libretro/flycast, libretro/nestopia
 msgctxt "game_options"
@@ -20628,6 +20872,11 @@ msgctxt "game_options"
 msgid "WINE RUNNER"
 msgstr "RUNNER WINE"
 
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "WINE SYNC"
+msgstr ""
+
 #. TRANSLATION: bigpemu
 msgctxt "game_options"
 msgid "WOLFENSTEIN 3D"
@@ -20828,6 +21077,11 @@ msgctxt "game_options"
 msgid "Wimpy"
 msgstr "Slabă"
 
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "Wine Builtin"
+msgstr ""
+
 #. TRANSLATION: libretro/puae, libretro/puae2021
 msgctxt "game_options"
 msgid "Works with 'Cycle-exact' mode and for a few games."
@@ -20867,6 +21121,16 @@ msgctxt "game_options"
 msgid "X2"
 msgstr "X2"
 
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "XAudio / XACT"
+msgstr ""
+
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "XAudio Native Then Builtin"
+msgstr ""
+
 #. TRANSLATION: xenia, xenia-canary, xenia-edge
 msgctxt "game_options"
 msgid "XBLA license enabled (Default)"
@@ -20890,6 +21154,11 @@ msgstr ""
 #. TRANSLATION: xenia, xenia-canary, xenia-edge
 msgctxt "game_options"
 msgid "XInput"
+msgstr ""
+
+#. TRANSLATION: wine
+msgctxt "game_options"
+msgid "XInput Native Then Builtin"
 msgstr ""
 
 #. TRANSLATION: shared
@@ -21628,6 +21897,10 @@ msgstr "galben/albastru"
 #~ msgid "Affects how the game output is scaled to the resolution."
 #~ msgstr "Afectează cum afișarea jocului este scalată la rezoluție."
 
+#~ msgctxt "game_options"
+#~ msgid "Allows you to limit FPS to 60."
+#~ msgstr "Îți permite să limitezi FPS la 60."
+
 #~ msgctxt "keys_files"
 #~ msgid "Analog 1 Down"
 #~ msgstr "Analog 1 Jos"
@@ -21946,6 +22219,10 @@ msgstr "galben/albastru"
 #~ msgid "IMAGE SCALING"
 #~ msgstr "SCALARE IMAGINE"
 
+#~ msgctxt "game_options"
+#~ msgid "Improves frame rate and responsiveness."
+#~ msgstr "Îmbunătățește rata de cadre și receptivitatea."
+
 #~ msgctxt "keys_files"
 #~ msgid "Left Flipper"
 #~ msgstr "Aripa stângă"
@@ -22073,10 +22350,6 @@ msgstr "galben/albastru"
 #~ msgctxt "keys_files"
 #~ msgid "Pause / Menu"
 #~ msgstr "Pauză / Meniu"
-
-#~ msgctxt "game_options"
-#~ msgid "Performance"
-#~ msgstr "Performanță"
 
 #~ msgctxt "keys_files"
 #~ msgid "Plunger"

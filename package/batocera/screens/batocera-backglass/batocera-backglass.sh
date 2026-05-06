@@ -5,8 +5,14 @@ EVENTS="game-selected system-selected"
 PIDFILE="/var/run/batocera-backglass.pid"
 PARAMSFILE="/var/run/batocera-backglass.params"
 
-# unset these variables while they causes issues on my side for webkit
+# Avoid WebKitGTK's DMABUF renderer on Thor, but keep a real EGL path available.
+export GDK_BACKEND=x11
+unset GDK_GL
+unset GSK_RENDERER
+unset LIBGL_ALWAYS_SOFTWARE
+export WEBKIT_DISABLE_COMPOSITING_MODE=1
 export WEBKIT_DISABLE_DMABUF_RENDERER=1
+export WEBKIT_DMABUF_RENDERER_DISABLE_GBM=1
 export __GLX_VENDOR_LIBRARY_NAME=
 export __NV_PRIME_RENDER_OFFLOAD=
 export __VK_LAYER_NV_optimus=
@@ -38,6 +44,24 @@ isRunning() {
     else
 	return 1
     fi
+}
+
+isDisabledTheme() {
+    case "$1" in
+	none|disabled|off)
+	    return 0
+	    ;;
+	*)
+	    return 1
+	    ;;
+    esac
+}
+
+removeHooks() {
+    for EVT in ${EVENTS}
+    do
+	unlink /var/run/emulationstation/scripts/${EVT}/batocera-backglass.sh 2>/dev/null || true
+    done
 }
 
 getUrl() {
@@ -99,6 +123,12 @@ case "${ACTION}" in
 	    echo "${X} ${Y} ${WIDTH} ${HEIGHT} ${THEME}" > "${PARAMSFILE}" || exit 1
 	fi
 
+	if isDisabledTheme "${THEME}"
+	then
+	    removeHooks
+	    exit 0
+	fi
+
 	### theme
 	THEMEPATH=$(getUrl "${THEME}")
 	###
@@ -125,10 +155,7 @@ case "${ACTION}" in
 	fi
 
 	# remove hooks
-        for EVT in ${EVENTS}
-        do
-            unlink /var/run/emulationstation/scripts/${EVT}/batocera-backglass.sh
-        done
+	removeHooks
 	;;
 
     "restart")
@@ -145,6 +172,12 @@ case "${ACTION}" in
 
 	# reread theme from configuration in case it changed
 	THEME=$(batocera-settings-get backglass.theme)
+	if isDisabledTheme "${THEME}"
+	then
+	    removeHooks
+	    exit 0
+	fi
+
 	THEMEPATH=$(getUrl "${THEME}")
 
 	batocera-backglass-window --x "${X}" --y "${Y}" --width "${WIDTH}" --height "${HEIGHT}" --www "${THEMEPATH}" &
