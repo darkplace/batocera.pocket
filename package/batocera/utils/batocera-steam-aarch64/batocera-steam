@@ -319,10 +319,64 @@ steam_gamepadui_enabled() {
     esac
 }
 
+steam_client_library_path() {
+    local path="${STEAM_ROOT}/lib/aarch64-linux-gnu:${STEAM_ROOT}/steamrtarm64"
+
+    if [[ -n "${LD_LIBRARY_PATH:-}" ]]; then
+        path="${path}:${LD_LIBRARY_PATH}"
+    fi
+
+    printf '%s\n' "${path}"
+}
+
+steam_client_dependencies_ready() {
+    local steamui="${STEAM_ROOT}/steamrtarm64/steamui.so"
+    local missing
+    local lib
+
+    [[ -f "${steamui}" ]] || return 1
+
+    if command -v ldd >/dev/null 2>&1; then
+        missing="$(LD_LIBRARY_PATH="$(steam_client_library_path)" ldd "${steamui}" 2>/dev/null | grep 'not found' || true)"
+        if [[ -n "${missing}" ]]; then
+            log_msg "Steam client runtime dependencies are incomplete:"
+            while IFS= read -r lib; do
+                [[ -n "${lib}" ]] && log_msg "  ${lib}"
+            done <<< "${missing}"
+            return 1
+        fi
+        return 0
+    fi
+
+    for lib in \
+        libavcodec.so.62 \
+        libavfilter.so.11 \
+        libavformat.so.62 \
+        libavutil.so.60 \
+        libswresample.so.6 \
+        libswscale.so.9
+    do
+        [[ -e "${STEAM_ROOT}/steamrtarm64/${lib}" || -e "${STEAM_ROOT}/lib/aarch64-linux-gnu/${lib}" ]] || return 1
+    done
+}
+
+steam_startup_args_enabled() {
+    if [[ "${BATOCERA_STEAM_STARTUP_ARGS:-1}" == "0" ]]; then
+        return 1
+    fi
+
+    if ! steam_client_dependencies_ready; then
+        log_msg "Steam client packages are incomplete; allowing bootstrap/update before launch."
+        return 1
+    fi
+
+    return 0
+}
+
 append_steam_startup_args() {
     local -n args="$1"
 
-    if [[ "${BATOCERA_STEAM_STARTUP_ARGS:-1}" == "0" ]]; then
+    if ! steam_startup_args_enabled; then
         return
     fi
 
@@ -1041,7 +1095,7 @@ launch_native_steam() {
     game_target="$(normalize_game_target "${GAME_ID}")"
     build_steam_args steam_args "${game_target}"
 
-    export LD_LIBRARY_PATH="${STEAM_ROOT}/lib/aarch64-linux-gnu:${STEAM_ROOT}/steamrtarm64${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
+    export LD_LIBRARY_PATH="$(steam_client_library_path)"
     export STEAM_COMPAT_CLIENT_INSTALL_PATH="${STEAM_ROOT}"
 
     for attempt in $(seq 1 "${max_attempts}"); do
@@ -1076,7 +1130,7 @@ launch_steam_deck_session() {
     game_target="$(normalize_game_target "${GAME_ID}")"
     build_steam_args steam_args "${game_target}"
 
-    export LD_LIBRARY_PATH="${STEAM_ROOT}/lib/aarch64-linux-gnu:${STEAM_ROOT}/steamrtarm64${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
+    export LD_LIBRARY_PATH="$(steam_client_library_path)"
     export STEAM_COMPAT_CLIENT_INSTALL_PATH="${STEAM_ROOT}"
     export BATOCERA_STEAM_USE_GAMESCOPE="1"
     export BATOCERA_STEAM_GAMEPADUI="${BATOCERA_STEAM_GAMEPADUI:-1}"
