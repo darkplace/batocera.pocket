@@ -43,13 +43,15 @@ Includes additional emulators where supported:
 - AetherSX2  
 - RPCS3  
 - Vita3K  
-- Cemu  
+- Cemu
+- Xenia
 - SkyEmu  
 - NanoBoy Advance
 - And more emulators
 - Steam aarch64 (aarch64 client) (with gamescope working on sm8550) (h/t tipoex/mia milkyway)
 - DXVK (DX11 support)
 - Fex-Emu support on Wine runners
+- LSFG-VK (requires Losless.dll - can be bought on steam)
 - Docker *(enable in Services menu)*
 - Hotkey + touchscreen support for on-screen keyboard  
 
