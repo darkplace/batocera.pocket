@@ -45,6 +45,8 @@ Includes additional emulators where supported:
 - Vita3K  
 - Cemu
 - Xenia
+  <img width="661" height="881" alt="image" src="https://github.com/user-attachments/assets/ce658ce6-7753-47fd-a56e-caaeddf29c67" />
+
 - SkyEmu  
 - NanoBoy Advance
 - And more emulators
@@ -52,6 +54,8 @@ Includes additional emulators where supported:
 - DXVK (DX11 support)
 - Fex-Emu support on Wine runners
 - LSFG-VK (requires Losless.dll - can be bought on steam)
+  <img width="661" height="881" alt="image" src="https://github.com/user-attachments/assets/7183369d-ca34-4d24-9f6b-86d35feb9918" />
+
 - Docker *(enable in Services menu)*
 - Hotkey + touchscreen support for on-screen keyboard  
 
@@ -64,6 +68,9 @@ Includes additional emulators where supported:
 - Many DX11-era titles may run  
 - Vulkan-native titles perform best  
 - Not a replacement for x86 gaming PCs  
+- Extra thor perks like Conky System monitor
+  <img width="661" height="881" alt="image" src="https://github.com/user-attachments/assets/2696ed6f-0bdd-48f6-9c82-d4e3ed377acb" />
+
 
 ### General Notes
 - Performance varies heavily by engine  
