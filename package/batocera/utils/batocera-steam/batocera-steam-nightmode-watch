@@ -2,7 +2,6 @@
 set -u
 
 LOG="/userdata/system/logs/steam.log"
-STEAM_CONFIG="${STEAM_CONFIG:-/userdata/system/steam/config/config.vdf}"
 RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
 STATE_FILE="${RUNTIME_DIR}/batocera-steam-nightmode.state"
 WARM_LOOK="${BATOCERA_STEAM_NIGHTMODE_LOOK:-/usr/share/batocera/steam/looks/night-mode-warm.cube}"
@@ -13,6 +12,31 @@ mkdir -p "$(dirname "${LOG}")" "${RUNTIME_DIR}" 2>/dev/null || true
 log() {
     echo "steam-nightmode: $*" >> "${LOG}"
 }
+
+resolve_steam_config() {
+    local candidate
+    local explicit="${STEAM_CONFIG:-}"
+
+    if [[ -n "${explicit}" && -r "${explicit}" ]]; then
+        printf '%s\n' "${explicit}"
+        return 0
+    fi
+
+    for candidate in \
+        "/userdata/system/steam/config/config.vdf" \
+        "/userdata/system/.steam/steam/config/config.vdf" \
+        "/userdata/system/.local/share/Steam/config/config.vdf"
+    do
+        if [[ -r "${candidate}" ]]; then
+            printf '%s\n' "${candidate}"
+            return 0
+        fi
+    done
+
+    printf '%s\n' "${explicit:-/userdata/system/steam/config/config.vdf}"
+}
+
+STEAM_CONFIG="$(resolve_steam_config)"
 
 vdf_value() {
     local key="$1"
@@ -158,6 +182,8 @@ main() {
         log "gamescope display was not available"
         return 0
     fi
+
+    log "using Steam config ${STEAM_CONFIG}"
 
     while gamescope_running; do
         if night_mode_enabled; then

@@ -454,7 +454,7 @@ install_steam_registry_defaults() {
     local registry_src="/usr/share/steam/registry.vdf"
     local registry_dst
 
-    [[ -f "${registry_src}" ]] || return
+    [[ -f "${registry_src}" ]] || return 0
 
     mkdir -p "${HOME}/.steam" "${STEAM_ROOT}" "/userdata/roms/steam/steamapps"
     for registry_dst in "${HOME}/.steam/registry.vdf" "${STEAM_ROOT}/registry.vdf"; do
@@ -606,7 +606,7 @@ link_arm64_runtime_libs() {
     local libnm_lib
 
     runtime_lib_dir="$(find "${STEAM_ROOT}/steam-runtime-steamrt-arm64" -path '*/files/lib/aarch64-linux-gnu' -type d 2>/dev/null | head -n 1 || true)"
-    [[ -n "${runtime_lib_dir}" ]] || return
+    [[ -n "${runtime_lib_dir}" ]] || return 0
 
     ibus_lib="$(find "${runtime_lib_dir}" -maxdepth 1 -name 'libibus-1.0.so.5.*' -type f 2>/dev/null | head -n 1 || true)"
     if [[ -n "${ibus_lib}" ]]; then
@@ -670,7 +670,7 @@ EOF
 patch_arm64_steamwebhelper_launcher() {
     local helper_script="${STEAM_ROOT}/steamrtarm64/steamwebhelper.sh"
 
-    [[ -f "${helper_script}" ]] || return
+    [[ -f "${helper_script}" ]] || return 0
     if grep -q 'BATOCERA_STEAMWEBHELPER_TASKSET_FALLBACK' "${helper_script}" 2>/dev/null; then
         return
     fi

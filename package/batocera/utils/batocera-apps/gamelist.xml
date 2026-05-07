@@ -1,11 +1,6 @@
 <?xml version="1.0"?>
 <gameList>
   <game>
-    <path>./VacuumTube.sh</path>
-    <name>VacuumTube</name>
-    <image>./images/vacuumtube.png</image>
-  </game>
-  <game>
     <path>./Chrome.sh</path>
     <name>Google Chrome</name>
     <image>./images/chrome.png</image>

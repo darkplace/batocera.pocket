@@ -227,7 +227,10 @@ define BATOCERA_APPS_INSTALL_TARGET_CMDS
 
 	mkdir -p $(TARGET_DIR)/usr/share/batocera/datainit/roms/apps
 	mkdir -p $(TARGET_DIR)/usr/share/batocera/datainit/roms/apps/images
-	printf '%s\n' '#!/bin/bash' 'set -euo pipefail' 'batocera-mouse show' "trap 'batocera-mouse hide' EXIT" 'exec batocera-app-vacuumtube' > $(TARGET_DIR)/usr/share/batocera/datainit/roms/apps/VacuumTube.sh
+	rm -f \
+		$(TARGET_DIR)/usr/share/batocera/datainit/roms/apps/VacuumTube.sh \
+		$(TARGET_DIR)/usr/share/batocera/datainit/roms/apps/VacuumTube.sh.keys \
+		$(TARGET_DIR)/usr/share/batocera/datainit/roms/apps/images/vacuumtube.png
 	printf '%s\n' '#!/bin/bash' 'set -euo pipefail' 'batocera-mouse show' "trap 'batocera-mouse hide' EXIT" 'exec batocera-app-chrome' > $(TARGET_DIR)/usr/share/batocera/datainit/roms/apps/Chrome.sh
 	printf '%s\n' '#!/bin/bash' 'set -euo pipefail' 'batocera-mouse show' "trap 'batocera-mouse hide' EXIT" 'exec batocera-app-firefox' > $(TARGET_DIR)/usr/share/batocera/datainit/roms/apps/Firefox.sh
 	install -D -m 0755 \
@@ -240,14 +243,8 @@ define BATOCERA_APPS_INSTALL_TARGET_CMDS
 	printf '%s\n' '#!/bin/bash' 'set -euo pipefail' 'batocera-mouse show' "trap 'batocera-mouse hide' EXIT" 'exec batocera-app-chiaki' > $(TARGET_DIR)/usr/share/batocera/datainit/roms/apps/Chiaki.sh
 	printf '%s\n' '#!/bin/bash' 'set -euo pipefail' 'batocera-mouse show' "trap 'batocera-mouse hide' EXIT" 'exec batocera-app-peazip' > $(TARGET_DIR)/usr/share/batocera/datainit/roms/apps/PeaZip.sh
 	install -D -m 0644 \
-		$(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/utils/batocera-apps/vacuumtube.keys \
-		$(TARGET_DIR)/usr/share/batocera/datainit/roms/apps/VacuumTube.sh.keys
-	install -D -m 0644 \
 		$(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/utils/batocera-apps/gamelist.xml \
 		$(TARGET_DIR)/usr/share/batocera/datainit/roms/apps/gamelist.xml
-	install -D -m 0644 \
-		$(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/core/batocera-desktopapps/icons/vacuumtube.png \
-		$(TARGET_DIR)/usr/share/batocera/datainit/roms/apps/images/vacuumtube.png
 	install -D -m 0644 \
 		$(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/core/batocera-desktopapps/icons/chrome.png \
 		$(TARGET_DIR)/usr/share/batocera/datainit/roms/apps/images/chrome.png

@@ -44,7 +44,10 @@ define BATOCERA_APPS_AARCH64_INSTALL_TARGET_CMDS
 		$(TARGET_DIR)/usr/share/batocera/apps/steamlink.AppImage \
 		$(TARGET_DIR)/usr/bin/batocera-app-steamlink \
 		$(TARGET_DIR)/usr/share/batocera/datainit/roms/apps/SteamLink.sh \
-		$(TARGET_DIR)/usr/share/batocera/datainit/roms/apps/images/steamlink.png
+		$(TARGET_DIR)/usr/share/batocera/datainit/roms/apps/images/steamlink.png \
+		$(TARGET_DIR)/usr/share/batocera/datainit/roms/apps/VacuumTube.sh \
+		$(TARGET_DIR)/usr/share/batocera/datainit/roms/apps/VacuumTube.sh.keys \
+		$(TARGET_DIR)/usr/share/batocera/datainit/roms/apps/images/vacuumtube.png
 
 	install -D -m 0755 \
 		$(BATOCERA_APPS_AARCH64_PKGDIR)/batocera-appimage-launcher \
@@ -60,23 +63,15 @@ define BATOCERA_APPS_AARCH64_INSTALL_TARGET_CMDS
 	mkdir -p $(TARGET_DIR)/usr/share/batocera/datainit/roms/apps/images
 	install -D -m 0644 $(BATOCERA_APPS_AARCH64_PKGDIR)/gamelist.xml \
 		$(TARGET_DIR)/usr/share/batocera/datainit/roms/apps/gamelist.xml
-	printf '%s\n' '#!/bin/bash' 'set -euo pipefail' 'batocera-mouse show' "trap 'batocera-mouse hide' EXIT" 'exec batocera-app-vacuumtube' > $(TARGET_DIR)/usr/share/batocera/datainit/roms/apps/VacuumTube.sh
 	install -D -m 0755 $(BATOCERA_APPS_AARCH64_PKGDIR)/roms/Brave.sh \
 		$(TARGET_DIR)/usr/share/batocera/datainit/roms/apps/Brave.sh
 	install -D -m 0755 $(BATOCERA_APPS_AARCH64_PKGDIR)/roms/Firefox.sh \
 		$(TARGET_DIR)/usr/share/batocera/datainit/roms/apps/Firefox.sh
-	install -D -m 0644 \
-		$(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/utils/batocera-apps/vacuumtube.keys \
-		$(TARGET_DIR)/usr/share/batocera/datainit/roms/apps/VacuumTube.sh.keys
-	install -D -m 0644 \
-		$(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/core/batocera-desktopapps/icons/vacuumtube.png \
-		$(TARGET_DIR)/usr/share/batocera/datainit/roms/apps/images/vacuumtube.png
 	install -D -m 0644 $(BATOCERA_APPS_AARCH64_PKGDIR)/images/brave.png \
 		$(TARGET_DIR)/usr/share/batocera/datainit/roms/apps/images/brave.png
 	install -D -m 0644 $(BATOCERA_APPS_AARCH64_PKGDIR)/images/firefox.png \
 		$(TARGET_DIR)/usr/share/batocera/datainit/roms/apps/images/firefox.png
-	chmod 0755 $(TARGET_DIR)/usr/bin/batocera-app-vacuumtube \
-		$(TARGET_DIR)/usr/share/batocera/datainit/roms/apps/VacuumTube.sh
+	chmod 0755 $(TARGET_DIR)/usr/bin/batocera-app-vacuumtube
 endef
 
 $(eval $(generic-package))

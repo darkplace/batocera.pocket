@@ -232,14 +232,14 @@ start_thor_backlight_mirror() {
     local -a backlights=()
     local backlight
 
-    [[ "${BATOCERA_STEAM_MIRROR_BACKLIGHTS:-1}" != "0" ]] || return
-    is_ayn_thor || return
+    [[ "${BATOCERA_STEAM_MIRROR_BACKLIGHTS:-1}" != "0" ]] || return 0
+    is_ayn_thor || return 0
 
     while IFS= read -r backlight; do
         backlights+=("${backlight}")
     done < <(list_backlight_dirs)
 
-    (( ${#backlights[@]} > 1 )) || return
+    (( ${#backlights[@]} > 1 )) || return 0
 
     (
         watch_backlights=("${backlights[@]}")
@@ -794,6 +794,58 @@ start_nightmode_watch() {
     echo "Steam night mode watcher started" >> "${log}"
 }
 
+aarch64_host() {
+    case "$(uname -m 2>/dev/null || true)" in
+        aarch64|arm64)
+            return 0
+            ;;
+    esac
+
+    return 1
+}
+
+prepare_mangoapp_config() {
+    local config_path
+    local visible="${BATOCERA_STEAM_GS_MANGOAPP_VISIBLE:-auto}"
+
+    if [[ "${BATOCERA_STEAM_GS_MANGOAPP:-0}" == "0" && -z "${MANGOHUD_CONFIGFILE:-}" && "${MANGOHUD:-0}" != "1" ]]; then
+        return
+    fi
+
+    [[ -z "${MANGOHUD_CONFIGFILE:-}" ]] || return
+
+    case "${visible}" in
+        0|false|False|FALSE|off|Off|OFF|no|No|NO)
+            return
+            ;;
+        auto|"")
+            aarch64_host || return
+            ;;
+    esac
+
+    config_path="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/batocera-steam-mangoapp.conf"
+    mkdir -p "$(dirname "${config_path}")" 2>/dev/null || true
+    {
+        printf '%s\n' "control=mangohud"
+        printf '%s\n' "mangoapp_steam"
+        printf '%s\n' "fsr_steam_sharpness=5"
+        printf '%s\n' "preset=2"
+        printf '%s\n' "legacy_layout=0"
+        printf '%s\n' "horizontal=1"
+        printf '%s\n' "fps=1"
+        printf '%s\n' "frame_timing=1"
+        printf '%s\n' "frametime=0"
+        printf '%s\n' "cpu_stats=1"
+        printf '%s\n' "gpu_stats=1"
+        printf '%s\n' "ram=1"
+        printf '%s\n' "battery=1"
+        printf '%s\n' "hud_no_margin=1"
+    } > "${config_path}" || return
+
+    export MANGOHUD_CONFIGFILE="${config_path}"
+    echo "Steam MangoApp config: ${config_path}" >> "${log}"
+}
+
 start_decky_loader
 ensure_system_bus_address
 start_networkmanager_stub
@@ -910,6 +962,7 @@ if command -v gamescope >/dev/null 2>&1 && [[ "${BATOCERA_STEAM_USE_GAMESCOPE:-1
         export GAMESCOPE_FAKE_OUTPUT_MM="${BATOCERA_STEAM_GS_FAKE_OUTPUT_MM:-508x286}"
     fi
 
+    prepare_mangoapp_config
     echo "Steam gamescope args: ${gs_args[*]} fake_output_mm=${GAMESCOPE_FAKE_OUTPUT_MM:-unset}" >> "${log}"
     start_steam_install_callouts
     start_nightmode_watch
