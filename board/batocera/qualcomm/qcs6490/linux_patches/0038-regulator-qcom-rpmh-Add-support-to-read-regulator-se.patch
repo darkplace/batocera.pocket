@@ -25,21 +25,13 @@ settings across the transition from bootloader to kernel.
 Signed-off-by: David Collins <david.collins@oss.qualcomm.com>
 Signed-off-by: Kamal Wadhwa <kamal.wadhwa@oss.qualcomm.com>
 ---
- drivers/regulator/qcom-rpmh-regulator.c | 71 ++++++++++
- 1 file changed, 71 insertions(+)
+ drivers/regulator/qcom-rpmh-regulator.c | 70 ++++++++++
+ 1 file changed, 70 insertions(+)
 
 diff --git a/drivers/regulator/qcom-rpmh-regulator.c b/drivers/regulator/qcom-rpmh-regulator.c
 index 111111111111..222222222222 100644
 --- a/drivers/regulator/qcom-rpmh-regulator.c
 +++ b/drivers/regulator/qcom-rpmh-regulator.c
-@@ -1,6 +1,7 @@
- // SPDX-License-Identifier: GPL-2.0
- // Copyright (c) 2018-2021, The Linux Foundation. All rights reserved.
- // Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
-+// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
- 
- #define pr_fmt(fmt) "%s: " fmt, __func__
- 
 @@ -33,8 +34,13 @@ enum rpmh_regulator_type {
  };
  
@@ -149,4 +141,3 @@ index 111111111111..222222222222 100644
  }
 -- 
 Armbian
-

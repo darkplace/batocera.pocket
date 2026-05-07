@@ -12,11 +12,9 @@ diff --git a/drivers/ufs/host/ufs-qcom.c b/drivers/ufs/host/ufs-qcom.c
 index 111111111111..222222222222 100644
 --- a/drivers/ufs/host/ufs-qcom.c
 +++ b/drivers/ufs/host/ufs-qcom.c
-@@ -2224,6 +2224,20 @@ static int ufs_qcom_probe(struct platform_device *pdev)
- {
- 	int err;
- 	struct device *dev = &pdev->dev;
+@@ -2387,0 +2388,1 @@ static int ufs_qcom_probe(struct platform_device *pdev)
 +	struct gpio_desc *cd_gpio;
+@@ -2392,0 +2394,13 @@ static int ufs_qcom_probe(struct platform_device *pdev)
 +
 +	cd_gpio = devm_gpiod_get_optional(dev, "cd", GPIOD_IN);
 +	if (IS_ERR(cd_gpio)) {
@@ -30,9 +28,5 @@ index 111111111111..222222222222 100644
 +			return 0;
 +		}
 +	}
- 
- 	/* Perform generic probe */
- 	err = ufshcd_pltfrm_init(pdev, &ufs_hba_qcom_vops);
 -- 
 Armbian
-

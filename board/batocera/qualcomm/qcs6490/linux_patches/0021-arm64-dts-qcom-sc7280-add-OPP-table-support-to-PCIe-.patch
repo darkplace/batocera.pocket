@@ -1,16 +1,16 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Xilin Wu <sophon@radxa.com>
 Date: Wed, 11 Jun 2025 23:24:20 +0800
-Subject: arm64: dts: qcom: sc7280: add OPP table support to PCIe 1
+Subject: arm64: dts: qcom: kodiak: add OPP table support to PCIe 1
 
 ---
- arch/arm64/boot/dts/qcom/sc7280.dtsi | 47 ++++++++++
+ arch/arm64/boot/dts/qcom/kodiak.dtsi | 47 ++++++++++
  1 file changed, 47 insertions(+)
 
-diff --git a/arch/arm64/boot/dts/qcom/sc7280.dtsi b/arch/arm64/boot/dts/qcom/sc7280.dtsi
+diff --git a/arch/arm64/boot/dts/qcom/kodiak.dtsi b/arch/arm64/boot/dts/qcom/kodiak.dtsi
 index 111111111111..222222222222 100644
---- a/arch/arm64/boot/dts/qcom/sc7280.dtsi
-+++ b/arch/arm64/boot/dts/qcom/sc7280.dtsi
+--- a/arch/arm64/boot/dts/qcom/kodiak.dtsi
++++ b/arch/arm64/boot/dts/qcom/kodiak.dtsi
 @@ -2393,8 +2393,16 @@ pcie1: pcie@1c08000 {
  			resets = <&gcc GCC_PCIE_1_BCR>;
  			reset-names = "pci";
@@ -71,9 +71,8 @@ index 111111111111..222222222222 100644
 +				};
 +			};
 +
- 			pcie@0 {
+			pcie1_port0: pcie@0 {
  				device_type = "pci";
  				reg = <0x0 0x0 0x0 0x0 0x0>;
 -- 
 Armbian
-

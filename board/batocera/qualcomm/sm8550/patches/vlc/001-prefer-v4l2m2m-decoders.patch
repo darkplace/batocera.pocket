@@ -1,0 +1,142 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Thu, 7 May 2026 00:00:00 +0000
+Subject: [PATCH] avcodec: prefer V4L2 mem2mem decoders on Qualcomm
+
+Try the stateful V4L2 wrappers first for codecs exposed by Qualcomm
+video engines, then retry the normal FFmpeg decoder when the device path
+does not open.
+---
+ modules/codec/avcodec/avcodec.c | 48 +++++++++++++++++++++++++++++--
+ modules/codec/avcodec/avcodec.h |  2 ++
+ modules/codec/avcodec/video.c   | 30 ++++++++++++++++++-
+ 3 files changed, 72 insertions(+), 3 deletions(-)
+
+diff --git a/modules/codec/avcodec/avcodec.c b/modules/codec/avcodec/avcodec.c
+index 2e60872..2bb53f9 100644
+--- a/modules/codec/avcodec/avcodec.c
++++ b/modules/codec/avcodec/avcodec.c
+@@ -249,8 +249,32 @@ vlc_module_begin ()
+ #endif
+ vlc_module_end ()
+ 
+-AVCodecContext *ffmpeg_AllocContext( decoder_t *p_dec,
+-                                     const AVCodec **restrict codecp )
++static const char *ffmpeg_GetV4L2M2MDecoderName( unsigned i_codec_id )
++{
++    switch( i_codec_id )
++    {
++        case AV_CODEC_ID_H264:
++            return "h264_v4l2m2m";
++        case AV_CODEC_ID_HEVC:
++            return "hevc_v4l2m2m";
++        case AV_CODEC_ID_VP8:
++            return "vp8_v4l2m2m";
++        case AV_CODEC_ID_VP9:
++            return "vp9_v4l2m2m";
++        default:
++            return NULL;
++    }
++}
++
++bool ffmpeg_IsV4L2M2MCodec( const AVCodec *codec )
++{
++    return codec != NULL && codec->wrapper_name != NULL &&
++           !strcmp( codec->wrapper_name, "v4l2m2m" );
++}
++
++static AVCodecContext *ffmpeg_AllocContextImpl( decoder_t *p_dec,
++                                                const AVCodec **restrict codecp,
++                                                bool b_prefer_v4l2m2m )
+ {
+     unsigned i_codec_id;
+     const char *psz_namecodec;
+@@ -284,6 +308,16 @@ static AVCodecContext *ffmpeg_AllocContextImpl( decoder_t *p_dec,
+         }
+         free( psz_decoder );
+     }
++    if( !p_codec && b_prefer_v4l2m2m )
++    {
++        const char *psz_v4l2m2m = ffmpeg_GetV4L2M2MDecoderName( i_codec_id );
++        if( psz_v4l2m2m != NULL )
++        {
++            p_codec = avcodec_find_decoder_by_name( psz_v4l2m2m );
++            if( p_codec != NULL )
++                msg_Dbg( p_dec, "preferring decoder `%s'", psz_v4l2m2m );
++        }
++    }
+     if( !p_codec )
+         p_codec = avcodec_find_decoder( i_codec_id );
+     if( !p_codec )
+@@ -303,6 +337,18 @@ static AVCodecContext *ffmpeg_AllocContextImpl( decoder_t *p_dec,
+     avctx->opaque = p_dec;
+     return avctx;
+ }
++
++AVCodecContext *ffmpeg_AllocContext( decoder_t *p_dec,
++                                     const AVCodec **restrict codecp )
++{
++    return ffmpeg_AllocContextImpl( p_dec, codecp, true );
++}
++
++AVCodecContext *ffmpeg_AllocContextFallback( decoder_t *p_dec,
++                                             const AVCodec **restrict codecp )
++{
++    return ffmpeg_AllocContextImpl( p_dec, codecp, false );
++}
+ 
+ /*****************************************************************************
+  * ffmpeg_OpenCodec:
+diff --git a/modules/codec/avcodec/avcodec.h b/modules/codec/avcodec/avcodec.h
+index c0e9467..92527dc 100644
+--- a/modules/codec/avcodec/avcodec.h
++++ b/modules/codec/avcodec/avcodec.h
+@@ -48,7 +48,9 @@ void EndVideoDec( vlc_object_t * );
+ 
+ /* Initialize decoder */
+ AVCodecContext *ffmpeg_AllocContext( decoder_t *, const AVCodec ** );
++AVCodecContext *ffmpeg_AllocContextFallback( decoder_t *, const AVCodec ** );
+ int ffmpeg_OpenCodec( decoder_t *p_dec, AVCodecContext *, const AVCodec * );
++bool ffmpeg_IsV4L2M2MCodec( const AVCodec * );
+ 
+ /*****************************************************************************
+  * Module descriptor help strings
+diff --git a/modules/codec/avcodec/video.c b/modules/codec/avcodec/video.c
+index 551f148..1ac9699 100644
+--- a/modules/codec/avcodec/video.c
++++ b/modules/codec/avcodec/video.c
+@@ -836,7 +836,31 @@ int InitVideoDec( vlc_object_t *obj )
+     p_sys->level = -1;
+     p_sys->b_hardware_only = false;
+ 
+-    return InitVideoDecCommon( p_dec );
++    int ret = InitVideoDecCommon( p_dec );
++    if( ret == VLC_SUCCESS || !ffmpeg_IsV4L2M2MCodec( p_codec ) )
++        return ret;
++
++    msg_Warn( p_dec, "V4L2 mem2mem decoder failed, retrying generic FFmpeg decoder" );
++
++    p_context = ffmpeg_AllocContextFallback( p_dec, &p_codec );
++    if( p_context == NULL )
++        return VLC_EGENERIC;
++
++    p_sys = calloc( 1, sizeof(*p_sys) );
++    if( unlikely(p_sys == NULL) )
++    {
++        avcodec_free_context( &p_context );
++        return VLC_ENOMEM;
++    }
++
++    p_dec->p_sys = p_sys;
++    p_sys->p_context = p_context;
++    p_sys->p_codec = p_codec;
++    p_sys->profile = -1;
++    p_sys->level = -1;
++    p_sys->b_hardware_only = false;
++
++    return InitVideoDecCommon( p_dec );
+ }
+ 
+ /*****************************************************************************
+-- 
+2.43.0

@@ -6,6 +6,9 @@
 # batocera - remove 0001 patch file with bump
 # When updating the version, please also update mesa3d-headers
 MESA3D_VERSION = 26.0.6
+ifneq ($(BR2_PACKAGE_BATOCERA_TARGET_QCS6490)$(BR2_PACKAGE_BATOCERA_TARGET_SM8550),)
+MESA3D_VERSION = 26.1.0
+endif
 MESA3D_SOURCE = mesa-$(MESA3D_VERSION).tar.xz
 MESA3D_SITE = https://archive.mesa3d.org
 MESA3D_LICENSE = MIT, SGI, Khronos
