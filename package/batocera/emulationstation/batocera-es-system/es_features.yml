@@ -8856,6 +8856,8 @@ dolphin:
             Steering Wheel: 8
             Dance Mat: 9
             DK Bongos: 10
+            GBA (Integrated): 13
+            GBA (TCP): 5
             Keyboard: 7
         dolphin_port_2_type:
           group: CONTROLS
@@ -8870,6 +8872,8 @@ dolphin:
             Steering Wheel: 8
             Dance Mat: 9
             DK Bongos: 10
+            GBA (Integrated): 13
+            GBA (TCP): 5
             Keyboard: 7
         dolphin_port_3_type:
           group: CONTROLS
@@ -8884,6 +8888,8 @@ dolphin:
             Steering Wheel: 8
             Dance Mat: 9
             DK Bongos: 10
+            GBA (Integrated): 13
+            GBA (TCP): 5
             Keyboard: 7
         dolphin_port_4_type:
           group: CONTROLS
@@ -8898,7 +8904,25 @@ dolphin:
             Steering Wheel: 8
             Dance Mat: 9
             DK Bongos: 10
+            GBA (Integrated): 13
+            GBA (TCP): 5
             Keyboard: 7
+        dolphin_gba_screen:
+          group: CONTROLS
+          submenu: GAMECUBE GBA LINK
+          prompt: GBA SCREEN
+          description: Place Dolphin's integrated GBA window on the main screen or
+            the lower panel.
+          choices:
+            Main Screen: main
+            Bottom Panel: bottom
+        dolphin_gba_rom:
+          group: CONTROLS
+          submenu: GAMECUBE GBA LINK
+          prompt: GBA ROM PATH
+          description: Optional path to load into Dolphin's integrated GBA for GBA
+            link games.
+          preset: input
         alt_mappings_1:
           group: CONTROLS
           submenu: GAMECUBE CONTROLLER 1
@@ -9825,6 +9849,15 @@ flycast:
           description: When enabled, each game has its own VMU on port 1 of controller
             1.
           preset: switchauto
+        flycast_vmu_display:
+          group: ADVANCED OPTIONS
+          prompt: VMU DISPLAY
+          description: Show Dreamcast VMU LCD screens on the main screen or the lower
+            panel.
+          choices:
+            Off (Default): off
+            Main Screen: main
+            Bottom Panel: bottom
         flycast_ctrl1_pack:
           group: ADVANCED OPTIONS
           prompt: CONTROLLER 1 FEATURE PACK

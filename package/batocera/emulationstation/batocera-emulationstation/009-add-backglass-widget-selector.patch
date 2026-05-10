@@ -10,6 +10,7 @@
 +			std::vector<std::pair<std::string, std::string>> preferredThemes = {
 +				{ _("DISABLED"), "none" },
 +				{ _("AUTO"), "auto" },
++				{ _("KODI"), "kodi" },
 +				{ _("SYSTEM DASHBOARD"), "backglass-conky" },
 +				{ _("DEFAULT BACKGLASS"), "backglass-default" },
 +				{ _("IMAGE"), "backglass-image" },
@@ -20,7 +21,8 @@
 +
 +			for (auto preferredTheme : preferredThemes)
 +			{
-+				bool isVirtualTheme = preferredTheme.second == "none" || preferredTheme.second == "auto";
++				bool isVirtualTheme = preferredTheme.second == "none" || preferredTheme.second == "auto" ||
++					preferredTheme.second == "kodi";
 +				bool isAvailableTheme = std::find(themeList.begin(), themeList.end(), preferredTheme.second) != themeList.end();
 +				if (isVirtualTheme || isAvailableTheme)
 +					theme->add(preferredTheme.first, preferredTheme.second, preferredTheme.second == selectedTheme);

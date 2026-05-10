@@ -121,6 +121,8 @@ class FlycastGenerator(Generator):
         Config.set("config", "Dreamcast.ForceWindowsCE", system.config.get_str("flycast_winCE", "no"))
         # Per-game VMU
         Config.set("config", "PerGameVmu", system.config.get_bool("flycast_per_game_vmu", return_values=("yes", "no")))
+        vmu_display = system.config.get("flycast_vmu_display", "off")
+        Config.set("config", "rend.FloatVMUs", "yes" if vmu_display == "main" else "no")
         # DSP
         Config.set("config", "aica.DSPEnabled", system.config.get_str("flycast_DSP", "no"))
         # Guns (WIP)
@@ -176,15 +178,16 @@ class FlycastGenerator(Generator):
         # VMU will be in $XDG_DATA_HOME / $FLYCAST_DATADIR because it needs rw access -> /userdata/saves/dreamcast
         # $FLYCAST_BIOS_PATH is where Flaycast should find the bios files
         # controller cfg files are set with an absolute path, so no worry
-        return Command.Command(
-            array=commandArray,
-            env={
-                "XDG_CONFIG_HOME": CONFIGS,
-                "XDG_CONFIG_DIRS": CONFIGS,
-                "XDG_DATA_HOME": FLYCAST_SAVES.parent,
-                "FLYCAST_DATADIR": FLYCAST_SAVES.parent,
-                "FLYCAST_BIOS_PATH": FLYCAST_BIOS,
-                "SDL_GAMECONTROLLERCONFIG": generate_sdl_game_controller_config(playersControllers),
-                "SDL_JOYSTICK_HIDAPI": "0"
-            }
-        )
+        env = {
+            "XDG_CONFIG_HOME": CONFIGS,
+            "XDG_CONFIG_DIRS": CONFIGS,
+            "XDG_DATA_HOME": FLYCAST_SAVES.parent,
+            "FLYCAST_DATADIR": FLYCAST_SAVES.parent,
+            "FLYCAST_BIOS_PATH": FLYCAST_BIOS,
+            "SDL_GAMECONTROLLERCONFIG": generate_sdl_game_controller_config(playersControllers),
+            "SDL_JOYSTICK_HIDAPI": "0"
+        }
+        if vmu_display == "bottom":
+            env["FLYCAST_VMU_EXPORT"] = "/var/run/flycast-vmu"
+
+        return Command.Command(array=commandArray, env=env)

@@ -1,0 +1,84 @@
+diff --git a/core/rend/osd.cpp b/core/rend/osd.cpp
+index 65c696f..6b458bb 100644
+--- a/core/rend/osd.cpp
++++ b/core/rend/osd.cpp
+@@ -18,18 +18,71 @@
+ #include "stdclass.h"
+ #ifdef LIBRETRO
+ #include "vmu_xhair.h"
++#else
++#include <cstdio>
++#include <cstdlib>
+ #endif
+ 
+ u32 vmu_lcd_data[8][48 * 32];
+ bool vmu_lcd_status[8];
+ u64 vmuLastChanged[8];
+ 
++#ifndef LIBRETRO
++static void export_vmu_screen(int vmu_id, const u8 *buffer)
++{
++	const char *prefix = std::getenv("FLYCAST_VMU_EXPORT");
++	if (prefix == nullptr || prefix[0] == '\0')
++		return;
++
++	static const char *const names[] = {
++		"A1", "A2", "B1", "B2", "C1", "C2", "D1", "D2"
++	};
++	if (vmu_id < 0 || vmu_id >= (int)std::size(names))
++		return;
++
++	char path[512];
++	char tmp_path[512];
++	if (std::snprintf(path, sizeof(path), "%s-%s.raw", prefix, names[vmu_id]) < 0)
++		return;
++	if (std::snprintf(tmp_path, sizeof(tmp_path), "%s.tmp", path) < 0)
++		return;
++
++	FILE *fp = std::fopen(tmp_path, "wb");
++	if (fp == nullptr)
++		return;
++
++	const size_t bytes_written = std::fwrite(buffer, 1, 48 * 32, fp);
++	const int close_result = std::fclose(fp);
++	if (bytes_written != 48 * 32 || close_result != 0)
++	{
++		std::remove(tmp_path);
++		return;
++	}
++
++	std::rename(tmp_path, path);
++
++	char status_path[512];
++	if (std::snprintf(status_path, sizeof(status_path), "%s.status", prefix) >= 0)
++	{
++		fp = std::fopen(status_path, "w");
++		if (fp != nullptr)
++		{
++			std::fprintf(fp, "%s\n", names[vmu_id]);
++			std::fclose(fp);
++		}
++	}
++}
++#endif
++
+ void push_vmu_screen(int bus_id, int bus_port, u8* buffer)
+ {
+ 	int vmu_id = bus_id * 2 + bus_port;
+ 	if (vmu_id < 0 || vmu_id >= (int)std::size(vmu_lcd_data))
+ 		return;
+ 	u32 *p = &vmu_lcd_data[vmu_id][0];
++#ifndef LIBRETRO
++	const u8 *raw_buffer = buffer;
++#endif
+ 	for (int i = 0; i < (int)std::size(vmu_lcd_data[vmu_id]); i++, buffer++)
+ #ifdef LIBRETRO
+ 		*p++ = (*buffer != 0
+@@ -40,6 +93,7 @@ void push_vmu_screen(int bus_id, int bus_port, u8* buffer)
+ 		*p++ = *buffer != 0 ? 0xFFFFFFFFu : 0xFF000000u;
+ #endif
+ #ifndef LIBRETRO
++	export_vmu_screen(vmu_id, raw_buffer);
+ 	vmu_lcd_status[vmu_id] = true;
+ #endif
+ 	vmuLastChanged[vmu_id] = getTimeMs();

@@ -33,6 +33,7 @@ define BATOCERA_PACMAN_INSTALL_CONF
 	$(INSTALL) -D -m 0755 $(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/utils/pacman/batocera-install.hook $(TARGET_DIR)/etc/pacman/hooks/batocera-install.hook
 	$(INSTALL) -D -m 0755 $(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/utils/pacman/batocera-uninstall.hook $(TARGET_DIR)/etc/pacman/hooks/batocera-uninstall.hook
 	$(INSTALL) -D -m 0644 $(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/utils/pacman/userdata_pacman.conf $(TARGET_DIR)/usr/share/batocera/datainit/system/pacman/pacman.conf
+	ln -sf /proc/self/mounts $(TARGET_DIR)/etc/mtab
 	sed -i -e s+"{BATOCERA_ARCHITECTURE}"+"$(PACMAN_ARCH)"+ $(TARGET_DIR)/etc/pacman.conf
 	sed -i -e s+/usr/bin/bash+/bin/bash+ $(TARGET_DIR)/usr/bin/repo-add
 endef

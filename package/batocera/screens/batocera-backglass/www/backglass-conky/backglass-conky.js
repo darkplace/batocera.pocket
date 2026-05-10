@@ -259,8 +259,154 @@ function pollStats() {
         });
 }
 
+function takeTopScreenshot() {
+    var button = document.getElementById("screenshot-top");
+    var status = document.getElementById("screenshot-status");
+    if(button) {
+        button.disabled = true;
+    }
+    if(status) {
+        status.textContent = "Saving...";
+    }
+
+    fetch("http://localhost:2033/screenshot?target=top")
+        .then(function(response) {
+            return response.json();
+        })
+        .then(function(result) {
+            if(status) {
+                status.textContent = result && result.ok ? "Saved" : "Failed";
+            }
+        })
+        .catch(function() {
+            if(status) {
+                status.textContent = "Failed";
+            }
+        })
+        .finally(function() {
+            if(button) {
+                button.disabled = false;
+            }
+            window.setTimeout(function() {
+                if(status) {
+                    status.textContent = "";
+                }
+            }, 1800);
+        });
+}
+
+function setActionStatus(message) {
+    var status = document.getElementById("screenshot-status");
+    if(status) {
+        status.textContent = message;
+    }
+}
+
+function clearActionStatusLater() {
+    window.setTimeout(function() {
+        setActionStatus("");
+    }, 1800);
+}
+
+function toggleButton(id, disabled) {
+    var button = document.getElementById(id);
+    if(button) {
+        button.disabled = disabled;
+    }
+}
+
+function runBackglassAction(buttonId, endpoint, busyText, successText) {
+    toggleButton(buttonId, true);
+    setActionStatus(busyText);
+
+    fetch("http://localhost:2033/" + endpoint)
+        .then(function(response) {
+            return response.json();
+        })
+        .then(function(result) {
+            setActionStatus(result && result.ok ? successText : "Failed");
+        })
+        .catch(function() {
+            setActionStatus("Failed");
+        })
+        .finally(function() {
+            toggleButton(buttonId, false);
+            clearActionStatusLater();
+        });
+}
+
+function startRecording() {
+    runBackglassAction("record-start", "record-start", "Starting...", "Recording");
+}
+
+function stopRecording() {
+    runBackglassAction("record-stop", "record-stop", "Stopping...", "Stopped");
+}
+
+function forceKillEmulator() {
+    var button = document.getElementById("force-kill");
+    var status = document.getElementById("screenshot-status");
+    if(button) {
+        button.disabled = true;
+    }
+    if(status) {
+        status.textContent = "Killing...";
+    }
+
+    fetch("http://localhost:2033/emukill")
+        .then(function(response) {
+            return response.json();
+        })
+        .then(function(result) {
+            if(status) {
+                if(result && result.ok) {
+                    status.textContent = "Killed";
+                } else if(result && result.code === 21) {
+                    status.textContent = "No game";
+                } else {
+                    status.textContent = "Failed";
+                }
+            }
+        })
+        .catch(function() {
+            if(status) {
+                status.textContent = "Failed";
+            }
+        })
+        .finally(function() {
+            if(button) {
+                button.disabled = false;
+            }
+            window.setTimeout(function() {
+                if(status) {
+                    status.textContent = "";
+                }
+            }, 1800);
+        });
+}
+
 window.onload = function() {
     renderAll();
     pollStats();
     setInterval(pollStats, 1000);
+
+    var screenshotButton = document.getElementById("screenshot-top");
+    if(screenshotButton) {
+        screenshotButton.addEventListener("click", takeTopScreenshot);
+    }
+
+    var killButton = document.getElementById("force-kill");
+    if(killButton) {
+        killButton.addEventListener("click", forceKillEmulator);
+    }
+
+    var recordStartButton = document.getElementById("record-start");
+    if(recordStartButton) {
+        recordStartButton.addEventListener("click", startRecording);
+    }
+
+    var recordStopButton = document.getElementById("record-stop");
+    if(recordStopButton) {
+        recordStopButton.addEventListener("click", stopRecording);
+    }
 };

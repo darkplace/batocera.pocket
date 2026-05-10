@@ -22,11 +22,17 @@ import re
 import glob
 import subprocess
 import time
+import signal
+import traceback
 
 class BackglassAPI(BaseHTTPRequestHandler):
 
     imgvideo_extensions = ["png", "jpg", "gif", "avi", "mp4"]
     imgvideo_properties = ["image", "video", "marquee", "thumbnail", "fanart", "manual", "titleshot", "bezel", "magazine", "manual", "boxart", "boxback", "wheel", "mix"]
+    record_pidfile = "/var/run/batocera-backglass-record.pid"
+    record_logfile = "/var/log/batocera-backglass-record.log"
+    api_logfile = "/var/log/batocera-backglass-window.log"
+    flycast_vmu_prefix = "/var/run/flycast-vmu"
     cached_model = None
     last_cpu_total = None
     last_cpu_idle = None
@@ -38,6 +44,16 @@ class BackglassAPI(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
 
+    def log_message(self, format, *args):
+        try:
+            with open(BackglassAPI.api_logfile, "a") as fp:
+                fp.write("{} {}\n".format(
+                    time.strftime("%Y-%m-%d %H:%M:%S"),
+                    format % args
+                ))
+        except Exception:
+            pass
+
     def readFile(path):
         try:
             with open(path, "r") as fd:
@@ -45,12 +61,73 @@ class BackglassAPI(BaseHTTPRequestHandler):
         except Exception:
             return ""
 
+    def readBinaryFile(path):
+        try:
+            with open(path, "rb") as fd:
+                return fd.read()
+        except Exception:
+            return b""
+
     def runCommand(cmd):
         try:
             res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, timeout=1)
             return res.stdout.strip()
         except Exception:
             return ""
+
+    def getFlycastVmu(slot):
+        slot = (slot or "A1").upper()
+        if slot not in ("A1", "A2", "B1", "B2", "C1", "C2", "D1", "D2"):
+            slot = "A1"
+
+        path = "{}-{}.raw".format(BackglassAPI.flycast_vmu_prefix, slot)
+        data = BackglassAPI.readBinaryFile(path)
+        if len(data) != 48 * 32:
+            data = b"\x00" * (48 * 32)
+        return data
+
+    def runCommandResult(cmd):
+        try:
+            return subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=3)
+        except Exception:
+            return None
+
+    def setupWaylandEnv():
+        runtime_dirs = (
+            os.environ.get("XDG_RUNTIME_DIR", ""),
+            "/var/run/0-runtime-dir",
+            "/run/0-runtime-dir",
+            "/run/user/0",
+            "/run/user/1000",
+        )
+
+        for runtime in runtime_dirs:
+            if not runtime:
+                continue
+            if not os.path.isdir(runtime):
+                continue
+
+            wayland = os.environ.get("WAYLAND_DISPLAY", "")
+            if not wayland or not os.path.exists(os.path.join(runtime, wayland)):
+                for candidate in sorted(glob.glob(os.path.join(runtime, "wayland-*"))):
+                    if os.path.exists(candidate):
+                        os.environ["WAYLAND_DISPLAY"] = os.path.basename(candidate)
+                        break
+
+            if os.environ.get("WAYLAND_DISPLAY") and os.path.exists(os.path.join(runtime, os.environ["WAYLAND_DISPLAY"])):
+                os.environ["XDG_RUNTIME_DIR"] = runtime
+                break
+
+        runtime = os.environ.get("XDG_RUNTIME_DIR", "")
+        if runtime and not os.environ.get("SWAYSOCK"):
+            sockets = sorted(glob.glob(os.path.join(runtime, "sway-ipc.*.sock")))
+            if sockets:
+                os.environ["SWAYSOCK"] = sockets[0]
+                os.environ["I3SOCK"] = sockets[0]
+
+        if os.environ.get("WAYLAND_DISPLAY"):
+            os.environ.setdefault("XDG_SESSION_TYPE", "wayland")
+            os.environ.setdefault("XDG_CURRENT_DESKTOP", "sway")
 
     def getCpuTemp():
         temps = []
@@ -147,6 +224,155 @@ class BackglassAPI(BaseHTTPRequestHandler):
             except Exception:
                 return None
         return None
+
+    def getTopOutput():
+        BackglassAPI.setupWaylandEnv()
+        raw = BackglassAPI.runCommand(["swaymsg", "-t", "get_outputs"])
+        if not raw:
+            return None
+
+        try:
+            outputs = json.loads(raw)
+        except Exception:
+            return None
+
+        active = [output for output in outputs if output.get("active")]
+        if not active:
+            return None
+
+        for output in active:
+            if output.get("name") == "DSI-2":
+                return output.get("name")
+
+        active.sort(key=lambda output: (
+            output.get("rect", {}).get("y", 0),
+            output.get("rect", {}).get("x", 0),
+        ))
+        return active[0].get("name")
+
+    def captureScreenshot(target):
+        outdir = "/userdata/screenshots"
+        os.makedirs(outdir, exist_ok=True)
+
+        prefix = "top-screen" if target == "top" else "screenshot"
+        filename = "{}-{}.png".format(prefix, time.strftime("%Y.%m.%d-%Hh%M.%S"))
+        path = os.path.join(outdir, filename)
+
+        if target == "top":
+            BackglassAPI.setupWaylandEnv()
+            output = BackglassAPI.getTopOutput()
+            if output:
+                result = BackglassAPI.runCommandResult(["grim", "-o", output, path])
+            else:
+                result = BackglassAPI.runCommandResult(["batocera-screenshot", path])
+        else:
+            result = BackglassAPI.runCommandResult(["batocera-screenshot", path])
+
+        if result is None or result.returncode != 0 or not os.path.exists(path):
+            return {
+                "ok": False,
+                "path": "",
+                "error": result.stderr.strip() if result and result.stderr else "screenshot failed",
+            }
+
+        BackglassAPI.runCommandResult(["batocera-flash-screen"])
+        return {"ok": True, "path": path, "error": ""}
+
+    def killEmulator():
+        result = BackglassAPI.runCommandResult(["batocera-es-swissknife", "--emukill", "0.5"])
+        if result is None:
+            return {"ok": False, "code": -1, "message": "failed to run emukill"}
+
+        message = (result.stdout or result.stderr or "").strip()
+        return {
+            "ok": result.returncode in (0, 20, 22, 25),
+            "code": result.returncode,
+            "message": message,
+        }
+
+    def getRecordPid():
+        pid = BackglassAPI.parseFirstInt(BackglassAPI.readFile(BackglassAPI.record_pidfile))
+        if not pid:
+            return None
+
+        if BackglassAPI.readFile("/proc/{}/stat".format(pid)).split()[2:3] == ["Z"]:
+            try:
+                os.waitpid(pid, os.WNOHANG)
+            except Exception:
+                pass
+            try:
+                os.unlink(BackglassAPI.record_pidfile)
+            except Exception:
+                pass
+            return None
+
+        try:
+            os.kill(pid, 0)
+            return pid
+        except Exception:
+            try:
+                os.unlink(BackglassAPI.record_pidfile)
+            except Exception:
+                pass
+            return None
+
+    def startRecording():
+        pid = BackglassAPI.getRecordPid()
+        if pid:
+            return {"ok": True, "recording": True, "pid": pid, "message": "already recording"}
+
+        BackglassAPI.setupWaylandEnv()
+        try:
+            os.makedirs(os.path.dirname(BackglassAPI.record_logfile), exist_ok=True)
+            log = open(BackglassAPI.record_logfile, "a")
+            proc = subprocess.Popen(
+                ["batocera-record", "--ultra-fast"],
+                stdout=log,
+                stderr=log,
+                stdin=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+            with open(BackglassAPI.record_pidfile, "w") as fp:
+                fp.write(str(proc.pid))
+            return {"ok": True, "recording": True, "pid": proc.pid, "message": "recording started"}
+        except Exception as e:
+            return {"ok": False, "recording": False, "pid": None, "message": str(e)}
+
+    def stopRecording():
+        pid = BackglassAPI.getRecordPid()
+        if not pid:
+            return {"ok": True, "recording": False, "pid": None, "message": "not recording"}
+
+        try:
+            os.killpg(pid, signal.SIGINT)
+            for _ in range(20):
+                try:
+                    waited, _ = os.waitpid(pid, os.WNOHANG)
+                    if waited == pid:
+                        break
+                except ChildProcessError:
+                    break
+                except Exception:
+                    pass
+                try:
+                    os.kill(pid, 0)
+                    time.sleep(0.1)
+                except Exception:
+                    break
+            else:
+                os.killpg(pid, signal.SIGTERM)
+                try:
+                    os.waitpid(pid, 0)
+                except Exception:
+                    pass
+        except Exception as e:
+            return {"ok": False, "recording": True, "pid": pid, "message": str(e)}
+
+        try:
+            os.unlink(BackglassAPI.record_pidfile)
+        except Exception:
+            pass
+        return {"ok": True, "recording": False, "pid": pid, "message": "recording stopped"}
 
     def readFreq(path):
         value = BackglassAPI.parseFirstInt(BackglassAPI.readFile(path))
@@ -415,6 +641,28 @@ class BackglassAPI(BaseHTTPRequestHandler):
                 self.sendHeaders("application/json")
                 self.wfile.write(bytes(json.dumps(BackglassAPI.getStats()), "utf-8"))
 
+            elif query.path == "/flycast-vmu":
+                self.sendHeaders("application/octet-stream")
+                slot = qs.get("slot", ["A1"])[0]
+                self.wfile.write(BackglassAPI.getFlycastVmu(slot))
+
+            elif query.path == "/screenshot":
+                self.sendHeaders("application/json")
+                target = qs.get("target", ["current"])[0]
+                self.wfile.write(bytes(json.dumps(BackglassAPI.captureScreenshot(target)), "utf-8"))
+
+            elif query.path == "/emukill":
+                self.sendHeaders("application/json")
+                self.wfile.write(bytes(json.dumps(BackglassAPI.killEmulator()), "utf-8"))
+
+            elif query.path == "/record-start":
+                self.sendHeaders("application/json")
+                self.wfile.write(bytes(json.dumps(BackglassAPI.startRecording()), "utf-8"))
+
+            elif query.path == "/record-stop":
+                self.sendHeaders("application/json")
+                self.wfile.write(bytes(json.dumps(BackglassAPI.stopRecording()), "utf-8"))
+
             elif query.path.startswith("/static/images/"):
                 if ".." not in  query.path: # don't allow to escape
                     with open("/userdata/system/backglass/{}".format(query.path[15:]), "rb") as fd:
@@ -433,8 +681,22 @@ class BackglassAPI(BaseHTTPRequestHandler):
                         self.wfile.write(fd.read())
 
         except Exception as e:
-            print(e)
-            self.wfile.write(bytes("ERROR\n", "utf-8"))
+            try:
+                with open(BackglassAPI.api_logfile, "a") as fp:
+                    fp.write(time.strftime("%Y-%m-%d %H:%M:%S "))
+                    fp.write(self.path)
+                    fp.write("\n")
+                    traceback.print_exc(file=fp)
+            except Exception:
+                pass
+            try:
+                self.send_response(500)
+                self.send_header("Content-type", "application/json")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.end_headers()
+            except Exception:
+                pass
+            self.wfile.write(bytes(json.dumps({"ok": False, "error": str(e)}), "utf-8"))
 
 def handle_api(window):
     webServer = HTTPServer(("localhost", 2033), BackglassAPI)

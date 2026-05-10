@@ -42,6 +42,105 @@ fi
 # Kodi complains about these directories not existing in the logs
 mkdir -p /userdata/system/.kodi/userdata/addon_data/pvr.{iptvsimple,nextpvr,vbox,vuplus}
 
+KODI_GUISETTINGS="/userdata/system/.kodi/userdata/guisettings.xml"
+KODI_JOYSTICK_SETTINGS="/userdata/system/.kodi/userdata/addon_data/peripheral.joystick/settings.xml"
+KODI_TOUCH_STATE="/var/run/kodi-touch-only-settings"
+KODI_TOUCH_ONLY_ACTIVE=0
+
+kodi_get_xml_setting() {
+    local SETTINGS_FILE="$1"
+    local SETTING_ID="$2"
+    local DEFAULT_VALUE="$3"
+
+    if [ -f "${SETTINGS_FILE}" ] && grep -q "id=\"${SETTING_ID}\"" "${SETTINGS_FILE}"; then
+        sed -n "s#.*<setting id=\"${SETTING_ID}\"[^>]*>\\(.*\\)</setting>.*#\\1#p" "${SETTINGS_FILE}" | tail -n1
+    else
+        echo "${DEFAULT_VALUE}"
+    fi
+}
+
+kodi_get_setting() {
+    kodi_get_xml_setting "${KODI_GUISETTINGS}" "$1" "$2"
+}
+
+kodi_get_joystick_setting() {
+    kodi_get_xml_setting "${KODI_JOYSTICK_SETTINGS}" "$1" "$2"
+}
+
+kodi_set_xml_setting() {
+    local SETTINGS_FILE="$1"
+    local SETTING_ID="$2"
+    local SETTING_VALUE="$3"
+
+    mkdir -p "$(dirname "${SETTINGS_FILE}")"
+    if [ ! -f "${SETTINGS_FILE}" ]; then
+        printf '%s\n' '<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>' '<settings version="2">' '</settings>' > "${SETTINGS_FILE}"
+    fi
+
+    if grep -q "id=\"${SETTING_ID}\"" "${SETTINGS_FILE}"; then
+        sed -i "s#<setting id=\"${SETTING_ID}\"[^>]*>.*</setting>#<setting id=\"${SETTING_ID}\">${SETTING_VALUE}</setting>#" "${SETTINGS_FILE}"
+    else
+        sed -i "/<settings[^>]*>/a\\    <setting id=\"${SETTING_ID}\">${SETTING_VALUE}</setting>" "${SETTINGS_FILE}"
+    fi
+}
+
+kodi_set_setting() {
+    kodi_set_xml_setting "${KODI_GUISETTINGS}" "$1" "$2"
+}
+
+kodi_set_joystick_setting() {
+    kodi_set_xml_setting "${KODI_JOYSTICK_SETTINGS}" "$1" "$2"
+}
+
+configure_touch_only() {
+    [ "${KODI_TOUCH_ONLY}" = "1" ] || return 0
+
+    printf '%s\n' \
+        "input_enablejoystick=$(kodi_get_setting input.enablejoystick true)" \
+        "input_enablemouse=$(kodi_get_setting input.enablemouse true)" \
+        "input_asknewcontrollers=$(kodi_get_setting input.asknewcontrollers true)" \
+        "joystick_driver_linux=$(kodi_get_joystick_setting driver_linux 0)" > "${KODI_TOUCH_STATE}"
+    kodi_set_setting input.enablejoystick false
+    kodi_set_setting input.enablemouse true
+    kodi_set_setting input.asknewcontrollers false
+    # 2 = None in peripheral.joystick's Linux driver selector.
+    kodi_set_joystick_setting driver_linux 2
+    export SDL_JOYSTICK_HIDAPI=0
+    export SDL_JOYSTICK_ALLOW_BACKGROUND_EVENTS=0
+    KODI_TOUCH_ONLY_ACTIVE=1
+}
+
+restore_touch_only() {
+    [ "${KODI_TOUCH_ONLY_ACTIVE}" = "1" ] || return 0
+    [ -f "${KODI_TOUCH_STATE}" ] || return 0
+
+    . "${KODI_TOUCH_STATE}"
+    kodi_set_setting input.enablejoystick "${input_enablejoystick:-true}"
+    kodi_set_setting input.enablemouse "${input_enablemouse:-true}"
+    kodi_set_setting input.asknewcontrollers "${input_asknewcontrollers:-true}"
+    kodi_set_joystick_setting driver_linux "${joystick_driver_linux:-0}"
+    rm -f "${KODI_TOUCH_STATE}"
+}
+
+trap restore_touch_only EXIT
+
+if [ "$(/usr/bin/batocera-model 2>/dev/null)" = "Anbernic_RG_DS" ]; then
+    export PULSE_SERVER="${PULSE_SERVER:-/var/run/pulse/native}"
+    export PULSE_LATENCY_MSEC="${PULSE_LATENCY_MSEC:-100}"
+    export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/var/run/0-runtime-dir}"
+    export PIPEWIRE_RUNTIME_DIR="${PIPEWIRE_RUNTIME_DIR:-/run}"
+
+    if [ -f "${KODI_GUISETTINGS}" ]; then
+        if grep -q 'id="audiooutput.audiodevice"' "${KODI_GUISETTINGS}"; then
+            sed -i 's#<setting id="audiooutput.audiodevice"[^>]*>.*</setting>#<setting id="audiooutput.audiodevice">ALSA:pulse|PulseAudio Sound Server ()</setting>#' "${KODI_GUISETTINGS}"
+        else
+            sed -i '/<settings[^>]*>/a\    <setting id="audiooutput.audiodevice">ALSA:pulse|PulseAudio Sound Server ()</setting>' "${KODI_GUISETTINGS}"
+        fi
+    fi
+fi
+
+configure_touch_only
+
 # save current resolution
 current_resolution=$(batocera-resolution currentMode)
 
@@ -67,23 +166,27 @@ do
 	"EXIT")
 	    kodiLastChance
 	    wait
+	    restore_touch_only
 	    /usr/bin/batocera-resolution setMode "$current_resolution"
 	    exit 0 # code for success
 	    ;;
 	"RESTART")
 	    kodiLastChance
 	    wait
+	    restore_touch_only
 	    exit 10 # code to reboot
 	    ;;
 	"SHUTDOWN")
 	    kodiLastChance
 	    wait
+	    restore_touch_only
 	    exit 11 # code to shutdown
 	    ;;
     esac
 done < /var/run/kodi.msg
 
 rm -f /var/run/kodi.msg
+restore_touch_only
 echo "Kodi launcher ended without event." >&2
 exit 1
 ### end ###
