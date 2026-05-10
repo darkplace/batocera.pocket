@@ -104,11 +104,12 @@ These SoCs are limited by:
 - Pre-2005 recommended  
 - 2D engines perform best  
 
-#### RK3566
+#### RK3566/8
 - Light DX9 titles possible  
 - Shader-heavy games will struggle
-- Vulkan enabled in libmali mode -- helps especially with PPSSPP (Thanks Sysdarn)
-- Azahar enabled - don't expect fullspeed, usually needs 3gb RAM minimum
+- Vulkan enabled in libmali mode -- helps especially with PPSSPP, Azahar, Flycast (Thanks Sysdarn)
+- Azahar enabled - don't expect fullspeed, usually
+- Dolphin working with light gamecube titles on RG-DS
 
 Do **NOT** expect:
 - DX10 / DX11 performance  
@@ -130,7 +131,7 @@ These are unofficial builds and are **NOT supported** by the Batocera team.
 ---
 
 ## License & Disclaimer
-- Released under Batocera’s GPLv2 License  
+- Released under Batocera’s LGPLv3 & Buildroot's GPLv2 License  
 - Source code is included  
 - Use at your own risk  
 - No warranty  
