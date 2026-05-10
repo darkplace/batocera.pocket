@@ -2,9 +2,7 @@
 
 var VMU_SLOTS = [
     { slot: "A1", canvas: "vmu-a1" },
-    { slot: "A2", canvas: "vmu-a2" },
-    { slot: "B1", canvas: "vmu-b1" },
-    { slot: "B2", canvas: "vmu-b2" }
+    { slot: "A2", canvas: "vmu-a2" }
 ];
 
 function drawVmu(canvas, bytes) {
@@ -35,7 +33,7 @@ function fetchVmu(entry) {
         return;
     }
 
-    fetch("/flycast-vmu?slot=" + encodeURIComponent(entry.slot) + "&t=" + Date.now(), {
+    fetch("http://localhost:2033/flycast-vmu?slot=" + encodeURIComponent(entry.slot) + "&t=" + Date.now(), {
         cache: "no-store"
     }).then(function(response) {
         if (!response.ok) {
