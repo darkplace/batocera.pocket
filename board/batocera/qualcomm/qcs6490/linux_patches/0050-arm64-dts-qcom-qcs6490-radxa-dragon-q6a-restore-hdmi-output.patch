@@ -1,0 +1,144 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Sun, 10 May 2026 00:00:00 +0000
+Subject: arm64: dts: qcom: qcs6490-radxa-dragon-q6a: restore HDMI output
+
+Restore the base Dragon Q6A HDMI path so the MSM display driver can bind
+the MDSS/DP pipeline instead of leaving the board on simpledrm only.
+
+Signed-off-by: suckbluefrog <suckbluefrog@proton.me>
+---
+ arch/arm64/boot/dts/qcom/qcs6490-radxa-dragon-q6a.dts | 93 ++++++++++++++++++
+ 1 file changed, 93 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/qcom/qcs6490-radxa-dragon-q6a.dts b/arch/arm64/boot/dts/qcom/qcs6490-radxa-dragon-q6a.dts
+index 111111111111..222222222222 100644
+--- a/arch/arm64/boot/dts/qcom/qcs6490-radxa-dragon-q6a.dts
++++ b/arch/arm64/boot/dts/qcom/qcs6490-radxa-dragon-q6a.dts
+@@ -74,10 +74,47 @@
+ 		#sound-dai-cells = <1>;
+ 	};
+ 
++	bridge {
++		compatible = "radxa,ra620";
++
++		ports {
++			#address-cells = <1>;
++			#size-cells = <0>;
++
++			port@0 {
++				reg = <0>;
++
++				hdmi_bridge_in: endpoint {
++					remote-endpoint = <&usb_dp_qmpphy_out>;
++				};
++			};
++
++			port@1 {
++				reg = <1>;
++
++				hdmi_bridge_out: endpoint {
++					remote-endpoint = <&hdmi_connector_in>;
++				};
++			};
++		};
++	};
++
+ 	chosen {
+ 		stdout-path = "serial0:115200n8";
+ 	};
+ 
++	hdmi-connector {
++		compatible = "hdmi-connector";
++		label = "hdmi";
++		type = "a";
++
++		port {
++			hdmi_connector_in: endpoint {
++				remote-endpoint = <&hdmi_bridge_out>;
++			};
++		};
++	};
++
+ 	usb2_1_con: connector-0 {
+ 		compatible = "usb-a-connector";
+ 		vbus-supply = <&vcc_5v_peri>;
+@@ -521,6 +558,22 @@
+ 	status = "okay";
+ };
+ 
++&mdss {
++	status = "okay";
++};
++
++&mdss_dp {
++	status = "okay";
++	sound-name-prefix = "Display Port0";
++	pinctrl-names = "default";
++	pinctrl-0 = <&dp_hot_plug_det>;
++};
++
++&mdss_dp_out {
++	data-lanes = <0 1>;
++	remote-endpoint = <&usb_dp_qmpphy_dp_in>;
++};
++
+ &pcie0 {
+ 	perst-gpios = <&tlmm 87 GPIO_ACTIVE_LOW>;
+ 	wake-gpios = <&tlmm 89 GPIO_ACTIVE_HIGH>;
+@@ -769,6 +822,22 @@
+ 			sound-dai = <&q6apm>;
+ 		};
+ 	};
++
++	dp0-dai-link {
++		link-name = "DP0 Playback";
++
++		cpu {
++			sound-dai = <&q6apmbedai DISPLAY_PORT_RX_0>;
++		};
++
++		codec {
++			sound-dai = <&mdss_dp>;
++		};
++
++		platform {
++			sound-dai = <&q6apm>;
++		};
++	};
+ };
+ 
+ /* Pin 11, 29, 31, 32 in GPIO header */
+@@ -959,6 +1012,30 @@
+ 	status = "okay";
+ };
+ 
++&usb_1 {
++	dr_mode = "host";
++	status = "okay";
++};
++
++&usb_1_hsphy {
++	vdda-pll-supply = <&vreg_l10c_0p88>;
++	vdda33-supply = <&vreg_l2b_3p072>;
++	vdda18-supply = <&vreg_l1c_1p8>;
++
++	status = "okay";
++};
++
++&usb_1_qmpphy {
++	vdda-phy-supply = <&vreg_l6b_1p2>;
++	vdda-pll-supply = <&vreg_l1b_0p912>;
++
++	status = "okay";
++};
++
++&usb_dp_qmpphy_out {
++	remote-endpoint = <&hdmi_bridge_in>;
++};
++
+ &usb_2 {
+ 	dr_mode = "host";
+ 
+-- 
+2.50.1
