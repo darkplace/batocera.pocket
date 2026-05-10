@@ -9,7 +9,11 @@ https://drive.proton.me/urls/RRPFQ38NX8#LmFz5AIaV2aI
 ## Current Builds
 - Odin2 / Thor Series  
 - Powkiddy X55
-- Anbernic RG-DS (test build)
+- Anbernic RG-DS (Beta)
+<img width="559" height="746" alt="image" src="https://github.com/user-attachments/assets/2f539866-4174-4c5c-b03c-2676ad81bd74" />
+<img width="481" height="642" alt="image" src="https://github.com/user-attachments/assets/2ac8e6a1-769b-4ddb-b0ea-f04324146561" />
+
+
 - Dragon Q6A  
 - R36s  
 - BattleXP G350  
