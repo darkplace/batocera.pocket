@@ -86,6 +86,20 @@ isSpecialTheme() {
 }
 
 setupGuiEnv() {
+    # Thor's backglass window is GTK/X11-backed. Keep Xwayland available while
+    # also exporting the sway socket for output discovery.
+    if test -S /tmp/.X11-unix/X0 -o -S /var/run/.X11-unix/X0; then
+        export DISPLAY="${DISPLAY:-:0}"
+    fi
+
+    for socket in /var/run/sway-ipc.0.sock /run/sway-ipc.0.sock /var/run/0-runtime-dir/sway-ipc.0.sock /run/0-runtime-dir/sway-ipc.0.sock; do
+        if test -S "${socket}"; then
+            export SWAYSOCK="${socket}"
+            export I3SOCK="${socket}"
+            break
+        fi
+    done
+
     WAYLAND_DISPLAY_VALUE=$(getLocalWaylandDisplay 2>/dev/null)
     if test -n "${WAYLAND_DISPLAY_VALUE}"; then
         for runtime in /var/run/0-runtime-dir /run/0-runtime-dir /run/user/0 /run/user/1000; do
@@ -97,9 +111,10 @@ setupGuiEnv() {
         export WAYLAND_DISPLAY="${WAYLAND_DISPLAY_VALUE}"
         export XDG_SESSION_TYPE=wayland
         export XDG_CURRENT_DESKTOP=sway
-        export SWAYSOCK="${XDG_RUNTIME_DIR}/sway-ipc.0.sock"
-        export I3SOCK="${SWAYSOCK}"
-        unset DISPLAY
+        if test -z "${SWAYSOCK}" -a -S "${XDG_RUNTIME_DIR}/sway-ipc.0.sock"; then
+            export SWAYSOCK="${XDG_RUNTIME_DIR}/sway-ipc.0.sock"
+            export I3SOCK="${SWAYSOCK}"
+        fi
     fi
 }
 

@@ -364,11 +364,27 @@ while [ -e "${REBOOT_FLAG}" ]; do
             # Get the device model
             MODEL="$(batocera-model)"
 
-            # For AYN_Thor, set a vertical (Y) offset (for mouse usage). For all other models, use the default horizontal (X) offset.
+            # Prefer the compositor's real output rectangle. Thor's lower panel
+            # is centered below the main panel, so x is not always 0.
+            if which swaymsg >/dev/null 2>&1 && which jq >/dev/null 2>&1 && [ "$(batocera-resolution getDisplayComp 2>/dev/null)" = "sway" ]; then
+                BGINFO="$(SWAYSOCK="${SWAYSOCK:-/var/run/sway-ipc.0.sock}" XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/var/run}" swaymsg -t get_outputs 2>/dev/null | jq -r --arg output "${settings_output2}" '
+                        (map(select(.active and .name == $output))[0] //
+                         (map(select(.active)) | sort_by(.rect.y, .rect.x) | .[1])) |
+                        select(. != null) |
+                        [.rect.x, .rect.y, .rect.width, .rect.height] | @tsv
+                    ')"
+                if [ -n "${BGINFO}" ]; then
+                    BGOFFSETX="$(echo "${BGINFO}" | awk '{ print $1 }')"
+                    BGOFFSETY="$(echo "${BGINFO}" | awk '{ print $2 }')"
+                    BGSIZE="$(echo "${BGINFO}" | awk '{ print $3 " " $4 }')"
+                fi
+            fi
+
+            # Fallback for layouts where compositor output geometry is unavailable.
             DISPLAY_POSITION=$(/usr/bin/batocera-settings-get-master "display.position")
-            if [ "${DISPLAY_POSITION}" = "top-bottom" ]; then
+            if [ "${DISPLAY_POSITION}" = "top-bottom" ] && [ "${BGOFFSETY}" = "0" ]; then
                 BGOFFSETY=$(echo "${PRIMARY_RES}" | cut -d x -f 2) # Height of the primary screen
-            else
+            elif [ "${DISPLAY_POSITION}" != "top-bottom" ] && [ "${BGOFFSETX}" = "0" ]; then
                 BGOFFSETX=$(echo "${PRIMARY_RES}" | cut -d x -f 1) # Width of the primary screen
             fi
             echo "Standalone: Launching backglass on '${settings_output2}' with OffsetX=${BGOFFSETX} and OffsetY=${BGOFFSETY} with Size=${BGSIZE}" >> $log
