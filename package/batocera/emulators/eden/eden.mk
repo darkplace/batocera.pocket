@@ -4,7 +4,7 @@
 #
 ################################################################################
 
-EDEN_VERSION = v0.0.4-rc2
+EDEN_VERSION = v0.2.0
 EDEN_LICENSE = GPL-3.0-or-later
 EDEN_STRIP = NO
 EDEN_TOOLCHAIN = manual
