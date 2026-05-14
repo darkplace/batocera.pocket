@@ -138,7 +138,8 @@ define LUTRIS_INSTALL_BATOCERA_DATAS
 		'  </game>' \
 		'</gameList>' \
 		> "$(TARGET_DIR)/usr/share/batocera/datainit/roms/lutris/gamelist.xml"
-	ln -snf /usr/share/icons/batocera/lutris.png \
+	$(INSTALL) -D -m 0644 \
+		$(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/core/batocera-desktopapps/icons/lutris.png \
 		$(TARGET_DIR)/usr/share/batocera/datainit/roms/lutris/images/lutris.png
 endef
 

@@ -9,9 +9,66 @@ mkdir -p /userdata/system/logs
 mkdir -p "${RUNTIME_DIR}"
 chmod 700 "${RUNTIME_DIR}"
 
-export XDG_RUNTIME_DIR="${RUNTIME_DIR}"
-export WAYLAND_DISPLAY="/run/wayland-0"
-export PULSE_RUNTIME_PATH="/run/pulse"
+configure_display_runtime() {
+    local candidate
+
+    if [ -n "${WAYLAND_DISPLAY:-}" ]; then
+        if [ "${WAYLAND_DISPLAY#/}" != "${WAYLAND_DISPLAY}" ]; then
+            if [ -S "${WAYLAND_DISPLAY}" ]; then
+                export XDG_RUNTIME_DIR="$(dirname "${WAYLAND_DISPLAY}")"
+                export WAYLAND_DISPLAY="$(basename "${WAYLAND_DISPLAY}")"
+                return
+            fi
+        elif [ -n "${XDG_RUNTIME_DIR:-}" ] && [ -S "${XDG_RUNTIME_DIR}/${WAYLAND_DISPLAY}" ]; then
+            ln -snf "${XDG_RUNTIME_DIR}/${WAYLAND_DISPLAY}" "${RUNTIME_DIR}/${WAYLAND_DISPLAY}"
+            export XDG_RUNTIME_DIR="${RUNTIME_DIR}"
+            return
+        fi
+    fi
+
+    for candidate in /var/run/wayland-* /run/wayland-*; do
+        [ -S "${candidate}" ] || continue
+        ln -snf "${candidate}" "${RUNTIME_DIR}/$(basename "${candidate}")"
+        export XDG_RUNTIME_DIR="${RUNTIME_DIR}"
+        export WAYLAND_DISPLAY="$(basename "${candidate}")"
+        return
+    done
+
+    export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/var/run}"
+}
+
+configure_waydroid_runtime_compat() {
+    local source_socket
+    local pulse_socket
+
+    if [ -n "${XDG_RUNTIME_DIR:-}" ] && [ -n "${WAYLAND_DISPLAY:-}" ]; then
+        source_socket="${XDG_RUNTIME_DIR}/${WAYLAND_DISPLAY}"
+        if [ -S "${source_socket}" ] && { [ ! -S "/run/${WAYLAND_DISPLAY}" ] || [ -L "/run/${WAYLAND_DISPLAY}" ]; }; then
+            ln -snf "${source_socket}" "/run/${WAYLAND_DISPLAY}"
+        fi
+    fi
+
+    mkdir -p /run/pulse
+    for pulse_socket in \
+        "${XDG_RUNTIME_DIR:-}/pulse/native" \
+        /var/run/0-runtime-dir/pulse/native \
+        /run/0-runtime-dir/pulse/native \
+        /run/user/0/pulse/native \
+        /run/pulse/native
+    do
+        [ -S "${pulse_socket}" ] || continue
+        if [ "${pulse_socket}" != "/run/pulse/native" ] && { [ ! -S /run/pulse/native ] || [ -L /run/pulse/native ]; }; then
+            ln -snf "${pulse_socket}" /run/pulse/native
+        fi
+        export PULSE_RUNTIME_PATH=/run/pulse
+        return
+    done
+
+    export PULSE_RUNTIME_PATH="${PULSE_RUNTIME_PATH:-/run/pulse}"
+}
+
+configure_display_runtime
+configure_waydroid_runtime_compat
 
 APP_ID=""
 INTENT_ACTION=""
@@ -29,9 +86,15 @@ if [ -z "${DISPLAY:-}" ] && command -v getLocalXDisplay >/dev/null 2>&1; then
     export DISPLAY="$(getLocalXDisplay)"
 fi
 
-/etc/init.d/S22waydroid-host start >>"${LOG_FILE}" 2>&1 || true
+if [ -x /etc/init.d/S22waydroid-host ]; then
+    /etc/init.d/S22waydroid-host start >>"${LOG_FILE}" 2>&1 || true
+fi
 
 cleanup_waydroid() {
+    if [ "${BATOCERA_WAYDROID_BOTTOM_WIDGET:-0}" = "1" ]; then
+        return 0
+    fi
+
     /usr/bin/waydroid session stop >>"${LOG_FILE}" 2>&1 || true
     /usr/bin/waydroid container stop >>"${LOG_FILE}" 2>&1 || true
 }
@@ -40,10 +103,58 @@ trap cleanup_waydroid EXIT INT TERM
 
 /usr/bin/batocera-waydroid-init >>"${LOG_FILE}" 2>&1 || exit 1
 
-if ! pgrep -f '/usr/bin/waydroid container start' >/dev/null 2>&1; then
-    /usr/bin/waydroid container start >>"${LOG_FILE}" 2>&1 &
-    sleep 2
-fi
+waydroid_lxc_state() {
+    lxc-info -P /var/lib/waydroid/lxc -n waydroid -sH 2>/dev/null || true
+}
+
+waydroid_manager_pids() {
+    ps -eo pid=,args= | awk -v me="$$" '
+        $1 == me { next }
+        $2 ~ /(^|\/)python3$/ && $3 == "/usr/bin/waydroid" && $4 == "container" && $5 == "start" { print $1; next }
+        $2 == "/usr/bin/waydroid" && $3 == "container" && $4 == "start" { print $1; next }
+    '
+}
+
+kill_stale_waydroid_managers() {
+    [ "$(waydroid_lxc_state)" = "RUNNING" ] && return 0
+
+    for pid in $(waydroid_manager_pids); do
+        printf '[%s] Killing stale Waydroid container manager pid %s while LXC is %s\n' \
+            "$(date '+%Y-%m-%d %H:%M:%S')" "${pid}" "$(waydroid_lxc_state)" >>"${LOG_FILE}"
+        kill "${pid}" 2>/dev/null || true
+    done
+
+    sleep 0.5
+
+    for pid in $(waydroid_manager_pids); do
+        kill -9 "${pid}" 2>/dev/null || true
+    done
+}
+
+start_waydroid_container() {
+    local i state
+
+    kill_stale_waydroid_managers
+
+    if [ "$(waydroid_lxc_state)" != "RUNNING" ]; then
+        /usr/bin/waydroid container start >>"${LOG_FILE}" 2>&1 &
+    fi
+
+    for i in $(seq 1 80); do
+        state="$(waydroid_lxc_state)"
+        [ "${state}" = "RUNNING" ] && return 0
+        if [ "${state}" = "STOPPED" ] && [ -z "$(waydroid_manager_pids)" ]; then
+            break
+        fi
+        sleep 0.25
+    done
+
+    printf '[%s] Waydroid container did not reach RUNNING state; current state: %s\n' \
+        "$(date '+%Y-%m-%d %H:%M:%S')" "$(waydroid_lxc_state)" >>"${LOG_FILE}"
+    return 1
+}
+
+start_waydroid_container || true
 
 if [ -n "${APP_ID}" ] || { [ -n "${INTENT_ACTION}" ] && [ -n "${INTENT_URI}" ]; }; then
     rm -f "${DBUS_ENV_FILE}"
@@ -57,8 +168,12 @@ umask 077
 } > "${DBUS_ENV_FILE}"
 
 /usr/bin/waydroid show-full-ui >>"${LOG_FILE}" 2>&1 &
-if [ "${BATOCERA_WAYDROID_DISABLE_GAMEPAD:-0}" != "1" ] && [ -x /usr/bin/batocera-waydroid-postboot ]; then
-    /usr/bin/batocera-waydroid-postboot >>"${LOG_FILE}" 2>&1 &
+if [ -x /usr/bin/batocera-waydroid-postboot ]; then
+    if [ "${BATOCERA_WAYDROID_DISABLE_GAMEPAD:-0}" = "1" ]; then
+        /usr/bin/batocera-waydroid-postboot --network-only >>"${LOG_FILE}" 2>&1 &
+    else
+        /usr/bin/batocera-waydroid-postboot >>"${LOG_FILE}" 2>&1 &
+    fi
 fi
 launched=0
 app_seen_foreground=0
@@ -146,8 +261,12 @@ else
         } > "${DBUS_ENV_FILE}"
 
         /usr/bin/waydroid show-full-ui >>"'"${LOG_FILE}"'" 2>&1 &
-        if [ "'"${BATOCERA_WAYDROID_DISABLE_GAMEPAD:-0}"'" != "1" ] && [ -x /usr/bin/batocera-waydroid-postboot ]; then
-            /usr/bin/batocera-waydroid-postboot >>"'"${LOG_FILE}"'" 2>&1 &
+        if [ -x /usr/bin/batocera-waydroid-postboot ]; then
+            if [ "'"${BATOCERA_WAYDROID_DISABLE_GAMEPAD:-0}"'" = "1" ]; then
+                /usr/bin/batocera-waydroid-postboot --network-only >>"'"${LOG_FILE}"'" 2>&1 &
+            else
+                /usr/bin/batocera-waydroid-postboot >>"'"${LOG_FILE}"'" 2>&1 &
+            fi
         fi
 
         while :; do

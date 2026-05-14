@@ -1,6 +1,23 @@
 default:
   options:
     hud_support: true
+    gpu_performance_profile: auto
+
+odcommander:
+  options:
+    gpu_performance_profile: highperformance
+
+scummvm:
+  options:
+    gpu_performance_profile: highperformance
+
+android:
+  options:
+    gpu_performance_profile: highperformance
+
+waydroid:
+  options:
+    gpu_performance_profile: highperformance
     
 advision:
   emulator: mame

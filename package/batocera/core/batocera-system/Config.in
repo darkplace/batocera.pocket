@@ -167,10 +167,10 @@ config BR2_PACKAGE_BATOCERA_SYSTEM
 	select BR2_PACKAGE_BATOCERA_ES_WEB_UI		# emulationstation web ui
 	select BR2_PACKAGE_ES_THEME_CARBON		# emulationstation theme
 	select BR2_PACKAGE_ES_BACKGROUND_MUSICS		# emulationstation musics
-	select BR2_PACKAGE_BATOCERA_ES_SYSTEM		# emulation station es_systems.cfg generator + default roms
-	select BR2_PACKAGE_BATOCERA_CONFIGGEN		# emulation station external command launcher
-	select BR2_PACKAGE_BATOCERA_TRIGGERHAPPY	# multimedia/power buttons
-	select BR2_PACKAGE_BATOCERA_ONSCREEN_KEYBOARD # touch keyboard
+		select BR2_PACKAGE_BATOCERA_ES_SYSTEM		# emulation station es_systems.cfg generator + default roms
+		select BR2_PACKAGE_BATOCERA_CONFIGGEN		# emulation station external command launcher
+		select BR2_PACKAGE_BATOCERA_TRIGGERHAPPY	# multimedia/power buttons
+		select BR2_PACKAGE_BATOCERA_ONSCREEN_KEYBOARD # touch keyboard
 		select BR2_PACKAGE_BATOCERA_UDEV_RULES		# extra udev rules for specifics joysticks/devices
 	select BR2_PACKAGE_BATOCERA_USERDATAINIT	# userdata init files
 	select BR2_PACKAGE_BATOCERA_BATTERY_CHECKER
@@ -812,6 +812,7 @@ config BR2_PACKAGE_BATOCERA_ALL_SYSTEMS
 		select BR2_PACKAGE_LUTRIS if BR2_PACKAGE_BATOCERA_TARGET_X86_64_ANY || BR2_PACKAGE_BATOCERA_TARGET_QCS6490 || BR2_PACKAGE_BATOCERA_TARGET_SM8550
 		select BR2_PACKAGE_BATOCERA_APPS if BR2_PACKAGE_BATOCERA_TARGET_X86_64_ANY
 		select BR2_PACKAGE_BATOCERA_APPS_AARCH64 if BR2_PACKAGE_BATOCERA_TARGET_QCS6490 || BR2_PACKAGE_BATOCERA_TARGET_SM8250 || BR2_PACKAGE_BATOCERA_TARGET_SM8550
+		select BR2_PACKAGE_WAYDROID if BR2_PACKAGE_BATOCERA_TARGET_QCS6490 || BR2_PACKAGE_BATOCERA_TARGET_SM8550
 
 		help
 		  batocera.linux all supported emulation systems
@@ -882,7 +883,7 @@ config BR2_PACKAGE_BATOCERA_HOMEBREW_SYSTEMS
 						   BR2_PACKAGE_BATOCERA_TARGET_SM8250 	  # Probably others but not tested yet
 
 	# Fighting games engine
-	 # select BR2_PACKAGE_IKEMEN		if BR2_PACKAGE_BATOCERA_TARGET_X86_64_ANY
+	 select BR2_PACKAGE_IKEMEN
 
 
 	# SMBX engine
@@ -1281,6 +1282,12 @@ config BR2_PACKAGE_BATOCERA_PORTS_SYSTEMS
 	select BR2_PACKAGE_JAZZ2_NATIVE    if BR2_PACKAGE_BATOCERA_GLES3 || \
 	                                      BR2_PACKAGE_LIBGLFW && \
 										  !BR2_PACKAGE_BATOCERA_TARGET_JH7110
+
+	# Dusk (Twilight Princess engine)
+	select BR2_PACKAGE_DUSK            if BR2_PACKAGE_HOST_RUSTC_TARGET_ARCH_SUPPORTS && \
+	                                      (BR2_PACKAGE_BATOCERA_TARGET_RK3568_VULKAN || \
+	                                       BR2_PACKAGE_BATOCERA_TARGET_QCS6490 || \
+	                                       BR2_PACKAGE_BATOCERA_TARGET_SM8550)
 
 	# Doom 3 & mods
 	select BR2_PACKAGE_BATOCERA_DHEWM3    if BR2_x86_64                              || \
@@ -2126,6 +2133,7 @@ config BR2_PACKAGE_BATOCERA_FREEDRENO_MESA3D
 	select BR2_PACKAGE_MESA3D_OPENGL_ES
 	select BR2_PACKAGE_MESA3D_OPENGL_EGL
 	select BR2_PACKAGE_MESA3D_GALLIUM_DRIVER_FREEDRENO
+	select BR2_PACKAGE_MESA3D_GALLIUM_DRIVER_ZINK
 	select BR2_PACKAGE_MESA3D_OPENGL_GLX    if BR2_PACKAGE_XORG7 # OpenGL GLX support
 	select BR2_PACKAGE_MESA3D_DEMOS			if BR2_PACKAGE_XORG7 # glxinfo etc
 	select BR2_PACKAGE_LIBGLVND			    if BR2_PACKAGE_XORG7 # opengl vendor neutral dispatch

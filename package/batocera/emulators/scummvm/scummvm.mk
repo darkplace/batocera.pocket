@@ -11,7 +11,14 @@ SCUMMVM_DEPENDENCIES += sdl2 zlib libmpeg2 libogg libvorbis flac libmad
 SCUMMVM_DEPENDENCIES += libpng libtheora faad2 freetype libjpeg-bato fluidsynth
 
 SCUMMVM_ADDITIONAL_FLAGS += -I$(STAGING_DIR)/usr/include -lpthread -lm
+
+ifeq ($(BR2_PACKAGE_BATOCERA_TARGET_SM8550),y)
+SCUMMVM_OPENGL_MODE = none
+SCUMMVM_CONF_OPTS += --disable-opengl-game --disable-opengl-game-classic --disable-opengl-game-shaders
+else
+SCUMMVM_OPENGL_MODE = auto
 SCUMMVM_ADDITIONAL_FLAGS += -L$(STAGING_DIR)/usr/lib -lGLESv2 -lEGL
+endif
 
 ifeq ($(BR2_PACKAGE_RPI_USERLAND),y)
     SCUMMVM_ADDITIONAL_FLAGS += -I$(STAGING_DIR)/usr/include/interface/vcos/pthreads \
@@ -30,7 +37,7 @@ endif
 SCUMMVM_CONF_ENV += RANLIB="$(TARGET_RANLIB)" STRIP="$(TARGET_STRIP)"
 SCUMMVM_CONF_ENV += AR="$(TARGET_AR) cru" AS="$(TARGET_AS)"
 
-SCUMMVM_CONF_OPTS += --opengl-mode=auto --disable-debug --enable-optimizations \
+SCUMMVM_CONF_OPTS += --opengl-mode=$(SCUMMVM_OPENGL_MODE) --disable-debug --enable-optimizations \
     --enable-mt32emu --enable-flac --enable-mad --enable-vorbis --disable-tremor \
     --enable-all-engines --enable-fluidsynth --disable-taskbar --disable-timidity \
     --disable-alsa --enable-vkeybd --enable-release --disable-eventrecorder \

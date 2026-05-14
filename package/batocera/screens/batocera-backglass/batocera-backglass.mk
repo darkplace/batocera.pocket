@@ -24,10 +24,31 @@ define BATOCERA_BACKGLASS_INSTALL_TARGET_CMDS
     $(INSTALL) -m 0755 -D $(BACKGLASS_PATH)/scripts/*.sh \
         $(TARGET_DIR)/usr/share/batocera-backglass/scripts/
 
-    # web pages
-    mkdir -p $(TARGET_DIR)/usr/share/batocera-backglass/www
-    cp -pr $(BACKGLASS_PATH)/www/* \
-        $(TARGET_DIR)/usr/share/batocera-backglass/www/
+    # default web page
+    mkdir -p $(TARGET_DIR)/usr/share/batocera-backglass/www/backglass-default
+    cp -pr $(BACKGLASS_PATH)/www/backglass-default/*.{js,css,htm} \
+        $(TARGET_DIR)/usr/share/batocera-backglass/www/backglass-default/
+    mkdir -p $(TARGET_DIR)/usr/share/batocera-backglass/www/backglass-image
+    cp -pr $(BACKGLASS_PATH)/www/backglass-image/*.{js,css,htm} \
+        $(TARGET_DIR)/usr/share/batocera-backglass/www/backglass-image/
+    mkdir -p $(TARGET_DIR)/usr/share/batocera-backglass/www/backglass-marquee
+    cp -pr $(BACKGLASS_PATH)/www/backglass-marquee/*.{js,css,htm} \
+        $(TARGET_DIR)/usr/share/batocera-backglass/www/backglass-marquee/
+    mkdir -p $(TARGET_DIR)/usr/share/batocera-backglass/www/backglass-boxart
+    cp -pr $(BACKGLASS_PATH)/www/backglass-boxart/*.{js,css,htm} \
+        $(TARGET_DIR)/usr/share/batocera-backglass/www/backglass-boxart/
+    mkdir -p $(TARGET_DIR)/usr/share/batocera-backglass/www/backglass-fanart
+    cp -pr $(BACKGLASS_PATH)/www/backglass-fanart/*.{js,css,htm} \
+        $(TARGET_DIR)/usr/share/batocera-backglass/www/backglass-fanart/
+    mkdir -p $(TARGET_DIR)/usr/share/batocera-backglass/www/backglass-conky
+    cp -pr $(BACKGLASS_PATH)/www/backglass-conky/*.{js,css,htm} \
+        $(TARGET_DIR)/usr/share/batocera-backglass/www/backglass-conky/
+    mkdir -p $(TARGET_DIR)/usr/share/batocera-backglass/www/backglass-game-controls
+    cp -pr $(BACKGLASS_PATH)/www/backglass-game-controls/*.{js,css,htm} \
+        $(TARGET_DIR)/usr/share/batocera-backglass/www/backglass-game-controls/
+    mkdir -p $(TARGET_DIR)/usr/share/batocera-backglass/www/backglass-flycast-vmu
+    cp -pr $(BACKGLASS_PATH)/www/backglass-flycast-vmu/*.{js,css,htm} \
+        $(TARGET_DIR)/usr/share/batocera-backglass/www/backglass-flycast-vmu/
 endef
 
 $(eval $(generic-package))

@@ -1,0 +1,114 @@
+#!/bin/sh
+
+LOG="/userdata/system/logs/waydroid-host.log"
+BINDERFS_DIR="/dev/binderfs"
+
+log_msg() {
+    echo "[$(date '+%F %T')] $*" >> "${LOG}"
+}
+
+ensure_cgroup2() {
+    if [ -f /sys/fs/cgroup/cgroup.controllers ]; then
+        log_msg "cgroup mode: unified v2"
+        return 0
+    fi
+
+    mkdir -p /sys/fs/cgroup
+    if grep -q ' /sys/fs/cgroup ' /proc/mounts; then
+        umount /sys/fs/cgroup 2>>"${LOG}" || true
+    fi
+
+    if mount -t cgroup2 none /sys/fs/cgroup 2>>"${LOG}"; then
+        log_msg "Mounted cgroup2 on /sys/fs/cgroup"
+    else
+        log_msg "Failed to mount cgroup2 on /sys/fs/cgroup"
+    fi
+}
+
+load_waydroid_netfilter_modules() {
+    local module
+
+    for module in \
+        ip_tables iptable_filter iptable_mangle iptable_raw iptable_nat \
+        ip6_tables ip6table_filter ip6table_mangle ip6table_raw ip6table_nat \
+        x_tables xt_mark xt_MARK xt_connmark xt_CONNMARK xt_bpf xt_u32 \
+        xt_NFLOG xt_limit xt_owner xt_quota xt_state xt_conntrack xt_addrtype \
+        nfnetlink nfnetlink_log nf_conntrack nf_nat nf_defrag_ipv4 nf_defrag_ipv6 \
+        xfrm_user
+    do
+        modprobe "${module}" >/dev/null 2>>"${LOG}" || true
+    done
+}
+
+start_waydroid_host() {
+    mkdir -p /userdata/system/logs
+    mkdir -p /userdata/system/waydroid/var-lib /userdata/system/waydroid/etc
+
+    log_msg "Waydroid host prep start"
+
+    # Keep waydroid state persistent across reboot.
+    if [ -L /var/lib/waydroid ]; then
+        :
+    else
+        rm -rf /var/lib/waydroid
+        mkdir -p /var/lib
+        ln -snf /userdata/system/waydroid/var-lib /var/lib/waydroid
+    fi
+
+    if [ -L /etc/waydroid ]; then
+        :
+    else
+        rm -rf /etc/waydroid
+        ln -snf /userdata/system/waydroid/etc /etc/waydroid
+    fi
+
+    # Provide default subordinate UID/GID mappings for root if absent.
+    for file in /etc/subuid /etc/subgid; do
+        if [ ! -e "${file}" ]; then
+            : > "${file}"
+            chmod 0644 "${file}"
+        fi
+        if ! grep -q '^root:' "${file}" 2>/dev/null; then
+            echo "root:100000:65536" >> "${file}"
+            log_msg "Added default mapping to ${file}"
+        fi
+    done
+
+    ensure_cgroup2
+    load_waydroid_netfilter_modules
+
+    if grep -qwE 'binder|binderfs' /proc/filesystems; then
+        mkdir -p "${BINDERFS_DIR}"
+        if ! grep -q " ${BINDERFS_DIR} " /proc/mounts; then
+            if mount -t binder binder "${BINDERFS_DIR}" 2>>"${LOG}"; then
+                log_msg "Mounted binderfs via -t binder"
+            elif mount -t binderfs binder "${BINDERFS_DIR}" 2>>"${LOG}"; then
+                log_msg "Mounted binderfs via -t binderfs"
+            else
+                log_msg "Failed to mount binderfs"
+            fi
+        fi
+
+        for node in binder hwbinder vndbinder; do
+            if [ -e "${BINDERFS_DIR}/${node}" ]; then
+                ln -sf "${BINDERFS_DIR}/${node}" "/dev/${node}"
+            fi
+        done
+    else
+        log_msg "Kernel has no binder/binderfs filesystem support"
+    fi
+}
+
+case "${1:-}" in
+    start|restart)
+        start_waydroid_host
+        ;;
+    stop)
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|restart}" >&2
+        exit 1
+        ;;
+esac
+
+exit 0

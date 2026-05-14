@@ -1,0 +1,5 @@
+#!/bin/sh
+
+export DUSK_DATA_DIR="${DUSK_DATA_DIR:-/usr/lib/dusk}"
+
+exec /usr/lib/dusk/dusk "$@"

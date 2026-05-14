@@ -161,6 +161,8 @@ def set_lxc_config(args):
     tools.helpers.run.user(args, command)
     command = ["sh", "-c", "cat {} > \"{}\"".format(' '.join('"{0}"'.format(w) for w in config_snippets), lxc_path + "/config")]
     tools.helpers.run.user(args, command)
+    command = ["sed", "-i", "-E", r"s/(lxc\.mount\.auto = .*cgroup):ro/\1:rw/", lxc_path + "/config"]
+    tools.helpers.run.user(args, command)
     command = ["sed", "-i", "s/LXCARCH/{}/".format(platform.machine()), lxc_path + "/config"]
     tools.helpers.run.user(args, command)
     command = ["cp", "-fpr", seccomp_profile, lxc_path + "/waydroid.seccomp"]

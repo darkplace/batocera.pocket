@@ -166,6 +166,13 @@ ifeq ($(BR2_PACKAGE_BATOCERA_APPS_AARCH64),y)
   BATOCERA_DESKTOPAPPS_STALE_ICONS += geforcenow.png
 endif
 
+# waydroid
+ifeq ($(BR2_PACKAGE_WAYDROID),y)
+  BATOCERA_DESKTOPAPPS_SCRIPTS += Waydroid.sh
+  BATOCERA_DESKTOPAPPS_APPS    += waydroid.desktop
+  BATOCERA_DESKTOPAPPS_ICONS   += waydroid.png
+endif
+
 # citron
 ifeq ($(BR2_PACKAGE_CITRON),y)
   BATOCERA_DESKTOPAPPS_SCRIPTS += batocera-config-citron

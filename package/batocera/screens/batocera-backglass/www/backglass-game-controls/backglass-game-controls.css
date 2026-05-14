@@ -1,0 +1,271 @@
+html,
+body {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    overflow: hidden;
+    background: #050809;
+    color: #f8fbff;
+    font-family: Arial, Helvetica, sans-serif;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+#controls {
+    width: 100vw;
+    height: 100vh;
+    display: grid;
+    grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+    grid-template-areas:
+        "state quick"
+        "motion status";
+    gap: 16px;
+    padding: 18px;
+    background:
+        linear-gradient(135deg, rgba(34, 115, 139, 0.46), rgba(5, 8, 9, 0.72) 42%, rgba(164, 74, 42, 0.34)),
+        #050809;
+}
+
+#state-panel,
+#quick-panel,
+#motion-panel {
+    min-width: 0;
+    min-height: 0;
+    border: 1px solid rgba(248, 251, 255, 0.14);
+    background: rgba(7, 13, 15, 0.74);
+    padding: 14px;
+}
+
+#state-panel {
+    grid-area: state;
+}
+
+#quick-panel {
+    grid-area: quick;
+}
+
+#motion-panel {
+    grid-area: motion;
+}
+
+.panel-title {
+    height: 28px;
+    font-size: 18px;
+    font-weight: 800;
+    color: #7ee1d2;
+    text-transform: uppercase;
+}
+
+.button-grid {
+    height: calc(100% - 28px);
+    display: grid;
+    gap: 10px;
+}
+
+.state-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: repeat(2, minmax(64px, 1fr));
+}
+
+.quick-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: repeat(4, minmax(44px, 1fr));
+}
+
+.motion-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: minmax(56px, 1fr);
+}
+
+button {
+    width: 100%;
+    min-width: 0;
+    min-height: 0;
+    border: 1px solid rgba(248, 251, 255, 0.22);
+    background: rgba(58, 165, 148, 0.26);
+    color: #ffffff;
+    font-size: clamp(16px, 3.4vh, 28px);
+    font-weight: 800;
+    touch-action: manipulation;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+button:active {
+    background: rgba(58, 165, 148, 0.48);
+}
+
+button:disabled {
+    opacity: 0.55;
+}
+
+button.danger {
+    background: rgba(204, 72, 72, 0.3);
+}
+
+button.danger:active {
+    background: rgba(204, 72, 72, 0.52);
+}
+
+#cheevos-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 18px;
+    background:
+        linear-gradient(135deg, rgba(10, 22, 26, 0.98), rgba(15, 18, 22, 0.98)),
+        #050809;
+}
+
+#cheevos-overlay.hidden {
+    display: none;
+}
+
+#cheevos-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    min-height: 76px;
+    border-bottom: 1px solid rgba(248, 251, 255, 0.16);
+    padding-bottom: 12px;
+}
+
+#cheevos-heading {
+    font-size: clamp(22px, 4.6vh, 38px);
+    font-weight: 900;
+    color: #f8fbff;
+}
+
+#cheevos-summary {
+    margin-top: 4px;
+    color: #8ee8d9;
+    font-size: clamp(13px, 2.8vh, 22px);
+    font-weight: 700;
+}
+
+#cheevos-close {
+    width: min(210px, 30vw);
+    height: 62px;
+    flex: 0 0 auto;
+}
+
+#cheevos-list {
+    min-height: 0;
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding-right: 4px;
+}
+
+.cheevo-row {
+    display: grid;
+    grid-template-columns: 72px minmax(0, 1fr);
+    gap: 12px;
+    align-items: center;
+    min-height: 86px;
+    border: 1px solid rgba(248, 251, 255, 0.12);
+    background: rgba(248, 251, 255, 0.055);
+    padding: 8px;
+}
+
+.cheevo-row.earned {
+    border-color: rgba(126, 225, 210, 0.4);
+    background: rgba(58, 165, 148, 0.14);
+}
+
+.cheevo-badge {
+    width: 64px;
+    height: 64px;
+    object-fit: contain;
+    image-rendering: auto;
+}
+
+.cheevo-body {
+    min-width: 0;
+}
+
+.cheevo-title {
+    color: #ffffff;
+    font-size: clamp(16px, 3.4vh, 26px);
+    font-weight: 900;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.cheevo-desc {
+    margin-top: 3px;
+    color: #c5d0d6;
+    font-size: clamp(12px, 2.6vh, 20px);
+    line-height: 1.2;
+}
+
+.cheevo-meta {
+    margin-top: 5px;
+    color: #82daca;
+    font-size: clamp(12px, 2.4vh, 18px);
+    font-weight: 800;
+    text-transform: uppercase;
+}
+
+.cheevos-empty {
+    height: 100%;
+    min-height: 180px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #c5d0d6;
+    font-size: clamp(18px, 3.6vh, 30px);
+    font-weight: 800;
+    text-align: center;
+}
+
+#status {
+    grid-area: status;
+    min-height: 56px;
+    align-self: stretch;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid rgba(248, 251, 255, 0.12);
+    background: rgba(7, 13, 15, 0.58);
+    color: #d3dde3;
+    font-size: clamp(14px, 2.8vh, 22px);
+    font-weight: 700;
+    text-align: center;
+}
+
+@media (max-width: 720px), (max-height: 560px) {
+    #controls {
+        gap: 10px;
+        padding: 10px;
+    }
+
+    #state-panel,
+    #quick-panel,
+    #motion-panel {
+        padding: 10px;
+    }
+
+    .button-grid {
+        gap: 8px;
+    }
+
+    .panel-title {
+        height: 24px;
+        font-size: 14px;
+    }
+
+    button {
+        font-size: 15px;
+    }
+}

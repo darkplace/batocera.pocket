@@ -236,6 +236,15 @@ function renderAll() {
     renderStats();
 }
 
+function tickPresentHeartbeat() {
+    var heartbeat = document.getElementById("present-heartbeat");
+    if(!heartbeat) {
+        return;
+    }
+    var tick = Date.now() % 1000;
+    heartbeat.style.opacity = tick < 500 ? "0.01" : "0.02";
+}
+
 function onSystem(infos) {
     currentSystem = infos || {};
     renderAll();
@@ -385,28 +394,40 @@ function forceKillEmulator() {
         });
 }
 
+function bindActionButton(id, handler) {
+    var button = document.getElementById(id);
+    if(!button) {
+        return;
+    }
+
+    var lastRun = 0;
+    var run = function(event) {
+        if(event) {
+            event.preventDefault();
+            event.stopPropagation();
+        }
+
+        var now = Date.now();
+        if(now - lastRun < 500) {
+            return;
+        }
+        lastRun = now;
+        handler();
+    };
+
+    button.addEventListener("click", run);
+    button.addEventListener("pointerup", run);
+    button.addEventListener("touchend", run, { passive: false });
+}
+
 window.onload = function() {
     renderAll();
     pollStats();
     setInterval(pollStats, 1000);
+    setInterval(tickPresentHeartbeat, 250);
 
-    var screenshotButton = document.getElementById("screenshot-top");
-    if(screenshotButton) {
-        screenshotButton.addEventListener("click", takeTopScreenshot);
-    }
-
-    var killButton = document.getElementById("force-kill");
-    if(killButton) {
-        killButton.addEventListener("click", forceKillEmulator);
-    }
-
-    var recordStartButton = document.getElementById("record-start");
-    if(recordStartButton) {
-        recordStartButton.addEventListener("click", startRecording);
-    }
-
-    var recordStopButton = document.getElementById("record-stop");
-    if(recordStopButton) {
-        recordStopButton.addEventListener("click", stopRecording);
-    }
+    bindActionButton("screenshot-top", takeTopScreenshot);
+    bindActionButton("record-start", startRecording);
+    bindActionButton("record-stop", stopRecording);
+    bindActionButton("force-kill", forceKillEmulator);
 };

@@ -13,6 +13,18 @@ body {
     box-sizing: border-box;
 }
 
+#present-heartbeat {
+    position: fixed;
+    right: 0;
+    bottom: 0;
+    width: 2px;
+    height: 2px;
+    pointer-events: none;
+    opacity: 0.01;
+    background: #ffffff;
+    z-index: 0;
+}
+
 #dashboard {
     width: 100vw;
     height: 100vh;
@@ -151,6 +163,9 @@ body {
     font-size: 12px;
     font-weight: 800;
     text-transform: uppercase;
+    touch-action: manipulation;
+    user-select: none;
+    -webkit-user-select: none;
 }
 
 #record-stop {

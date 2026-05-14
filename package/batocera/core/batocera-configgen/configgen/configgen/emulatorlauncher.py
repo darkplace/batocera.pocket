@@ -34,6 +34,7 @@ from .generators import get_generator
 from .gun import Gun
 from .utils import bezels as bezelsUtil, videoMode, wheelsUtils
 from .utils.gamescope import add_gamescope_arguments
+from .utils.gpu_profile import gpu_profile
 from .utils.hotkeygen import set_hotkeygen_context
 from .utils.logger import setup_logging
 from .utils.squashfs import squashfs_rom
@@ -171,7 +172,8 @@ def start_rom(args: argparse.Namespace, maxnbplayers: int, rom: Path, original_r
 
                 cmd = generator.generate(system, rom, player_controllers, metadata, guns, wheels, gameResolution)
 
-                if system.config.get_bool('hud_support'):
+                disable_mangohud = str(cmd.env.get("DISABLE_MANGOHUD", "")).lower() in ("1", "true", "yes")
+                if args.systemname != "steam" and system.config.get_bool('hud_support') and not disable_mangohud:
                     hud_bezel = getHudBezel(system, generator, rom, gameResolution, system.guns_borders_size_name(guns), system.guns_border_ratio_type(guns))
                     if ((hud := system.config.get('hud')) and hud != "none") or hud_bezel is not None:
                         cmd.env["MANGOHUD_DLSYM"] = "1"
@@ -198,7 +200,8 @@ def start_rom(args: argparse.Namespace, maxnbplayers: int, rom: Path, original_r
                     except Exception as e:
                         _logger.warning(f"Failed to reset mouse: {e}")
                     monitor_thread.start()
-                    exitCode = runCommand(cmd)
+                    with gpu_profile(system.config, systemName, system.config.emulator, effectiveCore, original_rom):
+                        exitCode = runCommand(cmd)
 
             # run a script after emulator shuts down
             callExternalScripts(USER_SCRIPTS, "gameStop", [systemName, system.config.emulator, effectiveCore, rom])

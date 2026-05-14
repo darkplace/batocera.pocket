@@ -1,16 +1,25 @@
 --- a/es-app/src/guis/GuiMenu.cpp
 +++ b/es-app/src/guis/GuiMenu.cpp
-@@ -514,1 +514,3 @@ void GuiMenu::openMultiScreensSettings()
+@@ -511,23 +511,66 @@ void GuiMenu::openMultiScreensSettings()
+ 			// theme
+ 			auto themes = ApiSystem::getInstance()->backglassThemes();
+ 			auto selectedTheme = SystemConf::getInstance()->get("backglass.theme");
 -			auto theme = std::make_shared<OptionListComponent<std::string> >(mWindow, _("THEME"), false);
 +			if (selectedTheme.empty())
 +				selectedTheme = "auto";
 +			auto theme = std::make_shared<OptionListComponent<std::string> >(mWindow, _("BOTTOM SCREEN WIDGET"), false);
-@@ -521,1 +523,18 @@ void GuiMenu::openMultiScreensSettings()
+ 			
+ 			std::vector<std::string> themeList;
+ 			for (auto it = themes.begin(); it != themes.end(); it++)
+ 			  themeList.push_back(*it);
+ 			std::sort(themeList.begin(), themeList.end(), [](const std::string& a, const std::string& b) -> bool { return Utils::String::toLower(a).compare(Utils::String::toLower(b)) < 0; });
+ 
 -			theme->add(_("AUTO"), "auto", selectedTheme == "" || selectedTheme == "auto");
 +			std::vector<std::pair<std::string, std::string>> preferredThemes = {
 +				{ _("DISABLED"), "none" },
 +				{ _("AUTO"), "auto" },
 +				{ _("KODI"), "kodi" },
++				{ _("WAYDROID"), "waydroid" },
 +				{ _("SYSTEM DASHBOARD"), "backglass-conky" },
 +				{ _("DEFAULT BACKGLASS"), "backglass-default" },
 +				{ _("IMAGE"), "backglass-image" },
@@ -19,15 +28,20 @@
 +				{ _("MARQUEE"), "backglass-marquee" }
 +			};
 +
++			themeList.erase(std::remove_if(themeList.begin(), themeList.end(), [](const std::string& themeName) {
++				auto lowerThemeName = Utils::String::toLower(themeName);
++				return lowerThemeName.find("vmu") != std::string::npos;
++			}), themeList.end());
++
 +			for (auto preferredTheme : preferredThemes)
 +			{
 +				bool isVirtualTheme = preferredTheme.second == "none" || preferredTheme.second == "auto" ||
-+					preferredTheme.second == "kodi";
++					preferredTheme.second == "kodi" || preferredTheme.second == "waydroid";
 +				bool isAvailableTheme = std::find(themeList.begin(), themeList.end(), preferredTheme.second) != themeList.end();
 +				if (isVirtualTheme || isAvailableTheme)
 +					theme->add(preferredTheme.first, preferredTheme.second, preferredTheme.second == selectedTheme);
 +			}
-@@ -522,2 +539,15 @@ void GuiMenu::openMultiScreensSettings()
++
  			for (auto themeName : themeList)
 -			  theme->add(themeName, themeName, themeName == selectedTheme);
 +			{
@@ -44,7 +58,7 @@
 +				if (!alreadyAdded)
 +					theme->add(themeName, themeName, themeName == selectedTheme);
 +			}
-@@ -525,5 +557,7 @@ void GuiMenu::openMultiScreensSettings()
+ 			
 -			s->addWithLabel(_("THEME"), theme);
 +			s->addWithDescription(_("BOTTOM SCREEN WIDGET"), _("Selects what appears on the secondary screen while browsing EmulationStation."), theme);
  			s->addSaveFunc([theme]
@@ -53,3 +67,6 @@
 +			  if (oldTheme.empty())
 +			    oldTheme = "auto";
  			  if (oldTheme != theme->getSelected()) {
+ 			    SystemConf::getInstance()->set("backglass.theme", theme->getSelected());
+ 			    SystemConf::getInstance()->saveSystemConf();
+ 			    ApiSystem::getInstance()->restartBackglass();

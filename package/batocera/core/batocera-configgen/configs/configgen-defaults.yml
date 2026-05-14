@@ -12,6 +12,7 @@ default:
     bezel:              consoles
     forceNoBezel:       false
     gamemode_enable:    false
+    gpu_performance_profile: auto
     gamescope_scaler:   stretch
     gamescope_filter:   linear
 
@@ -222,6 +223,9 @@ dreamcast:
 dxx-rebirth:
   emulator: dxx-rebirth
   core:     dxx-rebirth
+dusk:
+  emulator: dusk
+  core:     dusk
 easyrpg:
   emulator: easyrpg
   core:     easyrpg
@@ -405,8 +409,8 @@ megaduck:
   emulator: libretro
   core:     sameduck
 model2:
-  emulator: model2emu
-  core:     model2emu
+  emulator: libretro
+  core:     mame
   options:
     videomode: max-1920x1080
     hud_support: false
@@ -509,6 +513,9 @@ oricatmos:
 
 # P-S
 
+pc60:
+  emulator: libretro
+  core:     mame
 pc88:
   emulator: libretro
   core:     quasi88
@@ -551,11 +558,10 @@ prboom:
   emulator: libretro
   core:     prboom
 ps2:
-  emulator: aethersx2
-  core:     aethersx2
+  emulator: pcsx2
+  core:     pcsx2
   options:
     fullboot: true
-    hud_support: false
 ps3:
   emulator: rpcs3
   core:     rpcs3
@@ -660,14 +666,7 @@ spectravideo:
   core:     bluemsx
 steam:
   emulator: steam
-  core:     steamos
-  options:
-    bezel: none
-    gamescope: true
-    steam_session_mode: steamos
-    steam_gamepadui: true
-    steam_user: auto
-    steam_extra_args: ""
+  core:     gamepadui
 superbroswar:
   emulator: libretro
   core:     superbroswar

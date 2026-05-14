@@ -78,6 +78,8 @@ systemNetplayModes = {'host', 'client', 'spectator'}
 
 # Cores that require .slang shaders (even on OpenGL, not only Vulkan)
 coreForceSlangShaders = { 'mupen64plus-next' }
+rgdsVerticalArcadeCores = { 'fbneo', 'fbalpha', 'mame', 'mame078plus', 'mame0139', 'mame0160', 'mamevirtual', 'imame4all' }
+rgdsVerticalModeFile = Path('/var/run/rgds-vertical-mode')
 
 def connected_to_internet() -> bool:
     # Try Cloudflare one.one.one.one first
@@ -98,6 +100,86 @@ def connected_to_internet() -> bool:
 
     _logger.error("Not connected to the internet")
     return False
+
+def is_rgds_top_bottom() -> bool:
+    try:
+        display_position = subprocess.run(
+            ["/usr/bin/batocera-settings-get-master", "display.position"],
+            check=False,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        model = subprocess.run(
+            ["/usr/bin/batocera-model"],
+            check=False,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+    except Exception:
+        return False
+
+    if display_position != "top-bottom":
+        return False
+
+    if model == "Anbernic_RG_DS":
+        return True
+
+    try:
+        with open("/sys/firmware/devicetree/base/compatible", "rb") as compat:
+            return b"anbernic,rg-ds" in compat.read().split(b"\0")
+    except OSError:
+        return False
+
+
+def rgds_vertical_mode(system: Emulator, /) -> str:
+    mode = system.config.get_str("rgds_vertical_mode", "auto").lower()
+    if mode in { "off", "disabled", "0" }:
+        return "off"
+    if mode in { "force", "always", "1" }:
+        return "force"
+    return "auto"
+
+
+def write_rgds_vertical_mode(system: Emulator, /) -> None:
+    if system.config.core not in rgdsVerticalArcadeCores:
+        return
+
+    try:
+        rgdsVerticalModeFile.write_text(f"{rgds_vertical_mode(system)}\n", encoding="ascii")
+    except OSError:
+        _logger.debug("Unable to write %s", rgdsVerticalModeFile, exc_info=True)
+
+
+def is_rgds_vertical_arcade_rom(rom: Path, /) -> bool:
+    rom_name = rom.stem
+
+    if rom_name.startswith(("punchout", "spnchout", "pc_", "mp_")):
+        return True
+
+    arcade_roms = Path("/usr/share/emulationstation/resources/arcaderoms.xml")
+    try:
+        needle = f'id="{rom_name}"'
+        with arcade_roms.open(encoding="utf-8") as roms:
+            for line in roms:
+                if needle in line and 'vert="true"' in line:
+                    return True
+    except OSError:
+        pass
+
+    return False
+
+
+def should_rgds_stretch_arcade(system: Emulator, rom: Path, /) -> bool:
+    if system.config.core not in rgdsVerticalArcadeCores or not is_rgds_top_bottom():
+        return False
+
+    mode = rgds_vertical_mode(system)
+    if mode == "off":
+        return False
+    if mode == "force":
+        return True
+
+    return is_rgds_vertical_arcade_rom(rom)
 
 def writeLibretroConfig(
     generator: Generator,
@@ -145,6 +227,7 @@ def createLibretroConfig(
 
     # Create/update retroarch-core-options.cfg
     libretroOptions.generateCoreSettings(coreSettings, system, rom, guns, wheels)
+    write_rgds_vertical_mode(system)
 
     # Create/update hatari.cfg
     if system.name == 'atarist':
@@ -164,6 +247,8 @@ def createLibretroConfig(
     retroarchConfig['menu_show_restart_retroarch'] = 'false'      # this option messes everything up on Batocera if ever clicked
     retroarchConfig['menu_show_load_content_animation'] = 'false' # hide popup when starting a game
     retroarchConfig['menu_swap_ok_cancel_buttons'] = swapButtons  # Set the correct value to match ES confirm /cancel inputs
+    retroarchConfig['network_cmd_enable'] = 'true'
+    retroarchConfig['network_cmd_port'] = '55355'
     retroarchConfig["video_viewport_bias_x"] = "0.500000"
     retroarchConfig["video_viewport_bias_y"] = "0.500000"
 
@@ -667,6 +752,26 @@ def createLibretroConfig(
 
     retroarchConfig['video_scale_integer'] = system.config.get_bool('integerscale', return_values=('true', 'false'))
 
+    if should_rgds_stretch_arcade(system, rom):
+        width = int(gameResolution["width"])
+        height = int(gameResolution["height"]) * 2
+        bezel = None
+        retroarchConfig['video_fullscreen'] = 'false'
+        retroarchConfig['video_windowed_fullscreen'] = 'false'
+        retroarchConfig['video_window_width'] = width
+        retroarchConfig['video_window_height'] = height
+        retroarchConfig['video_fullscreen_x'] = width
+        retroarchConfig['video_fullscreen_y'] = height
+        retroarchConfig['video_scale_integer'] = 'false'
+        retroarchConfig['video_aspect_ratio_auto'] = 'false'
+        retroarchConfig['aspect_ratio_index'] = str(ratioIndexes.index("full"))
+        retroarchConfig['custom_viewport_x'] = 0
+        retroarchConfig['custom_viewport_y'] = 0
+        retroarchConfig['custom_viewport_width'] = width
+        retroarchConfig['custom_viewport_height'] = height
+        retroarchConfig['width'] = width
+        retroarchConfig['height'] = height
+
     # Netplay management
     if (netplay_mode := system.config.get('netplay.mode')) in systemNetplayModes:
         # Security : hardcore mode disables save states, which would kill netplay
@@ -730,6 +835,9 @@ def createLibretroConfig(
     # On-Screen Display
     retroarchConfig['width']  = gameResolution["width"]  # default value
     retroarchConfig['height'] = gameResolution["height"] # default value
+    if should_rgds_stretch_arcade(system, rom):
+        retroarchConfig['width'] = int(gameResolution["width"])
+        retroarchConfig['height'] = int(gameResolution["height"]) * 2
     # force the assets directory while it was wrong in some beta versions
     retroarchConfig['assets_directory'] = '/usr/share/libretro/assets'
 

@@ -512,6 +512,7 @@ exit $EXIT_CODE
             environment = {
                 'SDL_GAMECONTROLLERCONFIG': generate_sdl_game_controller_config(playersControllers),
                 'SDL_JOYSTICK_HIDAPI': '0',
+                'BATOCERA_SKIP_GAMESCOPE': '1',
             }
             lsfg.apply_lsfg_vk(system, environment)
             return Command.Command(array=commandArray, env=environment)

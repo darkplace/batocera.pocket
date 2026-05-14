@@ -97,6 +97,7 @@ map_touch_to_output() {
 }
 
 apply_sway_touch_mapping() {
+    mode="${1:-emulator}"
     model=$(batocera-model 2>/dev/null)
     primary=$(settings_get global.videooutput)
     secondary=$(settings_get global.videooutput2)
@@ -118,18 +119,32 @@ apply_sway_touch_mapping() {
             ;;
     esac
 
-    if [ "$model" = "AYN_Thor" ] && [ "$display_position" = "top-bottom" ] && [ "$primary" = "DSI-2" ] && [ "$secondary" = "DSI-1" ] && [ "$touch_count" -ge 2 ]; then
-        bottom_touch=$(echo "$touch_ids" | sed -n '1p')
-        top_touch=$(echo "$touch_ids" | sed -n '2p')
+    if [ "$model" = "AYN_Thor" ] && [ "$display_position" = "top-bottom" ] && [ "$primary" = "DSI-2" ] && [ "$secondary" = "DSI-1" ]; then
+        if [ "$touch_count" -ge 2 ]; then
+            bottom_touch=$(echo "$touch_ids" | sed -n '1p')
+            top_touch=$(echo "$touch_ids" | sed -n '2p')
 
-        if [ "$bottom_touch" = "$top_touch" ]; then
-            log_message "Sway touch map: duplicate touch identifiers; mapping native touch to ${primary} and using Xwayland matrix for bottom-screen emulators."
+            if [ "$bottom_touch" = "$top_touch" ]; then
+                log_message "Sway touch map: duplicate Thor touch identifiers; leaving per-panel routing to libinput calibration."
+                return 0
+            fi
+
+            map_touch_to_output "$bottom_touch" "$secondary" secondary 0
             map_touch_to_output "$top_touch" "$primary" primary 0
             return 0
         fi
 
-        map_touch_to_output "$bottom_touch" "$secondary" secondary 0
-        map_touch_to_output "$top_touch" "$primary" primary 0
+        first_touch=$(echo "$touch_ids" | sed -n '1p')
+        case "$mode" in
+            backglass|conky|lower-ui|ui)
+                log_message "Sway touch map: single Thor touch device; assigning it to lower panel for ${mode}."
+                map_touch_to_output "$first_touch" "$secondary" secondary 0
+                ;;
+            *)
+                log_message "Sway touch map: single Thor touch device; assigning it to primary panel for ${mode}."
+                map_touch_to_output "$first_touch" "$primary" primary 0
+                ;;
+        esac
         return 0
     fi
 
@@ -138,14 +153,38 @@ apply_sway_touch_mapping() {
 }
 
 apply_xwayland_touch_matrix() {
+    mode="${1:-emulator}"
     model=$(batocera-model 2>/dev/null)
     primary=$(settings_get global.videooutput)
     secondary=$(settings_get global.videooutput2)
     display_position=$(settings_get display.position)
+    matrix_y_scale="0.95"
+    matrix_y_offset="0.5"
 
     if [ "$model" != "AYN_Thor" ] || [ "$display_position" != "top-bottom" ] || [ "$primary" != "DSI-2" ] || [ "$secondary" != "DSI-1" ]; then
         return 0
     fi
+
+    if [ -f /usr/lib/udev/rules.d/99-ayn-thor-touch.rules ] || [ -f /etc/udev/rules.d/99-ayn-thor-touch.rules ]; then
+        log_message "Sway touch map: Thor libinput calibration is active; skipping Xwayland touch matrix."
+        return 0
+    fi
+
+    case "$mode" in
+        backglass|conky|lower-ui|ui)
+            matrix_y_scale="0.5"
+            matrix_y_offset="0.5"
+            ;;
+        emulator|dual-screen|game|"")
+            matrix_y_scale="0.95"
+            matrix_y_offset="0.5"
+            ;;
+        *)
+            log_message "Sway touch map: unknown Xwayland touch mode ${mode}; using emulator matrix."
+            matrix_y_scale="0.95"
+            matrix_y_offset="0.5"
+            ;;
+    esac
 
     if ! command -v xinput >/dev/null 2>&1; then
         log_message "Sway touch map: xinput missing; skipping Xwayland touch matrix."
@@ -155,10 +194,10 @@ apply_xwayland_touch_matrix() {
     for _try in $(seq 1 60); do
         xwayland_touch=$(DISPLAY=:0 xinput list --name-only 2>/dev/null | awk '/^xwayland-touch:/{print; exit}')
         if [ -n "$xwayland_touch" ]; then
-            log_message "Sway touch map: applying Thor Xwayland touch matrix to ${xwayland_touch}."
+            log_message "Sway touch map: applying Thor ${mode} Xwayland touch matrix to ${xwayland_touch}."
             DISPLAY=:0 xinput set-prop "$xwayland_touch" "Coordinate Transformation Matrix" \
                 0.645833 0 0.177083 \
-                0 0.95 0.5 \
+                0 "${matrix_y_scale}" "${matrix_y_offset}" \
                 0 0 1 >/dev/null 2>&1
             return 0
         fi
@@ -169,5 +208,5 @@ apply_xwayland_touch_matrix() {
 }
 
 wait_for_sway || exit 0
-apply_sway_touch_mapping
-apply_xwayland_touch_matrix
+apply_sway_touch_mapping "${1:-emulator}"
+apply_xwayland_touch_matrix "${1:-emulator}"

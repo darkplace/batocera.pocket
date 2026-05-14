@@ -407,7 +407,7 @@ nds:
     melonds:
       melonds: { requireAnyOf: [BR2_PACKAGE_MELONDS] }
     drastic:
-      drastic: { requireAnyOf: [BR2_PACKAGE_DRASTIC], incompatible_extensions: [7z] }
+      drastic: { requireAnyOf: [BR2_PACKAGE_DRASTIC] }
 
 fds:
   name:       Family Computer Disk System
@@ -5651,6 +5651,42 @@ dxx-rebirth:
     Trouvez la documentation ici: https://wiki.batocera.org/systems:dxx-rebirth
   comment_br: |
     Para mais informações: https://wiki.batocera.org/systems:dxx-rebirth
+
+dusk:
+  name: Dusk
+  manufacturer: Ports
+  release:
+  hardware: port
+  extensions: [rvz]
+  platform: gamecube
+  group: ports
+  path: dusk
+  emulators:
+    dusk:
+      dusk: { requireAnyOf: [ BR2_PACKAGE_DUSK ] }
+  comment_en: |
+    Native Twilight Princess engine.
+
+    Put your original GameCube Twilight Princess RVZ in:
+
+        /userdata/roms/dusk/Twilight Princess.rvz
+
+    Use that exact filename so the seeded artwork and game entry match.
+
+    Recommended dump: USA GameCube, Game ID GZ2E01, RVZ format.
+    Dusk opens to its own main menu; select the RVZ from there.
+  comment_fr: |
+    Moteur natif pour Twilight Princess.
+
+    Placez votre RVZ GameCube original de Twilight Princess ici :
+
+        /userdata/roms/dusk/Twilight Princess.rvz
+  comment_br: |
+    Motor nativo para Twilight Princess.
+
+    Coloque o RVZ original de GameCube do Twilight Princess aqui:
+
+        /userdata/roms/dusk/Twilight Princess.rvz
 
 etlegacy:
   name: Wolfenstein - Enemy Territory

@@ -1,0 +1,20 @@
+Dusk expects a user-supplied original GameCube Twilight Princess disc image.
+
+Put your RVZ file in this folder:
+
+  /userdata/roms/dusk/
+
+Use this exact filename:
+
+  Twilight Princess.rvz
+
+Recommended dump:
+
+  The Legend of Zelda: Twilight Princess
+  Platform: Nintendo GameCube
+  Region: USA
+  Game ID: GZ2E01
+  Format: RVZ, created from your own clean disc dump
+
+Launch the game from Ports -> Dusk. Dusk opens to its own main menu; select the
+RVZ from this folder inside the Dusk menu.

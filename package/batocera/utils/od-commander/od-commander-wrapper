@@ -1,0 +1,13 @@
+#!/bin/sh
+
+if [ "$(cat /usr/share/batocera/batocera.arch 2>/dev/null)" = "sm8550" ]; then
+    export DISPLAY=
+    export SDL_VIDEODRIVER=wayland
+    unset SDL_RENDER_DRIVER
+    export SDL_RENDER_VSYNC=0
+    export MESA_LOADER_DRIVER_OVERRIDE=zink
+    export DISABLE_MANGOHUD=1
+    export DISABLE_LSFG=1
+fi
+
+exec /usr/bin/od-commander.real "$@"

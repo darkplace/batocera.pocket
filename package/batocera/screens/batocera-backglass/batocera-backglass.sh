@@ -6,6 +6,9 @@ PIDFILE="/var/run/batocera-backglass.pid"
 PARAMSFILE="/var/run/batocera-backglass.params"
 KODIPIDFILE="/var/run/batocera-lower-screen-kodi.pid"
 KODILOGFILE="/var/log/batocera-lower-screen-kodi.log"
+WAYDROIDPIDFILE="/var/run/batocera-lower-screen-waydroid.pid"
+WAYDROIDLOGFILE="/var/log/batocera-lower-screen-waydroid.log"
+KEEPALIVE_PIDFILE="/var/run/batocera-backglass-keepalive.pid"
 
 # unset these variables while they causes issues on my side for webkit
 export WEBKIT_DISABLE_DMABUF_RENDERER=1
@@ -77,7 +80,7 @@ getUrl() {
 
 isSpecialTheme() {
     case "$1" in
-	none|kodi)
+	none|kodi|waydroid)
 	    return 0
 	    ;;
     esac
@@ -85,24 +88,86 @@ isSpecialTheme() {
     return 1
 }
 
-setupGuiEnv() {
-    # Thor's backglass window is GTK/X11-backed. Keep Xwayland available while
-    # also exporting the sway socket for output discovery.
-    if test -S /tmp/.X11-unix/X0 -o -S /var/run/.X11-unix/X0; then
-        export DISPLAY="${DISPLAY:-:0}"
-    fi
+normalizeTheme() {
+    case "$1" in
+	system-dashboard|dashboard|conky)
+	    echo "backglass-conky"
+	    ;;
+	*)
+	    echo "$1"
+	    ;;
+    esac
+}
 
-    for socket in /var/run/sway-ipc.0.sock /run/sway-ipc.0.sock /var/run/0-runtime-dir/sway-ipc.0.sock /run/0-runtime-dir/sway-ipc.0.sock; do
-        if test -S "${socket}"; then
-            export SWAYSOCK="${socket}"
-            export I3SOCK="${socket}"
-            break
-        fi
+isSm8550() {
+    test "$(cat /usr/share/batocera/batocera.arch 2>/dev/null)" = "sm8550"
+}
+
+setSm8550DisplayRuntimePm() {
+    MODE="$1"
+
+    isSm8550 || return 0
+
+    for PM_NODE in \
+        /sys/devices/platform/soc@0/3d00000.gpu/power/control \
+        /sys/class/devfreq/3d00000.gpu/power/control \
+        /sys/devices/genpd_provider/gpu_cc_cx_gdsc/power/control \
+        /sys/devices/genpd_provider/gpu_cc_gx_gdsc/power/control \
+        /sys/devices/platform/soc@0/ae00000.display-subsystem/ae01000.display-controller/power/control \
+        /sys/devices/platform/soc@0/ae00000.display-subsystem/ae01000.display-controller/drm/card0/power/control \
+        /sys/devices/platform/soc@0/ae00000.display-subsystem/ae01000.display-controller/drm/renderD128/power/control \
+        /sys/devices/platform/soc@0/ae00000.display-subsystem/ae01000.display-controller/drm/card0/card0-DSI-1/power/control \
+        /sys/devices/platform/soc@0/ae00000.display-subsystem/ae01000.display-controller/drm/card0/card0-DSI-2/power/control
+    do
+        test -w "${PM_NODE}" && echo "${MODE}" > "${PM_NODE}" 2>/dev/null || true
     done
+}
 
+setThorXwaylandTouchMode() {
+    MODE="$1"
+
+    isSm8550 || return 0
+    command -v sway-touch-map >/dev/null 2>&1 || return 0
+
+    setupGuiEnv
+    sway-touch-map "${MODE}" >/dev/null 2>&1 || true
+}
+
+stopConkyKeepalive() {
+    if test -f "${KEEPALIVE_PIDFILE}"; then
+        KEEPALIVE_PID="$(tr -dc 0-9 < "${KEEPALIVE_PIDFILE}" 2>/dev/null)"
+        test -n "${KEEPALIVE_PID}" && kill "${KEEPALIVE_PID}" 2>/dev/null || true
+        rm -f "${KEEPALIVE_PIDFILE}"
+    fi
+    setThorXwaylandTouchMode emulator
+    setSm8550DisplayRuntimePm auto
+}
+
+startConkyKeepalive() {
+    isSm8550 || return 0
+    stopConkyKeepalive
+    setSm8550DisplayRuntimePm on
+    setThorXwaylandTouchMode backglass
+
+    (
+        setupGuiEnv
+        while :; do
+            setSm8550DisplayRuntimePm on
+            if command -v swaymsg >/dev/null 2>&1; then
+                swaymsg output DSI-1 power on >/dev/null 2>&1 || true
+                swaymsg output DSI-2 power on >/dev/null 2>&1 || true
+            fi
+            sleep 20
+        done
+    ) &
+    echo "$!" > "${KEEPALIVE_PIDFILE}"
+}
+
+setupGuiEnv() {
     WAYLAND_DISPLAY_VALUE=$(getLocalWaylandDisplay 2>/dev/null)
+    test -n "${WAYLAND_DISPLAY_VALUE}" || WAYLAND_DISPLAY_VALUE="${WAYLAND_DISPLAY:-wayland-1}"
     if test -n "${WAYLAND_DISPLAY_VALUE}"; then
-        for runtime in /var/run/0-runtime-dir /run/0-runtime-dir /run/user/0 /run/user/1000; do
+        for runtime in /var/run/0-runtime-dir /run/0-runtime-dir /run /run/user/0 /run/user/1000; do
             if test -S "${runtime}/${WAYLAND_DISPLAY_VALUE}"; then
                 export XDG_RUNTIME_DIR="${runtime}"
                 break
@@ -111,10 +176,26 @@ setupGuiEnv() {
         export WAYLAND_DISPLAY="${WAYLAND_DISPLAY_VALUE}"
         export XDG_SESSION_TYPE=wayland
         export XDG_CURRENT_DESKTOP=sway
-        if test -z "${SWAYSOCK}" -a -S "${XDG_RUNTIME_DIR}/sway-ipc.0.sock"; then
+        if test -S "${XDG_RUNTIME_DIR}/sway-ipc.0.sock"; then
             export SWAYSOCK="${XDG_RUNTIME_DIR}/sway-ipc.0.sock"
-            export I3SOCK="${SWAYSOCK}"
+        else
+            for socket in /run/sway-ipc.*.sock /var/run/0-runtime-dir/sway-ipc.*.sock /run/0-runtime-dir/sway-ipc.*.sock; do
+                test -S "${socket}" || continue
+                export SWAYSOCK="${socket}"
+                break
+            done
         fi
+        export I3SOCK="${SWAYSOCK}"
+        unset DISPLAY
+    fi
+}
+
+setupBackglassWindowEnv() {
+    setupGuiEnv
+
+    if test -S /tmp/.X11-unix/X0; then
+        export DISPLAY=:0
+        export GDK_BACKEND=x11
     fi
 }
 
@@ -199,6 +280,110 @@ startKodiWidget() {
     moveKodiToBottomPanel &
 }
 
+moveWaydroidToBottomPanel() {
+    setupGuiEnv
+    BOTTOM_INFO=$(getBottomPanelInfo) || return 0
+    BOTTOM_WORKSPACE=$(echo "${BOTTOM_INFO}" | awk '{ print $1 }')
+    TOP_WORKSPACE=$(swaymsg -t get_outputs 2>/dev/null | jq -r '((map(select(.active and .name == "DSI-2"))[0]) // (map(select(.active)) | sort_by(.rect.y, .rect.x) | .[0])) | .current_workspace // ""')
+    WAYDROID_X=$(echo "${BOTTOM_INFO}" | awk '{ print $2 }')
+    WAYDROID_Y=$(echo "${BOTTOM_INFO}" | awk '{ print $3 }')
+    WAYDROID_WIDTH=$(echo "${BOTTOM_INFO}" | awk '{ print $4 }')
+    WAYDROID_HEIGHT=$(echo "${BOTTOM_INFO}" | awk '{ print $5 }')
+    test -n "${BOTTOM_WORKSPACE}" || return 0
+    test -n "${WAYDROID_X}" || WAYDROID_X=0
+    test -n "${WAYDROID_Y}" || WAYDROID_Y=480
+    test -n "${WAYDROID_WIDTH}" || WAYDROID_WIDTH=640
+    test -n "${WAYDROID_HEIGHT}" || WAYDROID_HEIGHT=480
+
+    i=0
+    WAYDROID_FOUND=0
+    while test "${i}" -lt 1200; do
+        if swaymsg -t get_tree 2>/dev/null | jq -e '
+            .. | objects |
+            select(
+                ((.app_id? // "") | ascii_downcase | contains("waydroid")) or
+                ((.name? // "") | ascii_downcase | contains("waydroid")) or
+                ((.window_properties.class? // "") | ascii_downcase | contains("waydroid")) or
+                ((.window_properties.title? // "") | ascii_downcase | contains("waydroid"))
+            )
+        ' >/dev/null 2>&1; then
+            WAYDROID_FOUND=1
+            break
+        fi
+        i=$((i + 1))
+        sleep 0.1
+    done
+
+    if test "${WAYDROID_FOUND}" != "1"; then
+        echo "Waydroid lower-screen widget did not expose a Sway window yet; leaving session running." >> "${WAYDROIDLOGFILE}"
+        return 1
+    fi
+
+    for PLACE_TRY in 1 2 3; do
+        for CRITERIA in '[app_id="Waydroid"]' '[app_id=".*[Ww]aydroid.*"]' '[title=".*[Ww]aydroid.*"]' '[class=".*[Ww]aydroid.*"]'; do
+            swaymsg "${CRITERIA} fullscreen disable" >/dev/null 2>&1 || true
+            swaymsg "${CRITERIA} floating enable" >/dev/null 2>&1 || true
+            swaymsg "${CRITERIA} border none" >/dev/null 2>&1 || true
+            swaymsg "${CRITERIA} resize set width ${WAYDROID_WIDTH} px height ${WAYDROID_HEIGHT} px" >/dev/null 2>&1 || true
+            swaymsg "${CRITERIA} move to workspace ${BOTTOM_WORKSPACE}" >/dev/null 2>&1 || true
+            swaymsg "${CRITERIA} move position ${WAYDROID_X} ${WAYDROID_Y}" >/dev/null 2>&1 || true
+            swaymsg "${CRITERIA} fullscreen enable" >/dev/null 2>&1 || true
+        done
+        sleep 0.2
+    done
+
+    test -n "${TOP_WORKSPACE}" && swaymsg workspace "${TOP_WORKSPACE}" >/dev/null 2>&1 || true
+}
+
+isWaydroidWidgetRunning() {
+    if test -f "${WAYDROIDPIDFILE}"; then
+        WAYDROIDPID=$(tr -dc 0-9 < "${WAYDROIDPIDFILE}" 2>/dev/null)
+        test -n "${WAYDROIDPID}" && test -e "/proc/${WAYDROIDPID}" && return 0
+    fi
+
+    ps -eo pid=,args= | awk '/\/usr\/bin\/batocera-waydroid-session/ && !/awk/ { found=1 } END { exit found ? 0 : 1 }'
+}
+
+stopWaydroidWidget() {
+    for WAYDROIDPID in $(ps -eo pid=,args= | awk '/\/usr\/bin\/batocera-waydroid-session/ && !/awk/ { print $1 }'); do
+        kill "${WAYDROIDPID}" 2>/dev/null || true
+    done
+
+    if test -f "${WAYDROIDPIDFILE}"; then
+        WAYDROIDPID=$(tr -dc 0-9 < "${WAYDROIDPIDFILE}" 2>/dev/null)
+        test -n "${WAYDROIDPID}" && kill "${WAYDROIDPID}" 2>/dev/null || true
+        rm -f "${WAYDROIDPIDFILE}"
+        sleep 1
+    fi
+
+    timeout 8 waydroid session stop >/dev/null 2>&1 || true
+    timeout 8 waydroid container stop >/dev/null 2>&1 || true
+    setThorXwaylandTouchMode emulator
+}
+
+startWaydroidWidget() {
+    setupGuiEnv
+
+    if isWaydroidWidgetRunning; then
+        setThorXwaylandTouchMode backglass
+        moveWaydroidToBottomPanel &
+        return 0
+    fi
+
+    stopWaydroidWidget
+
+    BOTTOM_INFO=$(getBottomPanelInfo) || BOTTOM_INFO=
+    BOTTOM_WORKSPACE=$(echo "${BOTTOM_INFO}" | awk '{ print $1 }')
+    test -n "${BOTTOM_WORKSPACE}" && swaymsg workspace "${BOTTOM_WORKSPACE}" >/dev/null 2>&1 || true
+
+    setThorXwaylandTouchMode backglass
+    BATOCERA_WAYDROID_DISABLE_GAMEPAD=1 \
+        BATOCERA_WAYDROID_BOTTOM_WIDGET=1 \
+        batocera-waydroid-session >"${WAYDROIDLOGFILE}" 2>&1 &
+    echo "$!" > "${WAYDROIDPIDFILE}"
+    moveWaydroidToBottomPanel &
+}
+
 stopSpecialTheme() {
     case "$1" in
 	control-center)
@@ -207,6 +392,10 @@ stopSpecialTheme() {
 	    ;;
 	kodi)
 	    stopKodiWidget
+	    return 0
+	    ;;
+	waydroid)
+	    stopWaydroidWidget
 	    return 0
 	    ;;
     esac
@@ -221,6 +410,10 @@ startSpecialTheme() {
 	    startKodiWidget
 	    return 0
 	    ;;
+	waydroid)
+	    startWaydroidWidget
+	    return 0
+	    ;;
     esac
 }
 
@@ -231,6 +424,10 @@ restartSpecialTheme() {
 	    ;;
 	kodi)
 	    startKodiWidget
+	    return 0
+	    ;;
+	waydroid)
+	    startWaydroidWidget
 	    return 0
 	    ;;
     esac
@@ -267,6 +464,7 @@ case "${ACTION}" in
 	if test $# -le 1 -a -f "${PARAMSFILE}" # ok, we can reuse the last used parameters (to make easy restart)
 	then
 	    read X Y WIDTH HEIGHT THEME < "${PARAMSFILE}"
+	    THEME=$(normalizeTheme "${THEME}")
 	else
 	    #
 	    X=$1
@@ -274,6 +472,7 @@ case "${ACTION}" in
 	    WIDTH=$3
 	    HEIGHT=$4
 	    THEME=$5 # can be empty
+	    THEME=$(normalizeTheme "${THEME}")
 	    shift
 	    shift
 	    shift
@@ -288,6 +487,7 @@ case "${ACTION}" in
 
 	if isSpecialTheme "${THEME}"
 	then
+	    stopConkyKeepalive
 	    startSpecialTheme "${THEME}"
 	    exit 0
 	fi
@@ -296,7 +496,13 @@ case "${ACTION}" in
 	THEMEPATH=$(getUrl "${THEME}")
 	###
 
-	setupGuiEnv
+	if test "${THEME}" = "backglass-conky"; then
+	    startConkyKeepalive
+	else
+	    stopConkyKeepalive
+	fi
+
+	setupBackglassWindowEnv
 	batocera-backglass-window --x "${X}" --y "${Y}" --width "${WIDTH}" --height "${HEIGHT}" --www "${THEMEPATH}" >/var/log/batocera-backglass-window.log 2>&1 &
 	echo "$!" > "${PIDFILE}"
 
@@ -313,6 +519,7 @@ case "${ACTION}" in
 	    if test -f "${PARAMSFILE}"
 	    then
 		read X Y WIDTH HEIGHT THEME < "${PARAMSFILE}"
+		THEME=$(normalizeTheme "${THEME}")
 		if isSpecialTheme "${THEME}"
 		then
 		    stopSpecialTheme "${THEME}"
@@ -325,40 +532,64 @@ case "${ACTION}" in
 
 	# remove hooks
 	removeHooks
+	stopConkyKeepalive
 	;;
 
     "restart")
-	if isRunning
-	then
-	    kill -15 $(cat "${PIDFILE}")
-	    rm -f "${PIDFILE}"
-	fi
-
+	X=
+	Y=
+	WIDTH=
+	HEIGHT=
+	OLD_THEME=
 	if test -f "${PARAMSFILE}"
 	then
 	    read X Y WIDTH HEIGHT OLD_THEME < "${PARAMSFILE}"
-	    stopSpecialTheme "${OLD_THEME}"
+	    OLD_THEME=$(normalizeTheme "${OLD_THEME}")
 	fi
 
 	# reread theme from configuration in case it changed
 	THEME=$(batocera-settings-get backglass.theme)
+	THEME=$(normalizeTheme "${THEME}")
 	echo "${X} ${Y} ${WIDTH} ${HEIGHT} ${THEME}" > "${PARAMSFILE}" || exit 1
+
+	if test "${OLD_THEME}" != "${THEME}"
+	then
+	    if isRunning
+	    then
+	        kill -15 $(cat "${PIDFILE}")
+	        rm -f "${PIDFILE}"
+	    fi
+	    stopSpecialTheme "${OLD_THEME}"
+	elif isRunning
+	then
+	    if test "${THEME}" = "backglass-conky"; then
+	        startConkyKeepalive
+	    fi
+	    exit 0
+	fi
 
 	if isSpecialTheme "${THEME}"
 	then
+	    stopConkyKeepalive
 	    restartSpecialTheme "${THEME}"
 	    exit 0
 	fi
 
 	THEMEPATH=$(getUrl "${THEME}")
 
-	setupGuiEnv
+	if test "${THEME}" = "backglass-conky"; then
+	    startConkyKeepalive
+	else
+	    stopConkyKeepalive
+	fi
+
+	setupBackglassWindowEnv
 	batocera-backglass-window --x "${X}" --y "${Y}" --width "${WIDTH}" --height "${HEIGHT}" --www "${THEMEPATH}" >/var/log/batocera-backglass-window.log 2>&1 &
 	echo "$!" > "${PIDFILE}"
 	addHooks
     ;;
 
     "list-themes")
-	(echo kodi; ls /usr/share/batocera-backglass/www; ls /userdata/system/backglass) 2>/dev/null | grep -viE '^systems$' | sort -u
+	(echo kodi; ls /usr/share/batocera-backglass/www; ls /userdata/system/backglass) 2>/dev/null | grep -viE '^(systems)$|vmu|game-controls' | sort -u
 	;;
 esac

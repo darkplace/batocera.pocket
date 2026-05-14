@@ -1,2 +1,0 @@
-#!/bin/sh
-exec /usr/libexec/batocera-appimage-launcher /usr/share/batocera/apps/steamlink.AppImage steamlink 0 "$@"

@@ -2,7 +2,7 @@
 
 STATE_FILE="/var/run/batocera-dual-screen-backglass.cmd"
 FLYCAST_VMU_STATE_FILE="/var/run/batocera-flycast-vmu-backglass.params"
-DOLPHIN_GBA_PIDFILE="/var/run/batocera-dolphin-gba-bottom.pid"
+GAME_CONTROLS_STATE_FILE="/var/run/batocera-game-controls-backglass.params"
 PIDFILE="/var/run/batocera-backglass.pid"
 PARAMSFILE="/var/run/batocera-backglass.params"
 
@@ -63,35 +63,32 @@ is_flycast_vmu_bottom_launch() {
     [ "${MODE}" = "bottom" ]
 }
 
-get_dolphin_gba_screen() {
+get_lower_screen_controls() {
     local SYSTEM_NAME="$1"
     local GAME_NAME="$2"
     local MODE=""
 
     if [ -n "${GAME_NAME}" ]; then
-        MODE="$(/usr/bin/batocera-settings-get-master "${SYSTEM_NAME}[\"${GAME_NAME}\"].dolphin_gba_screen" 2>/dev/null)"
+        MODE="$(/usr/bin/batocera-settings-get-master "${SYSTEM_NAME}[\"${GAME_NAME}\"].lower_screen_controls" 2>/dev/null)"
     fi
 
-    [ -n "${MODE}" ] || MODE="$(/usr/bin/batocera-settings-get-master "${SYSTEM_NAME}.dolphin_gba_screen" 2>/dev/null)"
-    [ -n "${MODE}" ] || MODE="main"
+    [ -n "${MODE}" ] || MODE="$(/usr/bin/batocera-settings-get-master "${SYSTEM_NAME}.lower_screen_controls" 2>/dev/null)"
+    [ -n "${MODE}" ] || MODE="off"
     echo "${MODE}"
 }
 
-is_dolphin_gba_bottom_launch() {
+is_game_controls_bottom_launch() {
     local SYSTEM_NAME="$1"
     local EMULATOR_NAME="$2"
     local CORE_NAME="$3"
     local GAME_PATH="$4"
     local GAME_NAME
-    local MODE
 
-    [ "${EMULATOR_NAME}" = "dolphin" ] || return 1
-    [ "${CORE_NAME}" = "dolphin" ] || return 1
-
+    [ "${EMULATOR_NAME}" = "libretro" ] || return 1
     GAME_NAME="${GAME_PATH##*/}"
-    MODE="$(get_dolphin_gba_screen "${SYSTEM_NAME}" "${GAME_NAME}")"
-    [ "${MODE}" = "bottom" ]
+    [ "$(get_lower_screen_controls "${SYSTEM_NAME}" "${GAME_NAME}")" = "retroarch" ]
 }
+
 
 setup_sway_env() {
     if command -v getLocalWaylandDisplay >/dev/null 2>&1; then
@@ -114,6 +111,12 @@ setup_sway_env() {
     export I3SOCK="${I3SOCK:-$SWAYSOCK}"
 }
 
+restore_emulator_touch_matrix() {
+    command -v sway-touch-map >/dev/null 2>&1 || return 0
+    setup_sway_env
+    sway-touch-map emulator >/dev/null 2>&1 || true
+}
+
 get_bottom_panel_info() {
     [ "$(batocera-settings-get-master display.position 2>/dev/null)" = "top-bottom" ] || return 1
     [ "$(batocera-resolution getDisplayComp 2>/dev/null)" = "sway" ] || return 1
@@ -128,55 +131,6 @@ get_bottom_panel_info() {
     '
 }
 
-move_dolphin_gba_window_to_bottom() {
-    local BOTTOM_INFO BOTTOM_WORKSPACE GBA_X GBA_Y GBA_WIDTH GBA_HEIGHT
-    local CRITERIA
-
-    setup_sway_env
-    BOTTOM_INFO="$(get_bottom_panel_info)" || return 0
-    BOTTOM_WORKSPACE="$(echo "${BOTTOM_INFO}" | awk '{ print $1 }')"
-    GBA_X="$(echo "${BOTTOM_INFO}" | awk '{ print $2 }')"
-    GBA_Y="$(echo "${BOTTOM_INFO}" | awk '{ print $3 }')"
-    GBA_WIDTH="$(echo "${BOTTOM_INFO}" | awk '{ print $4 }')"
-    GBA_HEIGHT="$(echo "${BOTTOM_INFO}" | awk '{ print $5 }')"
-    [ -n "${BOTTOM_WORKSPACE}" ] || return 0
-    [ -n "${GBA_X}" ] || GBA_X=0
-    [ -n "${GBA_Y}" ] || GBA_Y=480
-    [ -n "${GBA_WIDTH}" ] || GBA_WIDTH=640
-    [ -n "${GBA_HEIGHT}" ] || GBA_HEIGHT=480
-
-    swaymsg -t get_tree 2>/dev/null | jq -e '
-        .. | objects |
-        select((.name? // "") | test("^GBA[1-4]"))
-    ' >/dev/null 2>&1 || return 0
-
-    CRITERIA='[title="^GBA[1-4].*"]'
-    swaymsg "${CRITERIA} fullscreen disable" >/dev/null 2>&1 || true
-    swaymsg "${CRITERIA} floating enable" >/dev/null 2>&1 || true
-    swaymsg "${CRITERIA} border none" >/dev/null 2>&1 || true
-    swaymsg "${CRITERIA} resize set width ${GBA_WIDTH} px height ${GBA_HEIGHT} px" >/dev/null 2>&1 || true
-    swaymsg "${CRITERIA} move to workspace ${BOTTOM_WORKSPACE}" >/dev/null 2>&1 || true
-    swaymsg "${CRITERIA} move position ${GBA_X} ${GBA_Y}" >/dev/null 2>&1 || true
-}
-
-start_dolphin_gba_bottom_watcher() {
-    stop_dolphin_gba_bottom_watcher
-    touch "$DOLPHIN_GBA_PIDFILE"
-    (
-        while [ -f "$DOLPHIN_GBA_PIDFILE" ]; do
-            move_dolphin_gba_window_to_bottom
-            sleep 0.5
-        done
-    ) >/dev/null 2>&1 &
-    echo "$!" > "$DOLPHIN_GBA_PIDFILE"
-}
-
-stop_dolphin_gba_bottom_watcher() {
-    if [ -f "$DOLPHIN_GBA_PIDFILE" ]; then
-        kill "$(cat "$DOLPHIN_GBA_PIDFILE" 2>/dev/null)" 2>/dev/null || true
-        rm -f "$DOLPHIN_GBA_PIDFILE"
-    fi
-}
 
 get_rgds_vertical_mode() {
     local SYSTEM_NAME="$1"
@@ -318,20 +272,60 @@ restore_flycast_vmu_backglass() {
     batocera-backglass enable "$X" "$Y" "$WIDTH" "$HEIGHT" "$THEME" >/dev/null 2>&1 || true
 }
 
+switch_game_controls_backglass() {
+    local X Y WIDTH HEIGHT THEME BOTTOM_INFO
+
+    command -v batocera-backglass >/dev/null 2>&1 || return 1
+
+    if [ -f "$PARAMSFILE" ]; then
+        read X Y WIDTH HEIGHT THEME < "$PARAMSFILE"
+    else
+        setup_sway_env
+        BOTTOM_INFO="$(get_bottom_panel_info)" || return 1
+        X="$(echo "${BOTTOM_INFO}" | awk '{ print $2 }')"
+        Y="$(echo "${BOTTOM_INFO}" | awk '{ print $3 }')"
+        WIDTH="$(echo "${BOTTOM_INFO}" | awk '{ print $4 }')"
+        HEIGHT="$(echo "${BOTTOM_INFO}" | awk '{ print $5 }')"
+        THEME="$(/usr/bin/batocera-settings-get-master backglass.theme 2>/dev/null)"
+        [ -n "$THEME" ] || THEME="auto"
+    fi
+
+    [ -n "$X" ] && [ -n "$Y" ] && [ -n "$WIDTH" ] && [ -n "$HEIGHT" ] || return 1
+
+    echo "$X $Y $WIDTH $HEIGHT $THEME" > "$GAME_CONTROLS_STATE_FILE"
+    batocera-backglass disable >/dev/null 2>&1 || true
+    batocera-backglass enable "$X" "$Y" "$WIDTH" "$HEIGHT" backglass-game-controls >/dev/null 2>&1 || true
+}
+
+restore_game_controls_backglass() {
+    local X Y WIDTH HEIGHT THEME
+
+    [ -f "$GAME_CONTROLS_STATE_FILE" ] || return 1
+    command -v batocera-backglass >/dev/null 2>&1 || return 1
+
+    read X Y WIDTH HEIGHT THEME < "$GAME_CONTROLS_STATE_FILE"
+    rm -f "$GAME_CONTROLS_STATE_FILE"
+    [ -n "$X" ] && [ -n "$Y" ] && [ -n "$WIDTH" ] && [ -n "$HEIGHT" ] || return 1
+
+    batocera-backglass disable >/dev/null 2>&1 || true
+    batocera-backglass enable "$X" "$Y" "$WIDTH" "$HEIGHT" "$THEME" >/dev/null 2>&1 || true
+}
+
 case "$1" in
     gameStart)
         if is_dual_screen_handheld && is_dual_screen_emulator "$@"; then
+            restore_emulator_touch_matrix
             stop_backglass
         elif is_dual_screen_handheld && is_flycast_vmu_bottom_launch "$2" "$3" "$4" "$5"; then
+            restore_emulator_touch_matrix
             switch_flycast_vmu_backglass
-        elif is_dual_screen_handheld && is_dolphin_gba_bottom_launch "$2" "$3" "$4" "$5"; then
-            stop_backglass
-            start_dolphin_gba_bottom_watcher
+        elif is_dual_screen_handheld && is_game_controls_bottom_launch "$2" "$3" "$4" "$5"; then
+            restore_emulator_touch_matrix
+            switch_game_controls_backglass
         fi
         ;;
     gameStop)
-        stop_dolphin_gba_bottom_watcher
-        restore_flycast_vmu_backglass || restore_backglass
+        restore_flycast_vmu_backglass || restore_game_controls_backglass || restore_backglass
         ;;
 esac
 

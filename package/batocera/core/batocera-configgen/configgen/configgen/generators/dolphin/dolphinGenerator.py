@@ -26,7 +26,6 @@ if TYPE_CHECKING:
 
 _logger = logging.getLogger(__name__)
 
-DOLPHIN_GBA_INTEGRATED_DEVICE = "13"
 
 class DolphinGenerator(Generator):
 
@@ -35,7 +34,6 @@ class DolphinGenerator(Generator):
 
         # Dir required for saves
         mkdir_if_not_exists(DOLPHIN_SAVES / "StateSaves")
-        mkdir_if_not_exists(DOLPHIN_SAVES / "GBA")
 
         # GaemSettings
         mkdir_if_not_exists(DOLPHIN_SAVES / "GameSettings")
@@ -75,14 +73,6 @@ class DolphinGenerator(Generator):
             dolphinSettings.add_section("Analytics")
         if not dolphinSettings.has_section("Display"):
             dolphinSettings.add_section("Display")
-        if not dolphinSettings.has_section("GBA"):
-            dolphinSettings.add_section("GBA")
-
-        dolphinSettings.set("GBA", "BIOS", "/userdata/bios/gba_bios.bin")
-        dolphinSettings.set("GBA", "SavesPath", str(DOLPHIN_SAVES / "GBA"))
-        dolphinSettings.set("GBA", "SavesInRomPath", "False")
-        dolphinSettings.set("GBA", "Threads", "True")
-
         # Define default games path
         if "ISOPaths" not in dolphinSettings["General"]:
             dolphinSettings.set("General", "ISOPath0", "/userdata/roms/wii")
@@ -151,14 +141,13 @@ class DolphinGenerator(Generator):
 
         # Gamecube ports
         # Create a for loop going 1 through to 4 and iterate through it:
-        gba_integrated_ports = []
         for i in range(4):
             key = f"dolphin_port_{i+1}_type"
             if value := system.config.get(key):
                 # Set value to 6 if it is 6a or 6b. This is to differentiate between Standard Controller and GameCube Controller type.
                 value = "6" if value in ["6a", "6b"] else value
-                if value == DOLPHIN_GBA_INTEGRATED_DEVICE:
-                    gba_integrated_ports.append(i)
+                if value in ["5", "13"]:
+                    value = "6"
                 # Sub in the appropriate values from es_features, accounting for the 1 integer difference.
                 dolphinSettings.set("Core", f"SIDevice{i}", value)
             else:
@@ -168,10 +157,6 @@ class DolphinGenerator(Generator):
                 else:
                     dolphinSettings.set("Core", f"SIDevice{i}", "6")
 
-        gba_rom_path = system.config.get_str("dolphin_gba_rom", "")
-        if gba_rom_path:
-            for i in gba_integrated_ports:
-                dolphinSettings.set("GBA", f"Rom{i + 1}", gba_rom_path)
 
         # [Light Gun] HiResTextures for crosshair (part 1/2)
         if system.config.use_guns and guns and not system.config.get_bool('dolphin_crosshair'):

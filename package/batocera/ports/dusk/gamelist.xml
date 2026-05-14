@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+<gameList>
+  <game>
+    <path>./Twilight Princess.rvz</path>
+    <name>Dusk - Twilight Princess</name>
+    <desc>Native Twilight Princess engine. Place a clean GameCube Twilight Princess RVZ in this folder and launch Dusk to select it from the main menu.</desc>
+    <image>./images/dusk-image.png</image>
+    <marquee>./images/dusk-marquee.png</marquee>
+    <thumbnail>./images/dusk-logo.png</thumbnail>
+    <lang>en</lang>
+  </game>
+</gameList>

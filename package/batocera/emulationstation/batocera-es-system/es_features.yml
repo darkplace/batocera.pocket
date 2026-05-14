@@ -18,6 +18,18 @@ shared:
         High Performance: highperformance
         Balanced: balanced
         Power Saver: powersaver
+    gpu_performance_profile:
+      group: POWER OPTIONS
+      prompt: GPU POWER MODE
+      description: Select the GPU frequency and runtime power profile while this game
+        or app is running. Auto enables high performance for known fragile GPU idle
+        cases.
+      choices:
+        Auto: auto
+        High Performance: highperformance
+        Balanced: balanced
+        Power Saver: powersaver
+        Do Not Change: default
     tdp:
       archs_include:
       - x86_64
@@ -755,6 +767,7 @@ global:
   shared:
   - powermode
   - batterymode
+  - gpu_performance_profile
   - tdp
   - videomode
   - ratio
@@ -818,6 +831,7 @@ global:
 libretro:
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - ratio
@@ -903,6 +917,16 @@ libretro:
       choices:
         'On': 'true'
         'Off': 'false'
+    lower_screen_controls:
+      group: ADVANCED OPTIONS
+      prompt: LOWER SCREEN CONTROLS
+      description: Show a RetroArch save/load/runtime control panel on the lower screen while this game is running.
+      archs_include:
+      - sm8550
+      - qcs6490
+      choices:
+        Off (Default): off
+        RetroArch Controls: retroarch
   cores:
     '81':
       features:
@@ -8269,6 +8293,7 @@ amiberry:
   - padtokeyboard
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - ratio
@@ -8350,6 +8375,7 @@ amiberry:
 cannonball:
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   cfeatures:
@@ -8369,6 +8395,7 @@ cannonball:
 cemu:
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - gamescope
@@ -8539,6 +8566,7 @@ hypseus-singe:
   - padtokeyboard
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - use_guns
@@ -8654,6 +8682,7 @@ devilutionx:
   - padtokeyboard
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - bezel
@@ -8856,8 +8885,6 @@ dolphin:
             Steering Wheel: 8
             Dance Mat: 9
             DK Bongos: 10
-            GBA (Integrated): 13
-            GBA (TCP): 5
             Keyboard: 7
         dolphin_port_2_type:
           group: CONTROLS
@@ -8872,8 +8899,6 @@ dolphin:
             Steering Wheel: 8
             Dance Mat: 9
             DK Bongos: 10
-            GBA (Integrated): 13
-            GBA (TCP): 5
             Keyboard: 7
         dolphin_port_3_type:
           group: CONTROLS
@@ -8888,8 +8913,6 @@ dolphin:
             Steering Wheel: 8
             Dance Mat: 9
             DK Bongos: 10
-            GBA (Integrated): 13
-            GBA (TCP): 5
             Keyboard: 7
         dolphin_port_4_type:
           group: CONTROLS
@@ -8904,25 +8927,7 @@ dolphin:
             Steering Wheel: 8
             Dance Mat: 9
             DK Bongos: 10
-            GBA (Integrated): 13
-            GBA (TCP): 5
             Keyboard: 7
-        dolphin_gba_screen:
-          group: CONTROLS
-          submenu: GAMECUBE GBA LINK
-          prompt: GBA SCREEN
-          description: Place Dolphin's integrated GBA window on the main screen or
-            the lower panel.
-          choices:
-            Main Screen: main
-            Bottom Panel: bottom
-        dolphin_gba_rom:
-          group: CONTROLS
-          submenu: GAMECUBE GBA LINK
-          prompt: GBA ROM PATH
-          description: Optional path to load into Dolphin's integrated GBA for GBA
-            link games.
-          preset: input
         alt_mappings_1:
           group: CONTROLS
           submenu: GAMECUBE CONTROLLER 1
@@ -9197,26 +9202,9 @@ dosbox:
   - padtokeyboard
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
-  - gamescope
-  - gamescope_output_resolution
-  - gamescope_nested_resolution
-  - gamescope_nested_refresh
-  - gamescope_framerate_limit
-  - gamescope_scaler
-  - gamescope_filter
-  - gamescope_sharpness
-  - gamescope_hdr
-  - gamescope_output_resolution_custom
-  - gamescope_nested_resolution_custom
-  - gamescope_framerate_limit_custom
-  - gamescope_sharpness_custom
-  - gamescope_adaptive_sync
-  - gamescope_disable_damage_tracking
-  - gamescope_disable_hw_composition
-  - gamescope_force_composition_pipeline
-  - gamescope_backend
   - gamescope_xwayland_count
   - gamescope_xwayland_count_custom
   - gamescope_prefer_vk_device
@@ -9270,6 +9258,7 @@ dosbox_staging:
   - padtokeyboard
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - gamescope
@@ -9315,6 +9304,7 @@ dosbox-x:
   - padtokeyboard
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - gamescope
@@ -9358,6 +9348,7 @@ dosbox-x:
 duckstation:
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - bezel
@@ -9703,6 +9694,7 @@ duckstation:
 flycast:
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - bezel
@@ -9898,6 +9890,7 @@ fsuae:
   - padtokeyboard
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - ratio
@@ -9914,6 +9907,7 @@ hatari:
   - padtokeyboard
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - bezel
@@ -9978,6 +9972,7 @@ hatari:
 melonds:
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - bezel
@@ -10113,6 +10108,7 @@ melonds:
 moonlight:
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - ratio
@@ -10188,6 +10184,7 @@ moonlight:
 mupen64plus:
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - bezel
@@ -10457,6 +10454,7 @@ mupen64plus:
 openbor:
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   cfeatures:
@@ -10859,6 +10857,7 @@ pcsx2:
 ppsspp:
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - hud
@@ -11069,6 +11068,7 @@ pygame:
   - padtokeyboard
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - bezel
@@ -11083,6 +11083,7 @@ pygame:
 reicast:
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - ratio
@@ -11517,6 +11518,7 @@ scummvm:
   - padtokeyboard
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - bezel
@@ -11591,6 +11593,7 @@ scummvm:
 easyrpg:
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - bezel
@@ -11626,6 +11629,7 @@ easyrpg:
 redream:
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - bezel
@@ -11711,6 +11715,7 @@ sdlpop:
   - padtokeyboard
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - ratio
@@ -11719,6 +11724,7 @@ superbroswar:
   features: []
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - ratio
@@ -11735,6 +11741,7 @@ supermodel:
   - padtokeyboard
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - bezel
@@ -11830,6 +11837,7 @@ cgenius:
   - padtokeyboard
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - bezel
@@ -11884,6 +11892,7 @@ vice:
   - padtokeyboard
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - ratio
@@ -11908,6 +11917,7 @@ tsugaru:
   - padtokeyboard
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - bezel
@@ -11940,6 +11950,7 @@ mame:
   - padtokeyboard
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - bezel
@@ -13192,6 +13203,7 @@ wine:
   - padtokeyboard
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - gamescope
@@ -13610,6 +13622,7 @@ wine:
 solarus:
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - bezel
@@ -13633,6 +13646,7 @@ mugen:
   - padtokeyboard
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   cfeatures:
@@ -13662,6 +13676,7 @@ ikemen:
   - padtokeyboard
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - bezel
@@ -13677,6 +13692,7 @@ ruffle:
   - padtokeyboard
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
 lightspark:
@@ -13684,6 +13700,7 @@ lightspark:
   - padtokeyboard
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - bezel
@@ -13697,6 +13714,7 @@ lightspark:
 drastic:
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - bezel
@@ -13759,9 +13777,40 @@ drastic:
         Vertical: 0
         Horizontal: 1
         Single: 3
+    drastic_language:
+      submenu: EMULATION
+      prompt: FIRMWARE LANGUAGE
+      description: Sets the generated DS firmware language used by DraStic.
+      choices:
+        System Default: auto
+        Japanese: 0
+        English: 1
+        French: 2
+        German: 3
+        Italian: 4
+        Spanish: 5
+    drastic_mirror_touch:
+      submenu: CONTROLS
+      prompt: MIRROR TOUCHSCREEN
+      description: When touching outside the active touch area, remap input to the other
+        DS screen. Useful in single-screen mode for touch-heavy games.
+      choices:
+        'Off': 0
+        'On': 1
+    drastic_mic_threshold:
+      submenu: CONTROLS
+      prompt: MICROPHONE
+      description: Use the host microphone to trigger DraStic's fake microphone input.
+        Higher sensitivity triggers more easily.
+      choices:
+        'Off': 0
+        Low sensitivity: 0.06
+        Normal sensitivity: 0.03
+        High sensitivity: 0.015
 xemu:
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - bezel
@@ -13858,6 +13907,7 @@ lexaloffle:
   - padtokeyboard
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - bezel
@@ -13873,6 +13923,7 @@ ecwolf:
   - padtokeyboard
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - bezel
@@ -13888,6 +13939,7 @@ sonic2013:
   - padtokeyboard
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - bezel
@@ -13954,6 +14006,7 @@ soniccd:
   - padtokeyboard
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - bezel
@@ -14018,6 +14071,7 @@ model2emu:
   - padtokeyboard
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   cfeatures:
@@ -14141,6 +14195,7 @@ gsplus:
   - padtokeyboard
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - bezel
@@ -14166,6 +14221,7 @@ play:
   - padtokeyboard
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - bezel
@@ -14242,6 +14298,7 @@ flatpak:
   - padtokeyboard
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   cfeatures:
@@ -14429,6 +14486,7 @@ apps:
   - padtokeyboard
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - gamescope
@@ -14476,6 +14534,7 @@ waydroid:
   - padtokeyboard
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - gamescope
@@ -14526,6 +14585,7 @@ ios:
   - padtokeyboard
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - gamescope
@@ -14562,10 +14622,9 @@ steam:
   - padtokeyboard
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
-  - hud
-  - hud_corner
   cores:
     steamos:
       shared:
@@ -14707,6 +14766,7 @@ heroic:
   - padtokeyboard
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - gamescope
@@ -14748,6 +14808,7 @@ lutris:
   - padtokeyboard
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - gamescope
@@ -14789,6 +14850,7 @@ citron:
   - padtokeyboard
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - bezel
@@ -15173,6 +15235,7 @@ eden:
   - padtokeyboard
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - bezel
@@ -15486,6 +15549,7 @@ yuzu:
   - padtokeyboard
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - bezel
@@ -15792,6 +15856,7 @@ ryujinx:
   - padtokeyboard
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - bezel
@@ -15915,6 +15980,7 @@ samcoupe:
   - padtokeyboard
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - bezel
@@ -15930,6 +15996,7 @@ hcl:
   - padtokeyboard
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - hud
@@ -15939,6 +16006,7 @@ hurrican:
   - padtokeyboard
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - hud
@@ -15948,6 +16016,7 @@ tyrian:
   - padtokeyboard
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - hud
@@ -15957,6 +16026,7 @@ openjazz:
   - padtokeyboard
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - bezel
@@ -15994,6 +16064,7 @@ abuse:
   - padtokeyboard
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - bezel
@@ -16009,6 +16080,7 @@ cdogs:
   - padtokeyboard
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - bezel
@@ -16024,6 +16096,7 @@ openmsx:
   - padtokeyboard
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - bezel
@@ -16052,6 +16125,7 @@ sh:
   - padtokeyboard
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - gamescope
@@ -16095,6 +16169,7 @@ xenia:
   features: []
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   cfeatures:
@@ -16450,6 +16525,7 @@ xenia-canary:
   features: []
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - gamescope
@@ -16926,37 +17002,9 @@ xenia-edge:
   features: []
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
-  - gamescope
-  - gamescope_output_resolution
-  - gamescope_nested_resolution
-  - gamescope_nested_refresh
-  - gamescope_framerate_limit
-  - gamescope_scaler
-  - gamescope_filter
-  - gamescope_sharpness
-  - gamescope_hdr
-  - gamescope_output_resolution_custom
-  - gamescope_nested_resolution_custom
-  - gamescope_framerate_limit_custom
-  - gamescope_sharpness_custom
-  - gamescope_adaptive_sync
-  - gamescope_disable_damage_tracking
-  - gamescope_disable_hw_composition
-  - gamescope_force_composition_pipeline
-  - gamescope_backend
-  - gamescope_xwayland_count
-  - gamescope_xwayland_count_custom
-  - gamescope_prefer_vk_device
-  - gamescope_mangoapp
-  - gamescope_force_windows_fullscreen
-  - gamescope_nested_unfocused_refresh
-  - gamescope_nested_unfocused_refresh_custom
-  - gamescope_immediate_flips
-  - gamescope_stats_path
-  - gamescope_disable_color_management
-  - gamescope_disable_xres
   cfeatures:
     xenia_license:
       prompt: XBOX LIVE ARCADE
@@ -17491,6 +17539,7 @@ freej2me:
   features: []
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - gamescope
@@ -17558,6 +17607,7 @@ gopher64:
   features: []
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - hud
@@ -17617,6 +17667,7 @@ nanoboyadvance:
   features: []
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   cfeatures:
@@ -17674,6 +17725,7 @@ ares:
   - padtokeyboard
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - bezel
@@ -17698,6 +17750,7 @@ skyemu:
   - cheevos
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - gamescope
@@ -17724,6 +17777,7 @@ eka2l1:
   features: []
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - bezel
@@ -17738,6 +17792,7 @@ odcommander:
   - padtokeyboard
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - ratio
@@ -17745,6 +17800,7 @@ odcommander:
 gzdoom:
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - bezel
@@ -17774,6 +17830,7 @@ gzdoom:
 corsixth:
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   features:
@@ -17801,6 +17858,7 @@ corsixth:
 stella:
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   features:
@@ -17808,6 +17866,7 @@ stella:
 eduke32:
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - bezel
@@ -17828,6 +17887,7 @@ eduke32:
 fury:
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - bezel
@@ -17848,6 +17908,7 @@ fury:
 raze:
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - bezel
@@ -17876,6 +17937,7 @@ raze:
 vita3k:
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   features: []
@@ -17932,6 +17994,7 @@ vita3k:
 bigpemu:
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - bezel
@@ -18039,6 +18102,7 @@ pyxel:
   - padtokeyboard
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - bezel
@@ -18052,6 +18116,7 @@ pyxel:
 ioquake3:
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - bezel
@@ -18080,6 +18145,7 @@ thextech:
   - padtokeyboard
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - hud
@@ -18103,6 +18169,7 @@ vpinball:
   - padtokeyboard
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - bezel
@@ -18371,6 +18438,7 @@ theforceengine:
   - padtokeyboard
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - bezel
@@ -18533,6 +18601,7 @@ theforceengine:
 iortcw:
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - bezel
@@ -18607,6 +18676,7 @@ iortcw:
 fallout1-ce:
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - bezel
@@ -18659,6 +18729,7 @@ fallout1-ce:
 fallout2-ce:
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - bezel
@@ -18711,6 +18782,7 @@ fallout2-ce:
 dxx-rebirth:
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - bezel
@@ -18751,6 +18823,7 @@ dxx-rebirth:
 etlegacy:
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - bezel
@@ -18863,6 +18936,7 @@ taradino:
   - padtokeyboard
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - bezel
@@ -18878,6 +18952,7 @@ x16emu:
   - padtokeyboard
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - bezel
@@ -18915,6 +18990,7 @@ shadps4:
   - padtokeyboard
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - gamescope
@@ -19032,6 +19108,7 @@ dhewm3:
   - padtokeyboard
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - bezel
@@ -19073,6 +19150,7 @@ jazz2-native:
   - padtokeyboard
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - bezel
@@ -19088,6 +19166,7 @@ catacombgl:
   - padtokeyboard
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - bezel
@@ -19103,6 +19182,7 @@ lindbergh-loader:
   - padtokeyboard
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - bezel
@@ -19243,6 +19323,7 @@ vkquake:
   - padtokeyboard
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - bezel
@@ -19258,6 +19339,7 @@ vkquake2:
   - padtokeyboard
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - bezel
@@ -19271,6 +19353,7 @@ vkquake2:
 vkquake3:
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - bezel
@@ -19303,6 +19386,7 @@ vkquake3:
 tr1x:
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - bezel
@@ -19327,6 +19411,7 @@ tr2x:
   - padtokeyboard
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - bezel
@@ -19342,6 +19427,7 @@ bstone:
   - padtokeyboard
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - bezel
@@ -19377,6 +19463,7 @@ openjkdf2:
   - padtokeyboard
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - bezel
@@ -19618,6 +19705,7 @@ openjk:
   - padtokeyboard
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - bezel
@@ -19788,6 +19876,7 @@ openjk:
 azahar:
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - bezel
@@ -19813,6 +19902,19 @@ azahar:
         Separate Windows: 4-false
         Hybrid Screen Top: 5-false
         Hybrid Screen Bottom: 5-true
+    azahar_region:
+      submenu: EMULATION
+      prompt: SYSTEM REGION
+      description: Sets the emulated 3DS system region exposed through Azahar's Qt configuration.
+      choices:
+        Auto: auto
+        Japan: 0
+        USA: 1
+        Europe: 2
+        Australia: 3
+        China: 4
+        Korea: 5
+        Taiwan: 6
     azahar_resolution_factor:
       submenu: GRAPHICS
       prompt: RENDERING RESOLUTION
@@ -19905,6 +20007,7 @@ citra:
   - cheevos
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - bezel
@@ -20000,6 +20103,7 @@ openmohaa:
   - padtokeyboard
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - bezel
@@ -20165,6 +20269,7 @@ ymir:
   - padtokeyboard
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - bezel
@@ -20209,6 +20314,7 @@ clk:
   - padtokeyboard
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - bezel
@@ -20224,6 +20330,7 @@ yquake2:
   - padtokeyboard
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
 xroar:
@@ -20231,6 +20338,7 @@ xroar:
   - padtokeyboard
   shared:
   - powermode
+  - gpu_performance_profile
   - tdp
   - videomode
   - bezel

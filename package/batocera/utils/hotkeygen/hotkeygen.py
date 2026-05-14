@@ -8,6 +8,7 @@ import os
 import re
 import select
 import signal
+import subprocess
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -45,8 +46,12 @@ GUSER_DIR: Final     = Path("/userdata/system/configs/hotkeygen")
 GUSERCOMMONCONTEXT_FILE: Final = GUSER_DIR / Path("common_context.conf")
 GUSERDEFAULTMAPPING_FILE: Final = GUSER_DIR / Path("default_mapping.conf")
 
-GFORCEKILL_ACTION: Final = "forcekill"
-GFORCEKILL_COMMAND: Final = "batocera-es-swissknife --emukill 0.5"
+GBACKGLASS_PARAMS_FILE: Final = Path("/var/run/batocera-backglass.params")
+GBACKGLASS_PID_FILES: Final = (
+    Path("/var/run/batocera-backglass.pid"),
+    Path("/var/run/batocera-lower-screen-kodi.pid"),
+    Path("/var/run/batocera-lower-screen-waydroid.pid"),
+)
 
 gdebug = False
 
@@ -54,8 +59,6 @@ ECODES_NAMES: Final[dict[int, str]] = {
     # add BTN_ to that joysticks buttons can run hotkeys (but keep generating only KEY_ events)
     key_code: key_name for key_name, key_code in ecodes.ecodes.items() if key_name.startswith("KEY_") or key_name.startswith("BTN_")
 }
-
-GFORCEKILL_COMBO: Final = frozenset((ecodes.BTN_TL, ecodes.BTN_SELECT, ecodes.BTN_START))
 
 # default context is for es
 def get_default_context() -> HotkeysContext:
@@ -220,10 +223,6 @@ def get_mapping_associations(mapping: Mapping[int, str], caps: evdev._Capabiliti
     capskeys = set(caps[ecodes.EV_KEY])
     return {key: value for key, value in mapping.items() if key in capskeys}
 
-def has_forcekill_combo(caps: evdev._CapabilitiesWithAbsInfo) -> bool:
-    capskeys = set(caps[ecodes.EV_KEY])
-    return GFORCEKILL_COMBO.issubset(capskeys)
-
 def print_mapping(
     mapping: Mapping[int, str], associations: Mapping[int, str], context: HotkeysContext | None = None
 ) -> None:
@@ -277,6 +276,9 @@ def do_send(key: str, delay: None | int) -> None:
         if mapping[code] == key:
             if gdebug:
                 print(f"sending {key}")
+            if key == "exit" and lower_panel_widget_active():
+                exit_emulator_without_focus()
+                return
             sender = evdev.UInput(name="virtual keyboard", events={ ecodes.EV_KEY: [code] })
             time.sleep(0.1) # need some time to initialize... (otherwise the first events are ignored the time add is taken)
             send_keys(sender, code, True)
@@ -301,6 +303,223 @@ def send_reset_signal(target_device: evdev.UInput) -> None:
     target_device.syn()
     
     time.sleep(0.10)
+
+def run_quiet(args: list[str], timeout: float = 0.5) -> subprocess.CompletedProcess[str] | None:
+    try:
+        return subprocess.run(
+            args,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return None
+
+def read_runtime_setting(key: str) -> str:
+    result = run_quiet(["batocera-settings-get-master", key])
+    if result is None or result.returncode != 0:
+        return ""
+    return result.stdout.strip()
+
+def process_exists_from_pidfile(pidfile: Path) -> bool:
+    try:
+        pid = int(re.sub(r"\D", "", pidfile.read_text()))
+    except (FileNotFoundError, ValueError):
+        return False
+    return Path(f"/proc/{pid}").exists()
+
+def lower_panel_widget_active() -> bool:
+    if any(process_exists_from_pidfile(pidfile) for pidfile in GBACKGLASS_PID_FILES):
+        return True
+
+    try:
+        parts = GBACKGLASS_PARAMS_FILE.read_text().split(maxsplit=4)
+    except FileNotFoundError:
+        return False
+
+    return len(parts) == 5 and parts[4] not in ("", "none")
+
+def exit_emulator_without_focus() -> None:
+    result = run_quiet(["pgrep", "-f", "-n", "emulatorlauncher"], timeout=0.5)
+    if result is None or result.returncode != 0:
+        return
+
+    emulatorlauncher_pid = result.stdout.strip()
+    if not emulatorlauncher_pid.isdigit():
+        return
+
+    # Lower-panel widgets share the compositor, so never inject a global exit key
+    # when one is active. Terminate only the emulatorlauncher child tree instead.
+    script = r'''
+rc_pid="$1"
+pids=""
+
+collect_children() {
+    local parent="$1"
+    local child
+    for child in $(pgrep -P "${parent}" 2>/dev/null); do
+        pids="${pids} ${child}"
+        collect_children "${child}"
+    done
+}
+
+should_skip_pid() {
+    local pid="$1"
+    local cmdline
+    cmdline="$(tr '\0' ' ' <"/proc/${pid}/cmdline" 2>/dev/null || true)"
+    case "${cmdline}" in
+        *waydroid*|*batocera-backglass*|*hotkeygen*)
+            return 0
+            ;;
+    esac
+    return 1
+}
+
+collect_children "${rc_pid}"
+
+sent=0
+for pid in ${pids}; do
+    if should_skip_pid "${pid}"; then
+        continue
+    fi
+    kill -TERM "${pid}" 2>/dev/null && sent=1
+done
+
+if [ "${sent}" = "0" ]; then
+    kill -TERM "${rc_pid}" 2>/dev/null || true
+fi
+
+(
+    for _ in $(seq 1 25); do
+        kill -0 "${rc_pid}" 2>/dev/null || exit 0
+        sleep 0.2
+    done
+
+    for pid in ${pids}; do
+        if should_skip_pid "${pid}"; then
+            continue
+        fi
+        kill -KILL "${pid}" 2>/dev/null || true
+    done
+) >/dev/null 2>&1 &
+'''
+    subprocess.Popen(
+        ["/bin/bash", "-c", script, "batocera-hotkey-exit", emulatorlauncher_pid],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+
+def setup_sway_environment() -> None:
+    os.environ.setdefault("XDG_RUNTIME_DIR", "/var/run/0-runtime-dir")
+    os.environ.setdefault("WAYLAND_DISPLAY", "wayland-1")
+
+    if "SWAYSOCK" not in os.environ:
+        runtime_dir = Path(os.environ["XDG_RUNTIME_DIR"])
+        for candidate in runtime_dir.glob("sway-ipc.*.sock"):
+            os.environ["SWAYSOCK"] = str(candidate)
+            break
+
+def walk_sway_nodes(node: dict) -> Iterator[dict]:
+    yield node
+    for child in node.get("nodes", []):
+        yield from walk_sway_nodes(child)
+    for child in node.get("floating_nodes", []):
+        yield from walk_sway_nodes(child)
+
+def sway_node_text(node: dict) -> str:
+    props = node.get("window_properties") or {}
+    values = (
+        node.get("app_id"),
+        node.get("name"),
+        props.get("class"),
+        props.get("title"),
+    )
+    return " ".join(str(value).lower() for value in values if value)
+
+def find_sway_workspace(root: dict, workspace: str) -> dict | None:
+    for node in walk_sway_nodes(root):
+        if node.get("type") == "workspace" and node.get("name") == workspace:
+            return node
+    return None
+
+def focus_top_panel_window(workspace: str) -> bool:
+    result = run_quiet(["swaymsg", "-t", "get_tree"], timeout=0.8)
+    if result is None or result.returncode != 0:
+        return False
+
+    try:
+        root = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return False
+
+    workspace_node = find_sway_workspace(root, workspace)
+    if workspace_node is None:
+        return False
+
+    ignored_names = ("waydroid", "backglass", "kodi", "controlcenter")
+    candidates = []
+    for node in walk_sway_nodes(workspace_node):
+        if node.get("id") is None:
+            continue
+        if node.get("type") not in ("con", "floating_con"):
+            continue
+        if node.get("pid") is None and not node.get("app_id") and not node.get("window"):
+            continue
+        if any(name in sway_node_text(node) for name in ignored_names):
+            continue
+        candidates.append(node)
+
+    if not candidates:
+        return False
+
+    candidates.sort(key=lambda node: (
+        0 if node.get("focused") else 1,
+        0 if node.get("fullscreen_mode", 0) else 1,
+        0 if node.get("pid") else 1,
+    ))
+    node_id = candidates[0].get("id")
+    if node_id is None:
+        return False
+
+    result = run_quiet(["swaymsg", f"[con_id={node_id}] focus"], timeout=0.8)
+    return result is not None and result.returncode == 0
+
+def focus_top_panel_workspace_for_lower_widget() -> None:
+    if not lower_panel_widget_active():
+        return
+
+    if read_runtime_setting("display.position") != "top-bottom":
+        return
+    if not read_runtime_setting("global.videooutput2"):
+        return
+
+    setup_sway_environment()
+    result = run_quiet(["swaymsg", "-t", "get_outputs"], timeout=0.8)
+    if result is None or result.returncode != 0:
+        return
+
+    try:
+        outputs = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return
+
+    active_outputs = [
+        output for output in outputs
+        if output.get("active") and output.get("current_workspace")
+    ]
+    if len(active_outputs) < 2:
+        return
+
+    active_outputs.sort(key=lambda output: (
+        output.get("rect", {}).get("y", 0),
+        output.get("rect", {}).get("x", 0),
+    ))
+    workspace = active_outputs[0].get("current_workspace")
+    if workspace:
+        run_quiet(["swaymsg", "workspace", str(workspace)], timeout=0.8)
+        focus_top_panel_window(str(workspace))
 
 def do_reset_mouse() -> None:
     # Create temporary device
@@ -386,13 +605,11 @@ class Daemon:
     input_devices: dict[str, evdev.InputDevice] = field(init=False, default_factory=dict)
     input_devices_by_fd: dict[int, evdev.InputDevice] = field(init=False, default_factory=dict)
     mappings_by_fd: dict[int, dict[int, str]] = field(init=False, default_factory=dict)
-    forcekill_pressed_keys: set[int] = field(init=False, default_factory=set)
     udev_context: pyudev.Context = field(init=False)
     monitor: pyudev.Monitor = field(init=False)
     poll: select.poll = field(init=False)
     target: evdev.UInput = field(init=False)
     require_reconfig: bool = field(init=False, default=False)
-    forcekill_active: bool = field(init=False, default=False)
 
     def __post_init__(self) -> None:
         self.udev_context = pyudev.Context()
@@ -423,9 +640,8 @@ class Daemon:
                     if ecodes.EV_KEY in capabilities:
                         mapping = get_mapping(input_device)
                         associations = get_mapping_associations(mapping, capabilities)
-                        supports_forcekill = has_forcekill_combo(capabilities)
 
-                        if associations or supports_forcekill:
+                        if associations:
                             if gdebug:
                                 print(f"Adding device {device.device_node}: {input_device.name}")
                                 print_mapping(mapping, associations)
@@ -444,14 +660,18 @@ class Daemon:
                     del self.mappings_by_fd[input_device.fileno()]
                     del self.input_devices_by_fd[input_device.fileno()]
                     del self.input_devices[device.device_node]
-                    self.forcekill_pressed_keys.clear()
-                    self.forcekill_active = False
 
     def __handle_event(self, event: evdev.InputEvent, action: str, begin: bool) -> None:
         if self.context is not None and action in self.context["keys"]:
             keys = self.context["keys"][action]
 
+            if action == "exit" and lower_panel_widget_active():
+                if (isinstance(keys, str) and not begin) or (not isinstance(keys, str) and begin):
+                    exit_emulator_without_focus()
+                return
+
             if action == "exit" and ((isinstance(keys, str) and not begin) or (not isinstance(keys, str) and begin)):
+                focus_top_panel_workspace_for_lower_widget()
                 send_reset_signal(self.target)
 
             if gdebug:
@@ -460,39 +680,14 @@ class Daemon:
                 if isinstance(keys, str):
                     pass # nothing on keydown
                 else:
+                    if action != "exit":
+                        focus_top_panel_workspace_for_lower_widget()
                     send_keys(self.target, keys, True)
             else:
                 if isinstance(keys, str):
                     os.system(keys)
                 else:
                     send_keys(self.target, keys, False)
-
-    def __handle_forcekill_event(self, event: evdev.InputEvent) -> None:
-        if event.code not in GFORCEKILL_COMBO:
-            return
-
-        if event.value == 1:
-            self.forcekill_pressed_keys.add(event.code)
-        elif event.value == 0:
-            self.forcekill_pressed_keys.discard(event.code)
-            self.forcekill_active = False
-            return
-        else:
-            return
-
-        if self.forcekill_active or not GFORCEKILL_COMBO.issubset(self.forcekill_pressed_keys):
-            return
-
-        self.forcekill_active = True
-        command = GFORCEKILL_COMMAND
-        if self.context is not None:
-            keys = self.context["keys"].get(GFORCEKILL_ACTION)
-            if isinstance(keys, str):
-                command = keys
-
-        if gdebug:
-            print(f"forcekill combo pressed, running: {command}")
-        os.system(command)
 
     def __write_pid(self) -> None:
         with GPID_FILE.open("w") as fd:
@@ -551,15 +746,13 @@ class Daemon:
                         event = self.input_devices_by_fd[fd].read_one()
                         if (
                             event is not None and
-                            event.type == ecodes.EV_KEY
+                            event.type == ecodes.EV_KEY and
+                            event.code in self.mappings_by_fd[fd]
                         ):
-                            self.__handle_forcekill_event(event)
-
-                            if event.code in self.mappings_by_fd[fd]:
-                                if event.value == 1:
-                                    self.__handle_event(event, self.mappings_by_fd[fd][event.code], True)
-                                elif event.value == 0:
-                                    self.__handle_event(event, self.mappings_by_fd[fd][event.code], False)
+                            if event.value == 1:
+                                self.__handle_event(event, self.mappings_by_fd[fd][event.code], True)
+                            elif event.value == 0:
+                                self.__handle_event(event, self.mappings_by_fd[fd][event.code], False)
                 #except (OSError, KeyError, FileNotFoundError) as e:
                 except (Exception) as e:
                     if fd == self.monitor.fileno():

@@ -58,6 +58,8 @@ define OD_COMMANDER_INSTALL_TARGET_CMDS
 	$(INSTALL) -m 0644 $(@D)/res/*.png \
 	  $(TARGET_DIR)$(OD_COMMANDER_RESOURCES_DIR)
 	$(INSTALL) -m 0755 -D $(OD_COMMANDER_BUILDDIR)commander \
+	  $(TARGET_DIR)/usr/bin/od-commander.real
+	$(INSTALL) -m 0755 -D $(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/utils/od-commander/od-commander-wrapper \
 	  $(TARGET_DIR)/usr/bin/od-commander
 endef
 

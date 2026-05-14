@@ -12,6 +12,21 @@ log_msg() {
     echo "[$(date '+%F %T')] $*" | tee -a "${LOG_FILE}"
 }
 
+case "${BATOCERA_WAYDROID_NATIVE_BRIDGE:-auto}" in
+    1|true|yes|force)
+        ;;
+    *)
+        case "$(uname -m)" in
+            x86_64)
+                ;;
+            *)
+                log_msg "Skipping ARM native-bridge overlay on native $(uname -m) Waydroid"
+                exit 0
+                ;;
+        esac
+        ;;
+esac
+
 rebuild_base_props() {
     python3 - <<'PY'
 import argparse

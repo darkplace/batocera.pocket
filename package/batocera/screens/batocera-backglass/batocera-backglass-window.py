@@ -1,29 +1,46 @@
 #!/usr/bin/env python3
 
-import os
-
-os.environ["GDK_BACKEND"] = "x11"
-os.environ.pop("GDK_GL", None)
-os.environ.pop("GSK_RENDERER", None)
-os.environ.pop("LIBGL_ALWAYS_SOFTWARE", None)
-os.environ.setdefault("WEBKIT_DISABLE_COMPOSITING_MODE", "1")
-os.environ.setdefault("WEBKIT_DISABLE_DMABUF_RENDERER", "1")
-os.environ.setdefault("WEBKIT_DMABUF_RENDERER_DISABLE_GBM", "1")
-
 import webview
 from http.server  import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import urlparse
 from urllib.parse import parse_qs
+from urllib.parse import urlencode
 import urllib.request
 import json
 import hashlib
 import argparse
+import os
 import re
 import glob
 import subprocess
 import time
 import signal
 import traceback
+import atexit
+import ctypes
+import fcntl
+import struct
+import socket
+import urllib.error
+
+class InputId(ctypes.Structure):
+    _fields_ = [
+        ("bustype", ctypes.c_ushort),
+        ("vendor", ctypes.c_ushort),
+        ("product", ctypes.c_ushort),
+        ("version", ctypes.c_ushort),
+    ]
+
+class UInputUserDev(ctypes.Structure):
+    _fields_ = [
+        ("name", ctypes.c_char * 80),
+        ("id", InputId),
+        ("ff_effects_max", ctypes.c_uint32),
+        ("absmax", ctypes.c_int32 * 0x40),
+        ("absmin", ctypes.c_int32 * 0x40),
+        ("absfuzz", ctypes.c_int32 * 0x40),
+        ("absflat", ctypes.c_int32 * 0x40),
+    ]
 
 class BackglassAPI(BaseHTTPRequestHandler):
 
@@ -37,6 +54,57 @@ class BackglassAPI(BaseHTTPRequestHandler):
     last_cpu_total = None
     last_cpu_idle = None
     last_gpu_busy = {}
+    uinput_fd = None
+    ra_user_agent = "Batocera Backglass"
+
+    EV_SYN = 0x00
+    EV_KEY = 0x01
+    SYN_REPORT = 0
+    UI_SET_EVBIT = 0x40045564
+    UI_SET_KEYBIT = 0x40045565
+    UI_DEV_CREATE = 0x5501
+    UI_DEV_DESTROY = 0x5502
+    BUS_USB = 0x03
+    key_codes = {
+        "KEY_ESC": 1,
+        "KEY_LEFTSHIFT": 42,
+        "KEY_F1": 59,
+        "KEY_F3": 61,
+        "KEY_F4": 62,
+        "KEY_F5": 63,
+        "KEY_F6": 64,
+        "KEY_F11": 87,
+        "KEY_F12": 88,
+    }
+    hotkey_sequences = {
+        "menu": ["KEY_LEFTSHIFT", "KEY_F1"],
+        "exit": ["KEY_LEFTSHIFT", "KEY_ESC"],
+        "load-state": ["KEY_LEFTSHIFT", "KEY_F4"],
+        "save-state": ["KEY_LEFTSHIFT", "KEY_F3"],
+        "slot-next": ["KEY_LEFTSHIFT", "KEY_F5"],
+        "slot-previous": ["KEY_LEFTSHIFT", "KEY_F6"],
+        "fast-forward": ["KEY_LEFTSHIFT", "KEY_F12"],
+        "rewind": ["KEY_LEFTSHIFT", "KEY_F11"],
+    }
+    retroarch_commands = {
+        "menu": "MENU_TOGGLE",
+        "load-state": "LOAD_STATE",
+        "save-state": "SAVE_STATE",
+        "slot-next": "STATE_SLOT_PLUS",
+        "slot-previous": "STATE_SLOT_MINUS",
+        "fast-forward": "FAST_FORWARD",
+        "rewind": "REWIND",
+    }
+    hotkeygen_actions = {
+        "menu": "menu",
+        "exit": "exit",
+        "load-state": "restore_state",
+        "save-state": "save_state",
+        "slot-next": "next_slot",
+        "slot-previous": "previous_slot",
+        "fast-forward": "fastforward",
+        "rewind": "rewind",
+    }
 
     def sendHeaders(self, contentType):
         self.send_response(200)
@@ -91,6 +159,296 @@ class BackglassAPI(BaseHTTPRequestHandler):
             return subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=3)
         except Exception:
             return None
+
+    def isRetroarchRunning():
+        for proc in glob.glob("/proc/[0-9]*/cmdline"):
+            try:
+                args = BackglassAPI.readBinaryFile(proc).split(b"\0")
+                args = [arg.decode(errors="ignore") for arg in args if arg]
+            except Exception:
+                continue
+
+            if args and os.path.basename(args[0]) == "retroarch":
+                return True
+
+        return False
+
+    def sendRetroarchCommand(action):
+        command = BackglassAPI.retroarch_commands.get(action)
+        if not command or not BackglassAPI.isRetroarchRunning():
+            return None
+
+        result = BackglassAPI.runCommandResult(["retroarch", "--command", command])
+        if result is None:
+            return {"ok": False, "action": action, "message": "failed to run retroarch command"}
+
+        message = (result.stdout or result.stderr or "").strip()
+        if result.returncode == 0:
+            return {"ok": True, "action": action, "message": "retroarch command sent"}
+
+        BackglassAPI.logStatic("retroarch command {} failed: {}".format(command, message))
+        return None
+
+    def initVirtualKeyboard():
+        if BackglassAPI.uinput_fd is not None:
+            return True
+
+        try:
+            fd = os.open("/dev/uinput", os.O_WRONLY | os.O_NONBLOCK)
+            fcntl.ioctl(fd, BackglassAPI.UI_SET_EVBIT, BackglassAPI.EV_KEY)
+            codes = set()
+            for sequence in BackglassAPI.hotkey_sequences.values():
+                for key in sequence:
+                    codes.add(BackglassAPI.key_codes[key])
+            for code in sorted(codes):
+                fcntl.ioctl(fd, BackglassAPI.UI_SET_KEYBIT, code)
+
+            device = UInputUserDev()
+            device.name = b"batocera-backglass-hotkeys"
+            device.id.bustype = BackglassAPI.BUS_USB
+            device.id.vendor = 0x1d6b
+            device.id.product = 0xbabe
+            device.id.version = 1
+            os.write(fd, ctypes.string_at(ctypes.addressof(device), ctypes.sizeof(device)))
+            fcntl.ioctl(fd, BackglassAPI.UI_DEV_CREATE)
+            BackglassAPI.uinput_fd = fd
+            time.sleep(0.15)
+            return True
+        except Exception as e:
+            try:
+                os.close(fd)
+            except Exception:
+                pass
+            BackglassAPI.logStatic("uinput init failed: {}".format(e))
+            BackglassAPI.uinput_fd = None
+            return False
+
+    def closeVirtualKeyboard():
+        if BackglassAPI.uinput_fd is None:
+            return
+        try:
+            fcntl.ioctl(BackglassAPI.uinput_fd, BackglassAPI.UI_DEV_DESTROY)
+        except Exception:
+            pass
+        try:
+            os.close(BackglassAPI.uinput_fd)
+        except Exception:
+            pass
+        BackglassAPI.uinput_fd = None
+
+    def emitVirtualSequence(sequence):
+        if not BackglassAPI.initVirtualKeyboard():
+            return {"ok": False, "action": "", "message": "/dev/uinput unavailable"}
+
+        event = struct.Struct("llHHi")
+        try:
+            for code in sequence:
+                os.write(BackglassAPI.uinput_fd, event.pack(0, 0, BackglassAPI.EV_KEY, code, 1))
+                os.write(BackglassAPI.uinput_fd, event.pack(0, 0, BackglassAPI.EV_SYN, BackglassAPI.SYN_REPORT, 0))
+                time.sleep(0.035)
+            for code in reversed(sequence):
+                os.write(BackglassAPI.uinput_fd, event.pack(0, 0, BackglassAPI.EV_KEY, code, 0))
+                os.write(BackglassAPI.uinput_fd, event.pack(0, 0, BackglassAPI.EV_SYN, BackglassAPI.SYN_REPORT, 0))
+                time.sleep(0.035)
+            return {"ok": True, "action": "", "message": "sent"}
+        except Exception as e:
+            BackglassAPI.closeVirtualKeyboard()
+            return {"ok": False, "action": "", "message": str(e)}
+
+    def sendHotkeygenAction(action):
+        hotkey_action = BackglassAPI.hotkeygen_actions.get(action)
+        if not hotkey_action:
+            return None
+
+        result = BackglassAPI.runCommandResult(["hotkeygen", "--send", hotkey_action])
+        if result is None:
+            return None
+
+        message = (result.stdout or result.stderr or "").strip()
+        if result.returncode == 0:
+            return {"ok": True, "action": action, "message": "hotkeygen action sent"}
+
+        BackglassAPI.logStatic("hotkeygen action {} failed: {}".format(hotkey_action, message))
+        return None
+
+    def runHotkeyAction(action):
+        action = (action or "").strip().lower()
+        if action == "screenshot":
+            result = BackglassAPI.captureScreenshot("current")
+            result["action"] = action
+            return result
+
+        if action not in BackglassAPI.hotkey_sequences:
+            return {"ok": False, "action": action, "message": "unknown action"}
+
+        result = BackglassAPI.sendRetroarchCommand(action)
+        if result is not None:
+            return result
+
+        result = BackglassAPI.sendHotkeygenAction(action)
+        if result is not None:
+            return result
+
+        sequence = [BackglassAPI.key_codes[key] for key in BackglassAPI.hotkey_sequences[action]]
+        result = BackglassAPI.emitVirtualSequence(sequence)
+        result["action"] = action
+        return result
+
+    def getCurrentGameInfo():
+        for proc in glob.glob("/proc/[0-9]*/cmdline"):
+            try:
+                args = BackglassAPI.readBinaryFile(proc).split(b"\0")
+                args = [arg.decode(errors="ignore") for arg in args if arg]
+            except Exception:
+                continue
+
+            if not args or not any(os.path.basename(arg) == "emulatorlauncher" for arg in args):
+                continue
+            if "-system" not in args or "-rom" not in args:
+                continue
+
+            try:
+                system = args[args.index("-system") + 1]
+                path = args[args.index("-rom") + 1]
+            except Exception:
+                continue
+
+            game_hash = hashlib.md5(path.encode("utf-8")).hexdigest()
+            try:
+                with urllib.request.urlopen("http://localhost:1234/systems/{}/games/{}".format(system, game_hash), timeout=2) as url:
+                    data = json.load(url)
+                    data["systemName"] = data.get("systemName", system)
+                    data["path"] = data.get("path", path)
+                    return data
+            except Exception as e:
+                return {"systemName": system, "path": path, "error": str(e)}
+
+        return {}
+
+    def getRetroAchievementsDevLogin():
+        try:
+            data = BackglassAPI.runCommandResult(["strings", "/usr/bin/emulationstation"])
+        except Exception:
+            data = None
+
+        if data is None or data.returncode != 0:
+            return {}
+
+        for line in (data.stdout or "").splitlines():
+            line = line.strip()
+            if "&y=" not in line:
+                continue
+            if line.startswith("CHEEVOS_DEV_LOGIN="):
+                line = line.split("=", 1)[1]
+            if line.startswith("z="):
+                line = line[2:]
+            if line.startswith(("http://", "https://")):
+                continue
+
+            login, key = line.split("&y=", 1)
+            if login and key and re.match(r"^[A-Za-z0-9_-]+$", login):
+                return {"z": login, "y": key}
+
+        return {}
+
+    def getRetroAchievementsAuth(username):
+        for key in (
+            "global.retroachievements.web_api_key",
+            "global.retroachievements.webapikey",
+            "global.retroachievements.api_key",
+            "global.retroachievements.apikey",
+        ):
+            value = BackglassAPI.runCommand(["batocera-settings-get-master", key])
+            if value:
+                return {"z": username, "y": value}
+
+        return BackglassAPI.getRetroAchievementsDevLogin()
+
+    def getCheevosInfo():
+        game = BackglassAPI.getCurrentGameInfo()
+        cheevos_id = str(game.get("cheevosId", "")).strip()
+        if not cheevos_id or cheevos_id == "0":
+            return {"ok": False, "message": "No achievements for current game", "game": game}
+
+        username = BackglassAPI.runCommand(["batocera-settings-get-master", "global.retroachievements.username"])
+        auth = BackglassAPI.getRetroAchievementsAuth(username)
+        if not username:
+            return {"ok": False, "message": "RetroAchievements user is not configured", "game": game}
+        if not auth:
+            return {"ok": False, "message": "RetroAchievements API key is unavailable", "game": game}
+
+        url = "https://retroachievements.org/API/API_GetGameInfoAndUserProgress.php?{}".format(
+            urlencode(auth | {"u": username, "g": cheevos_id, "a": "1"})
+        )
+
+        try:
+            request = urllib.request.Request(url, headers={"User-Agent": BackglassAPI.ra_user_agent})
+            with urllib.request.urlopen(request, timeout=8) as response:
+                data = json.load(response)
+        except urllib.error.HTTPError as e:
+            return {"ok": False, "message": "RetroAchievements HTTP {}".format(e.code), "game": game}
+        except Exception as e:
+            return {"ok": False, "message": e.__class__.__name__, "game": game}
+
+        achievements = []
+        for item in data.get("Achievements", {}).values():
+            achievements.append({
+                "ID": item.get("ID", ""),
+                "Title": item.get("Title", ""),
+                "Description": item.get("Description", ""),
+                "Points": item.get("Points", ""),
+                "BadgeName": item.get("BadgeName", ""),
+                "DisplayOrder": item.get("DisplayOrder", 0),
+                "DateEarned": item.get("DateEarned", ""),
+                "DateEarnedHardcore": item.get("DateEarnedHardcore", ""),
+            })
+
+        def sort_key(item):
+            earned = bool(item.get("DateEarned") or item.get("DateEarnedHardcore"))
+            hardcore = bool(item.get("DateEarnedHardcore"))
+            try:
+                order = int(item.get("DisplayOrder", 0))
+            except Exception:
+                order = 0
+            return (not earned, not hardcore, order)
+
+        achievements.sort(key=sort_key)
+        data["Achievements"] = achievements
+        data["ok"] = True
+        data["game"] = game
+        return data
+
+    def getCheevosBadge(name, locked):
+        name = re.sub(r"[^A-Za-z0-9_-]", "", name or "")
+        if not name:
+            return b""
+
+        suffix = "_lock" if locked else ""
+        candidates = [
+            "/userdata/system/configs/emulationstation/tmp/i.retroachievements.org/Badge/{}{}.png".format(name, suffix),
+            "/userdata/system/configs/retroarch/thumbnails/cheevos/badges/{}{}.png".format(name, suffix),
+        ]
+        for candidate in candidates:
+            data = BackglassAPI.readBinaryFile(candidate)
+            if data:
+                return data
+
+        try:
+            request = urllib.request.Request(
+                "http://i.retroachievements.org/Badge/{}{}.png".format(name, suffix),
+                headers={"User-Agent": BackglassAPI.ra_user_agent},
+            )
+            with urllib.request.urlopen(request, timeout=4) as response:
+                return response.read()
+        except Exception:
+            return b""
+
+    def logStatic(message):
+        try:
+            with open(BackglassAPI.api_logfile, "a") as fp:
+                fp.write("{} {}\n".format(time.strftime("%Y-%m-%d %H:%M:%S"), message))
+        except Exception:
+            pass
 
     def setupWaylandEnv():
         runtime_dirs = (
@@ -655,6 +1013,22 @@ class BackglassAPI(BaseHTTPRequestHandler):
                 self.sendHeaders("application/json")
                 self.wfile.write(bytes(json.dumps(BackglassAPI.killEmulator()), "utf-8"))
 
+            elif query.path == "/hotkey":
+                self.sendHeaders("application/json")
+                action = qs.get("action", [""])[0]
+                self.wfile.write(bytes(json.dumps(BackglassAPI.runHotkeyAction(action)), "utf-8"))
+
+            elif query.path == "/cheevos-current":
+                self.sendHeaders("application/json")
+                self.wfile.write(bytes(json.dumps(BackglassAPI.getCheevosInfo()), "utf-8"))
+
+            elif query.path == "/cheevos-badge":
+                name = qs.get("name", [""])[0]
+                locked = qs.get("locked", ["0"])[0] in ("1", "true", "yes")
+                data = BackglassAPI.getCheevosBadge(name, locked)
+                self.sendHeaders("image/png")
+                self.wfile.write(data)
+
             elif query.path == "/record-start":
                 self.sendHeaders("application/json")
                 self.wfile.write(bytes(json.dumps(BackglassAPI.startRecording()), "utf-8"))
@@ -733,5 +1107,7 @@ args = parser.parse_args()
 if args.list_missing_customs:
     listMissingCustoms(args.list_missing_customs[0], args.list_missing_customs[1])
 else:
+    BackglassAPI.initVirtualKeyboard()
+    atexit.register(BackglassAPI.closeVirtualKeyboard)
     window = webview.create_window('backglass', args.www, x=args.x, y=args.y, width=args.width, height=args.height, focus=False)
     webview.start(handle_api, window)

@@ -7,6 +7,7 @@
 DRASTIC_VERSION = 1.1
 DRASTIC_SOURCE = drastic.tar.gz
 DRASTIC_SITE = https://github.com/liberodark/drastic/releases/download/$(DRASTIC_VERSION)
+DRASTIC_DEPENDENCIES = sdl2
 
 define DRASTIC_EXTRACT_CMDS
 	mkdir -p $(@D)/target && cd $(@D)/target && tar xf $(DL_DIR)/$(DRASTIC_DL_SUBDIR)/$(DRASTIC_SOURCE)
@@ -22,12 +23,22 @@ else ifeq ($(BR2_aarch64),y)
     endif
 endif
 
+define DRASTIC_BUILD_CMDS
+	$(TARGET_CC) $(TARGET_CFLAGS) -fPIC -shared \
+		-I$(STAGING_DIR)/usr/include/SDL2 -D_REENTRANT \
+		$(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/emulators/drastic/sources/libdrastouch.c \
+		-o $(@D)/libdrastouch.so \
+		$(TARGET_LDFLAGS) -ldl -lm -lSDL2
+endef
+
 define DRASTIC_INSTALL_TARGET_CMDS
 	mkdir -p $(TARGET_DIR)/usr/bin/
+	mkdir -p $(TARGET_DIR)/usr/lib/
 	mkdir -p $(TARGET_DIR)/usr/share/
 	mkdir -p $(TARGET_DIR)/usr/share/evmapy
 
 	install -m 0755 $(@D)/target/$(DRASTIC_BINARYFILE) $(TARGET_DIR)/usr/bin/drastic
+	install -m 0755 $(@D)/libdrastouch.so $(TARGET_DIR)/usr/lib/libdrastouch.so
 	cp -pr $(@D)/target/drastic $(TARGET_DIR)/usr/share/drastic
 
 	# evmap config

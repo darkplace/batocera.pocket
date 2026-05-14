@@ -1,0 +1,6 @@
+#!/bin/sh
+export DISABLE_MANGOHUD=1
+export DISABLE_LSFG=1
+export BATOCERA_APPS_EXTRA_ARGS="${BATOCERA_APPS_EXTRA_ARGS:-} --disable-gpu --disable-gpu-compositing --disable-gpu-rasterization --disable-accelerated-2d-canvas --disable-accelerated-video-decode --disable-zero-copy --disable-features=Vulkan,VulkanFromANGLE,DefaultANGLEVulkan,CanvasOopRasterization"
+
+exec /usr/libexec/batocera-appimage-launcher /usr/share/batocera/apps/vacuumtube.AppImage vacuumtube 1 "$@"

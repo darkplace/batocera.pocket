@@ -1,6 +1,11 @@
 <?xml version="1.0"?>
 <gameList>
   <game>
+    <path>./VacuumTube.sh</path>
+    <name>VacuumTube</name>
+    <image>./images/vacuumtube.png</image>
+  </game>
+  <game>
     <path>./Brave.sh</path>
     <name>Brave</name>
     <image>./images/brave.png</image>

@@ -361,9 +361,19 @@ steam_client_dependencies_ready() {
 }
 
 steam_startup_args_enabled() {
-    if [[ "${BATOCERA_STEAM_STARTUP_ARGS:-1}" == "0" ]]; then
-        return 1
-    fi
+    local startup_args="${BATOCERA_STEAM_STARTUP_ARGS:-auto}"
+
+    case "${startup_args}" in
+        0|false|FALSE|False|no|NO|No|off|OFF|Off)
+            return 1
+            ;;
+        1|true|TRUE|True|yes|YES|Yes|on|ON|On)
+            ;;
+        *)
+            log_msg "Steam client bootstrap/update is enabled; not appending startup bypass args."
+            return 1
+            ;;
+    esac
 
     if ! steam_client_dependencies_ready; then
         log_msg "Steam client packages are incomplete; allowing bootstrap/update before launch."
@@ -1126,6 +1136,10 @@ launch_steam_deck_session() {
     local -a steam_args=()
     local game_target
     local steam_bin="${STEAM_ROOT}/steamrtarm64/steam"
+    local attempt
+    local bootstrap_lines
+    local status
+    local max_attempts=3
 
     game_target="$(normalize_game_target "${GAME_ID}")"
     build_steam_args steam_args "${game_target}"
@@ -1138,8 +1152,26 @@ launch_steam_deck_session() {
         export BATOCERA_STEAM_GS_MANGOAPP="1"
     fi
 
-    log_msg "Launching native ARM64 SteamDeck session via gamescope: ${steam_bin} ${steam_args[*]:-}"
-    BATOCERA_STEAM_FIRST_RUN="${BATOCERA_STEAM_FIRST_RUN:-0}" /usr/bin/batocera-steam-session "${steam_bin}" "${steam_args[@]}"
+    for attempt in $(seq 1 "${max_attempts}"); do
+        bootstrap_lines=0
+        if [[ -f "${STEAM_ROOT}/logs/bootstrap_log.txt" ]]; then
+            bootstrap_lines="$(wc -l < "${STEAM_ROOT}/logs/bootstrap_log.txt" 2>/dev/null || echo 0)"
+        fi
+
+        log_msg "Launching native ARM64 SteamDeck session via gamescope (attempt ${attempt}/${max_attempts}): ${steam_bin} ${steam_args[*]:-}"
+        set +e
+        BATOCERA_STEAM_FIRST_RUN="${BATOCERA_STEAM_FIRST_RUN:-0}" /usr/bin/batocera-steam-session "${steam_bin}" "${steam_args[@]}"
+        status=$?
+        set -e
+
+        if [[ "${attempt}" -lt "${max_attempts}" ]] && steam_update_exit_detected "${bootstrap_lines}"; then
+            log_msg "SteamDeck session exited after applying an update; relaunching client."
+            sleep 2
+            continue
+        fi
+
+        return "${status}"
+    done
 }
 
 trap cleanup EXIT

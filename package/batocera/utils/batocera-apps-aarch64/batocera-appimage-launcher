@@ -40,7 +40,7 @@ setup_sdl_controller_env() {
 }
 
 case "$app_id" in
-    steamlink)
+    vacuumtube)
         setup_sdl_controller_env
         ;;
 esac
@@ -57,16 +57,8 @@ if [ -n "${BATOCERA_APPS_EXTRA_ARGS:-}" ]; then
     set -- "$@" ${BATOCERA_APPS_EXTRA_ARGS}
 fi
 
-run_appimage() {
-    if [ "$app_id" = "vacuumtube" ] && [ "$(uname -m)" = "aarch64" ] && command -v FEX >/dev/null 2>&1; then
-        exec FEX "$appimage" "$@"
-    fi
-
-    exec "$appimage" "$@"
-}
-
 if [ "$need_no_sandbox" = "1" ]; then
-    run_appimage --no-sandbox "$@"
+    exec "$appimage" --no-sandbox "$@"
 fi
 
-run_appimage "$@"
+exec "$appimage" "$@"

@@ -1,0 +1,8 @@
+# AYN Thor exposes two ft5x06 touch panels with identical Sway identifiers.
+# The DTS rotates both panels into landscape coordinates. These matrices then
+# place each panel into Batocera's top-bottom Sway canvas.
+#
+# platform-a90000.i2c: top 1920x1080 panel at (0,0)
+# platform-98c000.i2c: lower 1240x1080 panel centered at x=340, y=1080
+ACTION=="add|change", SUBSYSTEM=="input", KERNEL=="event*", ENV{ID_INPUT_TOUCHSCREEN}=="1", ENV{ID_PATH}=="platform-a90000.i2c", ENV{ID_INPUT_KEYBOARD}="0", ENV{LIBINPUT_CALIBRATION_MATRIX}="1 0 0 0 0.5 0"
+ACTION=="add|change", SUBSYSTEM=="input", KERNEL=="event*", ENV{ID_INPUT_TOUCHSCREEN}=="1", ENV{ID_PATH}=="platform-98c000.i2c", ENV{ID_INPUT_KEYBOARD}="0", ENV{LIBINPUT_CALIBRATION_MATRIX}="0.645833 0 0.177083 0 0.5 0.5"

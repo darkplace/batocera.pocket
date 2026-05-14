@@ -151,8 +151,9 @@ class AzaharGenerator(Generator):
         # New 3DS Version
         azaharConfig.set("System", "is_new_3ds", system.config.get_bool("azahar_is_new_3ds", return_values=("true", "false")))
         azaharConfig.set("System", r"is_new_3ds\default", "false")
-        # Language
-        azaharConfig.set("System", "region_value", str(getAzaharLangFromEnvironment()))
+        # System region. Azahar stores true system language in the emulated CFG save,
+        # while region is exposed through qt-config.ini.
+        azaharConfig.set("System", "region_value", str(getAzaharRegion(system.config)))
         azaharConfig.set("System", r"region_value\default", "false")
 
         ## [UI]
@@ -336,7 +337,21 @@ class AzaharGenerator(Generator):
             return "left"
         return "unknown"
 
-# Language auto setting
+# Region auto setting
+def getAzaharRegion(config):
+    region = config.get("azahar_region")
+    if region is not config.MISSING and str(region) != "auto":
+        try:
+            region_id = int(region)
+        except (TypeError, ValueError):
+            region_id = getAzaharLangFromEnvironment()
+        else:
+            if -1 <= region_id <= 6:
+                return region_id
+
+    return getAzaharLangFromEnvironment()
+
+
 def getAzaharLangFromEnvironment():
     region = { "AUTO": -1, "JPN": 0, "USA": 1, "EUR": 2, "AUS": 3, "CHN": 4, "KOR": 5, "TWN": 6 }
     availableLanguages = {

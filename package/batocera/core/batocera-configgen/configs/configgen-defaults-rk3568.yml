@@ -3,7 +3,7 @@ gamecube:
   core:     dolphin
 nds:
   emulator: libretro
-  core:     melonds
+  core:     melondsds
 wii:
   emulator: libretro
   core:     dolphin

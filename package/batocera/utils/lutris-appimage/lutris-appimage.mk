@@ -56,7 +56,8 @@ define LUTRIS_APPIMAGE_INSTALL_TARGET_CMDS
 		'  </game>' \
 		'</gameList>' \
 		> "$(TARGET_DIR)/usr/share/batocera/datainit/roms/lutris/gamelist.xml"
-	ln -snf /usr/share/icons/batocera/lutris.png \
+	$(INSTALL) -D -m 0644 \
+		$(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/core/batocera-desktopapps/icons/lutris.png \
 		$(TARGET_DIR)/usr/share/batocera/datainit/roms/lutris/images/lutris.png
 	for d in lib usr/lib usr/lib64; do \
 		if [ -e "$(TARGET_DIR)/$$d/libopenal.so.1" ] && [ ! -e "$(TARGET_DIR)/$$d/libal.so.1" ]; then \

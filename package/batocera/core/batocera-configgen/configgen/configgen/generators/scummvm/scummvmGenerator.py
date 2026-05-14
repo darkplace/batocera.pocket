@@ -4,7 +4,7 @@ import re
 from typing import TYPE_CHECKING, Final
 
 from ... import Command
-from ...batoceraPaths import BIOS, CACHE, CONFIGS, SAVES, SCREENSHOTS, ensure_parents_and_open, mkdir_if_not_exists
+from ...batoceraPaths import BATOCERA_SHARE_DIR, BIOS, CACHE, CONFIGS, SAVES, SCREENSHOTS, ensure_parents_and_open, mkdir_if_not_exists
 from ...controller import Controller, generate_sdl_game_controller_config
 from ...utils.configparser import CaseSensitiveConfigParser
 from ..Generator import Generator
@@ -16,6 +16,21 @@ scummConfigDir: Final = CONFIGS / "scummvm"
 scummConfigFile: Final = scummConfigDir / "scummvm.ini"
 scummExtra: Final = BIOS / "scummvm" / "extra"
 scummSave: Final = SAVES / "scummvm"
+
+def _is_sm8550() -> bool:
+    try:
+        return (BATOCERA_SHARE_DIR / "batocera.arch").read_text().strip() == "sm8550"
+    except OSError:
+        return False
+
+def _sm8550_sdl_ui_env() -> dict[str, str]:
+    if not _is_sm8550():
+        return {}
+
+    return {
+        "SDL_RENDER_DRIVER": "software",
+        "SDL_RENDER_VSYNC": "0",
+    }
 
 class ScummVMGenerator(Generator):
 
@@ -72,9 +87,6 @@ class ScummVMGenerator(Generator):
 
         commandArray = ["/usr/bin/scummvm", "-f"]
 
-        # set the resolution
-        commandArray.append(f"--window-size={gameResolution['width']},{gameResolution['height']}")
-
         ## user options
 
         # scale factor
@@ -88,7 +100,8 @@ class ScummVMGenerator(Generator):
             commandArray.append(f"--stretch-mode={stretch}")
 
         # renderer
-        commandArray.append(f"--renderer={system.config.get('scumm_renderer', 'opengl')}")
+        default_renderer = "software" if _is_sm8550() else "opengl"
+        commandArray.append(f"--renderer={system.config.get('scumm_renderer', default_renderer)}")
 
         # language
         if language := system.config.get("scumm_language"):
@@ -106,14 +119,14 @@ class ScummVMGenerator(Generator):
             f"{target}"]
         )
 
-        return Command.Command(
-            array=commandArray,
-            env={
-                "XDG_CONFIG_HOME": CONFIGS,
-                "XDG_CACHE_HOME": CACHE,
-                "SDL_GAMECONTROLLERCONFIG": generate_sdl_game_controller_config(playersControllers)
-            }
-        )
+        env = {
+            "XDG_CONFIG_HOME": CONFIGS,
+            "XDG_CACHE_HOME": CACHE,
+            "SDL_GAMECONTROLLERCONFIG": generate_sdl_game_controller_config(playersControllers)
+        }
+        env.update(_sm8550_sdl_ui_env())
+
+        return Command.Command(array=commandArray, env=env)
 
     def getInGameRatio(self, config, gameResolution, rom):
         if config.get("scumm_stretch") in ["fit_force_aspect", "pixel-perfect"]:

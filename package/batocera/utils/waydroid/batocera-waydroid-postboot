@@ -23,10 +23,13 @@ wait_for_boot() {
     local boot_completed=""
     local attempt
 
-    for attempt in $(seq 1 45); do
+    for attempt in $(seq 1 60); do
         if ! container_running; then
-            log_msg "Post-boot hook exiting because Waydroid container is no longer running"
-            return 1
+            if [ "${attempt}" = "1" ]; then
+                log_msg "Post-boot hook waiting for Waydroid container"
+            fi
+            sleep 2
+            continue
         fi
 
         boot_completed="$(waydroid_shell_quiet getprop sys.boot_completed | tr -d '\r\n')"
@@ -40,6 +43,21 @@ wait_for_boot() {
 
     log_msg "Post-boot hook timed out waiting for Android boot completion"
     return 1
+}
+
+configure_android_network() {
+    local gateway="192.168.240.1"
+    local route
+
+    route="$(waydroid_shell_quiet ip route | tr -d '\r')"
+    if ! printf '%s\n' "${route}" | grep -q '^default '; then
+        waydroid_shell_quiet ip route add default via "${gateway}" dev eth0 >/dev/null
+        log_msg "Post-boot hook added Android default route via ${gateway}"
+    fi
+
+    waydroid_shell_quiet setprop net.dns1 "${gateway}" >/dev/null
+    waydroid_shell_quiet setprop net.eth0.dns1 "${gateway}" >/dev/null
+    waydroid_shell_quiet setprop net.eth0.gw "${gateway}" >/dev/null
 }
 
 trigger_controller_uevents() {
@@ -104,6 +122,12 @@ main() {
     log_msg "Post-boot hook started"
 
     if ! wait_for_boot; then
+        exit 0
+    fi
+
+    configure_android_network
+    if [ "${1:-}" = "--network-only" ]; then
+        log_msg "Post-boot hook finished network-only setup"
         exit 0
     fi
 
