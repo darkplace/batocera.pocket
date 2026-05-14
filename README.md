@@ -52,14 +52,13 @@ Includes additional emulators where supported:
   <img width="661" height="881" alt="image" src="https://github.com/user-attachments/assets/ce658ce6-7753-47fd-a56e-caaeddf29c67" />
 - SkyEmu  
 - NanoBoy Advance
-- Dusk Port Engine
 - And more emulators
-- Steam aarch64 (aarch64 client) (with gamescope working on sm8550) (h/t tipoex/mia milkyway)
+- Dusk Port Engine
+- Steam aarch64 (aarch64 client) (with gamescope working on sm8550) (h/t tipoex/mashy)
 - DXVK (DX11 support)
 - Fex-Emu support on Wine runners
 - LSFG-VK (requires Losless.dll - can be bought on steam)
   <img width="661" height="881" alt="image" src="https://github.com/user-attachments/assets/7183369d-ca34-4d24-9f6b-86d35feb9918" />
-
 - Docker *(enable in Services menu)*
 - Hotkey + touchscreen support for on-screen keyboard  
 
@@ -67,12 +66,15 @@ Includes additional emulators where supported:
 
 ## SM8550 (Snapdragon 8 Gen 2 Class)
 - Odin 2 includes LED support
+- GPU Profile settings
 - experimental gamescope for wine, cemu
 - Strong DX9 / DX10 support  
 - Many DX11-era titles may run  
 - Vulkan-native titles perform best  
-- Not a replacement for x86 gaming PCs  
-- Extra thor perks like lower widget Conky System monitor, retroarch lower panel controls, waydroid
+- Not a replacement for x86 gaming PCs
+
+
+## Extra thor perks like lower widget Conky System monitor, retroarch lower panel controls, waydroid
   <img width="661" height="881" alt="image" src="https://github.com/user-attachments/assets/2696ed6f-0bdd-48f6-9c82-d4e3ed377acb" />
   <img width="583" height="777" alt="image" src="https://github.com/user-attachments/assets/8f00df20-a3e4-40a8-a8aa-eda8cbea1ae7" />
   <img width="661" height="881" alt="image" src="https://github.com/user-attachments/assets/307330f2-39b4-4c33-8893-85c19507884f" />
