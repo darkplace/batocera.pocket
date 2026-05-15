@@ -1,0 +1,7 @@
+config BR2_PACKAGE_TAILSCALE_SERVICE
+	bool "tailscale-service"
+	depends on BR2_PACKAGE_HOST_GO_TARGET_ARCH_SUPPORTS
+	depends on BR2_USE_MMU
+	select BR2_PACKAGE_TAILSCALE
+	help
+	  Batocera service wrapper for tailscaled.

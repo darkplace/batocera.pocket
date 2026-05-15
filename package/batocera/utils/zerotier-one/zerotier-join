@@ -1,0 +1,30 @@
+#!/bin/bash
+
+DATA_DIR="/userdata/system/zerotier"
+NETWORKS_FILE="${DATA_DIR}/networks"
+CLI="/usr/sbin/zerotier-cli"
+
+[ -x "${CLI}" ] || exit 0
+[ -f "${NETWORKS_FILE}" ] || exit 0
+
+configured_networks="$(sed -e 's/#.*//' -e 's/[[:space:]]//g' "${NETWORKS_FILE}" | sed '/^$/d')"
+[ -n "${configured_networks}" ] || exit 0
+
+for network in ${configured_networks}; do
+    "${CLI}" -D"${DATA_DIR}" join "${network}" >/dev/null 2>&1 || true
+done
+
+current_networks="$("${CLI}" -D"${DATA_DIR}" listnetworks 2>/dev/null | awk '$1 == "200" && $2 == "listnetworks" {print $3}')"
+for network in ${current_networks}; do
+    keep=false
+    for configured in ${configured_networks}; do
+        if [ "${network}" = "${configured}" ]; then
+            keep=true
+            break
+        fi
+    done
+
+    if [ "${keep}" = false ]; then
+        "${CLI}" -D"${DATA_DIR}" leave "${network}" >/dev/null 2>&1 || true
+    fi
+done

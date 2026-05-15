@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, NotRequired, TypedDict, cast
 
 from ... import controllersConfig
-from ...batoceraPaths import DEFAULTS_DIR, SAVES, mkdir_if_not_exists
+from ...batoceraPaths import DEFAULTS_DIR, SAVES, USERDATA, mkdir_if_not_exists
 from ...controller import Controller
 from ...settings.unixSettings import UnixSettings
 from ...utils import bezels as bezelsUtil, videoMode, vulkan, esSettings
@@ -44,6 +44,44 @@ class _GunMappingItem(TypedDict):
 # return true if the option is considered defined
 def defined(key: str, dict: Mapping[str, Any] | SystemConfig, /) -> bool:
     return key in dict and isinstance(dict[key], str) and len(dict[key]) > 0
+
+
+def _custom_save_path(path: str, /) -> Path | None:
+    path = path.strip().strip('"')
+    if not path or path in {'auto', 'default'}:
+        return None
+
+    custom_path = Path(path)
+    if not custom_path.is_absolute():
+        custom_path = USERDATA / custom_path
+
+    mkdir_if_not_exists(custom_path)
+    return custom_path
+
+
+def _configure_retroarch_save_location(
+    retroarch_config: dict[str, object],
+    *,
+    directory_key: str,
+    mode_key: str,
+    custom_directory_key: str,
+    sort_by_core_key: str,
+    sort_by_content_key: str,
+    system: Emulator,
+) -> None:
+    mode = system.config.get_str(mode_key, 'system')
+    if mode not in {'system', 'custom', 'core', 'content', 'custom_core', 'custom_content'}:
+        mode = 'system'
+
+    directory = SAVES / system.name
+    if mode.startswith('custom') and (custom_directory := _custom_save_path(system.config.get_str(custom_directory_key))):
+        directory = custom_directory
+    elif mode in {'core', 'content'}:
+        directory = SAVES
+
+    retroarch_config[directory_key] = directory
+    retroarch_config[sort_by_core_key] = 'true' if mode in {'core', 'custom_core'} else 'false'
+    retroarch_config[sort_by_content_key] = 'true' if mode in {'content', 'custom_content'} else 'false'
 
 
 # Warning the values in the array must be exactly at the same index than
@@ -307,10 +345,26 @@ def createLibretroConfig(
 
     retroarchConfig['video_fullscreen'] = 'true'                # Fullscreen is required at least for x86* and odroidn2
 
-    retroarchConfig['sort_savefiles_enable'] = 'false'     # ensure we don't save system.name + core
-    retroarchConfig['sort_savestates_enable'] = 'false'    # ensure we don't save system.name + core
-    retroarchConfig['savestate_directory'] = SAVES / system.name
-    retroarchConfig['savefile_directory'] = SAVES / system.name
+    retroarchConfig['savefiles_in_content_dir'] = 'false'
+    retroarchConfig['savestates_in_content_dir'] = 'false'
+    _configure_retroarch_save_location(
+        retroarchConfig,
+        directory_key='savefile_directory',
+        mode_key='retroarch_savefile_location',
+        custom_directory_key='retroarch_savefile_directory',
+        sort_by_core_key='sort_savefiles_enable',
+        sort_by_content_key='sort_savefiles_by_content_enable',
+        system=system,
+    )
+    _configure_retroarch_save_location(
+        retroarchConfig,
+        directory_key='savestate_directory',
+        mode_key='retroarch_savestate_location',
+        custom_directory_key='retroarch_savestate_directory',
+        sort_by_core_key='sort_savestates_enable',
+        sort_by_content_key='sort_savestates_by_content_enable',
+        system=system,
+    )
 
     # Forced values (so that if the config is not correct, fix it)
     if system.config.core == 'tgbdual':

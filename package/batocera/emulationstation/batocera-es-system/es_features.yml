@@ -917,6 +917,38 @@ libretro:
       choices:
         'On': 'true'
         'Off': 'false'
+    retroarch_savefile_location:
+      group: RETROARCH SAVES
+      prompt: SAVE FILE LOCATION
+      description: Choose where RetroArch writes in-game save files.
+      choices:
+        System Folder (Default): system
+        Custom Folder: custom
+        Core Folder: core
+        Content Directory Folder: content
+        Custom Folder + Core Folder: custom_core
+        Custom Folder + Content Directory Folder: custom_content
+    retroarch_savefile_directory:
+      group: RETROARCH SAVES
+      prompt: CUSTOM SAVE FILE FOLDER
+      description: Absolute or /userdata-relative folder used when Save File Location is Custom Folder.
+      preset: input
+    retroarch_savestate_location:
+      group: RETROARCH SAVES
+      prompt: SAVE STATE LOCATION
+      description: Choose where RetroArch writes save states.
+      choices:
+        System Folder (Default): system
+        Custom Folder: custom
+        Core Folder: core
+        Content Directory Folder: content
+        Custom Folder + Core Folder: custom_core
+        Custom Folder + Content Directory Folder: custom_content
+    retroarch_savestate_directory:
+      group: RETROARCH SAVES
+      prompt: CUSTOM SAVE STATE FOLDER
+      description: Absolute or /userdata-relative folder used when Save State Location is Custom Folder.
+      preset: input
     lower_screen_controls:
       group: ADVANCED OPTIONS
       prompt: LOWER SCREEN CONTROLS

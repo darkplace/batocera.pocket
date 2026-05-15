@@ -1,0 +1,64 @@
+#!/bin/bash
+
+STATE_DIR="/userdata/system/tailscale"
+SOCKET_DIR="/var/run/tailscale"
+SOCKET="${SOCKET_DIR}/tailscaled.sock"
+PIDFILE="/var/run/tailscaled.pid"
+LOGFILE="/userdata/system/logs/tailscaled.log"
+
+running() {
+    [ -s "${PIDFILE}" ] && kill -0 "$(cat "${PIDFILE}")" 2>/dev/null
+}
+
+start() {
+    if running; then
+        return 0
+    fi
+
+    mkdir -p "${STATE_DIR}" "${SOCKET_DIR}" "$(dirname "${LOGFILE}")"
+    modprobe tun 2>/dev/null || true
+
+    start-stop-daemon -S -q -m -b -p "${PIDFILE}" -x /usr/bin/tailscaled -- \
+        --state="${STATE_DIR}/tailscaled.state" \
+        --socket="${SOCKET}" >> "${LOGFILE}" 2>&1
+}
+
+stop() {
+    if running; then
+        start-stop-daemon -K -q -p "${PIDFILE}"
+    fi
+    rm -f "${PIDFILE}"
+}
+
+restart() {
+    stop
+    start
+}
+
+status() {
+    if running; then
+        echo "tailscale: running"
+        /usr/bin/tailscale --socket="${SOCKET}" status --peers=false 2>/dev/null || true
+    else
+        echo "tailscale: stopped"
+        return 3
+    fi
+}
+
+case "$1" in
+    start)
+        start
+        ;;
+    stop)
+        stop
+        ;;
+    restart)
+        restart
+        ;;
+    status)
+        status
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|restart|status}"
+        ;;
+esac

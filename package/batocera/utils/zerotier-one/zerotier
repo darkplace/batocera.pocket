@@ -1,0 +1,71 @@
+#!/bin/bash
+
+DATA_DIR="/userdata/system/zerotier"
+PIDFILE="/var/run/zerotier-one.pid"
+LOGFILE="/userdata/system/logs/zerotier-one.log"
+BIN="/usr/sbin/zerotier-one"
+CLI="/usr/sbin/zerotier-cli"
+
+running() {
+    [ -s "${PIDFILE}" ] && kill -0 "$(cat "${PIDFILE}")" 2>/dev/null
+}
+
+start() {
+    if running; then
+        return 0
+    fi
+
+    mkdir -p "${DATA_DIR}" "$(dirname "${LOGFILE}")"
+    modprobe tun 2>/dev/null || true
+
+    start-stop-daemon -S -q -m -b -p "${PIDFILE}" -x "${BIN}" -- "${DATA_DIR}" >> "${LOGFILE}" 2>&1
+
+    for _ in $(seq 1 20); do
+        "${CLI}" -D"${DATA_DIR}" info >/dev/null 2>&1 && break
+        sleep 0.5
+    done
+
+    /usr/bin/zerotier-join
+}
+
+stop() {
+    if running; then
+        "${CLI}" -D"${DATA_DIR}" shutdown >/dev/null 2>&1 || \
+            start-stop-daemon -K -q -p "${PIDFILE}"
+    fi
+    rm -f "${PIDFILE}"
+}
+
+restart() {
+    stop
+    start
+}
+
+status() {
+    if running; then
+        echo "zerotier: running"
+        "${CLI}" -D"${DATA_DIR}" info 2>/dev/null || true
+        "${CLI}" -D"${DATA_DIR}" listnetworks 2>/dev/null || true
+    else
+        echo "zerotier: stopped"
+        return 3
+    fi
+}
+
+case "$1" in
+    start)
+        start
+        ;;
+    stop)
+        stop
+        ;;
+    restart)
+        restart
+        ;;
+    status)
+        status
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|restart|status}"
+        ;;
+esac
