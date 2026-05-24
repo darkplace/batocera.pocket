@@ -1,0 +1,71 @@
+#!/bin/bash
+set -eu
+
+USER_DIR="/userdata/system/configs/hotkeygen"
+USER_FILE="${USER_DIR}/common_context.ally.conf"
+SERVICE_DIR="/usr/share/batocera/services/allyhotkeys.d"
+SYSTEM_FILE="${SERVICE_DIR}/common_context.ally.conf"
+ACTIVE_MAP="${USER_DIR}/ASUS_ROG_Ally_Config-b05-1abe.mapping"
+ALLY_X_MAP="${USER_DIR}/ASUS_ROG_Ally_X_Gamepad-b05-1b4c.mapping"
+ES_MAP="${SERVICE_DIR}/ASUS_ROG_Ally_Config-b05-1abe.mapping.es"
+DEFAULT_MAP="${SERVICE_DIR}/ASUS_ROG_Ally_Config-b05-1abe.mapping"
+SYSTEM_ALLY_X_MAP="${SERVICE_DIR}/ASUS_ROG_Ally_X_Gamepad-b05-1b4c.mapping"
+
+hotkeygen_permanent_running() {
+    pgrep -f '(^|[[:space:]])(/usr/bin/)?hotkeygen([[:space:]].*)?--permanent([[:space:]]|$)' >/dev/null 2>&1
+}
+
+ensure_hotkeygen_started() {
+    if command -v hotkeygen >/dev/null 2>&1 && ! hotkeygen_permanent_running && [ -x /etc/init.d/S90hotkeygen ]; then
+        /etc/init.d/S90hotkeygen start >/dev/null 2>&1 || true
+    fi
+}
+
+restore_ally_es_map() {
+    src=""
+
+    mkdir -p "${USER_DIR}"
+    rm -f "${USER_DIR}"/ASUS_ROG_Ally_Config-b05-1abe.mapping.es "${USER_DIR}"/ASUS_ROG_Ally_Config-b05-1abe.mapping.steam
+    if [ -f "${SYSTEM_ALLY_X_MAP}" ]; then
+        cp -f "${SYSTEM_ALLY_X_MAP}" "${ALLY_X_MAP}" 2>/dev/null || true
+    fi
+    for src in "${ES_MAP}" "${DEFAULT_MAP}"; do
+        if [ -f "${src}" ]; then
+            cp -f "${src}" "${ACTIVE_MAP}" 2>/dev/null || true
+            return 0
+        fi
+    done
+
+    return 1
+}
+
+reload_hotkeys() {
+    ensure_hotkeygen_started
+    /usr/bin/hotkeygen --default-context >/dev/null 2>&1 || true
+    /usr/bin/hotkeygen --reload >/dev/null 2>&1 || true
+}
+
+case "${1:-}" in
+    start)
+        mkdir -p "${USER_DIR}"
+        install -m 0644 "${SYSTEM_FILE}" "${USER_FILE}"
+        restore_ally_es_map || true
+        reload_hotkeys
+        ;;
+    stop)
+        rm -f "${USER_FILE}"
+        rm -f "${USER_DIR}"/ASUS_ROG_Ally_*.mapping "${USER_DIR}"/ASUS_ROG_Ally_*.mapping.es "${USER_DIR}"/ASUS_ROG_Ally_*.mapping.steam
+        reload_hotkeys
+        ;;
+    status)
+        if [ -f "${USER_FILE}" ]; then
+            echo "allyhotkeys: enabled"
+        else
+            echo "allyhotkeys: disabled"
+        fi
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|status}" >&2
+        exit 1
+        ;;
+esac

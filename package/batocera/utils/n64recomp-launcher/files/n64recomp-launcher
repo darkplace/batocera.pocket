@@ -1,0 +1,51 @@
+#!/bin/sh
+
+set -eu
+
+SYSTEM_DIR="${BATOCERA_N64RECOMP_SYSTEM_DIR:-/usr/share/n64recomp-launcher}"
+BASE_DIR="${BATOCERA_N64RECOMP_HOME:-/userdata/system/n64recomp-launcher}"
+APP_DIR="${BATOCERA_N64RECOMP_APP_DIR:-${BASE_DIR}/app}"
+GAMES_DIR="${BATOCERA_N64RECOMP_GAMES_DIR:-${BASE_DIR}/games}"
+
+copy_if_missing() {
+    src="${SYSTEM_DIR}/$1"
+    dst="${APP_DIR}/$1"
+    [ -f "$src" ] || return 0
+    [ -f "$dst" ] || cp -f "$src" "$dst"
+}
+
+mkdir -p "$APP_DIR" "$GAMES_DIR" "$BASE_DIR/.config" "$BASE_DIR/.local/share" "$BASE_DIR/.cache"
+
+needs_seed=0
+if [ ! -x "$APP_DIR/N64RecompLauncher" ]; then
+    needs_seed=1
+elif [ -f "$SYSTEM_DIR/N64RecompLauncher" ]; then
+    system_size="$(stat -c %s "$SYSTEM_DIR/N64RecompLauncher" 2>/dev/null || echo 0)"
+    app_size="$(stat -c %s "$APP_DIR/N64RecompLauncher" 2>/dev/null || echo 0)"
+    if [ "$system_size" -gt 0 ] && [ "$app_size" -gt 0 ] && [ "$system_size" -gt $((app_size * 2)) ]; then
+        needs_seed=1
+    fi
+fi
+
+if [ "$needs_seed" -eq 1 ]; then
+    cp -f "$SYSTEM_DIR/N64RecompLauncher" "$APP_DIR/N64RecompLauncher"
+    chmod 0755 "$APP_DIR/N64RecompLauncher"
+fi
+
+copy_if_missing libHarfBuzzSharp.so
+copy_if_missing libSDL2.so
+copy_if_missing libSkiaSharp.so
+copy_if_missing N64RecompLauncher.dll.config
+
+if [ ! -f "$APP_DIR/settings.json" ] && [ -f "$SYSTEM_DIR/default-settings.json" ]; then
+    sed "s|@GAMES_DIR@|$GAMES_DIR|g" "$SYSTEM_DIR/default-settings.json" > "$APP_DIR/settings.json"
+fi
+
+export HOME="$BASE_DIR"
+export XDG_CONFIG_HOME="$BASE_DIR/.config"
+export XDG_DATA_HOME="$BASE_DIR/.local/share"
+export XDG_CACHE_HOME="$BASE_DIR/.cache"
+export LD_LIBRARY_PATH="$APP_DIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+
+cd "$APP_DIR"
+exec "$APP_DIR/N64RecompLauncher" "$@"

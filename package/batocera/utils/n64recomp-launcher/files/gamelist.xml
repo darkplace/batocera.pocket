@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<gameList>
+  <game>
+    <path>./N64 Recomp Launcher.sh</path>
+    <name>N64 Recomp Launcher</name>
+    <desc>Install, update, configure, and launch N64 recomp packages. Use the launcher's desktop shortcut option, then update game lists to import created shortcuts into this system.</desc>
+    <image>./images/n64recomp-launcher.png</image>
+    <thumbnail>./images/n64recomp-launcher.png</thumbnail>
+    <lang>en</lang>
+  </game>
+</gameList>

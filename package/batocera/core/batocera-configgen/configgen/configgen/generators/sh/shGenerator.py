@@ -49,6 +49,8 @@ class ShGenerator(Generator):
         elif system.config.emulator == "lutris":
             env["BATOCERA_LUTRIS_EXTRA_ARGS"] = system.config.get_str("lutris_extra_args", "")
             env["BATOCERA_LUTRIS_MODE"] = system.config.core
+        elif system.config.emulator == "n64recomp":
+            env["BATOCERA_N64RECOMP_EXTRA_ARGS"] = system.config.get_str("n64recomp_extra_args", "")
         elif system.config.emulator == "apps":
             env["BATOCERA_APPS_EXTRA_ARGS"] = system.config.get_str("apps_extra_args", "")
             env["BATOCERA_APPS_NO_SANDBOX"] = system.config.get_bool("apps_no_sandbox", return_values=("1", "0"))

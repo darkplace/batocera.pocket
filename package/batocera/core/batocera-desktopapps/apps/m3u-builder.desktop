@@ -1,0 +1,8 @@
+[Desktop Entry]
+Version=1.0
+Icon=/usr/share/icons/batocera/m3u-builder.png
+Exec=xterm -fs 14 -fg white -bg black -fa "Monospace" -en UTF-8 -sb -rightbar -geometry 120x38 -e env BATOCERA_FORCE_DIALOG=1 /usr/bin/batocera-m3u-builder dialog
+Terminal=false
+Type=Application
+Categories=Utility;batocera.linux;
+Name=M3U Builder

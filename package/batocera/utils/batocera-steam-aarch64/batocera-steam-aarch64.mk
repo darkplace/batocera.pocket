@@ -39,6 +39,15 @@ define BATOCERA_STEAM_AARCH64_INSTALL_TARGET_CMDS
 		$(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/utils/batocera-steam/batocera-steam-session \
 		$(TARGET_DIR)/usr/bin/batocera-steam-session
 	install -D -m 0755 \
+		$(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/utils/batocera-steam/batocera-steam-gamescope-child \
+		$(TARGET_DIR)/usr/bin/batocera-steam-gamescope-child
+	install -D -m 0755 \
+		$(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/utils/batocera-steam/batocera-steam-update-terminal \
+		$(TARGET_DIR)/usr/bin/batocera-steam-update-terminal
+	install -D -m 0755 \
+		$(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/utils/batocera-steam/batocera-steam-update-preflight \
+		$(TARGET_DIR)/usr/bin/batocera-steam-update-preflight
+	install -D -m 0755 \
 		$(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/utils/batocera-steam/steam-direct-session.sh \
 		$(TARGET_DIR)/usr/bin/steam-direct-session.sh
 	install -D -m 0755 \
@@ -47,6 +56,9 @@ define BATOCERA_STEAM_AARCH64_INSTALL_TARGET_CMDS
 	install -D -m 0755 \
 		$(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/utils/batocera-steam/batocera-steam-desktop-switch \
 		$(TARGET_DIR)/usr/bin/batocera-steam-desktop-switch
+	install -D -m 0755 \
+		$(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/utils/batocera-steam/batocera-steam-desktop-launcher \
+		$(TARGET_DIR)/usr/bin/batocera-steam-desktop-launcher
 	install -D -m 0755 \
 		$(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/utils/batocera-steam/batocera-steam-uimode-watch \
 		$(TARGET_DIR)/usr/bin/batocera-steam-uimode-watch
@@ -65,6 +77,12 @@ define BATOCERA_STEAM_AARCH64_INSTALL_TARGET_CMDS
 	install -D -m 0755 \
 		$(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/utils/batocera-steam/batocera-consolekit-stub \
 		$(TARGET_DIR)/usr/bin/batocera-consolekit-stub
+	install -D -m 0755 \
+		$(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/utils/batocera-steam/batocera-steam-shortcuts \
+		$(TARGET_DIR)/usr/bin/batocera-steam-shortcuts
+	install -D -m 0755 \
+		$(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/utils/batocera-steam/xdg-user-dir \
+		$(TARGET_DIR)/usr/bin/xdg-user-dir
 
 	mkdir -p $(TARGET_DIR)/etc/dbus-1/system.d
 	install -m 0644 \
@@ -99,7 +117,7 @@ define BATOCERA_STEAM_AARCH64_INSTALL_TARGET_CMDS
 	install -m 0644 \
 		$(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/core/batocera-desktopapps/icons/steam.png \
 		$(TARGET_DIR)/usr/share/batocera/datainit/roms/steam/images/Steam.png
-	printf '%s\n' 'mode=steamos' 'gamepadui=1' 'gamescope=1' > "$(TARGET_DIR)/usr/share/batocera/datainit/roms/steam/Steam GamepadUI Gamescope.steam"
+	printf '%s\n' 'mode=steamos' 'gamepadui=1' 'gamescope=1' 'visible_update_preflight=1' 'update_preflight_no_update_secs=15' > "$(TARGET_DIR)/usr/share/batocera/datainit/roms/steam/Steam GamepadUI Gamescope.steam"
 	printf '%s\n' 'mode=gamepadui' 'gamepadui=1' 'gamescope=0' > "$(TARGET_DIR)/usr/share/batocera/datainit/roms/steam/Steam GamepadUI.steam"
 	printf '%s\n' 'mode=desktop' 'gamepadui=0' 'gamescope=0' > "$(TARGET_DIR)/usr/share/batocera/datainit/roms/steam/Steam Desktop.steam"
 	printf '%s\n' '<?xml version="1.0"?>' '<gameList>' '  <game>' '    <path>./Steam GamepadUI Gamescope.steam</path>' '    <name>Steam (GamepadUI Gamescope)</name>' '    <image>./images/Steam.png</image>' '  </game>' '  <game>' '    <path>./Steam GamepadUI.steam</path>' '    <name>Steam (GamepadUI)</name>' '    <image>./images/Steam.png</image>' '  </game>' '  <game>' '    <path>./Steam Desktop.steam</path>' '    <name>Steam (Desktop)</name>' '    <image>./images/Steam.png</image>' '  </game>' '</gameList>' > "$(TARGET_DIR)/usr/share/batocera/datainit/roms/steam/gamelist.xml"

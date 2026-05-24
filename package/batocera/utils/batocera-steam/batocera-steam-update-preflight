@@ -1,0 +1,778 @@
+#!/bin/bash
+set -euo pipefail
+
+STEAM_HOME="${BATOCERA_STEAM_HOME:-/userdata/system/steam}"
+STEAM_ROOT="${BATOCERA_STEAM_ROOT:-/userdata/system/.local/share/Steam}"
+STEAM_SH="${BATOCERA_STEAM_SH:-${STEAM_HOME}/steam.sh}"
+BOOTSTRAP_LOG="${STEAM_ROOT}/logs/bootstrap_log.txt"
+LOG_DIR="/userdata/system/logs"
+LOG="${LOG_DIR}/steam-update-preflight.log"
+STEAM_LOG="${LOG_DIR}/steam.log"
+ES_PROCESS_PATTERN='(^|/)emulationstation([[:space:]]|$)'
+ES_STANDALONE_PATTERN='(^|/)emulationstation-standalone([[:space:]]|$)'
+PREFLIGHT_SESSION_FLAG="/var/run/batocera-steam-update-preflight"
+PREFLIGHT_FLAG_ACTIVE=0
+MOUSE_SHOWN=0
+mkdir -p "${LOG_DIR}"
+
+log() {
+    echo "steam-update-preflight: $*" >> "${LOG}"
+}
+
+mark_preflight_active() {
+    printf '%s\n' "$$" > "${PREFLIGHT_SESSION_FLAG}" 2>/dev/null || true
+    PREFLIGHT_FLAG_ACTIVE=1
+}
+
+clear_preflight_active() {
+    if [[ "${PREFLIGHT_FLAG_ACTIVE}" == "1" ]]; then
+        rm -f "${PREFLIGHT_SESSION_FLAG}" 2>/dev/null || true
+    fi
+}
+
+cleanup_preflight_process() {
+    clear_preflight_active
+    if [[ "${MOUSE_SHOWN}" == "1" ]]; then
+        batocera-mouse hide >/dev/null 2>&1 || true
+    fi
+}
+
+trap cleanup_preflight_process EXIT
+trap 'cleanup_preflight_process; exit 130' INT
+trap 'cleanup_preflight_process; exit 143' TERM
+
+file_line_count() {
+    local file="$1"
+
+    if [[ -f "${file}" ]]; then
+        wc -l < "${file}" 2>/dev/null || echo 0
+    else
+        echo 0
+    fi
+}
+
+line_count() {
+    file_line_count "${BOOTSTRAP_LOG}"
+}
+
+new_file_lines() {
+    local file="$1"
+    local baseline="${2:-0}"
+
+    [[ -f "${file}" ]] || return 0
+    sed -n "$((baseline + 1)),\$p" "${file}" 2>/dev/null || true
+}
+
+new_bootstrap_log() {
+    new_file_lines "${BOOTSTRAP_LOG}" "${1:-0}"
+}
+
+update_started() {
+    new_bootstrap_log "$1" | grep -Eqi 'Downloading update|Add pending download|Extracting package|Installing update'
+}
+
+update_finished() {
+    new_bootstrap_log "$1" | grep -Eq 'Update complete|Shutdown'
+}
+
+verification_complete() {
+    new_bootstrap_log "$1" | grep -Eq 'Verification complete'
+}
+
+status_lines() {
+    new_bootstrap_log "$1" | tr -d '\r' | \
+        grep -E 'Downloading update|Download complete|Extracting package|Installing update|Cleaning up|Update complete|Verifying installation|Verification complete|Shutdown' || true
+}
+
+setup_status_lines() {
+    new_file_lines "${STEAM_LOG}" "${1:-0}" | tr -d '\r' | \
+        grep -E 'Steam/Proton/FEX setup|Steam first launch setup|Steam support setup|Network is available|Steam setup needs network|Downloading ARM64 Steam runtime|Downloading ARM64 Steam client|Downloading FEX rootfs|Steam runtime:|Steam client:|FEX rootfs:|download complete|Configured FEX rootfs|Registered installed Proton|Prepared Proton|ARM64 Steam bootstrap completed|ERROR:|Failed' || true
+}
+
+latest_status() {
+    local line
+    line="$(status_lines "$1" | tail -n 1)"
+    line="${line#*] }"
+    printf '%s\n' "${line:-Waiting for Steam updater...}"
+}
+
+resolve_steam_launcher() {
+    local candidate
+
+    for candidate in \
+        "${STEAM_SH}" \
+        "${STEAM_ROOT}/steamrtarm64/steam" \
+        "${STEAM_ROOT}/steam.sh" \
+        "${STEAM_HOME}/steam.sh"
+    do
+        [[ -x "${candidate}" ]] || continue
+        printf '%s\n' "${candidate}"
+        return 0
+    done
+
+    return 1
+}
+
+stop_steam_stack() {
+    pkill -TERM -f '/userdata/system/steam/steam.sh|/usr/share/steam/bin_steam.sh|steamrtarm64/steam|steamwebhelper|steam-runtime-supervisor|steamerrorreporter|FEX' >/dev/null 2>&1 || true
+    sleep 2
+    pkill -KILL -f '/userdata/system/steam/steam.sh|/usr/share/steam/bin_steam.sh|steamrtarm64/steam|steamwebhelper|steam-runtime-supervisor|steamerrorreporter|FEX' >/dev/null 2>&1 || true
+}
+
+emulationstation_running() {
+    pgrep -f "${ES_PROCESS_PATTERN}" >/dev/null 2>&1
+}
+
+emulationstation_standalone_running() {
+    pgrep -f "${ES_STANDALONE_PATTERN}" >/dev/null 2>&1
+}
+
+stop_emulationstation() {
+    local signal="${1:-TERM}"
+
+    /usr/bin/emulationstation-standalone --stop-rebooting >/dev/null 2>&1 || true
+    pkill "-${signal}" -f "${ES_PROCESS_PATTERN}" >/dev/null 2>&1 || true
+}
+
+wait_for_emulationstation_stop() {
+    local i
+
+    for i in $(seq 1 50); do
+        if ! emulationstation_running && ! emulationstation_standalone_running; then
+            return 0
+        fi
+        sleep 0.1
+    done
+
+    return 1
+}
+
+stop_emulationstation_for_update() {
+    if ! emulationstation_running; then
+        return 0
+    fi
+
+    log "stopping EmulationStation before visible Steam updater preflight"
+    stop_emulationstation TERM
+    if ! wait_for_emulationstation_stop; then
+        log "EmulationStation did not stop cleanly before visible Steam updater preflight"
+        stop_emulationstation KILL
+        wait_for_emulationstation_stop || true
+    fi
+}
+
+resolve_display() {
+    if [[ -n "${DISPLAY:-}" ]]; then
+        printf '%s\n' "${DISPLAY}"
+        return 0
+    fi
+
+    if command -v getLocalXDisplay >/dev/null 2>&1; then
+        getLocalXDisplay 2>/dev/null && return 0
+    fi
+
+    if [[ -S /tmp/.X11-unix/X0 ]]; then
+        printf ':0\n'
+        return 0
+    fi
+
+    return 1
+}
+
+prepare_user_env() {
+    export HOME="/userdata/system"
+    export XDG_DATA_HOME="${HOME}/.local/share"
+    export XDG_CONFIG_HOME="${HOME}/.config"
+    export XDG_CACHE_HOME="${HOME}/.cache"
+
+    if [[ -z "${XDG_RUNTIME_DIR:-}" || ! -d "${XDG_RUNTIME_DIR:-}" ]]; then
+        export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+        mkdir -p "${XDG_RUNTIME_DIR}"
+        chmod 700 "${XDG_RUNTIME_DIR}" 2>/dev/null || true
+    fi
+
+    if [[ -f /var/lib/.Xauthority ]]; then
+        export XAUTHORITY="/var/lib/.Xauthority"
+    fi
+
+    export WLR_XWAYLAND_NO_AUTH="${WLR_XWAYLAND_NO_AUTH:-1}"
+    export GDK_BACKEND="${GDK_BACKEND:-x11}"
+    export SDL_VIDEODRIVER="${SDL_VIDEODRIVER:-x11}"
+}
+
+steam_client_library_path() {
+    local path="${STEAM_ROOT}/lib/aarch64-linux-gnu:${STEAM_ROOT}/steamrtarm64"
+
+    if [[ -n "${LD_LIBRARY_PATH:-}" ]]; then
+        path="${path}:${LD_LIBRARY_PATH}"
+    fi
+
+    printf '%s\n' "${path}"
+}
+
+prepare_steam_client_env() {
+    export LD_LIBRARY_PATH="$(steam_client_library_path)"
+    export STEAM_COMPAT_CLIENT_INSTALL_PATH="${STEAM_ROOT}"
+    export STEAM_DECK="${STEAM_DECK:-1}"
+    export STEAMOS="${STEAMOS:-1}"
+}
+
+first_existing_file() {
+    local path
+
+    for path in "$@"; do
+        [[ -f "${path}" ]] || continue
+        printf '%s\n' "${path}"
+        return 0
+    done
+
+    return 1
+}
+
+find_font_file() {
+    local pattern
+    local found
+
+    for pattern in "$@"; do
+        found="$(find /usr/share/fonts -type f -iname "${pattern}" 2>/dev/null | head -n 1)"
+        [[ -n "${found}" ]] || continue
+        printf '%s\n' "${found}"
+        return 0
+    done
+
+    return 1
+}
+
+seed_steam_updater_resources() {
+    local regular_font=""
+    local bold_font=""
+
+    mkdir -p "${STEAM_ROOT}/public" "${STEAM_ROOT}/clientui/fonts"
+
+    if [[ ! -s "${STEAM_ROOT}/public/steambootstrapper_english.txt" ]]; then
+        cat > "${STEAM_ROOT}/public/steambootstrapper_english.txt" <<'EOF'
+"lang"
+{
+    "Language" "English"
+    "Tokens"
+    {
+        "SteamBootstrapper_UpdatingSteam" "Updating Steam"
+        "SteamBootstrapper_UpdateDownload" "Downloading update"
+        "SteamBootstrapper_UpdateDownloading" "Downloading update"
+        "SteamBootstrapper_DownloadComplete" "Download complete"
+        "SteamBootstrapper_UpdateExtractingPackage" "Extracting package"
+        "SteamBootstrapper_UpdateInstalling" "Installing update"
+        "SteamBootstrapper_UpdateCleanup" "Cleaning up"
+        "SteamBootstrapper_UpdateComplete" "Update complete"
+        "SteamBootstrapper_InstallVerify" "Verifying installation"
+        "SteamBootstrapper_UpdateChecking" "Checking for update"
+        "SteamBootstrapper_PercentComplete" "%s%% complete"
+        "SteamBootstrapper_Error_Title" "Steam"
+        "SteamBootstrapper_Warning_Title" "Steam"
+        "SteamBootstrapper_OK" "OK"
+        "SteamBootstrapper_Cancel" "Cancel"
+    }
+}
+EOF
+        log "seeded Steam updater bootstrap language file"
+    fi
+
+    regular_font="$(first_existing_file \
+        /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf \
+        /usr/share/fonts/dejavu/DejaVuSans.ttf \
+        /usr/share/fonts/TTF/DejaVuSans.ttf \
+        /usr/share/fonts/liberation/LiberationSans-Regular.ttf \
+        /usr/share/fonts/liberation-sans/LiberationSans-Regular.ttf \
+        || find_font_file '*NotoSans*Regular*.ttf' '*DejaVuSans.ttf' '*LiberationSans-Regular.ttf' '*.ttf' || true)"
+    bold_font="$(first_existing_file \
+        /usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf \
+        /usr/share/fonts/dejavu/DejaVuSans-Bold.ttf \
+        /usr/share/fonts/TTF/DejaVuSans-Bold.ttf \
+        /usr/share/fonts/liberation/LiberationSans-Bold.ttf \
+        /usr/share/fonts/liberation-sans/LiberationSans-Bold.ttf \
+        || find_font_file '*NotoSans*Bold*.ttf' '*DejaVuSans-Bold.ttf' '*LiberationSans-Bold.ttf' '*.ttf' || true)"
+
+    if [[ -n "${regular_font}" && ! -s "${STEAM_ROOT}/clientui/fonts/GoNotoKurrent-Regular.ttf" ]]; then
+        cp -f "${regular_font}" "${STEAM_ROOT}/clientui/fonts/GoNotoKurrent-Regular.ttf" 2>/dev/null || true
+        log "seeded Steam updater regular font from ${regular_font}"
+    fi
+    if [[ -n "${bold_font}" && ! -s "${STEAM_ROOT}/clientui/fonts/GoNotoKurrent-Bold.ttf" ]]; then
+        cp -f "${bold_font}" "${STEAM_ROOT}/clientui/fonts/GoNotoKurrent-Bold.ttf" 2>/dev/null || true
+        log "seeded Steam updater bold font from ${bold_font}"
+    fi
+}
+
+steam_update_progress_xterm_enabled() {
+    local enabled="${BATOCERA_STEAM_PREFLIGHT_STATUS_XTERM:-1}"
+
+    case "${enabled,,}" in
+        0|false|no|off)
+            return 1
+            ;;
+    esac
+
+    [[ -x /usr/bin/xterm ]]
+}
+
+steam_child_update_ui_suppressed() {
+    local enabled="${BATOCERA_STEAM_PREFLIGHT_SUPPRESS_CHILD_UI:-1}"
+
+    case "${enabled,,}" in
+        0|false|no|off)
+            return 1
+            ;;
+    esac
+
+    return 0
+}
+
+stop_background_helper() {
+    local pid="${1:-}"
+
+    [[ -n "${pid}" ]] || return 0
+    kill "${pid}" >/dev/null 2>&1 || true
+}
+
+start_update_progress_xterm() {
+    local baseline="$1"
+    local display="$2"
+
+    steam_update_progress_xterm_enabled || return 0
+    [[ -n "${display}" ]] || return 0
+
+    log "starting Steam updater xterm progress monitor baseline=${baseline}"
+    BASELINE="${baseline}" \
+    BOOTSTRAP_LOG="${BOOTSTRAP_LOG}" \
+    DISPLAY="${display}" \
+    XAUTHORITY="${XAUTHORITY:-}" \
+    WLR_XWAYLAND_NO_AUTH="${WLR_XWAYLAND_NO_AUTH:-1}" \
+        /usr/bin/xterm -fs 14 -fg white -bg black -fa "Monospace" -en UTF-8 -sb -rightbar \
+        -geometry "${BATOCERA_STEAM_PREFLIGHT_GEOMETRY:-120x30}" \
+        -T "Steam Update Progress" \
+        -e /bin/bash -lc '
+            log="${BOOTSTRAP_LOG:-/userdata/system/.local/share/Steam/logs/bootstrap_log.txt}"
+            baseline="${BASELINE:-0}"
+            while true; do
+                printf "\033[H\033[2J"
+                printf "\n  Steam update is running.\n"
+                printf "  Steam will switch to gamescope after this phase.\n\n"
+                printf "  Recent activity:\n\n"
+                tail -45 "${log}" 2>/dev/null | tr -d "\r" | \
+                    grep -E "Downloading update|Download Complete|Extracting package|Installing update|Cleaning up|Update complete|Shutdown|Set percent complete|Verifying installation|Verification complete" | \
+                    tail -24 | sed "s/^/    /"
+                sed -n "$((baseline + 1)),\$p" "${log}" 2>/dev/null | grep -Eq "Update complete|Shutdown" && break
+                pgrep -f "[s]teamrtarm64/steam" >/dev/null 2>&1 || break
+                sleep 2
+            done
+            sleep 3
+        ' >> "${LOG}" 2>&1 &
+    printf '%s\n' "$!"
+}
+
+start_child_update_ui_suppressor() {
+    local baseline="$1"
+    local max_secs="${BATOCERA_STEAM_PREFLIGHT_MAX_SECS:-1800}"
+
+    steam_child_update_ui_suppressed || return 0
+
+    log "starting Steam child update UI suppressor baseline=${baseline}"
+    (
+        local waited=0
+        while (( waited < max_secs )); do
+            pkill -TERM -f '[s]teamrtarm64/steam -child-update-ui' >/dev/null 2>&1 || true
+            update_finished "${baseline}" && exit 0
+            pgrep -f '[s]teamrtarm64/steam' >/dev/null 2>&1 || exit 0
+            sleep 1
+            waited=$((waited + 1))
+        done
+    ) &
+    printf '%s\n' "$!"
+}
+
+draw_status() {
+    local baseline="$1"
+    local message="$2"
+    local setup_baseline="${3:-}"
+    local status
+    local setup_lines=""
+    local steam_lines=""
+
+    printf '\033[H\033[2J'
+    printf '\n'
+    printf '  Steam setup/update preflight\n'
+    printf '  Steam will switch to gamescope after this phase.\n\n'
+    printf '  %s\n\n' "${message}"
+    if [[ -n "${setup_baseline}" ]]; then
+        setup_lines="$(setup_status_lines "${setup_baseline}")"
+    fi
+    steam_lines="$(status_lines "${baseline}")"
+    status="$(printf '%s\n%s\n' "${setup_lines}" "${steam_lines}" | sed '/^$/d' | tail -n 1)"
+    if [[ -z "${status}" ]]; then
+        status="$(latest_status "${baseline}")"
+    fi
+    status="${status#*] }"
+    printf '  Status: %s\n\n' "${status}"
+    printf '  Recent activity:\n\n'
+    printf '%s\n%s\n' "${setup_lines}" "${steam_lines}" | sed '/^$/d' | tail -n 12 | sed 's/^/    /'
+    printf '\n'
+}
+
+run_bootstrap_setup() {
+    local setup_baseline
+    local bootstrap_pid
+    local status
+
+    [[ "${BATOCERA_STEAM_PREFLIGHT_BOOTSTRAP_SETUP:-1}" != "0" ]] || return 0
+    case "$(uname -m)" in
+        aarch64|arm64)
+            ;;
+        *)
+            return 0
+            ;;
+    esac
+    [[ -x /usr/bin/batocera-steam ]] || return 0
+
+    setup_baseline="$(file_line_count "${STEAM_LOG}")"
+    log "starting ARM64 Steam bootstrap setup baseline=${setup_baseline}"
+    draw_status "$(line_count)" "Preparing Steam, Proton, and FEX setup..." "${setup_baseline}"
+    set +e
+    (
+        export BATOCERA_STEAM_BOOTSTRAP_ONLY=1
+        export BATOCERA_STEAM_MODE="${BATOCERA_STEAM_MODE:-steamos}"
+        export BATOCERA_STEAM_USE_GAMESCOPE="${BATOCERA_STEAM_USE_GAMESCOPE:-1}"
+        export BATOCERA_STEAM_NO_FLASH=1
+        export BATOCERA_STEAM_VISIBLE_UPDATE_PREFLIGHT=0
+        /usr/bin/batocera-steam
+    ) >> "${LOG}" 2>&1 &
+    bootstrap_pid="$!"
+    set -e
+
+    while kill -0 "${bootstrap_pid}" >/dev/null 2>&1; do
+        draw_status "$(line_count)" "Preparing Steam, Proton, and FEX setup..." "${setup_baseline}"
+        sleep 2
+    done
+
+    set +e
+    wait "${bootstrap_pid}"
+    status="$?"
+    set -e
+
+    if [[ "${status}" != "0" ]]; then
+        log "ARM64 Steam bootstrap setup failed with status ${status}"
+        draw_status "$(line_count)" "Steam bootstrap setup failed. Check network and retry." "${setup_baseline}"
+        sleep 7
+        return "${status}"
+    fi
+
+    draw_status "$(line_count)" "Steam bootstrap setup completed. Checking updater next..." "${setup_baseline}"
+    sleep 2
+}
+
+steam_updater_preflight_enabled() {
+    local enabled="${BATOCERA_STEAM_PREFLIGHT_STEAM_UPDATER:-auto}"
+
+    case "${enabled,,}" in
+        0|false|no|off)
+            return 1
+            ;;
+        terminal|xterm)
+            return 0
+            ;;
+        external|desktop)
+            return 1
+            ;;
+        1|true|yes|on)
+            return 0
+            ;;
+    esac
+
+    case "$(uname -m)" in
+        aarch64|arm64)
+            return 0
+            ;;
+    esac
+
+    return 0
+}
+
+steam_updater_external_preflight_enabled() {
+    local enabled="${BATOCERA_STEAM_PREFLIGHT_STEAM_UPDATER:-auto}"
+
+    case "${enabled,,}" in
+        0|false|no|off|terminal|xterm)
+            return 1
+            ;;
+        external|desktop)
+            return 0
+            ;;
+        1|true|yes|on)
+            return 1
+            ;;
+    esac
+
+    return 1
+}
+
+run_external_steam_updater() {
+    local baseline
+    local no_update_secs="${BATOCERA_STEAM_PREFLIGHT_NO_UPDATE_SECS:-15}"
+    local max_secs="${BATOCERA_STEAM_PREFLIGHT_MAX_SECS:-1800}"
+    local verification_grace_secs="${BATOCERA_STEAM_PREFLIGHT_VERIFICATION_GRACE_SECS:-5}"
+    local waited=0
+    local verification_waited=0
+    local steam_pid=""
+    local steam_launcher=""
+    local display=""
+    local status_xterm_pid=""
+    local child_ui_suppressor_pid=""
+    local -a steam_args=(-steamdeck -steamos3 -gamepadui)
+    local -a extra_args=()
+
+    steam_updater_external_preflight_enabled || return 0
+
+    display="$(resolve_display || true)"
+    if [[ -z "${display}" ]]; then
+        log "no X display found; skipping external Steam updater preflight"
+        return 0
+    fi
+
+    mark_preflight_active
+    prepare_user_env
+    prepare_steam_client_env
+    seed_steam_updater_resources
+    export DISPLAY="${display}"
+    steam_launcher="$(resolve_steam_launcher || true)"
+    if [[ -z "${steam_launcher}" ]]; then
+        log "missing Steam launcher under ${STEAM_HOME} or ${STEAM_ROOT}; skipping external updater preflight"
+        return 0
+    fi
+
+    if [[ -n "${BATOCERA_STEAM_PREFLIGHT_ARGS:-${BATOCERA_STEAM_EXTRA_ARGS:-}}" ]]; then
+        read -r -a extra_args <<< "${BATOCERA_STEAM_PREFLIGHT_ARGS:-${BATOCERA_STEAM_EXTRA_ARGS:-}}"
+        steam_args+=("${extra_args[@]}")
+    fi
+
+    stop_emulationstation_for_update
+    stop_steam_stack
+    baseline="$(line_count)"
+    log "starting external Steam updater preflight on DISPLAY=${DISPLAY} launcher=${steam_launcher} baseline=${baseline} args=${steam_args[*]}"
+    set +e
+    "${steam_launcher}" "${steam_args[@]}" >> "${LOG}" 2>&1 &
+    steam_pid="$!"
+    child_ui_suppressor_pid="$(start_child_update_ui_suppressor "${baseline}" || true)"
+    set -e
+
+    while (( waited < no_update_secs )); do
+        if update_started "${baseline}"; then
+            status_xterm_pid="$(start_update_progress_xterm "${baseline}" "${DISPLAY}" || true)"
+            break
+        fi
+        if update_finished "${baseline}"; then
+            log "external Steam updater completed before download marker"
+            stop_background_helper "${child_ui_suppressor_pid}"
+            stop_background_helper "${status_xterm_pid}"
+            stop_steam_stack
+            sleep 2
+            return 0
+        fi
+        if verification_complete "${baseline}"; then
+            verification_waited=$((verification_waited + 1))
+            if (( verification_waited >= verification_grace_secs )); then
+                log "external Steam updater verification completed with no update activity"
+                stop_background_helper "${child_ui_suppressor_pid}"
+                stop_background_helper "${status_xterm_pid}"
+                stop_steam_stack
+                return 0
+            fi
+        else
+            verification_waited=0
+        fi
+        if [[ -n "${steam_pid}" ]] && ! kill -0 "${steam_pid}" >/dev/null 2>&1 && ! pgrep -f 'steamrtarm64/steam|steamwebhelper|steam-runtime-supervisor' >/dev/null 2>&1; then
+            log "external Steam updater process exited before update activity"
+            stop_background_helper "${child_ui_suppressor_pid}"
+            stop_background_helper "${status_xterm_pid}"
+            stop_steam_stack
+            return 0
+        fi
+        sleep 1
+        waited=$((waited + 1))
+    done
+
+    if ! update_started "${baseline}"; then
+        log "no external Steam updater activity detected after ${no_update_secs}s"
+        stop_background_helper "${child_ui_suppressor_pid}"
+        stop_background_helper "${status_xterm_pid}"
+        stop_steam_stack
+        return 0
+    fi
+
+    if [[ -z "${status_xterm_pid}" ]]; then
+        status_xterm_pid="$(start_update_progress_xterm "${baseline}" "${DISPLAY}" || true)"
+    fi
+
+    waited=0
+    while (( waited < max_secs )); do
+        if update_finished "${baseline}"; then
+            log "external Steam updater completed"
+            stop_background_helper "${child_ui_suppressor_pid}"
+            stop_background_helper "${status_xterm_pid}"
+            stop_steam_stack
+            sleep 2
+            return 0
+        fi
+        if [[ -n "${steam_pid}" ]] && ! kill -0 "${steam_pid}" >/dev/null 2>&1 && ! pgrep -f 'steamrtarm64/steam|steamwebhelper|steam-runtime-supervisor' >/dev/null 2>&1; then
+            log "external Steam updater process exited before completion marker"
+            stop_background_helper "${child_ui_suppressor_pid}"
+            stop_background_helper "${status_xterm_pid}"
+            stop_steam_stack
+            return 0
+        fi
+        sleep 2
+        waited=$((waited + 2))
+    done
+
+    log "external Steam updater timed out after ${max_secs}s"
+    stop_background_helper "${child_ui_suppressor_pid}"
+    stop_background_helper "${status_xterm_pid}"
+    stop_steam_stack
+}
+
+run_in_terminal() {
+    local baseline="${1:-$(line_count)}"
+    local no_update_secs="${BATOCERA_STEAM_PREFLIGHT_NO_UPDATE_SECS:-15}"
+    local max_secs="${BATOCERA_STEAM_PREFLIGHT_MAX_SECS:-1800}"
+    local waited=0
+    local steam_pid=""
+    local steam_launcher=""
+    local -a steam_args=(-steamdeck -steamos3 -gamepadui)
+    local -a extra_args=()
+
+    mark_preflight_active
+    stop_emulationstation_for_update
+    prepare_user_env
+    prepare_steam_client_env
+    seed_steam_updater_resources
+    run_bootstrap_setup || return 0
+    if ! steam_updater_preflight_enabled; then
+        draw_status "$(line_count)" "Bootstrap complete. Starting gamescope for Steam updater..."
+        sleep 3
+        return 0
+    fi
+
+    steam_launcher="$(resolve_steam_launcher || true)"
+    if [[ -z "${steam_launcher}" ]]; then
+        log "missing Steam launcher under ${STEAM_HOME} or ${STEAM_ROOT}"
+        draw_status "${baseline}" "Steam launcher was not found."
+        sleep 5
+        return 0
+    fi
+
+    if [[ -n "${BATOCERA_STEAM_PREFLIGHT_ARGS:-${BATOCERA_STEAM_EXTRA_ARGS:-}}" ]]; then
+        read -r -a extra_args <<< "${BATOCERA_STEAM_PREFLIGHT_ARGS:-${BATOCERA_STEAM_EXTRA_ARGS:-}}"
+        steam_args+=("${extra_args[@]}")
+    fi
+
+    stop_steam_stack
+    baseline="$(line_count)"
+    log "starting Steam updater preflight launcher=${steam_launcher} baseline=${baseline} args=${steam_args[*]}"
+    set +e
+    "${steam_launcher}" "${steam_args[@]}" >> "${LOG}" 2>&1 &
+    steam_pid="$!"
+    set -e
+
+    while (( waited < no_update_secs )); do
+        draw_status "${baseline}" "Starting Steam so the updater can run visibly..."
+        if update_started "${baseline}"; then
+            break
+        fi
+        if update_finished "${baseline}"; then
+            draw_status "${baseline}" "Steam updater already completed."
+            stop_steam_stack
+            sleep 2
+            return 0
+        fi
+        sleep 1
+        waited=$((waited + 1))
+    done
+
+    if ! update_started "${baseline}"; then
+        log "no updater activity detected after ${no_update_secs}s"
+        draw_status "${baseline}" "No Steam updater activity was detected. Starting gamescope next..."
+        sleep 4
+        stop_steam_stack
+        return 0
+    fi
+
+    waited=0
+    while (( waited < max_secs )); do
+        draw_status "${baseline}" "Steam is downloading or installing an update."
+        if update_finished "${baseline}"; then
+            draw_status "${baseline}" "Update complete. Starting gamescope next..."
+            stop_steam_stack
+            sleep 2
+            return 0
+        fi
+        if [[ -n "${steam_pid}" ]] && ! kill -0 "${steam_pid}" >/dev/null 2>&1 && ! pgrep -f 'steamrtarm64/steam|steamwebhelper|steam-runtime-supervisor' >/dev/null 2>&1; then
+            log "Steam preflight process exited before an update completion marker"
+            draw_status "${baseline}" "Steam exited before a completion marker. Starting gamescope next..."
+            sleep 4
+            stop_steam_stack
+            return 0
+        fi
+        sleep 2
+        waited=$((waited + 2))
+    done
+
+    log "preflight timed out after ${max_secs}s"
+    draw_status "${baseline}" "Steam update preflight timed out. Starting gamescope next..."
+    sleep 5
+    stop_steam_stack
+}
+
+launch_terminal() {
+    local display
+    local baseline
+    local geometry="${BATOCERA_STEAM_PREFLIGHT_GEOMETRY:-120x30}"
+
+    if [[ "${BATOCERA_STEAM_VISIBLE_UPDATE_PREFLIGHT:-0}" == "0" ]]; then
+        return 0
+    fi
+
+    if [[ ! -x /usr/bin/xterm ]]; then
+        log "xterm is not installed; skipping visible preflight"
+        return 0
+    fi
+
+    display="$(resolve_display || true)"
+    if [[ -z "${display}" ]]; then
+        log "no X display found; skipping visible preflight"
+        return 0
+    fi
+
+    prepare_user_env
+    export DISPLAY="${display}"
+    baseline="$(line_count)"
+    log "launching xterm preflight on DISPLAY=${DISPLAY} baseline=${baseline}"
+
+    batocera-mouse show >/dev/null 2>&1 || true
+    MOUSE_SHOWN=1
+    /usr/bin/xterm -fs 14 -fg white -bg black -fa "Monospace" -en UTF-8 -sb -rightbar \
+        -geometry "${geometry}" \
+        -T "Steam Update" \
+        -e /usr/bin/batocera-steam-update-preflight run "${baseline}" || true
+
+    run_external_steam_updater
+}
+
+case "${1:-launch}" in
+    launch)
+        launch_terminal
+        ;;
+    run)
+        run_in_terminal "${2:-$(line_count)}"
+        ;;
+    *)
+        echo "Usage: $0 [launch|run] [bootstrap-baseline]" >&2
+        exit 1
+        ;;
+esac

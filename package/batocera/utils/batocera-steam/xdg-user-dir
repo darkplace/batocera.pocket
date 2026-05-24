@@ -1,0 +1,67 @@
+#!/bin/sh
+
+home="${HOME:-/userdata/system}"
+name="$(printf '%s' "${1:-HOME}" | tr '[:lower:]-' '[:upper:]_')"
+config="${XDG_CONFIG_HOME:-${home}/.config}/user-dirs.dirs"
+
+expand_path() {
+	case "$1" in
+		'$HOME') printf '%s\n' "${home}" ;;
+		'$HOME'/*) printf '%s/%s\n' "${home}" "${1#\$HOME/}" ;;
+		~) printf '%s\n' "${home}" ;;
+		~/*) printf '%s/%s\n' "${home}" "${1#~/}" ;;
+		/*) printf '%s\n' "$1" ;;
+		*) printf '%s/%s\n' "${home}" "$1" ;;
+	esac
+}
+
+lookup_configured_dir() {
+	[ -r "${config}" ] || return 1
+
+	sed -n "s/^XDG_${name}_DIR=\"\\(.*\\)\"$/\\1/p" "${config}" | while IFS= read -r path; do
+		[ -n "${path}" ] || continue
+		expand_path "${path}"
+		break
+	done
+}
+
+configured="$(lookup_configured_dir)"
+if [ -n "${configured}" ]; then
+	printf '%s\n' "${configured}"
+	exit 0
+fi
+
+case "${name}" in
+	DESKTOP)
+		path="${home}/Desktop"
+		;;
+	DOWNLOAD)
+		path="${home}/Downloads"
+		;;
+	TEMPLATES)
+		path="${home}/Templates"
+		;;
+	PUBLICSHARE|PUBLIC_SHARE)
+		path="${home}/Public"
+		;;
+	DOCUMENTS)
+		path="${home}/Documents"
+		;;
+	MUSIC)
+		path="/userdata/music"
+		;;
+	PICTURES)
+		path="${home}/Pictures"
+		;;
+	VIDEOS)
+		path="/userdata/videos"
+		;;
+	APPLICATIONS)
+		path="/usr/share/applications"
+		;;
+	HOME|*)
+		path="${home}"
+		;;
+esac
+
+printf '%s\n' "${path}"

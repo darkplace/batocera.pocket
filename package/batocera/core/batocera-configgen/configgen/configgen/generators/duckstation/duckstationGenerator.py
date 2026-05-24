@@ -487,26 +487,31 @@ def getLangFromEnvironment():
 
 def rewriteM3uFullPath(m3u: Path) -> Path:
     # Rewrite a clean m3u file with valid fullpath
+    fulldirname = m3u.parent
+    entries = []
 
-    # get initialm3u
-    with m3u.open() as f:
-        firstline = f.readline().rstrip()  # Get first line in m3u
+    with m3u.open() as initialm3u:
+        for raw_line in initialm3u:
+            line = raw_line.strip()
+            if not line or line.startswith("#"):
+                continue
 
-    initialfirstdisc = Path("/tmp") / Path(firstline).with_suffix(".m3u").name  # Generating a temp path with the first iso filename in m3u
+            path = Path(line)
+            if path.is_absolute():
+                # Some m3u files use "/disc.cue" to mean "from this playlist folder".
+                entries.append(path if path.exists() else fulldirname / line.lstrip("/"))
+            else:
+                entries.append(fulldirname / path)
+
+    if not entries:
+        return m3u
+
+    initialfirstdisc = Path("/tmp") / entries[0].with_suffix(".m3u").name  # Generating a temp path with the first iso filename in m3u
 
     # create a temp m3u to bypass Duckstation m3u bad pathfile
-    fulldirname = m3u.parent
-    with initialfirstdisc.open("w"):
-        pass
-
-    with m3u.open() as initialm3u, initialfirstdisc.open('a') as f1:
-        for line in initialm3u:
-            # handle both "/MGScd1.chd" and "MGScd1.chd"
-            if line[0] == "/":
-                newpath = fulldirname / line[1:]
-            else:
-                newpath = fulldirname / line
-            f1.write(str(newpath))
+    with initialfirstdisc.open("w") as f1:
+        for entry in entries:
+            f1.write(f"{entry}\n")
 
     return initialfirstdisc  # Return the tempm3u pathfile written with valid fullpath
 

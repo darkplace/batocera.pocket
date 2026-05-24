@@ -1,0 +1,15 @@
+{
+  "Language": null,
+  "GamesPath": "@GAMES_DIR@",
+  "SelectedTheme": "Default",
+  "ShowExperimentalGames": true,
+  "ShowCustomGames": true,
+  "StartFullscreen": true,
+  "CloseAfterLaunch": false,
+  "WindowWidth": 1100.0,
+  "WindowHeight": 700.0,
+  "WindowX": null,
+  "WindowY": null,
+  "LastSelectedGame": null,
+  "IgnoredGameUpdates": []
+}

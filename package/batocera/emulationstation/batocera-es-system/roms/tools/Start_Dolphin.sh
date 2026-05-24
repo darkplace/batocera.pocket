@@ -1,0 +1,18 @@
+#!/bin/bash
+
+# when the program is called from a non X environment, handle the mouse
+# maybe an other choice is better
+
+if test -z "${DISPLAY}"
+then
+    export DISPLAY=$(getLocalXDisplay)
+fi
+
+if [[ -x /usr/bin/dolphin-emu ]]; then
+    XDG_CONFIG_HOME=/userdata/system/configs \
+        XDG_DATA_HOME=/userdata/saves \
+        /usr/bin/dolphin-emu
+else
+    echo "System not found."
+    exit 1
+fi

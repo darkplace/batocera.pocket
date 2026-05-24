@@ -1,0 +1,843 @@
+#!/bin/bash
+
+set -u
+
+TITLE="Batocera Win9x Image Builder"
+ROMS_DIR="/userdata/roms/win9x"
+BIOS_DIR="/userdata/bios"
+CONFIG_DIR="/userdata/system/configs/win9x"
+PROFILE_DIR="${CONFIG_DIR}/os-profiles"
+PRODUCT_STORE="${CONFIG_DIR}/product-keys.conf"
+
+has_display() {
+    [ -n "${DISPLAY:-}" ] || [ -n "${WAYLAND_DISPLAY:-}" ]
+}
+
+use_graphical() {
+    [ "${BATOCERA_FORCE_DIALOG:-0}" != "1" ] && has_display
+}
+
+dialog_available() {
+    command -v dialog >/dev/null 2>&1 && [ -r /dev/tty ] && [ -w /dev/tty ]
+}
+
+dialog_show() {
+    dialog "$@" </dev/tty >/dev/tty 2>&1
+}
+
+dialog_capture() {
+    dialog --stdout "$@" </dev/tty 2>/dev/tty
+}
+
+ui_info() {
+    local msg="$1"
+    if use_graphical && command -v yad >/dev/null 2>&1; then
+        yad --title="$TITLE" --text="$msg" --button=OK:0 >/dev/null 2>&1 || true
+    elif use_graphical && command -v zenity >/dev/null 2>&1; then
+        zenity --info --title="$TITLE" --text="$msg" >/dev/null 2>&1 || true
+    elif dialog_available; then
+        dialog_show --title "$TITLE" --msgbox "$msg" 14 96
+    else
+        printf '%s\n' "$msg"
+    fi
+}
+
+ui_error() {
+    local msg="$1"
+    if use_graphical && command -v yad >/dev/null 2>&1; then
+        yad --title="$TITLE" --text="$msg" --button=OK:1 >/dev/null 2>&1 || true
+    elif use_graphical && command -v zenity >/dev/null 2>&1; then
+        zenity --error --title="$TITLE" --text="$msg" >/dev/null 2>&1 || true
+    elif dialog_available; then
+        dialog_show --title "$TITLE" --msgbox "$msg" 14 96
+    else
+        printf 'Error: %s\n' "$msg" >&2
+    fi
+}
+
+die() {
+    ui_error "$1"
+    exit 1
+}
+
+ui_entry() {
+    local prompt="$1"
+    local default="${2:-}"
+    local value
+
+    if use_graphical && command -v yad >/dev/null 2>&1; then
+        yad --title="$TITLE" --entry --text="$prompt" --entry-text="$default"
+        return
+    elif use_graphical && command -v zenity >/dev/null 2>&1; then
+        zenity --entry --title="$TITLE" --text="$prompt" --entry-text="$default"
+        return
+    elif dialog_available; then
+        value=$(dialog_capture --title "$TITLE" --inputbox "$prompt" 12 96 "$default") || return 1
+        printf '%s\n' "$value"
+        return
+    fi
+
+    printf '%s [%s]: ' "$prompt" "$default" >&2
+    IFS= read -r value || return 1
+    printf '%s\n' "${value:-$default}"
+}
+
+ui_yesno() {
+    local prompt="$1"
+
+    if use_graphical && command -v yad >/dev/null 2>&1; then
+        yad --title="$TITLE" --text="$prompt" --button=Yes:0 --button=No:1 >/dev/null 2>&1
+        return
+    elif use_graphical && command -v zenity >/dev/null 2>&1; then
+        zenity --question --title="$TITLE" --text="$prompt" >/dev/null 2>&1
+        return
+    elif dialog_available; then
+        dialog_show --title "$TITLE" --yesno "$prompt" 10 88
+        return
+    fi
+
+    local answer
+    printf '%s [y/N]: ' "$prompt" >&2
+    IFS= read -r answer || return 1
+    case "${answer,,}" in
+        y|yes) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+ui_choice() {
+    local prompt="$1"
+    shift
+    local entries=("$@")
+    local choice
+
+    if use_graphical && command -v yad >/dev/null 2>&1; then
+        yad --title="$TITLE" --list --width=620 --height=360 \
+            --text="$prompt" --column=Choice --column=Value --hide-column=2 \
+            --print-column=2 "${entries[@]}"
+        return
+    elif use_graphical && command -v zenity >/dev/null 2>&1; then
+        zenity --list --title="$TITLE" --width=620 --height=360 \
+            --text="$prompt" --column=Choice --column=Value --hide-column=2 \
+            --print-column=2 "${entries[@]}"
+        return
+    elif dialog_available; then
+        local menu=()
+        local i=0
+        while [ "$i" -lt "${#entries[@]}" ]; do
+            menu+=("${entries[$((i + 1))]}" "${entries[$i]}")
+            i=$((i + 2))
+        done
+        choice=$(dialog_capture --title "$TITLE" --menu "$prompt" 22 96 14 "${menu[@]}") || return 1
+        printf '%s\n' "$choice"
+        return
+    fi
+
+    local i=0
+    while [ "$i" -lt "${#entries[@]}" ]; do
+        printf '%s: %s\n' "${entries[$((i + 1))]}" "${entries[$i]}" >&2
+        i=$((i + 2))
+    done
+    printf '%s: ' "$prompt" >&2
+    IFS= read -r choice || return 1
+    printf '%s\n' "$choice"
+}
+
+normalize_dir() {
+    local path="${1:-/userdata}"
+
+    [ -n "$path" ] || path="/userdata"
+    [ -f "$path" ] && path="$(dirname "$path")"
+    [ -d "$path" ] || path="/userdata"
+    printf '%s\n' "$path"
+}
+
+choose_folder() {
+    local start purpose choice dir base
+    local entries=()
+
+    start="$(normalize_dir "${1:-/userdata}")"
+    purpose="${2:-Choose the folder that contains the file you want.}"
+
+    entries+=("Use this folder: $start" "$start")
+    entries+=("Type or paste a folder path" "__custom")
+
+    while IFS= read -r dir; do
+        base="$(basename "$dir")"
+        entries+=("$base  ($dir)" "$dir")
+    done < <(find /userdata -mindepth 1 -maxdepth 2 -type d 2>/dev/null | sort)
+
+    choice="$(ui_choice "${purpose}
+
+This avoids the confusing two-pane dialog file browser.
+
+First choose a folder. The next screen will list files inside that folder." "${entries[@]}")" || return 1
+
+    if [ "$choice" = "__custom" ]; then
+        choice="$(ui_entry "Enter the full folder path." "$start")" || return 1
+    fi
+
+    [ -d "$choice" ] || die "Folder does not exist:
+$choice"
+    printf '%s\n' "$choice"
+}
+
+is_support_entry() {
+    local path="$1"
+    local base ext
+
+    base="$(basename "$path")"
+    ext="${base##*.}"
+    ext="${ext,,}"
+
+    case "$base" in
+        .|..|images|image|videos|manuals|screenshots|downloaded_images|covers|boxart|wheel|marquees|gamelist.xml|_info.txt)
+            return 0
+            ;;
+    esac
+
+    case "$ext" in
+        xml|txt|nfo|png|jpg|jpeg|webp|gif|bmp|sav|srm|state|cfg|conf|ini|log)
+            return 0
+            ;;
+    esac
+
+    return 1
+}
+
+collect_candidates() {
+    local dir="$1"
+    local files_only="${2:-0}"
+    local path
+
+    while IFS= read -r path; do
+        is_support_entry "$path" && continue
+        if [ "$files_only" = "1" ] && [ ! -f "$path" ]; then
+            continue
+        fi
+        printf '%s\n' "$path"
+    done < <(find "$dir" -mindepth 1 -maxdepth 1 \( -type f -o -type d \) 2>/dev/null | sort)
+}
+
+choose_path_from_folder() {
+    local dir="$1"
+    local prompt="$2"
+    local files_only="${3:-0}"
+    local entries=()
+    local path base choice manual
+
+    entries+=("Type or paste a full path" "__manual")
+    while IFS= read -r path; do
+        base="$(basename "$path")"
+        if [ -d "$path" ]; then
+            entries+=("[folder] $base" "$path")
+        else
+            entries+=("$base" "$path")
+        fi
+    done < <(collect_candidates "$dir" "$files_only")
+
+    choice="$(ui_choice "${prompt}
+
+Use arrow keys and Enter. Choose 'Type or paste a full path' if the file is not listed." "${entries[@]}")" || return 1
+
+    if [ "$choice" = "__manual" ]; then
+        manual="$(ui_entry "Enter the full path." "$dir/")" || return 1
+        [ -e "$manual" ] || die "Path does not exist:
+$manual"
+        printf '%s\n' "$manual"
+        return
+    fi
+
+    printf '%s\n' "$choice"
+}
+
+ui_choose_file() {
+    local start="${1:-/userdata}"
+    local dir
+
+    dir="$(choose_folder "$start" "Choose the folder that contains the file.")" || return 1
+    choose_path_from_folder "$dir" "Choose the file." 1
+}
+
+safe_id() {
+    printf '%s\n' "$1" | tr '[:upper:]' '[:lower:]' | sed -e 's/[^a-z0-9._-]/-/g' -e 's/--*/-/g' -e 's/^-//' -e 's/-$//'
+}
+
+safe_filename() {
+    local value="$1"
+
+    value="$(printf '%s\n' "$value" | sed -e 's#[/\\:*?"<>|]#-#g' -e 's/^[. ]*//' -e 's/[ ]*$//')"
+    [ -n "$value" ] || value="Windows 9x"
+    printf '%s\n' "$value"
+}
+
+uppercase_ext() {
+    local path="$1"
+    local ext="${path##*.}"
+
+    [ "$ext" != "$path" ] || ext="IMG"
+    printf '%s\n' "$ext" | tr '[:lower:]' '[:upper:]'
+}
+
+autoboot_os_name() {
+    local image="$1"
+    local rel
+
+    rel="$(relative_path "$BIOS_DIR" "$image")"
+    rel="${rel%.*}"
+    printf '%s\n' "$rel"
+}
+
+relative_path() {
+    local base="$1"
+    local path="$2"
+    local rel
+
+    rel=$(realpath --relative-to="$base" "$path" 2>/dev/null) && {
+        printf '%s\n' "$rel"
+        return
+    }
+    printf '%s\n' "$path"
+}
+
+ensure_dirs() {
+    mkdir -p "$ROMS_DIR" "$PROFILE_DIR" "$CONFIG_DIR" "$BIOS_DIR" || die "Could not create Win9x directories."
+}
+
+write_product_value() {
+    local profile="$1"
+    local value="$2"
+    local tmp
+
+    [ -n "$value" ] || return 0
+    mkdir -p "$CONFIG_DIR" || return 1
+    tmp="${PRODUCT_STORE}.tmp.$$"
+    if [ -f "$PRODUCT_STORE" ]; then
+        grep -v "^${profile}=" "$PRODUCT_STORE" > "$tmp" || true
+    fi
+    printf '%s=%s\n' "$profile" "$value" >> "$tmp"
+    mv -f "$tmp" "$PRODUCT_STORE"
+    chmod 0600 "$PRODUCT_STORE" 2>/dev/null || true
+}
+
+write_profile() {
+    local profile="$1"
+    local name="$2"
+    local iso="$3"
+    local boot_floppy="$4"
+    local image_path="${5:-${BIOS_DIR}/${profile}.img}"
+
+    mkdir -p "$PROFILE_DIR" || return 1
+    {
+        printf 'profile=%s\n' "$profile"
+        printf 'name=%s\n' "$name"
+        printf 'image_path=%s\n' "$image_path"
+        printf 'autoboot_name=%s\n' "$(autoboot_os_name "$image_path")"
+        printf 'installer_iso=%s\n' "$iso"
+        printf 'boot_floppy=%s\n' "$boot_floppy"
+        printf 'created=%s\n' "$(date -Iseconds 2>/dev/null || date)"
+    } > "${PROFILE_DIR}/${profile}.conf"
+}
+
+set_game_option() {
+    local rom_name="$1"
+    local key="$2"
+    local value="$3"
+
+    command -v batocera-settings-set >/dev/null 2>&1 || return 0
+    batocera-settings-set "win9x[\"${rom_name}\"].${key}" "$value" >/dev/null 2>&1 || true
+}
+
+set_win9x_options() {
+    local rom_name="$1"
+    local ram="$2"
+    local machine="$3"
+    local svga="$4"
+    local svgamem="$5"
+    local voodoo="$6"
+    local voodoo_perf="$7"
+    local voodoo_scale="$8"
+    local os_writes="$9"
+    local d_space="${10}"
+    local force_normal="${11}"
+
+    set_game_option "$rom_name" emulator libretro
+    set_game_option "$rom_name" core dosbox_pure
+    set_game_option "$rom_name" pure_memory_size "$ram"
+    set_game_option "$rom_name" pure_machine "$machine"
+    set_game_option "$rom_name" pure_svga "$svga"
+    set_game_option "$rom_name" pure_svgamem "$svgamem"
+    set_game_option "$rom_name" pure_voodoo "$voodoo"
+    set_game_option "$rom_name" pure_voodoo_perf "$voodoo_perf"
+    set_game_option "$rom_name" pure_voodoo_scale "$voodoo_scale"
+    set_game_option "$rom_name" pure_bootos_ramdisk "$os_writes"
+    set_game_option "$rom_name" pure_bootos_dfreespace "$d_space"
+    set_game_option "$rom_name" pure_bootos_forcenormal "$force_normal"
+}
+
+create_installer_entry() {
+    local iso os_name image_name profile product_value boot_floppy launcher_dir image_path rom_name
+
+    ensure_dirs
+    ui_info "Create Windows image installer
+
+Use this first when you have your own Windows 95/98 install media.
+
+What you provide:
+  1. A Windows installer ISO or disc image.
+  2. Optionally, a boot floppy image if your installer needs one.
+  3. Optionally, your own product key for your notes.
+
+What this creates:
+  /userdata/roms/win9x/<image name>.pc
+
+What still happens later:
+  Launch that new entry from the Windows 9x system in EmulationStation, then choose DOSBox Pure's 'Boot and Install New Operating System' option.
+
+DOSBox Pure will create the Windows hard disk image in:
+  ${BIOS_DIR}
+
+The image name comes from the launcher folder name."
+    iso="$(ui_choose_file /userdata)" || exit 1
+    [ -f "$iso" ] || die "Installer media not found."
+
+    os_name="$(ui_choice "Windows version" \
+        "Windows 98 Second Edition" "win98se" \
+        "Windows 98" "win98" \
+        "Windows 95" "win95" \
+        "Custom Win9x" "win9x")" || exit 1
+    [ -n "$os_name" ] || exit 1
+
+    image_name="$(ui_entry "Image/launcher name. DOSBox Pure will create ${BIOS_DIR}/<this name>.img" "$os_name")" || exit 1
+    image_name="$(safe_filename "$image_name")"
+    [ -n "$image_name" ] || die "Invalid image name."
+
+    profile="$(safe_id "$image_name")"
+    [ -n "$profile" ] || profile="$(safe_id "$os_name")"
+    profile="$(safe_id "$profile")"
+    [ -n "$profile" ] || die "Invalid profile id."
+
+    boot_floppy=
+    if ui_yesno "Add a boot floppy image to this installer entry?"; then
+        boot_floppy="$(ui_choose_file "$(dirname "$iso")")" || exit 1
+        [ -f "$boot_floppy" ] || die "Boot floppy image not found."
+    fi
+
+    product_value="$(ui_entry "Optional Windows product key for your own reference" "")" || product_value=
+    write_product_value "$profile" "$product_value"
+    image_path="${BIOS_DIR}/${image_name}.img"
+    write_profile "$profile" "$os_name" "$iso" "$boot_floppy" "$image_path"
+
+    launcher_dir="${ROMS_DIR}/${image_name}.pc"
+    mkdir -p "$launcher_dir" || die "Could not create launcher folder:
+$launcher_dir"
+    clear_generated_launcher_media "$launcher_dir"
+    rm -f "${launcher_dir}/AUTOBOOT.DBP"
+
+    if [ -n "$boot_floppy" ]; then
+        link_launcher_media "$launcher_dir" "$boot_floppy" "A" 1
+    fi
+    link_launcher_media "$launcher_dir" "$iso" "D" 1
+
+    {
+        printf '%s\n\n' "$image_name"
+        printf 'Launch this entry from EmulationStation, then choose DOSBox Pure: Boot and Install New Operating System.\n'
+        printf 'When DOSBox Pure asks for a disk size, choose the size you want for this Windows image.\n\n'
+        printf 'Expected installed image:\n%s\n\n' "$image_path"
+        printf 'After Windows is installed, reopen Win9x Image Builder and create a launch entry for this image.\n'
+    } > "${launcher_dir}/WIN9X-INSTALL.txt"
+
+    rom_name="$(basename "$launcher_dir")"
+    set_game_option "$rom_name" emulator libretro
+    set_game_option "$rom_name" core dosbox_pure
+
+    ui_info "Created ${launcher_dir}
+
+Next:
+  1. Refresh EmulationStation.
+  2. Launch '${image_name}' from the Windows 9x system.
+  3. In DOSBox Pure choose 'Boot and Install New Operating System'.
+  4. Pick the hard disk size and install Windows.
+
+That should create:
+  ${image_path}"
+}
+
+write_sidecar() {
+    local output="$1"
+    shift
+
+    {
+        while [ "$#" -gt 0 ]; do
+            printf '%s=%s\n' "$1" "$2"
+            shift 2
+        done
+    } > "$output"
+}
+
+image_size_label() {
+    local path="$1"
+    local bytes
+
+    bytes="$(stat -c '%s' "$path" 2>/dev/null)" || {
+        printf '?'
+        return
+    }
+
+    if [ "$bytes" -ge 1073741824 ]; then
+        awk "BEGIN { printf \"%.1fGB\", $bytes / 1073741824 }"
+    else
+        awk "BEGIN { printf \"%.0fMB\", $bytes / 1048576 }"
+    fi
+}
+
+find_os_images() {
+    [ -d "$BIOS_DIR" ] || return 0
+    find "$BIOS_DIR" -type f \( -iname '*.img' -o -iname '*.ima' -o -iname '*.vhd' \) -size +7167k 2>/dev/null | sort
+}
+
+select_os_image() {
+    local entries=()
+    local path rel size choice
+
+    while IFS= read -r path; do
+        [ -n "$path" ] || continue
+        rel="$(relative_path "$BIOS_DIR" "$path")"
+        size="$(image_size_label "$path")"
+        entries+=("${rel} (${size})" "$path")
+    done < <(find_os_images)
+
+    if [ "${#entries[@]}" -eq 0 ]; then
+        ui_info "No installed Windows disk images were found.
+
+DOSBox Pure stores installed operating-system images in:
+  ${BIOS_DIR}
+
+Create a Windows image installer first, launch it from EmulationStation, then choose DOSBox Pure's operating-system install option. When the install finishes, return here to create launch entries."
+        return 1
+    fi
+
+    choice="$(ui_choice "Choose the installed Windows image that this entry should boot.
+
+The entry will write AUTOBOOT.DBP so DOSBox Pure selects this image automatically." "${entries[@]}")" || return 1
+    [ -f "$choice" ] || die "Selected image does not exist:
+$choice"
+    printf '%s\n' "$choice"
+}
+
+choose_media_set() {
+    local start="$1"
+    local title="$2"
+    local item_prompt="$3"
+    local add_prompt="$4"
+    local dir selected
+    local files=()
+
+    dir="$(choose_folder "$start" "$title")" || return 1
+    while true; do
+        selected="$(choose_path_from_folder "$dir" "$item_prompt" 1)" || return 1
+        [ -n "$selected" ] && files+=("$selected")
+        ui_yesno "$add_prompt" || break
+        dir="$(dirname "$selected")"
+    done
+
+    [ "${#files[@]}" -gt 0 ] || return 1
+    printf '%s\n' "${files[@]}"
+}
+
+clear_generated_launcher_media() {
+    local launcher_dir="$1"
+
+    find "$launcher_dir" -maxdepth 1 -type l -exec rm -f {} + 2>/dev/null || true
+}
+
+link_cue_dependencies() {
+    local launcher_dir="$1"
+    local cue="$2"
+    local cue_dir dep dep_path dep_name
+
+    cue_dir="$(dirname "$cue")"
+    while IFS= read -r dep; do
+        [ -n "$dep" ] || continue
+        case "$dep" in
+            /*) dep_path="$dep" ;;
+            *) dep_path="${cue_dir}/${dep}" ;;
+        esac
+        [ -f "$dep_path" ] || continue
+
+        dep_name="$(basename "$dep")"
+        rm -f "${launcher_dir}/${dep_name}"
+        ln -s "$dep_path" "${launcher_dir}/${dep_name}" || die "Could not link CUE dependency:
+$dep_path"
+    done < <(sed -n \
+        -e 's/^[[:space:]]*FILE[[:space:]]*"\([^"]*\)".*/\1/p' \
+        -e 's/^[[:space:]]*FILE[[:space:]]*\([^" ][^ ]*\).*/\1/p' "$cue")
+}
+
+link_launcher_media() {
+    local launcher_dir="$1"
+    local media="$2"
+    local drive="$3"
+    local index="$4"
+    local stem ext link_name link_path
+
+    [ -f "$media" ] || die "Media file not found:
+$media"
+
+    stem="$(basename "$media")"
+    stem="$(safe_filename "${stem%.*}")"
+    ext="$(uppercase_ext "$media")"
+    link_name="$(printf '%02d - %s.%s.%s' "$index" "$stem" "$drive" "$ext")"
+    link_path="${launcher_dir}/${link_name}"
+
+    rm -f "$link_path"
+    ln -s "$media" "$link_path" || die "Could not link media into launcher:
+$media"
+
+    if [ "$ext" = "CUE" ]; then
+        link_cue_dependencies "$launcher_dir" "$media"
+    fi
+}
+
+write_autoboot() {
+    local launcher_dir="$1"
+    local image="$2"
+
+    printf 'O*%s\r\n' "$(autoboot_os_name "$image")" > "${launcher_dir}/AUTOBOOT.DBP" || die "Could not write AUTOBOOT.DBP."
+}
+
+write_launcher_readme() {
+    local launcher_dir="$1"
+    local title="$2"
+    local image="$3"
+
+    {
+        printf '%s\n\n' "$title"
+        printf 'This launcher boots this Windows image through DOSBox Pure:\n'
+        printf '%s\n\n' "$image"
+        printf 'CD/DVD images linked here with .D.ISO, .D.CHD, .D.CUE, or .D.INS are mounted as the Windows D: drive.\n'
+        printf 'Floppy images linked here with .A.IMA or .A.IMG are mounted as the Windows A: drive.\n\n'
+        printf 'For a one-image/one-game setup, install the game in Windows and copy the game shortcut to the Windows Start Menu Startup folder.\n'
+        printf 'For a shared image, leave Startup empty and pick the game from inside Windows after the image boots.\n'
+    } > "${launcher_dir}/WIN9XPROFILE.TXT"
+}
+
+create_game_entry() {
+    local image game_name game_id launcher_dir sidecar rom_name media
+    local cd_files=()
+    local floppy_files=()
+    local index
+    local ram machine svga svgamem voodoo voodoo_perf voodoo_scale os_writes d_space force_normal
+
+    ensure_dirs
+    ui_info "Create Win9x image launch entry
+
+Use this after you have installed Windows through DOSBox Pure.
+
+What you provide:
+  1. The installed Windows image to boot.
+  2. A launcher name as it should appear in EmulationStation.
+  3. Optional CD/DVD images for the Windows D: drive.
+  4. Optional floppy images for the Windows A: drive.
+  5. DOSBox Pure options for RAM, video card, 3dfx, and installed-OS writes.
+
+What this creates:
+  /userdata/roms/win9x/<Launcher Name>.pc
+
+When you launch the game:
+  DOSBox Pure reads AUTOBOOT.DBP from the .pc folder and boots the selected Windows image.
+
+For one image/one game:
+  Install the game inside Windows, then copy the game's shortcut into the Windows Start Menu Startup folder. After that, launching this ES entry boots Windows and the game starts from inside Windows."
+    image="$(select_os_image)" || exit 1
+
+    game_name="$(ui_entry "Game name" "Windows Game")" || exit 1
+    [ -n "$game_name" ] || die "Game name is required."
+    game_name="$(safe_filename "$game_name")"
+    game_id="$(safe_id "$game_name")"
+    [ -n "$game_id" ] || die "Invalid game name."
+
+    if ui_yesno "Attach one or more CD/DVD images as the Windows D: drive?
+
+Use this for game install/play discs such as ISO, CHD, CUE, or INS files."; then
+        while IFS= read -r media; do
+            [ -n "$media" ] && cd_files+=("$media")
+        done < <(choose_media_set /userdata \
+            "Choose the folder that contains the CD/DVD image." \
+            "Choose a CD/DVD image for the Windows D: drive." \
+            "Add another CD/DVD image for this launcher?")
+    fi
+
+    if ui_yesno "Attach one or more floppy images as the Windows A: drive?
+
+Use this only for games or installers that need floppy media."; then
+        while IFS= read -r media; do
+            [ -n "$media" ] && floppy_files+=("$media")
+        done < <(choose_media_set /userdata \
+            "Choose the folder that contains the floppy image." \
+            "Choose a floppy image for the Windows A: drive." \
+            "Add another floppy image for this launcher?")
+    fi
+
+    ram="$(ui_choice "Emulated RAM" \
+        "32MB" "32" "64MB" "64" "96MB" "96" "128MB" "128" "224MB" "224")" || exit 1
+    machine="$(ui_choice "Graphics chip type" \
+        "SVGA" "svga" "VGA" "vga" "EGA" "ega" "CGA" "cga")" || exit 1
+    svga="$(ui_choice "SVGA chipset" \
+        "S3 Trio64" "svga_s3" \
+        "S3 Trio64 no-line buffer hack" "vesa_nolfb" \
+        "S3 Trio64 VESA 1.3" "vesa_oldvbe" \
+        "Tseng Labs ET4000" "svga_et4000" \
+        "Paradise PVGA1A" "svga_paradise")" || exit 1
+    svgamem="$(ui_choice "SVGA memory" \
+        "2MB" "2" "4MB" "4" "8MB" "8" "1MB" "1")" || exit 1
+    voodoo="$(ui_choice "3dfx Voodoo" \
+        "8MB Voodoo" "8mb" \
+        "12MB Voodoo dual texture" "12mb" \
+        "4MB Voodoo" "4mb" \
+        "Disabled" "off")" || exit 1
+    voodoo_perf="$(ui_choice "3dfx renderer" \
+        "Auto" "auto" \
+        "Hardware OpenGL" "4" \
+        "Software multi threaded" "1" \
+        "Software single threaded" "0")" || exit 1
+    voodoo_scale="$(ui_choice "3dfx OpenGL scale" \
+        "1x" "1" "2x" "2" "3x" "3" "4x" "4")" || exit 1
+    os_writes="$(ui_choice "Installed OS disk writes" \
+        "Save difference per game" "diff" \
+        "Keep writes on OS disk" "false" \
+        "Discard writes" "true")" || exit 1
+    d_space="$(ui_choice "D: drive free space" \
+        "1GB" "1024" "2GB" "2048" "4GB" "4096" "8GB" "8192" "Discard D: changes" "discard" "Hide D:" "hide")" || exit 1
+    force_normal="$(ui_choice "Force normal CPU core in installed OS" \
+        "Off" "false" "On" "true")" || exit 1
+
+    launcher_dir="${ROMS_DIR}/${game_name}.pc"
+    mkdir -p "$launcher_dir" || die "Could not create launcher folder:
+$launcher_dir"
+    clear_generated_launcher_media "$launcher_dir"
+    write_autoboot "$launcher_dir" "$image"
+
+    index=1
+    for media in "${cd_files[@]}"; do
+        link_launcher_media "$launcher_dir" "$media" "D" "$index"
+        index=$((index + 1))
+    done
+
+    index=1
+    for media in "${floppy_files[@]}"; do
+        link_launcher_media "$launcher_dir" "$media" "A" "$index"
+        index=$((index + 1))
+    done
+
+    write_launcher_readme "$launcher_dir" "$game_name" "$image"
+
+    rom_name="$(basename "$launcher_dir")"
+    set_win9x_options "$rom_name" "$ram" "$machine" "$svga" "$svgamem" "$voodoo" "$voodoo_perf" "$voodoo_scale" "$os_writes" "$d_space" "$force_normal"
+
+    sidecar="${launcher_dir}/WIN9XPROFILE.CONF"
+    write_sidecar "$sidecar" \
+        name "$game_name" \
+        image "$image" \
+        autoboot_name "$(autoboot_os_name "$image")" \
+        ram "$ram" \
+        machine "$machine" \
+        svga "$svga" \
+        svgamem "$svgamem" \
+        voodoo "$voodoo" \
+        voodoo_perf "$voodoo_perf" \
+        voodoo_scale "$voodoo_scale" \
+        os_writes "$os_writes" \
+        d_space "$d_space" \
+        force_normal "$force_normal"
+
+    ui_info "Created ${launcher_dir}
+
+Launch it from the Windows 9x system. DOSBox Pure should auto-select:
+  $(autoboot_os_name "$image")
+
+Media behavior:
+  First CD/DVD image is mounted as D:.
+  First floppy image is mounted as A:.
+  Extra discs stay available through RetroArch's disk control.
+
+For a one-image/one-game setup, put the game's shortcut in the Windows Startup folder from inside Win98."
+}
+
+show_help() {
+    ui_info "Win9x Image Builder help
+
+Goal:
+  Make Windows 95/98 images and game launchers appear in Batocera while DOSBox Pure handles the actual Windows boot.
+
+Recommended flow:
+  1. Put your own Windows 95/98 installer ISO somewhere under /userdata.
+  2. Open this tool and choose 'Create Windows image installer'.
+  3. Select the installer ISO. Add a boot floppy only if that Windows media needs one.
+  4. The tool creates a .pc launcher folder in /userdata/roms/win9x.
+  5. Return to EmulationStation, refresh the Windows 9x system, and launch the installer entry.
+  6. In DOSBox Pure, choose 'Boot and Install New Operating System', pick a disk size, and install Windows.
+  7. Come back to this tool and choose 'Create Win9x image launch entry'.
+  8. Select the installed image in /userdata/bios and attach any game CD/DVD or floppy media.
+  9. Pick the RAM/video/3dfx options for that launcher.
+ 10. Launch the new entry from the Windows 9x system.
+
+How launchers work:
+  Launchers are .pc folders, not .m3u8 playlists. The folder contains AUTOBOOT.DBP so DOSBox Pure boots the selected Windows image automatically.
+
+Media:
+  CD/DVD images linked inside the launcher as .D.ISO/.D.CHD/.D.CUE mount as D:.
+  Floppy images linked as .A.IMA/.A.IMG mount as A:.
+  Extra discs stay available through RetroArch's disk control.
+
+One image/one game:
+  Install the game inside that Windows image, then copy the game's shortcut into the Windows Start Menu Startup folder. Batocera launches the image; Windows launches the game.
+
+Shared image:
+  Leave the Windows Startup folder empty. Batocera launches the image with the selected removable media attached, then you choose the game inside Windows.
+
+Product keys:
+  The optional product-key prompt is only for your own reference. It does not bypass Windows activation or licensing. Values are stored under /userdata/system/configs/win9x."
+}
+
+main_menu() {
+    local choice
+
+    choice="$(ui_choice "Choose a Win9x workflow
+
+Start with the image installer if Windows is not installed yet.
+
+Use the launch entry after DOSBox Pure already has an installed Windows image in /userdata/bios.
+
+The generic M3U builder is for normal multi-disc playlists outside this Win9x-specific flow." \
+        "Create Windows image installer" "installer" \
+        "Create Win9x image launch entry" "game" \
+        "Build generic M3U/M3U8 list" "m3u" \
+        "Show instructions" "help")" || exit 1
+
+    case "$choice" in
+        installer) create_installer_entry ;;
+        game) create_game_entry ;;
+        m3u) batocera-m3u-builder dialog ;;
+        help) show_help ;;
+    esac
+}
+
+case "${1:-dialog}" in
+    dialog|menu)
+        main_menu
+        ;;
+    installer|create-installer|setup-os)
+        create_installer_entry
+        ;;
+    game|create-game)
+        create_game_entry
+        ;;
+    help|instructions)
+        show_help
+        ;;
+    *)
+        printf 'Usage: %s [dialog|installer|game|help]\n' "$0" >&2
+        exit 2
+        ;;
+esac

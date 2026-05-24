@@ -1,0 +1,8 @@
+#!/bin/bash
+
+export DISPLAY=$(getLocalXDisplay)
+
+XDG_CONFIG_HOME=/userdata/system/configs \
+XDG_DATA_HOME=/userdata/saves \
+XDG_CACHE_HOME=/userdata/system/cache \
+/usr/bin/scummvm

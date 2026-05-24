@@ -1,0 +1,8 @@
+[Desktop Entry]
+Version=1.0
+Icon=/usr/share/icons/batocera/n64recomp-launcher.png
+Exec=/usr/bin/n64recomp-launcher
+Terminal=false
+Type=Application
+Categories=Game;Utility;batocera.linux;
+Name=N64 Recomp Launcher

@@ -80,6 +80,44 @@ select_single() {
     printf '%s\n' "${entries[$((choice - 1))]}"
 }
 
+menu_label_for_path() {
+    local path="$1"
+    local root="${2:-}"
+    local label="$path"
+
+    if [ -n "$root" ] && [[ "$path" == "$root/"* ]]; then
+        label="${path#"$root"/}"
+    elif [[ "$path" == "$ROOT_ROMS_WINDOWS/"* ]]; then
+        label="${path#"$ROOT_ROMS_WINDOWS"/}"
+    fi
+
+    printf '%s\n' "$label"
+}
+
+select_path_single() {
+    local title="$1"
+    local prompt="$2"
+    local root="$3"
+    shift 3
+    local entries=("$@")
+    local options=()
+    local idx choice label
+
+    [ "${#entries[@]}" -gt 0 ] || return 1
+
+    for idx in "${!entries[@]}"; do
+        label="$(menu_label_for_path "${entries[$idx]}" "$root")"
+        options+=("$((idx + 1))" "$label")
+    done
+
+    choice=$(dialog --clear --title "$title" --menu "$prompt" 20 86 12 "${options[@]}" 2>&1 >/dev/tty) || {
+        clear_screen
+        return 1
+    }
+    clear_screen
+    printf '%s\n' "${entries[$((choice - 1))]}"
+}
+
 select_multiple_from_json() {
     local title="$1"
     local prompt="$2"
@@ -510,9 +548,88 @@ collect_windows_games_for_steam() {
     )
 }
 
+trim_autorun_value() {
+    local value="$1"
+    value="${value%$'\r'}"
+    value="${value#"${value%%[![:space:]]*}"}"
+    value="${value%"${value##*[![:space:]]}"}"
+    if [[ "${value}" == \"*\" && "${value}" == *\" ]]; then
+        value="${value:1:${#value}-2}"
+    fi
+    printf '%s\n' "${value}"
+}
+
+autorun_exe_for_steam() {
+    local game_dir="$1"
+    local autorun="${game_dir}/autorun.cmd"
+    local line key value cmd="" dir="." candidate exe base
+
+    [ -f "${autorun}" ] || return 1
+    while IFS= read -r line; do
+        [[ "${line}" == *=* ]] || continue
+        key="${line%%=*}"
+        value="${line#*=}"
+        key="${key^^}"
+        key="${key//[[:space:]]/}"
+        case "${key}" in
+            CMD) cmd="$(trim_autorun_value "${value}")" ;;
+            DIR) dir="$(trim_autorun_value "${value}")" ;;
+        esac
+    done < "${autorun}"
+
+    [ -n "${cmd}" ] || return 1
+    cmd="${cmd//\\//}"
+    dir="${dir//\\//}"
+    if [[ "${cmd}" == /* ]]; then
+        candidate="${cmd}"
+    else
+        candidate="${game_dir}/${dir:-.}/${cmd}"
+    fi
+    if [[ -s "${candidate}" && "${candidate,,}" == *.exe ]]; then
+        printf '%s\n' "${candidate}"
+        return 0
+    fi
+
+    base="$(basename "${cmd}")"
+    while IFS= read -r -d '' exe; do
+        [ -s "${exe}" ] || continue
+        if [[ "$(basename "${exe}")" == "${base}" ]]; then
+            printf '%s\n' "${exe}"
+            return 0
+        fi
+    done < <(find "${game_dir}" -type f -iname '*.exe' -print0 2>/dev/null)
+    return 1
+}
+
+collect_steam_exes_for_windows_game() {
+    local selected="$1"
+    local ext="${selected##*.}"
+    local exe suggested seen=""
+
+    case "${ext,,}" in
+        exe)
+            [ -s "${selected}" ] && printf '%s\n' "${selected}"
+            ;;
+        pc|wine)
+            [ -d "${selected}" ] || return 0
+            suggested="$(autorun_exe_for_steam "${selected}" || true)"
+            if [ -n "${suggested}" ]; then
+                printf '%s\n' "${suggested}"
+                seen=$'\n'"${suggested}"$'\n'
+            fi
+            while IFS= read -r -d '' exe; do
+                [ -s "${exe}" ] || continue
+                [[ "${seen}" == *$'\n'"${exe}"$'\n'* ]] && continue
+                printf '%s\n' "${exe}"
+                seen+="${exe}"$'\n'
+            done < <(find "${selected}" -type f -iname '*.exe' -print0 2>/dev/null | sort -z)
+            ;;
+    esac
+}
+
 add_windows_game_to_steam_menu() {
-    require_commands batocera-wine python3 || return 1
-    local games=() line selected output rc
+    require_commands batocera-steam-shortcuts || return 1
+    local games=() exes=() line selected selected_exe output rc ext exe_root
 
     while IFS= read -r line; do
         [ -n "$line" ] && games+=("$line")
@@ -523,15 +640,39 @@ add_windows_game_to_steam_menu() {
         return 1
     fi
 
-    selected=$(select_single "Add to Steam" "Choose a Windows game to add as a Steam non-Steam game:" "${games[@]}") || return 1
+    selected=$(select_path_single "Add to Steam" "Choose a Windows game. .pc/.wine use autorun.cmd first; archives must be extracted for Proton." "${ROOT_ROMS_WINDOWS}" "${games[@]}") || return 1
+    ext="${selected##*.}"
+    case "${ext,,}" in
+        wsquashfs|wtgz)
+            msg_box "$(basename "${selected}") cannot be added directly to Steam.\n\nSteam/Proton needs a real .exe. Extract the archive first, or choose an .exe inside an unpacked .pc/.wine folder."
+            return 1
+            ;;
+    esac
 
-    info_box "Adding $(basename "$selected") to Steam..."
-    output=$(batocera-wine windows add-to-steam "$selected" 2>&1)
+    while IFS= read -r line; do
+        [ -n "$line" ] && exes+=("$line")
+    done < <(collect_steam_exes_for_windows_game "${selected}")
+
+    if [ "${#exes[@]}" -eq 0 ]; then
+        msg_box "No non-empty .exe target found for $(basename "${selected}").\n\nIf this is a .pc/.wine folder, create/fix autorun.cmd or choose a real .exe inside the folder."
+        return 1
+    fi
+
+    if [ "${#exes[@]}" -eq 1 ]; then
+        selected_exe="${exes[0]}"
+    else
+        exe_root="${selected}"
+        [ -d "${exe_root}" ] || exe_root="$(dirname "${selected}")"
+        selected_exe=$(select_path_single "Choose Steam executable" "Choose the .exe for Steam/Proton. autorun.cmd is first when found." "${exe_root}" "${exes[@]}") || return 1
+    fi
+
+    info_box "Adding $(basename "$selected_exe") to Steam..."
+    output=$(batocera-steam-shortcuts add "$selected_exe" --mode direct --compat-tool none --tags Batocera,Windows,Steam 2>&1)
     rc=$?
     clear_screen
 
     if [ "$rc" -eq 0 ]; then
-        msg_box "${output}\n\nRestart Steam to see the new shortcut."
+        msg_box "Steam shortcut added for $(basename "$selected_exe").\n\nIn Steam, set Compatibility to Proton 11 (ARM64), then restart Steam/GamepadUI. Refresh ES gamelists if needed."
     else
         msg_box "Failed to add Steam shortcut:\n\n${output}"
     fi
@@ -799,7 +940,7 @@ main_menu() {
         fi
 
         menu_options+=(
-            5 "Prepare VC++ / DX9 / Steamy installers for next run"
+            5 "Prepare VC++ / DX9 installers for next run"
             6 "Easy Batocera Winetricks"
             7 "Easy autorun.cmd creator"
             8 "Convert .pc folder to .wine folder"

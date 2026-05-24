@@ -1,0 +1,140 @@
+#!/bin/bash
+set -euo pipefail
+
+STEAM_ROOT="${BATOCERA_STEAM_ROOT:-/userdata/system/.local/share/Steam}"
+BOOTSTRAP_LOG="${STEAM_ROOT}/logs/bootstrap_log.txt"
+LOG_DIR="/userdata/system/logs"
+LOG="${LOG_DIR}/steam-update-terminal.log"
+mkdir -p "${LOG_DIR}"
+
+line_count() {
+    if [[ -f "${BOOTSTRAP_LOG}" ]]; then
+        wc -l < "${BOOTSTRAP_LOG}" 2>/dev/null || echo 0
+    else
+        echo 0
+    fi
+}
+
+new_bootstrap_log() {
+    local baseline="${1:-0}"
+    [[ -f "${BOOTSTRAP_LOG}" ]] || return 0
+    sed -n "$((baseline + 1)),\$p" "${BOOTSTRAP_LOG}" 2>/dev/null || true
+}
+
+update_started() {
+    new_bootstrap_log "$1" | grep -Eq 'Downloading update|Extracting package|Installing update'
+}
+
+update_finished() {
+    new_bootstrap_log "$1" | grep -Eq 'Update complete|Shutdown'
+}
+
+status_lines() {
+    new_bootstrap_log "$1" | tr -d '\r' | \
+        grep -E 'Downloading update|Download complete|Extracting package|Installing update|Cleaning up|Update complete|Verifying installation|Verification complete|Shutdown' || true
+}
+
+latest_status() {
+    local line
+    line="$(status_lines "$1" | tail -n 1)"
+    line="${line#*] }"
+    printf '%s\n' "${line:-Waiting for Steam updater...}"
+}
+
+flash_fallback() {
+    local baseline="$1"
+    local last=""
+    local current
+
+    command -v batocera-flash-screen >/dev/null 2>&1 || return 0
+
+    while true; do
+        current="$(latest_status "${baseline}")"
+        if [[ "${current}" != "${last}" ]]; then
+            /usr/bin/batocera-flash-screen 5 "#ffffff" "Steam update: ${current}" 17 >/dev/null 2>&1 || true
+            last="${current}"
+        fi
+        update_finished "${baseline}" && break
+        sleep 4
+    done
+}
+
+display_terminal() {
+    local baseline="$1"
+    local status
+
+    while true; do
+        printf '\033[H\033[2J'
+        printf '\n'
+        printf '  Steam is updating\n'
+        printf '  Do not power off or close this window.\n\n'
+
+        status="$(latest_status "${baseline}")"
+        printf '  Status: %s\n\n' "${status}"
+        printf '  Recent updater log:\n\n'
+        status_lines "${baseline}" | tail -n 10 | sed 's/^/    /'
+        printf '\n'
+
+        if update_finished "${baseline}"; then
+            printf '  Update complete. Steam is starting...\n'
+            sleep 5
+            break
+        fi
+
+        sleep 2
+    done
+}
+
+watch_for_update() {
+    local baseline="${1:-$(line_count)}"
+    local waited=0
+    local wait_secs="${BATOCERA_STEAM_UPDATE_TERMINAL_WAIT_SECS:-900}"
+    local geometry="${BATOCERA_STEAM_UPDATE_TERMINAL_GEOMETRY:-96x24}"
+    local display="${DISPLAY:-}"
+
+    while (( waited < wait_secs )); do
+        if update_started "${baseline}"; then
+            echo "Steam updater activity detected; launching terminal status window." >> "${LOG}"
+            if [[ -n "${display}" && -x /usr/bin/xterm ]]; then
+                env \
+                    DISPLAY="${display}" \
+                    WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-}" \
+                    XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}" \
+                    STEAM_GAME=769 \
+                    SteamGameId=769 \
+                    SteamAppId=769 \
+                    /usr/bin/xterm -fs 14 -fg white -bg black -fa "Monospace" -en UTF-8 -sb -rightbar \
+                        -geometry "${geometry}" \
+                        -T "Steam Update" \
+                        -e /usr/bin/batocera-steam-update-terminal display "${baseline}" &
+            else
+                echo "xterm or DISPLAY unavailable; using flash fallback." >> "${LOG}"
+                flash_fallback "${baseline}" &
+            fi
+            return 0
+        fi
+
+        if update_finished "${baseline}"; then
+            return 0
+        fi
+
+        sleep 1
+        waited=$((waited + 1))
+    done
+}
+
+case "${1:-watch}" in
+    watch)
+        watch_for_update "${2:-${BATOCERA_STEAM_UPDATE_BASELINE:-$(line_count)}}"
+        ;;
+    display)
+        display_terminal "${2:-${BATOCERA_STEAM_UPDATE_BASELINE:-0}}"
+        ;;
+    flash)
+        flash_fallback "${2:-${BATOCERA_STEAM_UPDATE_BASELINE:-0}}"
+        ;;
+    *)
+        echo "Usage: $0 [watch|display|flash] [bootstrap-baseline]" >&2
+        exit 1
+        ;;
+esac

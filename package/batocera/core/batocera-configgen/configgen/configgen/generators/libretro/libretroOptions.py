@@ -560,13 +560,13 @@ def _dolphin_options(
     coreSettings: UnixSettings, system: Emulator, rom: Path, guns: Guns, wheels: DeviceInfoMapping, /,
 ) -> None:
     # Wii System Languages
-    _set_from_system(coreSettings, 'dolphin_language', system, 'wii_language', default='English')
+    _set_from_system(coreSettings, 'dolphin_language', system, 'wii_language', default='1')
 
     # Wii Resolution Scale
-    _set_from_system(coreSettings, 'dolphin_efb_scale', system, 'wii_resolution', default="x1 (640 x 528)")
+    _set_from_system(coreSettings, 'dolphin_efb_scale', system, 'wii_resolution', default="1")
 
     # Anisotropic Filtering
-    _set_from_system(coreSettings, 'dolphin_max_anisotropy', system, 'wii_anisotropic', default="x1")
+    _set_from_system(coreSettings, 'dolphin_max_anisotropy', system, 'wii_anisotropic', default="0")
 
     # Wii Tv Mode
     _set_from_system(coreSettings, 'dolphin_widescreen', system, 'wii_widescreen', default="enabled")
@@ -575,7 +575,7 @@ def _dolphin_options(
     _set_from_system(coreSettings, 'dolphin_widescreen_hack', system, 'wii_widescreen_hack', default="disabled")
 
     # Shader Compilation Mode
-    _set_from_system(coreSettings, 'dolphin_shader_compilation_mode', system, 'wii_shader_mode', default="sync")
+    _set_from_system(coreSettings, 'dolphin_shader_compilation_mode', system, 'wii_shader_mode', default="0")
 
     # OSD
     _set_from_system(coreSettings, 'dolphin_osd_enabled', system, 'wii_osd', default="enabled")
@@ -779,8 +779,32 @@ def _dosbox_pure_options(
     # Graphics Chip type
     _set_from_system(coreSettings, 'dosbox_pure_machine', system, 'pure_machine', default='svga')
 
+    # SVGA adapter
+    _set_from_system(coreSettings, 'dosbox_pure_svga', system, 'pure_svga', default='svga_s3')
+
+    # SVGA video memory
+    _set_from_system(coreSettings, 'dosbox_pure_svgamem', system, 'pure_svgamem', default='2')
+
+    # 3dfx Voodoo card
+    _set_from_system(coreSettings, 'dosbox_pure_voodoo', system, 'pure_voodoo', default='8mb')
+
+    # 3dfx Voodoo renderer
+    _set_from_system(coreSettings, 'dosbox_pure_voodoo_perf', system, 'pure_voodoo_perf', default='auto')
+
+    # 3dfx Voodoo OpenGL render scale
+    _set_from_system(coreSettings, 'dosbox_pure_voodoo_scale', system, 'pure_voodoo_scale', default='1')
+
     # Memory size
-    _set_from_system(coreSettings, 'dosbox_pure_memory_size', system, 'pure_memory_size', default='16')
+    _set_from_system(coreSettings, 'dosbox_pure_memory_size', system, 'pure_memory_size', default='64' if system.name == 'win9x' else '16')
+
+    # Installed OS disk writes
+    _set_from_system(coreSettings, 'dosbox_pure_bootos_ramdisk', system, 'pure_bootos_ramdisk', default='diff' if system.name == 'win9x' else 'false')
+
+    # Free space exposed as the D: drive when booting an installed OS
+    _set_from_system(coreSettings, 'dosbox_pure_bootos_dfreespace', system, 'pure_bootos_dfreespace', default='1024')
+
+    # More compatible CPU core when booting an installed OS
+    _set_from_system(coreSettings, 'dosbox_pure_bootos_forcenormal', system, 'pure_bootos_forcenormal', default='false')
 
     # Save state
     _set_from_system(coreSettings, 'dosbox_pure_savestate', system, 'pure_savestate', default='on')

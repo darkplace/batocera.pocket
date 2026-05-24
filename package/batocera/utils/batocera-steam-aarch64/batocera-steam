@@ -23,6 +23,7 @@ export PROTON_USE_ARM64="${PROTON_USE_ARM64:-1}"
 declare -a DISABLED_BINFMT=()
 declare -a REGISTERED_BINFMT=()
 declare -a ENABLED_BINFMT=()
+PROTON11_TOOLMANIFEST_WATCHER_PID=""
 
 log_msg() {
     printf '%s\n' "$*" >> "${log}"
@@ -33,6 +34,7 @@ flash_msg() {
     local message="$2"
     local size="${3:-22}"
 
+    [[ "${BATOCERA_STEAM_NO_FLASH:-0}" == "0" ]] || return 0
     if command -v batocera-flash-screen >/dev/null 2>&1; then
         /usr/bin/batocera-flash-screen "${seconds}" "#ffffff" "${message}" "${size}" >/dev/null 2>&1 || true
     fi
@@ -46,8 +48,9 @@ die() {
 }
 
 has_network() {
-    if command -v ip >/dev/null 2>&1 && ! ip route get 1.1.1.1 >/dev/null 2>&1; then
-        return 1
+    if command -v ip >/dev/null 2>&1; then
+        ip route get 1.1.1.1 >/dev/null 2>&1
+        return $?
     fi
 
     if command -v ping >/dev/null 2>&1; then
@@ -86,6 +89,7 @@ activate_wifi_for_steam() {
 }
 
 gamescope_install_flashes_enabled() {
+    [[ "${BATOCERA_STEAM_NO_FLASH:-0}" == "0" ]] || return 1
     [[ "${MODE}" == "steamos" || "${BATOCERA_STEAM_USE_GAMESCOPE:-0}" == "1" ]] || return 1
     command -v batocera-flash-screen >/dev/null 2>&1
 }
@@ -106,8 +110,11 @@ flash_download_progress() {
     local current_mb=0
     local step_mb=100
     local rounded_mb=0
+    local flash_enabled=0
 
-    gamescope_install_flashes_enabled || return 0
+    if gamescope_install_flashes_enabled; then
+        flash_enabled=1
+    fi
 
     while true; do
         if [[ -e "${tmp}" ]]; then
@@ -121,8 +128,10 @@ flash_download_progress() {
 
             if (( rounded_mb > 0 && rounded_mb > last_mb )); then
                 last_mb="${rounded_mb}"
-                flash_msg 3 "${label}: ${last_mb} MB downloaded" 20
                 log_msg "${label}: ${last_mb} MB downloaded"
+                if [[ "${flash_enabled}" == "1" ]]; then
+                    flash_msg 3 "${label}: ${last_mb} MB downloaded" 20
+                fi
             fi
         fi
 
@@ -168,12 +177,22 @@ download_file() {
         fi
     }
 
-    rm -f "${tmp}"
     if command -v curl >/dev/null 2>&1; then
         start_progress
-        if curl -fL --retry 5 --connect-timeout 20 -o "${tmp}" "${url}" >> "${log}" 2>&1; then
+        if curl -fL -C - --retry 10 --retry-delay 3 --connect-timeout 20 \
+            --speed-limit "${BATOCERA_STEAM_DOWNLOAD_MIN_BPS:-1024}" \
+            --speed-time "${BATOCERA_STEAM_DOWNLOAD_STALL_SECS:-60}" \
+            -o "${tmp}" "${url}" >> "${log}" 2>&1 || {
+                log_msg "${label}: resume failed, retrying from scratch"
+                rm -f "${tmp}"
+                curl -fL --retry 10 --retry-delay 3 --connect-timeout 20 \
+                    --speed-limit "${BATOCERA_STEAM_DOWNLOAD_MIN_BPS:-1024}" \
+                    --speed-time "${BATOCERA_STEAM_DOWNLOAD_STALL_SECS:-60}" \
+                    -o "${tmp}" "${url}" >> "${log}" 2>&1
+            }; then
             stop_progress
             mv -f "${tmp}" "${target}"
+            log_msg "${label}: download complete"
             if gamescope_install_flashes_enabled; then
                 flash_msg 3 "${label}: download complete" 20
             fi
@@ -182,12 +201,12 @@ download_file() {
         stop_progress
     fi
 
-    rm -f "${tmp}"
     if command -v wget >/dev/null 2>&1; then
         start_progress
-        if wget -c -t 5 -O "${tmp}" "${url}" >> "${log}" 2>&1; then
+        if wget -c -t 10 --timeout=20 --read-timeout="${BATOCERA_STEAM_DOWNLOAD_STALL_SECS:-60}" -O "${tmp}" "${url}" >> "${log}" 2>&1; then
             stop_progress
             mv -f "${tmp}" "${target}"
+            log_msg "${label}: download complete"
             if gamescope_install_flashes_enabled; then
                 flash_msg 3 "${label}: download complete" 20
             fi
@@ -295,8 +314,8 @@ normalize_game_target() {
         return
     fi
 
-    if [[ "${game}" =~ ^steam://rungameid/([0-9]+)$ ]]; then
-        printf '%s' "${BASH_REMATCH[1]}"
+    if [[ "${game}" =~ ^steam://rungameid/[0-9]+$ ]]; then
+        printf '%s' "${game}"
         return
     fi
 
@@ -884,6 +903,7 @@ start_proton11_toolmanifest_watcher() {
             sleep 2
         done
     ) >> "${log}" 2>&1 &
+    PROTON11_TOOLMANIFEST_WATCHER_PID="$!"
 }
 
 apply_steam_user_selection() {
@@ -989,32 +1009,30 @@ ensure_network_for_steam_setup() {
         return 0
     fi
 
-    log_msg "Steam/Proton/FEX setup is incomplete; network is required."
+    log_msg "Steam/Proton/FEX setup is incomplete; preparing setup."
     export BATOCERA_STEAM_SETUP_PENDING=1
     export BATOCERA_STEAM_SETUP_KIND="${setup_state}"
     if [[ "${setup_state}" == "client" ]]; then
         export BATOCERA_STEAM_FIRST_RUN=1
     fi
 
-    if [[ "${MODE}" == "steamos" || "${BATOCERA_STEAM_USE_GAMESCOPE:-0}" == "1" ]]; then
-        if [[ "${setup_state}" == "client" ]]; then
-            flash_msg 8 "Steam is not installed yet." 22
-        else
-            flash_msg 8 "Steam Proton/FEX setup is incomplete." 20
-        fi
-        flash_msg 8 "Gamescope mode is not supported before setup completes." 17
-        flash_msg 8 "Launch Steam GamepadUI or Desktop without Gamescope first." 17
-        exit 0
+    if [[ "${setup_state}" == "client" ]]; then
+        flash_msg 6 "Steam first launch setup is starting." 21
+        flash_msg "${BATOCERA_STEAM_FIRST_RUN_WAIT_SECS:-12}" "Steam downloads can take several minutes." 18
     else
-        if [[ "${setup_state}" == "client" ]]; then
-            flash_msg 6 "Steam first launch setup is starting." 21
-            flash_msg "${BATOCERA_STEAM_FIRST_RUN_WAIT_SECS:-12}" "Downloads can take several minutes." 18
-        else
-            flash_msg 6 "Steam support setup is starting." 22
-            flash_msg "${BATOCERA_STEAM_FIRST_RUN_WAIT_SECS:-12}" "Proton/FEX setup may take several minutes." 18
-        fi
-        flash_msg 9 "For Windows games, select Proton 11.0 (ARM64) as the Steam compatibility runner." 15
+        flash_msg 6 "Steam support setup is starting." 22
+        flash_msg "${BATOCERA_STEAM_FIRST_RUN_WAIT_SECS:-12}" "Proton/FEX setup may take several minutes." 18
+    fi
+    if [[ "${MODE}" == "steamos" || "${BATOCERA_STEAM_USE_GAMESCOPE:-0}" == "1" ]]; then
+        flash_msg 7 "Gamescope will start after setup completes." 19
+    else
         flash_msg 7 "After setup completes, you may need to relaunch Steam." 19
+    fi
+    flash_msg 9 "Select Proton 11.0 (ARM64) as the Steam compatibility runner." 16
+
+    if has_network; then
+        log_msg "Network is available for Steam setup."
+        return 0
     fi
 
     if activate_wifi_for_steam; then
@@ -1081,6 +1099,11 @@ restore_host_binfmt() {
 
 cleanup() {
     batocera-mouse hide >/dev/null 2>&1 || true
+    if [[ -n "${PROTON11_TOOLMANIFEST_WATCHER_PID:-}" ]]; then
+        kill "${PROTON11_TOOLMANIFEST_WATCHER_PID}" >/dev/null 2>&1 || true
+        wait "${PROTON11_TOOLMANIFEST_WATCHER_PID}" >/dev/null 2>&1 || true
+        PROTON11_TOOLMANIFEST_WATCHER_PID=""
+    fi
     restore_host_binfmt
 }
 

@@ -1,0 +1,324 @@
+#!/bin/bash
+
+set -u
+
+TITLE="Batocera Media Swap"
+STATE_FILE="/var/run/batocera-media-swap/state"
+QUIET=0
+
+has_display() {
+    [ -n "${DISPLAY:-}" ] || [ -n "${WAYLAND_DISPLAY:-}" ]
+}
+
+ui_info() {
+    local msg="$1"
+    if has_display && command -v yad >/dev/null 2>&1; then
+        yad --title="$TITLE" --text="$msg" --button=OK:0 >/dev/null 2>&1 || true
+    elif has_display && command -v zenity >/dev/null 2>&1; then
+        zenity --info --title="$TITLE" --text="$msg" >/dev/null 2>&1 || true
+    elif command -v dialog >/dev/null 2>&1; then
+        dialog --title "$TITLE" --msgbox "$msg" 10 70
+    else
+        printf '%s\n' "$msg"
+    fi
+}
+
+running_rom_from_es() {
+    local json
+
+    command -v curl >/dev/null 2>&1 || return 1
+    command -v jq >/dev/null 2>&1 || return 1
+    json="$(curl -fsS http://127.0.0.1:1234/runningGame 2>/dev/null)" || return 1
+    printf '%s\n' "$json" | jq -r '.path // .rom // .gamePath // .file // empty' 2>/dev/null | sed 's/^null$//'
+}
+
+running_rom_from_process() {
+    local pid arg previous
+
+    for pid in $(pidof emulatorlauncher 2>/dev/null); do
+        previous=
+        while IFS= read -r -d '' arg; do
+            if [ "$previous" = "-rom" ]; then
+                printf '%s\n' "$arg"
+                return 0
+            fi
+            previous="$arg"
+        done < "/proc/${pid}/cmdline"
+    done
+    return 1
+}
+
+running_rom() {
+    local rom
+
+    rom="$(running_rom_from_es | head -n1)"
+    if [ -n "$rom" ]; then
+        printf '%s\n' "$rom"
+        return 0
+    fi
+
+    running_rom_from_process
+}
+
+resolve_media_list() {
+    local rom="$1"
+    local candidate
+
+    case "${rom,,}" in
+        *.m3u|*.m3u8)
+            [ -f "$rom" ] && printf '%s\n' "$rom" && return 0
+            ;;
+    esac
+
+    candidate="${rom%.*}.m3u8"
+    [ -f "$candidate" ] && printf '%s\n' "$candidate" && return 0
+    candidate="${rom%.*}.m3u"
+    [ -f "$candidate" ] && printf '%s\n' "$candidate" && return 0
+    return 1
+}
+
+load_entries() {
+    local list="$1"
+    local base line label path
+
+    MEDIA_LABELS=()
+    MEDIA_PATHS=()
+    base="$(dirname "$list")"
+    label=
+
+    while IFS= read -r line || [ -n "$line" ]; do
+        line="${line%$'\r'}"
+        [ -z "$line" ] && continue
+        case "$line" in
+            '#EXTINF:'*)
+                label="${line#*,}"
+                ;;
+            '#'*)
+                ;;
+            *)
+                if [[ "$line" = /* ]]; then
+                    path="$line"
+                else
+                    path="${base}/${line}"
+                fi
+                MEDIA_PATHS+=("$path")
+                MEDIA_LABELS+=("${label:-$(basename "${line%.*}")}")
+                label=
+                ;;
+        esac
+    done < "$list"
+}
+
+current_index() {
+    local rom="$1"
+    local list="$2"
+    local key value index
+
+    index=0
+    if [ -f "$STATE_FILE" ]; then
+        while IFS='=' read -r key value; do
+            case "$key" in
+                rom)
+                    [ "$value" = "$rom" ] || return 0
+                    ;;
+                list)
+                    [ "$value" = "$list" ] || return 0
+                    ;;
+                index)
+                    index="$value"
+                    ;;
+            esac
+        done < "$STATE_FILE"
+    fi
+    printf '%s\n' "$index"
+}
+
+write_state() {
+    local rom="$1"
+    local list="$2"
+    local index="$3"
+    local label="$4"
+
+    mkdir -p "$(dirname "$STATE_FILE")"
+    {
+        printf 'rom=%s\n' "$rom"
+        printf 'list=%s\n' "$list"
+        printf 'index=%s\n' "$index"
+        printf 'label=%s\n' "$label"
+    } > "$STATE_FILE"
+}
+
+send_action() {
+    local action="$1"
+
+    hotkeygen --send "$action" >/dev/null 2>&1
+}
+
+apply_index() {
+    local rom="$1"
+    local list="$2"
+    local target="$3"
+    local current count delta action i
+
+    count="${#MEDIA_PATHS[@]}"
+    [ "$target" -ge 0 ] 2>/dev/null || return 1
+    [ "$target" -lt "$count" ] || return 1
+
+    current="$(current_index "$rom" "$list")"
+    [ "$current" -ge 0 ] 2>/dev/null || current=0
+    [ "$current" -lt "$count" ] || current=0
+
+    if [ "$target" -eq "$current" ]; then
+        write_state "$rom" "$list" "$target" "${MEDIA_LABELS[$target]}"
+        [ "$QUIET" = "1" ] || ui_info "Media already selected: ${MEDIA_LABELS[$target]}"
+        return 0
+    fi
+
+    send_action disk_eject || true
+    if [ "$target" -gt "$current" ]; then
+        delta=$((target - current))
+        action=next_disk
+    else
+        delta=$((current - target))
+        action=previous_disk
+    fi
+
+    i=0
+    while [ "$i" -lt "$delta" ]; do
+        send_action "$action" || true
+        sleep 0.15
+        i=$((i + 1))
+    done
+    send_action disk_eject || true
+
+    write_state "$rom" "$list" "$target" "${MEDIA_LABELS[$target]}"
+    [ "$QUIET" = "1" ] || ui_info "Selected media: ${MEDIA_LABELS[$target]}"
+}
+
+choose_entry() {
+    local choice entries=()
+    local i
+
+    i=0
+    while [ "$i" -lt "${#MEDIA_PATHS[@]}" ]; do
+        entries+=("$i" "${MEDIA_LABELS[$i]}" "$(basename "${MEDIA_PATHS[$i]}")")
+        i=$((i + 1))
+    done
+
+    if has_display && command -v yad >/dev/null 2>&1; then
+        yad --title="$TITLE" --list --width=700 --height=420 \
+            --column=Index --column=Label --column=File \
+            --print-column=1 "${entries[@]}"
+        return
+    elif has_display && command -v zenity >/dev/null 2>&1; then
+        zenity --list --title="$TITLE" --width=700 --height=420 \
+            --column=Index --column=Label --column=File \
+            --print-column=1 "${entries[@]}"
+        return
+    elif command -v dialog >/dev/null 2>&1; then
+        local menu=()
+        i=0
+        while [ "$i" -lt "${#MEDIA_PATHS[@]}" ]; do
+            menu+=("$i" "${MEDIA_LABELS[$i]} - $(basename "${MEDIA_PATHS[$i]}")")
+            i=$((i + 1))
+        done
+        choice=$(dialog --title "$TITLE" --menu "Select active media" 20 78 12 "${menu[@]}" 3>&1 1>&2 2>&3) || return 1
+        printf '%s\n' "$choice"
+        return
+    fi
+
+    i=0
+    while [ "$i" -lt "${#MEDIA_PATHS[@]}" ]; do
+        printf '%s: %s (%s)\n' "$i" "${MEDIA_LABELS[$i]}" "$(basename "${MEDIA_PATHS[$i]}")" >&2
+        i=$((i + 1))
+    done
+    printf 'Media index: ' >&2
+    IFS= read -r choice || return 1
+    printf '%s\n' "$choice"
+}
+
+prepare_list() {
+    local rom list
+
+    rom="$(running_rom)" || return 1
+    [ -n "$rom" ] || return 1
+    list="$(resolve_media_list "$rom")" || return 1
+    load_entries "$list"
+    [ "${#MEDIA_PATHS[@]}" -gt 1 ] || return 1
+    ACTIVE_ROM="$rom"
+    ACTIVE_LIST="$list"
+}
+
+cmd_available() {
+    prepare_list >/dev/null 2>&1 && printf '1\n'
+}
+
+cmd_summary() {
+    local index
+
+    if ! prepare_list >/dev/null 2>&1; then
+        printf 'No active M3U media list\n'
+        return 0
+    fi
+
+    index="$(current_index "$ACTIVE_ROM" "$ACTIVE_LIST")"
+    [ "$index" -ge 0 ] 2>/dev/null || index=0
+    [ "$index" -lt "${#MEDIA_LABELS[@]}" ] || index=0
+    printf '%s (%s/%s)\n' "${MEDIA_LABELS[$index]}" "$((index + 1))" "${#MEDIA_LABELS[@]}"
+}
+
+cmd_dialog() {
+    local choice
+
+    if ! prepare_list; then
+        ui_info "The running game is not using a multi-entry M3U/M3U8 list."
+        return 1
+    fi
+
+    choice="$(choose_entry)" || return 1
+    [ -n "$choice" ] || return 1
+    apply_index "$ACTIVE_ROM" "$ACTIVE_LIST" "$choice"
+}
+
+cmd_step() {
+    local direction="$1"
+    local index count
+
+    prepare_list || return 1
+    count="${#MEDIA_LABELS[@]}"
+    index="$(current_index "$ACTIVE_ROM" "$ACTIVE_LIST")"
+    [ "$index" -ge 0 ] 2>/dev/null || index=0
+
+    case "$direction" in
+        next)
+            index=$(((index + 1) % count))
+            ;;
+        previous)
+            index=$(((index + count - 1) % count))
+            ;;
+    esac
+    QUIET=1
+    apply_index "$ACTIVE_ROM" "$ACTIVE_LIST" "$index"
+}
+
+case "${1:-summary}" in
+    available)
+        cmd_available
+        ;;
+    summary)
+        cmd_summary
+        ;;
+    dialog|select)
+        cmd_dialog
+        ;;
+    next)
+        cmd_step next
+        ;;
+    previous|prev)
+        cmd_step previous
+        ;;
+    *)
+        printf 'Usage: %s [available|summary|dialog|next|previous]\n' "$0" >&2
+        exit 2
+        ;;
+esac

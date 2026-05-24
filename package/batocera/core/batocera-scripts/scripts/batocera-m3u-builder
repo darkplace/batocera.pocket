@@ -1,0 +1,684 @@
+#!/bin/bash
+
+set -u
+
+TITLE="Batocera M3U Builder"
+START_PATH="${2:-/userdata/roms}"
+ROMS_ROOT="/userdata/roms"
+LOG_FILE="/userdata/system/logs/batocera-m3u-builder.log"
+
+SELECTED_FILES=()
+SELECTED_LABELS=()
+
+log_msg() {
+    local dir
+
+    dir="$(dirname "$LOG_FILE")"
+    mkdir -p "$dir" 2>/dev/null || true
+    printf '%s %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >> "$LOG_FILE" 2>/dev/null || true
+}
+
+die() {
+    log_msg "error: $1"
+    ui_error "$1"
+    exit 1
+}
+
+has_display() {
+    [ -n "${DISPLAY:-}" ] || [ -n "${WAYLAND_DISPLAY:-}" ]
+}
+
+use_graphical() {
+    [ "${BATOCERA_FORCE_DIALOG:-0}" != "1" ] && has_display
+}
+
+dialog_available() {
+    command -v dialog >/dev/null 2>&1 || return 1
+    { : </dev/tty; } 2>/dev/null || return 1
+    { : >/dev/tty; } 2>/dev/null || return 1
+}
+
+dialog_show() {
+    dialog "$@" </dev/tty >/dev/tty 2>&1
+}
+
+dialog_capture() {
+    dialog --stdout "$@" </dev/tty 2>/dev/tty
+}
+
+ui_info() {
+    local msg="$1"
+    if use_graphical && command -v yad >/dev/null 2>&1; then
+        yad --title="$TITLE" --text="$msg" --button=OK:0 >/dev/null 2>&1 || true
+    elif use_graphical && command -v zenity >/dev/null 2>&1; then
+        zenity --info --title="$TITLE" --text="$msg" >/dev/null 2>&1 || true
+    elif dialog_available; then
+        dialog_show --title "$TITLE" --msgbox "$msg" 18 100
+    else
+        printf '%s\n' "$msg"
+    fi
+}
+
+ui_error() {
+    local msg="$1"
+    if use_graphical && command -v yad >/dev/null 2>&1; then
+        yad --title="$TITLE" --text="$msg" --button=OK:1 >/dev/null 2>&1 || true
+    elif use_graphical && command -v zenity >/dev/null 2>&1; then
+        zenity --error --title="$TITLE" --text="$msg" >/dev/null 2>&1 || true
+    elif dialog_available; then
+        dialog_show --title "$TITLE" --msgbox "$msg" 16 100
+    else
+        printf 'Error: %s\n' "$msg" >&2
+    fi
+}
+
+ui_yesno() {
+    local prompt="$1"
+
+    if use_graphical && command -v yad >/dev/null 2>&1; then
+        yad --title="$TITLE" --text="$prompt" --button=Yes:0 --button=No:1 >/dev/null 2>&1
+        return
+    elif use_graphical && command -v zenity >/dev/null 2>&1; then
+        zenity --question --title="$TITLE" --text="$prompt" >/dev/null 2>&1
+        return
+    elif dialog_available; then
+        dialog_show --title "$TITLE" --yesno "$prompt" 14 100
+        return
+    fi
+
+    local answer
+    printf '%s [y/N]: ' "$prompt" >&2
+    IFS= read -r answer || return 1
+    case "${answer,,}" in
+        y|yes) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+ui_entry() {
+    local prompt="$1"
+    local default="${2:-}"
+    local value
+
+    if use_graphical && command -v yad >/dev/null 2>&1; then
+        yad --title="$TITLE" --entry --text="$prompt" --entry-text="$default"
+        return
+    elif use_graphical && command -v zenity >/dev/null 2>&1; then
+        zenity --entry --title="$TITLE" --text="$prompt" --entry-text="$default"
+        return
+    elif dialog_available; then
+        value=$(dialog_capture --title "$TITLE" --inputbox "$prompt" 16 100 "$default") || return 1
+        printf '%s\n' "$value"
+        return
+    fi
+
+    printf '%s [%s]: ' "$prompt" "$default" >&2
+    IFS= read -r value || return 1
+    printf '%s\n' "${value:-$default}"
+}
+
+ui_choice() {
+    local prompt="$1"
+    shift
+    local entries=("$@")
+    local choice
+
+    if use_graphical && command -v yad >/dev/null 2>&1; then
+        yad --title="$TITLE" --list --width=760 --height=520 \
+            --text="$prompt" --column=Choice --column=Value --hide-column=2 \
+            --print-column=2 "${entries[@]}"
+        return
+    elif use_graphical && command -v zenity >/dev/null 2>&1; then
+        zenity --list --title="$TITLE" --width=760 --height=520 \
+            --text="$prompt" --column=Choice --column=Value --hide-column=2 \
+            --print-column=2 "${entries[@]}"
+        return
+    elif dialog_available; then
+        local menu=()
+        local i=0
+        while [ "$i" -lt "${#entries[@]}" ]; do
+            menu+=("${entries[$((i + 1))]}" "${entries[$i]}")
+            i=$((i + 2))
+        done
+        choice=$(dialog_capture --title "$TITLE" --menu "$prompt" 24 110 16 "${menu[@]}") || return 1
+        printf '%s\n' "$choice"
+        return
+    fi
+
+    local i=0
+    while [ "$i" -lt "${#entries[@]}" ]; do
+        printf '%s: %s\n' "${entries[$((i + 1))]}" "${entries[$i]}" >&2
+        i=$((i + 2))
+    done
+    printf '%s: ' "$prompt" >&2
+    IFS= read -r choice || return 1
+    printf '%s\n' "$choice"
+}
+
+normalize_dir() {
+    local path="$1"
+
+    [ -n "$path" ] || path="$ROMS_ROOT"
+    [ -f "$path" ] && path="$(dirname "$path")"
+    [ -d "$path" ] || path="$ROMS_ROOT"
+    printf '%s\n' "$path"
+}
+
+choose_folder() {
+    local start
+    start="$(normalize_dir "$1")"
+
+    if [ "$start" != "$ROMS_ROOT" ] && [ -d "$start" ]; then
+        if ui_yesno "Step 1 of 5 - Choose the Batocera system folder
+
+The playlist should normally be saved in the same /userdata/roms system folder as the disks/media it will launch.
+
+Use this folder?
+
+$start"; then
+            printf '%s\n' "$start"
+            return
+        fi
+    fi
+
+    local entries=()
+    local dir base choice
+    entries+=("Type or paste a folder path" "__custom")
+
+    while IFS= read -r dir; do
+        base="$(basename "$dir")"
+        entries+=("$base  ($dir)" "$dir")
+    done < <(find "$ROMS_ROOT" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort)
+
+    choice="$(ui_choice "Step 1 of 5 - Choose the Batocera system folder
+
+Pick the system folder that will contain the playlist.
+
+Examples:
+  /userdata/roms/apple2
+  /userdata/roms/psx
+  /userdata/roms/saturn
+
+Use the arrow keys, Enter to choose, Esc to cancel." "${entries[@]}")" || return 1
+
+    if [ "$choice" = "__custom" ]; then
+        choice="$(ui_entry "Enter the full system folder path.
+
+The path should usually be under /userdata/roms.
+
+Example: /userdata/roms/apple2" "$start")" || return 1
+    fi
+
+    [ -d "$choice" ] || die "Folder does not exist:
+$choice"
+    printf '%s\n' "$choice"
+}
+
+is_support_entry() {
+    local path="$1"
+    local base ext
+
+    base="$(basename "$path")"
+    ext="${base##*.}"
+    ext="${ext,,}"
+
+    case "$base" in
+        .|..|images|image|videos|manuals|screenshots|downloaded_images|covers|boxart|wheel|marquees|gamelist.xml|_info.txt)
+            return 0
+            ;;
+    esac
+
+    case "$ext" in
+        m3u|m3u8|xml|txt|nfo|png|jpg|jpeg|webp|gif|bmp|sav|srm|state|cfg|conf|ini|log)
+            return 0
+            ;;
+    esac
+
+    return 1
+}
+
+rom_system_for_path() {
+    local path="$1"
+    local rel
+
+    case "$path" in
+        "$ROMS_ROOT"/*)
+            rel="${path#"$ROMS_ROOT"/}"
+            printf '%s\n' "${rel%%/*}"
+            ;;
+        *)
+            printf '%s\n' ""
+            ;;
+    esac
+}
+
+lower_ext() {
+    local base ext
+
+    base="$(basename "$1")"
+    ext="${base##*.}"
+    printf '%s\n' "${ext,,}"
+}
+
+psx_bin_has_cue() {
+    local file="$1"
+
+    [ "$(rom_system_for_path "$file")" = "psx" ] || return 1
+    [ "$(lower_ext "$file")" = "bin" ] || return 1
+    [ -f "${file%.*}.cue" ]
+}
+
+create_psx_cue_for_bin() {
+    local file="$1"
+    local cue="${file%.*}.cue"
+    local tmp="${cue}.tmp.$$"
+    local base
+
+    [ "$(rom_system_for_path "$file")" = "psx" ] || return 1
+    [ "$(lower_ext "$file")" = "bin" ] || return 1
+    [ -f "$cue" ] && {
+        printf '%s\n' "$cue"
+        return
+    }
+
+    base="$(basename "$file")"
+    {
+        printf 'FILE "%s" BINARY\n' "$base"
+        printf '  TRACK 01 MODE2/2352\n'
+        printf '    INDEX 01 00:00:00\n'
+    } > "$tmp" || {
+        rm -f "$tmp"
+        return 1
+    }
+    mv -f "$tmp" "$cue" || {
+        rm -f "$tmp"
+        return 1
+    }
+    chmod 0644 "$cue" 2>/dev/null || true
+
+    ui_info "Created a companion cue file for this PSX disc:
+$cue
+
+The playlist will use the .cue entry instead of the raw .bin. DuckStation and Beetle/Mednafen PSX are stricter about this than PCSX ReARMed and SwanStation."
+    printf '%s\n' "$cue"
+}
+
+normalize_selected_media() {
+    local file="$1"
+
+    if psx_bin_has_cue "$file"; then
+        printf '%s\n' "${file%.*}.cue"
+        return
+    fi
+
+    if [ "$(rom_system_for_path "$file")" = "psx" ] && [ "$(lower_ext "$file")" = "bin" ]; then
+        create_psx_cue_for_bin "$file" && return
+    fi
+
+    printf '%s\n' "$file"
+}
+
+collect_candidates() {
+    local dir="$1"
+    local path
+
+    while IFS= read -r path; do
+        is_support_entry "$path" && continue
+        psx_bin_has_cue "$path" && continue
+        printf '%s\n' "$path"
+    done < <(find "$dir" -mindepth 1 -maxdepth 1 \( -type f -o -type d \) 2>/dev/null | sort)
+}
+
+already_selected() {
+    local file="$1"
+    local selected
+
+    for selected in "${SELECTED_FILES[@]}"; do
+        [ "$selected" = "$file" ] && return 0
+    done
+    return 1
+}
+
+default_label() {
+    local file="$1"
+    local base
+
+    base="$(basename "$file")"
+    printf '%s\n' "${base%.*}"
+}
+
+default_playlist_name() {
+    local file="$1"
+    local base name
+
+    base="$(default_label "$file")"
+    name="$(printf '%s\n' "$base" | sed -E '
+        s/[[:space:]_-]*[\(\[]?[[:space:]]*([Dd][Ii][Ss][Cc]|[Dd][Ii][Ss][Kk]|[Cc][Dd])[[:space:]_-]*0*1([[:space:]_-]*([Oo][Ff]|\/)[[:space:]_-]*[0-9]+)?[[:space:]]*[\)\]]?[[:space:]]*$//
+        s/[[:space:]_-]*[\(\[]?[[:space:]]*[Ss][Ii][Dd][Ee][[:space:]_-]*[Aa][[:space:]]*[\)\]]?[[:space:]]*$//
+        s/[[:space:]_-]+$//
+    ')"
+
+    [ -n "$name" ] || name="$base"
+    printf '%s\n' "$name"
+}
+
+choose_media_file() {
+    local dir="$1"
+    local entries=()
+    local file base choice manual
+
+    if [ "$dir" != "$ROMS_ROOT" ] && [ "$dir" != "/" ]; then
+        entries+=("Open parent folder" "__parent")
+    fi
+    if [ "${#SELECTED_FILES[@]}" -gt 0 ]; then
+        entries+=("Finish selecting media" "__done")
+    fi
+    entries+=("Type or paste a full media path" "__manual")
+
+    while IFS= read -r file; do
+        already_selected "$file" && continue
+        base="$(basename "$file")"
+        if [ -d "$file" ]; then
+            entries+=("[open folder] $base" "$file")
+        else
+            entries+=("$base" "$file")
+        fi
+    done < <(collect_candidates "$dir")
+
+    if [ "${#entries[@]}" -le 2 ] && [ "${#SELECTED_FILES[@]}" -eq 0 ]; then
+        ui_info "Step 2 of 5 - Select media
+
+No obvious media files were found in:
+
+$dir
+
+The builder hides images, text files, existing playlists, and other support files.
+
+The next screen lets you type or paste a full path manually."
+    fi
+
+    choice="$(ui_choice "Step 2 of 5 - Select media in boot order
+
+Choose the next disk, disc, side, tape, ISO, CHD, or media folder.
+
+For multi-disk games, add entries in the order you want Batocera to see them:
+  Disk 1 Side A
+  Disk 1 Side B
+  Disk 2 Side A
+  Disk 2 Side B
+
+Folders open so you can choose the real .cue, .chd, .iso, .dsk, or other launchable media inside them.
+
+Use Enter to choose an item. After each item, the wizard asks whether to add another." "${entries[@]}")" || return 1
+
+    case "$choice" in
+        __parent)
+            choose_media_file "$(dirname "$dir")"
+            return
+            ;;
+        __done)
+            printf '%s\n' "$choice"
+            return
+            ;;
+        __manual)
+            manual="$(ui_entry "Enter the full path to the media file or folder.
+
+Example:
+/userdata/roms/apple2/Ultima V Disk 1 Side A.dsk" "$dir/")" || return 1
+            [ -e "$manual" ] || die "Media path does not exist:
+$manual"
+            printf '%s\n' "$manual"
+            return
+            ;;
+    esac
+
+    if [ -d "$choice" ]; then
+        choose_media_file "$choice"
+        return
+    fi
+
+    printf '%s\n' "$choice"
+}
+
+select_media_files() {
+    local dir="$1"
+    local file label
+
+    SELECTED_FILES=()
+    SELECTED_LABELS=()
+
+    while true; do
+        file="$(choose_media_file "$dir")" || return 1
+        [ "$file" = "__done" ] && break
+        [ -n "$file" ] || continue
+        file="$(normalize_selected_media "$file")" || die "Could not prepare media for playlist."
+        [ -n "$file" ] || continue
+
+        already_selected "$file" && {
+            ui_info "That media item is already in the playlist:
+$file"
+            continue
+        }
+
+        label="$(ui_entry "Step 3 of 5 - Friendly name
+
+This label is written into the playlist. It helps identify the disk later, especially from a media-swap overlay.
+
+It does not rename the real file.
+
+Friendly name for:
+$(basename "$file")" "$(default_label "$file")")" || return 1
+        [ -n "$label" ] || label="$(default_label "$file")"
+
+        SELECTED_FILES+=("$file")
+        SELECTED_LABELS+=("$label")
+
+        ui_yesno "Added:
+$label
+
+Add another disk/media item to this same playlist?" || break
+    done
+
+    [ "${#SELECTED_FILES[@]}" -gt 0 ] || die "No media files selected."
+}
+
+choose_extension() {
+    local dir="$1"
+    local system
+
+    system="$(basename "$dir")"
+    if [ "$system" = "win9x" ]; then
+        ui_choice "Step 4 of 5 - Choose playlist extension
+
+For the Windows 9x system, .m3u8 is supported and is the recommended choice.
+
+For most regular Batocera emulator systems, use .m3u because that is what the system scan lists usually include.
+
+Choose the playlist type to create." \
+            ".m3u8 - Windows 9x UTF-8 playlist" "m3u8" \
+            ".m3u - Standard Batocera playlist" "m3u"
+    else
+        ui_info "Step 4 of 5 - Playlist type
+
+This system folder is:
+$dir
+
+The wizard will create a standard .m3u playlist.
+
+Use .m3u for PSX and normal Batocera emulator systems. .m3u8 is only for systems that explicitly list it, such as the custom win9x system."
+        printf '%s\n' "m3u"
+    fi
+}
+
+relative_path() {
+    local base="$1"
+    local path="$2"
+    local rel
+
+    rel=$(realpath --relative-to="$base" "$path" 2>/dev/null) && {
+        printf '%s\n' "$rel"
+        return
+    }
+    printf '%s\n' "$path"
+}
+
+normalize_output_path() {
+    local dir="$1"
+    local ext="$2"
+    local value="$3"
+
+    [ -n "$value" ] || return 1
+    case "$value" in
+        /*) ;;
+        *) value="${dir%/}/$value" ;;
+    esac
+
+    case "${value,,}" in
+        *.m3u|*.m3u8) ;;
+        *) value="${value}.${ext}" ;;
+    esac
+
+    printf '%s\n' "$value"
+}
+
+choose_output() {
+    local dir="$1"
+    local ext="$2"
+    local default_name output
+
+    default_name="$(default_playlist_name "${SELECTED_FILES[0]}").${ext}"
+    output="$(ui_entry "Step 5 of 5 - Save playlist
+
+Enter a filename or full path for the playlist.
+
+Recommended:
+  Save it in the same system folder:
+  $dir
+
+Extension guidance:
+  .m3u  = normal Batocera systems
+  .m3u8 = only if that system supports .m3u8
+
+If you enter only a filename, it will be saved in:
+$dir" "$default_name")" || return 1
+
+    normalize_output_path "$dir" "$ext" "$output"
+}
+
+playlist_summary() {
+    local output="$1"
+    local i summary
+
+    summary="The builder will create:
+$output
+
+Playlist entries:"
+    for i in "${!SELECTED_FILES[@]}"; do
+        summary="${summary}
+
+$((i + 1)). ${SELECTED_LABELS[$i]}
+   ${SELECTED_FILES[$i]}"
+    done
+
+    printf '%s\n' "$summary"
+}
+
+write_playlist() {
+    local output="$1"
+    local output_dir tmp i rel
+
+    log_msg "creating playlist: $output"
+    output_dir="$(dirname "$output")"
+    mkdir -p "$output_dir" || die "Could not create $output_dir"
+    tmp="${output}.tmp.$$"
+
+    {
+        printf '#EXTM3U\n'
+        for i in "${!SELECTED_FILES[@]}"; do
+            [ -f "${SELECTED_FILES[$i]}" ] || [ -d "${SELECTED_FILES[$i]}" ] || continue
+            rel="$(relative_path "$output_dir" "${SELECTED_FILES[$i]}")"
+            printf '#EXTINF:-1,%s\n' "${SELECTED_LABELS[$i]}"
+            printf '%s\n' "$rel"
+        done
+    } > "$tmp" || {
+        rm -f "$tmp"
+        die "Could not write $output"
+    }
+
+    mv -f "$tmp" "$output" || die "Could not save $output"
+    chmod 0644 "$output" 2>/dev/null || true
+    [ -s "$output" ] || die "Playlist was not created or is empty:
+$output"
+    sync "$output" 2>/dev/null || sync 2>/dev/null || true
+    log_msg "created playlist: $output"
+    ui_info "Created playlist:
+$output
+
+If EmulationStation is already open, refresh the gamelist or restart ES to see the new entry."
+}
+
+run_create() {
+    local output="${1:-}"
+    local file
+
+    [ -n "$output" ] || die "Missing output playlist path."
+    shift || true
+    [ "$#" -gt 0 ] || die "Missing media files."
+
+    SELECTED_FILES=()
+    SELECTED_LABELS=()
+    for file in "$@"; do
+        [ -e "$file" ] || die "Media path does not exist:
+$file"
+        SELECTED_FILES+=("$file")
+        SELECTED_LABELS+=("$(default_label "$file")")
+    done
+
+    write_playlist "$output"
+}
+
+run_builder() {
+    local start="$1"
+    local folder ext output summary
+
+    log_msg "wizard started: start=$start"
+    ui_info "M3U/M3U8 playlist wizard
+
+This creates a small playlist file that Batocera launches as one game.
+
+Use it for multi-disc or multi-floppy games, or for systems where a single entry should point to several media files.
+
+Important:
+  .m3u is the normal Batocera choice.
+  .m3u8 should only be used for systems that explicitly support it, such as win9x."
+
+    folder="$(choose_folder "$start")" || exit 1
+    select_media_files "$folder"
+    ext="$(choose_extension "$folder")" || exit 1
+    [ -n "$ext" ] || exit 1
+    output="$(choose_output "$folder" "$ext")" || exit 1
+    [ -n "$output" ] || exit 1
+
+    summary="$(playlist_summary "$output")"
+    ui_yesno "${summary}
+
+Write this playlist now?" || exit 1
+    write_playlist "$output"
+}
+
+case "${1:-dialog}" in
+    dialog|--dialog|create)
+        run_builder "$START_PATH"
+        ;;
+    --start)
+        run_builder "$START_PATH"
+        ;;
+    --create)
+        shift
+        run_create "$@"
+        ;;
+    *)
+        printf 'Usage: %s [dialog|--start PATH|--create OUTPUT MEDIA...]\n' "$0" >&2
+        exit 2
+        ;;
+esac

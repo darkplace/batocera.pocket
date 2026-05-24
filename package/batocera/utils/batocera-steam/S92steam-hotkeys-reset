@@ -6,10 +6,19 @@ LOG="/userdata/system/logs/steam.log"
 HOTKEY_DIR="/userdata/system/configs/hotkeygen"
 ACTIVE_MAP="${HOTKEY_DIR}/ASUS_ROG_Ally_Config-b05-1abe.mapping"
 ES_MAP="${HOTKEY_DIR}/ASUS_ROG_Ally_Config-b05-1abe.mapping.es"
+SYSTEM_DIR="/usr/share/batocera/services/allyhotkeys.d"
 DATAINIT_DIR="/usr/share/batocera/datainit/system/configs/hotkeygen"
 
 hotkeygen_permanent_running() {
     pgrep -f '(^|[[:space:]])(/usr/bin/)?hotkeygen([[:space:]].*)?--permanent([[:space:]]|$)' >/dev/null 2>&1
+}
+
+ensure_hotkeygen_started() {
+    if command -v hotkeygen >/dev/null 2>&1; then
+        if ! hotkeygen_permanent_running && [ -x /etc/init.d/S90hotkeygen ]; then
+            /etc/init.d/S90hotkeygen start >/dev/null 2>&1 || true
+        fi
+    fi
 }
 
 restore_ally_es_map() {
@@ -18,6 +27,8 @@ restore_ally_es_map() {
     mkdir -p "${HOTKEY_DIR}" 2>/dev/null || true
     for src in \
         "${ES_MAP}" \
+        "${SYSTEM_DIR}/ASUS_ROG_Ally_Config-b05-1abe.mapping.es" \
+        "${SYSTEM_DIR}/ASUS_ROG_Ally_Config-b05-1abe.mapping" \
         "${DATAINIT_DIR}/ASUS_ROG_Ally_Config-b05-1abe.mapping.es" \
         "${DATAINIT_DIR}/ASUS_ROG_Ally_Config-b05-1abe.mapping"
     do
@@ -38,10 +49,9 @@ start() {
     fi
 
     if command -v hotkeygen >/dev/null 2>&1; then
+        ensure_hotkeygen_started
         /usr/bin/hotkeygen --default-context >/dev/null 2>&1 || true
-        if hotkeygen_permanent_running; then
-            /usr/bin/hotkeygen --reload >/dev/null 2>&1 || true
-        fi
+        /usr/bin/hotkeygen --reload >/dev/null 2>&1 || true
     fi
 }
 

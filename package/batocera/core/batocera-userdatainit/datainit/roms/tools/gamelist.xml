@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<gameList>
+  <game>
+    <path>./M3U_Builder.sh</path>
+    <name>M3U Builder</name>
+    <desc>Create .m3u playlists for multi-disc and multi-media games.</desc>
+    <image>./images/m3u-builder.png</image>
+    <thumbnail>./images/m3u-builder.png</thumbnail>
+  </game>
+  <game>
+    <path>./Win9x_Image_Builder.sh</path>
+    <name>Win9x Image Builder</name>
+    <desc>Create and manage DOSBox Pure Windows 9x image launcher entries.</desc>
+    <image>./images/win9x-tool.png</image>
+    <thumbnail>./images/win9x-tool.png</thumbnail>
+  </game>
+</gameList>

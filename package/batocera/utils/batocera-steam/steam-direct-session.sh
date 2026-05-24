@@ -3,9 +3,10 @@ set -euo pipefail
 
 LOG="/userdata/system/logs/steam.log"
 ES_SERVICE="/etc/init.d/S31emulationstation"
+DIRECT_APP_SESSION_FLAG="/var/run/batocera-steam-direct-app-session"
 CLEANUP_DONE=0
-STEAM_ROOT="${BATOCERA_STEAM_ROOT:-/userdata/system/.local/share/Steam}"
-PROTON11_ARM64_DIR_NAME="${BATOCERA_STEAM_PROTON11_ARM64_DIR_NAME:-Proton 11.0 (ARM64)}"
+ES_PROCESS_PATTERN='(^|/)emulationstation([[:space:]]|$)'
+ES_STANDALONE_PATTERN='(^|/)emulationstation-standalone([[:space:]]|$)'
 
 mkdir -p "$(dirname "${LOG}")"
 
@@ -13,101 +14,62 @@ log() {
     echo "steam-direct-session: $*" >> "${LOG}"
 }
 
-flash_message() {
-    local seconds="$1"
-    local message="$2"
-    local size="${3:-22}"
-
-    if command -v batocera-flash-screen >/dev/null 2>&1; then
-        /usr/bin/batocera-flash-screen "${seconds}" "#ffffff" "${message}" "${size}" >/dev/null 2>&1 || true
-    fi
-}
-
-has_network() {
-    if command -v ip >/dev/null 2>&1 && ! ip route get 1.1.1.1 >/dev/null 2>&1; then
-        return 1
-    fi
-
-    if command -v ping >/dev/null 2>&1; then
-        timeout 2 ping -c 1 -W 1 1.1.1.1 >/dev/null 2>&1
-        return $?
-    fi
-
-    return 0
-}
-
-activate_wifi_for_steam() {
-    local i
-
-    if has_network; then
-        return 0
-    fi
-
-    log "network unavailable before Steam setup; trying to enable Wi-Fi"
-    flash_message 5 "Steam setup needs Wi-Fi. Enabling Wi-Fi..." 21
-
-    if command -v connmanctl >/dev/null 2>&1; then
-        connmanctl enable wifi >> "${LOG}" 2>&1 || true
-        connmanctl scan wifi >> "${LOG}" 2>&1 || true
-    fi
-
-    for i in $(seq 1 "${BATOCERA_STEAM_WIFI_WAIT_SECS:-30}"); do
-        if has_network; then
-            log "network became available before Steam setup"
+normalize_bool() {
+    case "${1,,}" in
+        1|true|yes|on)
+            printf '1\n'
             return 0
-        fi
-        sleep 1
-    done
+            ;;
+        0|false|no|off)
+            printf '0\n'
+            return 0
+            ;;
+    esac
 
-    log "network still unavailable after Wi-Fi enable attempt"
     return 1
 }
 
-steam_setup_state() {
-    local fex_config="/userdata/system/.config/fex-emu/Config.json"
-    local fex_rootfs_dir="/userdata/system/.local/share/fex-emu/RootFS"
-    local fex_rootfs_name
+trim_value() {
+    local value="$1"
 
-    if [[ ! -x "${STEAM_ROOT}/steamrtarm64/steam" ]]; then
-        printf 'client\n'
-        return 0
-    fi
-
-    if [[ ! -x "${STEAM_ROOT}/steamapps/common/${PROTON11_ARM64_DIR_NAME}/proton" ]]; then
-        printf 'support\n'
-        return 0
-    fi
-
-    if [[ ! -f "${fex_config}" ]]; then
-        printf 'support\n'
-        return 0
-    fi
-    fex_rootfs_name="$(sed -n 's/.*"RootFS"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "${fex_config}" | head -n 1)"
-    if [[ -z "${fex_rootfs_name}" || ! -e "${fex_rootfs_dir}/${fex_rootfs_name}" ]]; then
-        printf 'support\n'
-        return 0
-    fi
-
-    printf 'none\n'
+    value="${value#"${value%%[![:space:]]*}"}"
+    value="${value%"${value##*[![:space:]]}"}"
+    printf '%s\n' "${value}"
 }
 
-prepare_visible_steam_setup() {
-    local setup_state
+apply_steam_launcher_overrides() {
+    local launcher
+    local line
+    local key
+    local value
+    local normalized
 
-    setup_state="$(steam_setup_state)"
-    if [[ "${setup_state}" == "none" ]]; then
-        return 0
-    fi
+    for launcher in "$@"; do
+        [[ -f "${launcher}" && "${launcher}" == *.steam ]] || continue
 
-    log "Steam/Proton/FEX setup is incomplete; refusing Gamescope launch before setup"
-    if [[ "${setup_state}" == "client" ]]; then
-        flash_message 8 "Steam is not installed yet." 22
-    else
-        flash_message 8 "Steam Proton/FEX setup is incomplete." 20
-    fi
-    flash_message 8 "Gamescope mode is not supported before setup completes." 17
-    flash_message 8 "Launch Steam GamepadUI or Desktop without Gamescope first." 17
-    exit 0
+        log "reading Steam launcher overrides from ${launcher}"
+        while IFS= read -r line || [[ -n "${line}" ]]; do
+            line="$(trim_value "${line}")"
+            [[ -n "${line}" && "${line}" != \#* && "${line}" == *=* ]] || continue
+            key="$(trim_value "${line%%=*}")"
+            key="${key,,}"
+            value="$(trim_value "${line#*=}")"
+
+            case "${key}" in
+                visible_update_preflight|update_preflight)
+                    normalized="$(normalize_bool "${value}" || true)"
+                    if [[ -n "${normalized}" ]]; then
+                        export BATOCERA_STEAM_VISIBLE_UPDATE_PREFLIGHT="${normalized}"
+                    fi
+                    ;;
+                update_preflight_no_update_secs|preflight_no_update_secs)
+                    if [[ "${value}" =~ ^[0-9]+$ && "${value}" -gt 0 ]]; then
+                        export BATOCERA_STEAM_PREFLIGHT_NO_UPDATE_SECS="${value}"
+                    fi
+                    ;;
+            esac
+        done < "${launcher}"
+    done
 }
 
 ensure_runtime_dir() {
@@ -453,14 +415,25 @@ ensure_cef_remote_debugging_markers() {
 }
 
 frontend_running() {
-    pgrep -x emulationstation >/dev/null 2>&1 || \
+    emulationstation_running || \
     pgrep -x labwc >/dev/null 2>&1 || \
     pgrep -x sway >/dev/null 2>&1 || \
     pgrep -x openbox >/dev/null 2>&1
 }
 
 emulationstation_running() {
-    pgrep -f '(^|/)emulationstation([[:space:]]|$)' >/dev/null 2>&1
+    pgrep -f "${ES_PROCESS_PATTERN}" >/dev/null 2>&1
+}
+
+emulationstation_standalone_running() {
+    pgrep -f "${ES_STANDALONE_PATTERN}" >/dev/null 2>&1
+}
+
+stop_emulationstation() {
+    local signal="${1:-TERM}"
+
+    /usr/bin/emulationstation-standalone --stop-rebooting >/dev/null 2>&1 || true
+    pkill "-${signal}" -f "${ES_PROCESS_PATTERN}" >/dev/null 2>&1 || true
 }
 
 restore_sway_display_config() {
@@ -495,13 +468,106 @@ wait_for_emulationstation_stop() {
     local i
 
     for i in $(seq 1 50); do
-        if ! emulationstation_running; then
+        if ! emulationstation_running && ! emulationstation_standalone_running; then
             return 0
         fi
         sleep 0.1
     done
 
     return 1
+}
+
+session_select_return_active() {
+    pgrep -f '(^|[[:space:]/])steamos-session-select[[:space:]]+(plasma|desktop)([[:space:]]|$)' >/dev/null 2>&1
+}
+
+run_frontend_env() {
+    env \
+        -u WAYLAND_DISPLAY \
+        -u DISPLAY \
+        -u SWAYSOCK \
+        -u I3SOCK \
+        -u GAMESCOPE_DISPLAY \
+        -u GAMESCOPE_WAYLAND_DISPLAY \
+        -u GAMESCOPE_SESSION \
+        -u STEAM_GAME_DISPLAY_0 \
+        -u STEAM_MULTIPLE_XWAYLANDS \
+        -u DESKTOP_STARTUP_ID \
+        -u XKB_LAYOUT \
+        -u XKB_DEFAULT_LAYOUT \
+        -u XKB_VARIANT \
+        -u XKB_DEFAULT_VARIANT \
+        XDG_CURRENT_DESKTOP=sway \
+        XDG_SESSION_TYPE=wayland \
+        XDG_RUNTIME_DIR=/var/run \
+        WLR_XWAYLAND_NO_AUTH=1 \
+        "$@"
+}
+
+run_frontend_service_cmd() {
+    run_frontend_env "$@" >/dev/null 2>&1
+}
+
+steam_stack_alive() {
+    pgrep -f '(^|[[:space:]/])batocera-steam([[:space:]]|$)' >/dev/null 2>&1 || \
+    pgrep -f '(^|[[:space:]/])batocera-steam-session([[:space:]]|$)' >/dev/null 2>&1 || \
+    pgrep -f '(^|[[:space:]/])batocera-steam-uimode-watch([[:space:]]|$)' >/dev/null 2>&1 || \
+    pgrep -f '(^|[[:space:]/])batocera-steam-nightmode-watch([[:space:]]|$)' >/dev/null 2>&1 || \
+    pgrep -f '(^|[[:space:]/])batocera-steam-update-terminal([[:space:]]|$)' >/dev/null 2>&1 || \
+    pgrep -x steam >/dev/null 2>&1 || \
+    pgrep -x steamwebhelper >/dev/null 2>&1 || \
+    pgrep -x steam-runtime-supervisor >/dev/null 2>&1 || \
+    pgrep -x FEX >/dev/null 2>&1 || \
+    pgrep -f '(^|[[:space:]/])gamescope([[:space:]]|$)' >/dev/null 2>&1 || \
+    pgrep -x gamescopereaper >/dev/null 2>&1 || \
+    pgrep -x gamescopestream >/dev/null 2>&1 || \
+    pgrep -x gamescopectl >/dev/null 2>&1 || \
+    pgrep -x wineserver >/dev/null 2>&1 || \
+    pgrep -f 'SteamLaunch AppId=|pw-audio-namespace|/proton waitforexitandrun|steam\.exe' >/dev/null 2>&1
+}
+
+terminate_steam_stack() {
+    local i
+
+    log "cleaning residual Steam/gamescope process stack after Steam exit"
+    pkill -TERM -f '(^|[[:space:]/])batocera-steam([[:space:]]|$)' >/dev/null 2>&1 || true
+    pkill -TERM -f '(^|[[:space:]/])batocera-steam-session([[:space:]]|$)' >/dev/null 2>&1 || true
+    pkill -TERM -f '(^|[[:space:]/])batocera-steam-uimode-watch([[:space:]]|$)' >/dev/null 2>&1 || true
+    pkill -TERM -f '(^|[[:space:]/])batocera-steam-nightmode-watch([[:space:]]|$)' >/dev/null 2>&1 || true
+    pkill -TERM -f '(^|[[:space:]/])batocera-steam-update-terminal([[:space:]]|$)' >/dev/null 2>&1 || true
+    pkill -TERM -x steam >/dev/null 2>&1 || true
+    pkill -TERM -x steamwebhelper >/dev/null 2>&1 || true
+    pkill -TERM -x steam-runtime-supervisor >/dev/null 2>&1 || true
+    pkill -TERM -x FEX >/dev/null 2>&1 || true
+    pkill -TERM -f '(^|[[:space:]/])gamescope([[:space:]]|$)' >/dev/null 2>&1 || true
+    pkill -TERM -x gamescope >/dev/null 2>&1 || true
+    pkill -TERM -x gamescopereaper >/dev/null 2>&1 || true
+    pkill -TERM -x gamescopestream >/dev/null 2>&1 || true
+    pkill -TERM -x gamescopectl >/dev/null 2>&1 || true
+    pkill -TERM -x wineserver >/dev/null 2>&1 || true
+    pkill -TERM -f 'SteamLaunch AppId=|pw-audio-namespace|/proton waitforexitandrun|steam\.exe' >/dev/null 2>&1 || true
+
+    for i in $(seq 1 20); do
+        steam_stack_alive || return 0
+        sleep 0.2
+    done
+
+    pkill -KILL -f '(^|[[:space:]/])batocera-steam([[:space:]]|$)' >/dev/null 2>&1 || true
+    pkill -KILL -f '(^|[[:space:]/])batocera-steam-session([[:space:]]|$)' >/dev/null 2>&1 || true
+    pkill -KILL -f '(^|[[:space:]/])batocera-steam-uimode-watch([[:space:]]|$)' >/dev/null 2>&1 || true
+    pkill -KILL -f '(^|[[:space:]/])batocera-steam-nightmode-watch([[:space:]]|$)' >/dev/null 2>&1 || true
+    pkill -KILL -f '(^|[[:space:]/])batocera-steam-update-terminal([[:space:]]|$)' >/dev/null 2>&1 || true
+    pkill -KILL -x steam >/dev/null 2>&1 || true
+    pkill -KILL -x steamwebhelper >/dev/null 2>&1 || true
+    pkill -KILL -x steam-runtime-supervisor >/dev/null 2>&1 || true
+    pkill -KILL -x FEX >/dev/null 2>&1 || true
+    pkill -KILL -f '(^|[[:space:]/])gamescope([[:space:]]|$)' >/dev/null 2>&1 || true
+    pkill -KILL -x gamescope >/dev/null 2>&1 || true
+    pkill -KILL -x gamescopereaper >/dev/null 2>&1 || true
+    pkill -KILL -x gamescopestream >/dev/null 2>&1 || true
+    pkill -KILL -x gamescopectl >/dev/null 2>&1 || true
+    pkill -KILL -x wineserver >/dev/null 2>&1 || true
+    pkill -KILL -f 'SteamLaunch AppId=|pw-audio-namespace|/proton waitforexitandrun|steam\.exe' >/dev/null 2>&1 || true
 }
 
 restore_frontend() {
@@ -517,7 +583,7 @@ restore_frontend() {
 
     if emulationstation_running; then
         log "killing orphaned EmulationStation before service restart"
-        pkill -KILL -x emulationstation >/dev/null 2>&1 || true
+        stop_emulationstation KILL
     fi
 
     if frontend_running; then
@@ -527,7 +593,7 @@ restore_frontend() {
 
     if [[ -x "${ES_SERVICE}" ]]; then
         log "starting EmulationStation service after Steam exit"
-        "${ES_SERVICE}" start >/dev/null 2>&1 || "${ES_SERVICE}" restart >/dev/null 2>&1 || true
+        run_frontend_service_cmd "${ES_SERVICE}" start || run_frontend_service_cmd "${ES_SERVICE}" restart || true
     fi
 }
 
@@ -541,11 +607,17 @@ cleanup() {
     CLEANUP_DONE=1
 
     log "Steam session exited with status ${rc}"
+    rm -f "${DIRECT_APP_SESSION_FLAG}"
     restore_sway_display_config
     if [[ "${BATOCERA_STEAM_GS_BACKEND:-}" == "drm" && "${BATOCERA_STEAM_RESET_DSI_AFTER_GAMESCOPE:-0}" == "1" ]]; then
         log "resetting DSI connector state after DRM gamescope exit"
         reset_dsi_connectors
     fi
+    if session_select_return_active; then
+        log "frontend restore deferred to steamos-session-select"
+        exit "${rc}"
+    fi
+    terminate_steam_stack
     restore_frontend
     exit "${rc}"
 }
@@ -554,17 +626,66 @@ trap cleanup EXIT INT TERM
 
 log "requested direct Steam session launch"
 
+case "${1:-}" in
+    gameStop|systemSelected|systemDeselected)
+        log "ignoring Batocera launcher hook event without launching: $*"
+        exit 0
+        ;;
+esac
+
 export BATOCERA_STEAM_GS_BACKEND="${BATOCERA_STEAM_GS_BACKEND:-$(default_gamescope_backend)}"
 
-prepare_visible_steam_setup
+apply_steam_launcher_overrides "$@"
+
+steam_args=()
+direct_app_session=0
+case "${1:-}" in
+    gameStart)
+        log "ignoring Batocera launcher hook arguments: $*"
+        ;;
+    "")
+        ;;
+    *)
+        steam_args=("$@")
+        direct_app_session=1
+        ;;
+esac
+
+if [[ "${direct_app_session}" == "1" ]]; then
+    printf '%s\n' "${steam_args[*]}" > "${DIRECT_APP_SESSION_FLAG}" || true
+fi
+
+if [[ "${BATOCERA_STEAM_VISIBLE_UPDATE_PREFLIGHT:-0}" != "0" && -x /usr/bin/batocera-steam-update-preflight ]]; then
+    if emulationstation_running; then
+        log "stopping EmulationStation before visible Steam updater preflight"
+        stop_emulationstation TERM
+        if ! wait_for_emulationstation_stop; then
+            log "EmulationStation did not stop cleanly before visible Steam updater preflight"
+            stop_emulationstation KILL
+            wait_for_emulationstation_stop || true
+        fi
+    fi
+    log "running visible Steam updater preflight before Gamescope"
+    if /usr/bin/batocera-steam-update-preflight launch >> "${LOG}" 2>&1; then
+        case "${BATOCERA_STEAM_STARTUP_ARGS:-auto}" in
+            auto|AUTO|Auto|"")
+                export BATOCERA_STEAM_STARTUP_ARGS=1
+                log "visible Steam updater preflight completed; suppressing Steam bootstrap/update during Gamescope handoff"
+                ;;
+        esac
+    else
+        log "visible Steam updater preflight failed; continuing to Gamescope"
+    fi
+fi
 
 if [[ "${BATOCERA_STEAM_GS_BACKEND}" == "wayland" ]]; then
     log "keeping Wayland compositor alive for nested gamescope backend"
-    pkill -TERM -x emulationstation >/dev/null 2>&1 || true
+    stop_emulationstation TERM
     if ! wait_for_emulationstation_stop; then
         log "EmulationStation did not stop cleanly before Steam launch"
         if [[ "${BATOCERA_STEAM_FORCE_KILL_ES_FOR_WAYLAND:-0}" == "1" ]]; then
-            pkill -KILL -x emulationstation >/dev/null 2>&1 || true
+            stop_emulationstation KILL
+            wait_for_emulationstation_stop || true
         fi
     fi
 elif [[ -x "${ES_SERVICE}" ]]; then
@@ -643,18 +764,6 @@ export BATOCERA_STEAM_GS_FILTER="${BATOCERA_STEAM_GS_FILTER:-linear}"
 log "using gamescope defaults backend=${BATOCERA_STEAM_GS_BACKEND} connector=${BATOCERA_STEAM_GS_PREFER_OUTPUT:-none} res=${BATOCERA_STEAM_GS_DEFAULT_RES} output=${BATOCERA_STEAM_GS_OUTPUT_RES} nested=${BATOCERA_STEAM_GS_NESTED_RES} refresh=${BATOCERA_STEAM_GS_NESTED_REFRESH} orientation=${BATOCERA_STEAM_GS_FORCE_ORIENTATION:-none}"
 
 ensure_cef_remote_debugging_markers
-
-steam_args=()
-case "${1:-}" in
-    gameStart|gameStop|systemSelected|systemDeselected)
-        log "ignoring Batocera launcher hook arguments: $*"
-        ;;
-    "")
-        ;;
-    *)
-        steam_args=("$@")
-        ;;
-esac
 
 log "launching batocera-steam with mode=${BATOCERA_STEAM_MODE} args=${steam_args[*]:-<none>}"
 if command -v dbus-run-session >/dev/null 2>&1; then

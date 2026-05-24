@@ -1,0 +1,23 @@
+OpenGOAL expects user-supplied original PlayStation 2 game ISOs.
+
+Put your ISOs in this folder:
+
+  /userdata/roms/opengoal/
+
+Recommended filenames:
+
+  Jak and Daxter.iso
+  Jak II.iso
+  Jak 3.iso
+
+OpenGOAL supports retail Jak and Daxter releases documented by the upstream
+project. Use clean PS2 dumps from your own discs.
+
+The first launch extracts, decompiles, and compiles the selected game into:
+
+  /userdata/saves/opengoal/
+
+That first launch can take a while and uses several gigabytes of storage.
+After it completes, later launches use the cached build. Enable the Rebuild
+Game option from EmulationStation if you replace the ISO or need to regenerate
+the cached OpenGOAL data.

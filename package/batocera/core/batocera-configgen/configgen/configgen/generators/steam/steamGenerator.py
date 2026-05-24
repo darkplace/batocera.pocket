@@ -131,17 +131,25 @@ class SteamGenerator(Generator):
         extra_args_override = None
         gamepadui_override = None
         gamescope_override = None
+        visible_update_preflight_override = None
+        update_preflight_no_update_secs_override = None
         steam_user_override = None
         if basename != "Steam.steam":
             # read the id inside the file
             with rom.open() as f:
                 entry = _parse_steam_rom_entry(f.read())
-            gameId = entry.get("appid") or entry.get("gameid")
+            steam_uri = entry.get("steam_uri") or entry.get("uri") or entry.get("url")
+            if steam_uri and steam_uri.startswith("steam://"):
+                gameId = steam_uri
+            else:
+                gameId = entry.get("appid") or entry.get("gameid")
             mode_override = entry.get("mode")
             command_override = entry.get("command") or entry.get("exec")
             extra_args_override = entry.get("extra_args") or entry.get("args")
             gamepadui_override = entry.get("gamepadui")
             gamescope_override = entry.get("gamescope")
+            visible_update_preflight_override = entry.get("visible_update_preflight") or entry.get("update_preflight")
+            update_preflight_no_update_secs_override = entry.get("update_preflight_no_update_secs") or entry.get("preflight_no_update_secs")
             steam_user_override = entry.get("steam_user") or entry.get("user") or entry.get("account")
 
         if command_override:
@@ -210,6 +218,7 @@ class SteamGenerator(Generator):
             if gameId is not None:
                 commandArray.append(gameId)
 
+        default_visible_update_preflight = is_aarch64 and mode == "steamos" and use_gamescope
         env = {
             "SDL_JOYSTICK_HIDAPI_XBOX": "0",
             "BATOCERA_STEAM_MODE": mode,
@@ -234,12 +243,19 @@ class SteamGenerator(Generator):
             "BATOCERA_STEAM_GS_STATS_PATH": system.config.get_str("gamescope_stats_path", "").strip(),
             "BATOCERA_STEAM_GAMEPADUI": steam_gamepadui,
             "BATOCERA_STEAM_EXTRA_ARGS": system.config.get_str("steam_extra_args", ""),
+            "BATOCERA_STEAM_VISIBLE_UPDATE_PREFLIGHT": system.config.get_bool("steam_visible_update_preflight", default_visible_update_preflight, return_values=("1", "0")),
         }
         steam_user = _normalize_steam_user(steam_user_override) if steam_user_override is not None else steam_user
         if steam_user != "auto":
             env["BATOCERA_STEAM_USER"] = steam_user
         if extra_args_override:
             env["BATOCERA_STEAM_EXTRA_ARGS"] = extra_args_override
+        normalized_update_preflight = _normalize_bool_override(visible_update_preflight_override)
+        if normalized_update_preflight is not None:
+            env["BATOCERA_STEAM_VISIBLE_UPDATE_PREFLIGHT"] = normalized_update_preflight
+        update_preflight_no_update_secs = _positive_int(update_preflight_no_update_secs_override or "")
+        if update_preflight_no_update_secs is not None:
+            env["BATOCERA_STEAM_PREFLIGHT_NO_UPDATE_SECS"] = str(update_preflight_no_update_secs)
         if nested_refresh > 0:
             env["BATOCERA_STEAM_GS_NESTED_REFRESH"] = str(nested_refresh)
         if nested_unfocused_refresh is not None:

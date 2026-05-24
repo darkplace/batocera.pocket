@@ -1,0 +1,17 @@
+Windows 9x images and games use DOSBox Pure.
+
+Use "Win9x Image Builder" from the F1 desktop applications menu.
+
+Basic flow:
+
+1. Create an installer entry from your own Windows 95/98 install ISO.
+2. Launch the installer entry from the Windows 9x system.
+3. In DOSBox Pure, choose the install operating system option.
+4. Install Windows into the new image that DOSBox Pure creates in /userdata/bios.
+5. Create launch entries that target that image and attach CD/DVD media to D: or floppy media to A:.
+6. Launch a game entry. DOSBox Pure reads AUTOBOOT.DBP from the .pc folder and boots the selected image.
+
+One image/one game:
+Install the game inside Windows, then copy the game's shortcut into the Windows Start Menu Startup folder.
+
+Launch entries are .pc folders. Generic multi-disc playlists outside this Win9x flow should use the M3U Builder.

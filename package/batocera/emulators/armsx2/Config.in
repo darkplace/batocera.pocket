@@ -8,6 +8,7 @@ config BR2_PACKAGE_ARMSX2
     select BR2_PACKAGE_DBUS
     select BR2_PACKAGE_LIBPCAP
     select BR2_PACKAGE_ZLIB
+    select BR2_PACKAGE_ECM
     help
       ARMSX2 is a PCSX2 fork with a native ARM64 JIT for PlayStation 2 emulation.
 

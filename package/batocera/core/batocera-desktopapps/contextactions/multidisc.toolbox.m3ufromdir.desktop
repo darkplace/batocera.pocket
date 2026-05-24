@@ -1,16 +1,16 @@
 [Desktop Entry]
 Type=Action
-Name=Create m3u from Directory
+Name=Create M3U/M3U8 list
 # Folders point so base dir, exclude dirs with !... for example:
 # /userdata/roms --> includes all systems
 # !*/windows     --> excludes windows
 # /userdata/roms/windows will crash pcmanfm
 Folders=/userdata/roms*;
 # Add more systems to Basenames to activate script for context menu
-Basenames=psx;segacd;saturn;dreamcast
+Basenames=psx;segacd;saturn;dreamcast;apple2;win9x
 Profiles=Batocera
 SelectionCount==1
 
 [X-Action-Profile Batocera]
 MimeTypes=inode/directory
-Exec=bash -c '/usr/share/file-manager/actions/toolbox/multidisc.toolbox %f | yad --text-info --wrap'
+Exec=xterm -fs 14 -fg white -bg black -fa "Monospace" -en UTF-8 -sb -rightbar -geometry 120x38 -e env BATOCERA_FORCE_DIALOG=1 /usr/bin/batocera-m3u-builder --start %f

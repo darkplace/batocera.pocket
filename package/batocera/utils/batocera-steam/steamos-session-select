@@ -10,6 +10,9 @@ ASYNC="${STEAMOS_SESSION_SELECT_ASYNC:-0}"
 ALLY_HOTKEY_DIR="/userdata/system/configs/hotkeygen"
 ALLY_ACTIVE_MAP="${ALLY_HOTKEY_DIR}/ASUS_ROG_Ally_Config-b05-1abe.mapping"
 ALLY_ES_MAP="${ALLY_HOTKEY_DIR}/ASUS_ROG_Ally_Config-b05-1abe.mapping.es"
+ALLY_SYSTEM_DIR="/usr/share/batocera/services/allyhotkeys.d"
+ALLY_SYSTEM_DEFAULT_MAP="${ALLY_SYSTEM_DIR}/ASUS_ROG_Ally_Config-b05-1abe.mapping"
+ALLY_SYSTEM_ES_MAP="${ALLY_SYSTEM_DIR}/ASUS_ROG_Ally_Config-b05-1abe.mapping.es"
 ALLY_DATAINIT_DIR="/usr/share/batocera/datainit/system/configs/hotkeygen"
 
 request="${1:-}"
@@ -31,29 +34,100 @@ run_detached() {
     fi
 }
 
+run_frontend_env() {
+    env \
+        -u WAYLAND_DISPLAY \
+        -u DISPLAY \
+        -u SWAYSOCK \
+        -u I3SOCK \
+        -u GAMESCOPE_DISPLAY \
+        -u GAMESCOPE_WAYLAND_DISPLAY \
+        -u GAMESCOPE_SESSION \
+        -u STEAM_GAME_DISPLAY_0 \
+        -u STEAM_MULTIPLE_XWAYLANDS \
+        -u DESKTOP_STARTUP_ID \
+        -u XKB_LAYOUT \
+        -u XKB_DEFAULT_LAYOUT \
+        -u XKB_VARIANT \
+        -u XKB_DEFAULT_VARIANT \
+        XDG_CURRENT_DESKTOP=sway \
+        XDG_SESSION_TYPE=wayland \
+        XDG_RUNTIME_DIR=/var/run \
+        WLR_XWAYLAND_NO_AUTH=1 \
+        "$@"
+}
+
 run_es_cmd() {
     if command -v timeout >/dev/null 2>&1; then
-        timeout 15 "$@" >/dev/null 2>&1
+        run_frontend_env timeout 15 "$@" >/dev/null 2>&1
     else
-        "$@" >/dev/null 2>&1
+        run_frontend_env "$@" >/dev/null 2>&1
     fi
+}
+
+run_frontend_detached() {
+    if command -v setsid >/dev/null 2>&1; then
+        run_frontend_env setsid "$@" </dev/null >/dev/null 2>&1 &
+    else
+        run_frontend_env nohup "$@" </dev/null >/dev/null 2>&1 &
+    fi
+}
+
+emulationstation_running() {
+    pgrep -f '(^|[[:space:]/])emulationstation([[:space:]]|$)' >/dev/null 2>&1
+}
+
+emulationstation_standalone_running() {
+    pgrep -f '(^|[[:space:]/])emulationstation-standalone([[:space:]]|$)' >/dev/null 2>&1
+}
+
+wait_for_emulationstation() {
+    local i
+
+    for i in $(seq 1 "${1:-80}"); do
+        if emulationstation_running; then
+            return 0
+        fi
+        sleep 0.25
+    done
+
+    return 1
+}
+
+start_frontend_clean() {
+    if [[ -x /usr/bin/sway-launch ]]; then
+        echo "Starting clean Sway frontend after Steam session switch" >> "${log}"
+        run_frontend_detached /usr/bin/sway-launch
+        return 0
+    fi
+
+    if command -v emulationstation-standalone >/dev/null 2>&1; then
+        echo "Starting clean EmulationStation standalone after Steam session switch" >> "${log}"
+        run_frontend_detached /usr/bin/emulationstation-standalone
+        return 0
+    fi
+
+    echo "Starting clean raw EmulationStation after Steam session switch" >> "${log}"
+    run_frontend_detached emulationstation
 }
 
 resume_es() {
     local resumed=0
 
     if [[ -x /etc/init.d/S31emulationstation ]]; then
-        if run_es_cmd /etc/init.d/S31emulationstation resume; then
-            resumed=1
+        if emulationstation_standalone_running; then
+            if run_es_cmd /etc/init.d/S31emulationstation resume; then
+                resumed=1
+            fi
+        else
+            echo "EmulationStation resume skipped; frontend runner is not active" >> "${log}"
+            rm -f /tmp/es-resume.fifo /tmp/suspend.please
         fi
     fi
 
-    for _ in $(seq 1 20); do
-        if pgrep -x emulationstation >/dev/null 2>&1; then
-            return
-        fi
-        sleep 0.2
-    done
+    if wait_for_emulationstation 80; then
+        return
+    fi
 
     if [[ -x /etc/init.d/S31emulationstation ]]; then
         if [[ "${resumed}" -eq 1 ]]; then
@@ -65,21 +139,29 @@ resume_es() {
             run_es_cmd /etc/init.d/S31emulationstation start || true
     fi
 
-    if ! pgrep -x emulationstation >/dev/null 2>&1; then
-        emulationstation >/dev/null 2>&1 &
+    if wait_for_emulationstation 80; then
+        return
     fi
+
+    start_frontend_clean
+    wait_for_emulationstation 80 || true
 }
 
 steam_stack_alive() {
     pgrep -x batocera-steam >/dev/null 2>&1 || \
     pgrep -f "${steam_session_pattern}" >/dev/null 2>&1 || \
+    pgrep -f '(^|[[:space:]/])batocera-steam-update-terminal([[:space:]]|$)' >/dev/null 2>&1 || \
+    pgrep -f '(^|[[:space:]/])batocera-steam-uimode-watch([[:space:]]|$)' >/dev/null 2>&1 || \
+    pgrep -f '(^|[[:space:]/])batocera-steam-nightmode-watch([[:space:]]|$)' >/dev/null 2>&1 || \
     pgrep -x steam >/dev/null 2>&1 || \
     pgrep -x steamwebhelper >/dev/null 2>&1 || \
     pgrep -x FEX >/dev/null 2>&1 || \
-    pgrep -x gamescope >/dev/null 2>&1 || \
+    pgrep -f '(^|[[:space:]/])gamescope([[:space:]]|$)' >/dev/null 2>&1 || \
     pgrep -x gamescopereaper >/dev/null 2>&1 || \
     pgrep -x gamescopestream >/dev/null 2>&1 || \
     pgrep -x gamescopectl >/dev/null 2>&1 || \
+    pgrep -x wineserver >/dev/null 2>&1 || \
+    pgrep -f 'SteamLaunch AppId=|pw-audio-namespace|/proton waitforexitandrun|steam\.exe' >/dev/null 2>&1 || \
     pgrep -f '/userdata/system/homebrew/services/PluginLoader' >/dev/null 2>&1 || \
     pgrep -f '/userdata/system/steam/steam.sh|/usr/share/steam/bin_steam.sh|emulatorlauncher.*-system steam|Steam GamepadUI\.steam|Steam Desktop\.steam' >/dev/null 2>&1
 }
@@ -90,12 +172,18 @@ terminate_steam_stack() {
     # Hard-kill first for reliability on this build.
     if command -v killall >/dev/null 2>&1; then
         killall -q -9 steam steamwebhelper steam-runtime-supervisor \
-            FEX gamescope gamescopereaper gamescopestream gamescopectl PluginLoader \
+            FEX gamescope gamescope-wl gamescopereaper gamescopestream gamescopectl wineserver PluginLoader \
             >/dev/null 2>&1 || true
     fi
     pkill -KILL -x FEX >/dev/null 2>&1 || true
+    pkill -KILL -f '(^|[[:space:]/])gamescope([[:space:]]|$)' >/dev/null 2>&1 || true
     pkill -KILL -x batocera-steam >/dev/null 2>&1 || true
     pkill -KILL -f "${steam_session_pattern}" >/dev/null 2>&1 || true
+    pkill -KILL -f '(^|[[:space:]/])batocera-steam-update-terminal([[:space:]]|$)' >/dev/null 2>&1 || true
+    pkill -KILL -f '(^|[[:space:]/])batocera-steam-uimode-watch([[:space:]]|$)' >/dev/null 2>&1 || true
+    pkill -KILL -f '(^|[[:space:]/])batocera-steam-nightmode-watch([[:space:]]|$)' >/dev/null 2>&1 || true
+    pkill -KILL -x wineserver >/dev/null 2>&1 || true
+    pkill -KILL -f 'SteamLaunch AppId=|pw-audio-namespace|/proton waitforexitandrun|steam\.exe' >/dev/null 2>&1 || true
     pkill -KILL -f 'pressure-vessel' >/dev/null 2>&1 || true
     pkill -KILL -f '/userdata/system/steam/steam.sh|/usr/share/steam/bin_steam.sh|emulatorlauncher.*-system steam|Steam GamepadUI\.steam|Steam Desktop\.steam' >/dev/null 2>&1 || true
 
@@ -108,7 +196,7 @@ terminate_steam_stack() {
 
     if steam_stack_alive; then
         echo "Steam stack still alive after hard kill:" >> "${log}"
-        pgrep -af 'steam|steamwebhelper|gamescope|batocera-steam' >> "${log}" || true
+        pgrep -af 'steam|steamwebhelper|gamescope|gamescope-wl|batocera-steam|update-terminal|uimode-watch|nightmode-watch|wineserver|SteamLaunch|pw-audio-namespace|proton waitforexitandrun' >> "${log}" || true
     fi
 }
 
@@ -123,6 +211,8 @@ restore_ally_hotkeys_es() {
     mkdir -p "${ALLY_HOTKEY_DIR}" 2>/dev/null || true
     for src in \
         "${ALLY_ES_MAP}" \
+        "${ALLY_SYSTEM_ES_MAP}" \
+        "${ALLY_SYSTEM_DEFAULT_MAP}" \
         "${ALLY_DATAINIT_DIR}/ASUS_ROG_Ally_Config-b05-1abe.mapping.es" \
         "${ALLY_DATAINIT_DIR}/ASUS_ROG_Ally_Config-b05-1abe.mapping"
     do

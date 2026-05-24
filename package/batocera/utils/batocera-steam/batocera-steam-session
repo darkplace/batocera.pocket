@@ -29,10 +29,17 @@ STEAM_FIRST_RUN_PENDING=0
 STEAM_SETUP_KIND="${BATOCERA_STEAM_SETUP_KIND:-}"
 STEAM_INSTALL_CALLOUT_PID=""
 THOR_BRIGHTNESS_WATCH_PID=""
+STEAM_SESSION_DBUS_PID=""
+STEAM_PORTAL_PIDS=()
+STEAM_CHILD_LSFG_ENV=()
 ALLY_HOTKEY_DIR="/userdata/system/configs/hotkeygen"
 ALLY_ACTIVE_MAP="${ALLY_HOTKEY_DIR}/ASUS_ROG_Ally_Config-b05-1abe.mapping"
 ALLY_ES_MAP="${ALLY_HOTKEY_DIR}/ASUS_ROG_Ally_Config-b05-1abe.mapping.es"
 ALLY_STEAM_MAP="${ALLY_HOTKEY_DIR}/ASUS_ROG_Ally_Config-b05-1abe.mapping.steam"
+ALLY_SYSTEM_DIR="/usr/share/batocera/services/allyhotkeys.d"
+ALLY_SYSTEM_DEFAULT_MAP="${ALLY_SYSTEM_DIR}/ASUS_ROG_Ally_Config-b05-1abe.mapping"
+ALLY_SYSTEM_ES_MAP="${ALLY_SYSTEM_DIR}/ASUS_ROG_Ally_Config-b05-1abe.mapping.es"
+ALLY_SYSTEM_STEAM_MAP="${ALLY_SYSTEM_DIR}/ASUS_ROG_Ally_Config-b05-1abe.mapping.steam"
 ALLY_DATAINIT_DIR="/usr/share/batocera/datainit/system/configs/hotkeygen"
 
 run_ally_hotkey_hook() {
@@ -78,6 +85,7 @@ apply_ally_hotkey_map() {
         steam)
             for src in \
                 "${ALLY_STEAM_MAP}" \
+                "${ALLY_SYSTEM_STEAM_MAP}" \
                 "${ALLY_DATAINIT_DIR}/ASUS_ROG_Ally_Config-b05-1abe.mapping.steam"
             do
                 if [[ -f "${src}" ]]; then
@@ -92,6 +100,8 @@ apply_ally_hotkey_map() {
         es)
             for src in \
                 "${ALLY_ES_MAP}" \
+                "${ALLY_SYSTEM_ES_MAP}" \
+                "${ALLY_SYSTEM_DEFAULT_MAP}" \
                 "${ALLY_DATAINIT_DIR}/ASUS_ROG_Ally_Config-b05-1abe.mapping.es" \
                 "${ALLY_DATAINIT_DIR}/ASUS_ROG_Ally_Config-b05-1abe.mapping"
             do
@@ -294,11 +304,28 @@ stop_thor_backlight_mirror() {
     fi
 }
 
+cleanup_steam_portal_session() {
+    local pid
+
+    for pid in "${STEAM_PORTAL_PIDS[@]}"; do
+        kill "${pid}" >/dev/null 2>&1 || true
+        wait "${pid}" >/dev/null 2>&1 || true
+    done
+    STEAM_PORTAL_PIDS=()
+
+    if [[ -n "${STEAM_SESSION_DBUS_PID}" ]]; then
+        kill "${STEAM_SESSION_DBUS_PID}" >/dev/null 2>&1 || true
+        wait "${STEAM_SESSION_DBUS_PID}" >/dev/null 2>&1 || true
+        STEAM_SESSION_DBUS_PID=""
+    fi
+}
+
 cleanup_hotkeys_on_exit() {
     # "Switch to Desktop" kills the original session outside configgen's normal cleanup path.
     # Restore an explicit default context and ES profile when that happens.
     stop_steam_install_callouts
     stop_thor_backlight_mirror
+    cleanup_steam_portal_session
     run_ally_hotkey_hook gameStop || true
     if command -v hotkeygen >/dev/null 2>&1; then
         if ! hotkeygen_permanent_running && [ -x /etc/init.d/S90hotkeygen ]; then
@@ -582,6 +609,105 @@ ensure_system_bus_address() {
     fi
 }
 
+session_bus_is_system_bus() {
+    [[ "${DBUS_SESSION_BUS_ADDRESS:-}" == *"/run/dbus/system_bus_socket"* ]] || \
+    [[ "${DBUS_SESSION_BUS_ADDRESS:-}" == *"/var/run/dbus/system_bus_socket"* ]]
+}
+
+session_bus_responds() {
+    command -v dbus-send >/dev/null 2>&1 || return 0
+    timeout 2 dbus-send --session --type=method_call \
+        --dest=org.freedesktop.DBus / org.freedesktop.DBus.ListNames >/dev/null 2>&1
+}
+
+ensure_steam_session_bus() {
+    local dbus_out
+    local address
+    local pid
+
+    ensure_runtime_dir
+
+    if [[ -n "${DBUS_SESSION_BUS_ADDRESS:-}" ]] && ! session_bus_is_system_bus && session_bus_responds; then
+        return
+    fi
+
+    if ! command -v dbus-daemon >/dev/null 2>&1; then
+        echo "Steam portal setup: dbus-daemon missing, keeping DBUS_SESSION_BUS_ADDRESS=${DBUS_SESSION_BUS_ADDRESS:-unset}" >> "${log}"
+        return
+    fi
+
+    dbus_out="$(dbus-daemon --session --fork --print-address=1 --print-pid=1 2>> "${log}" || true)"
+    address="$(printf '%s\n' "${dbus_out}" | sed -n '1p')"
+    pid="$(printf '%s\n' "${dbus_out}" | sed -n '2p')"
+    if [[ -z "${address}" ]]; then
+        echo "Steam portal setup: failed to create session bus" >> "${log}"
+        return
+    fi
+
+    export DBUS_SESSION_BUS_ADDRESS="${address}"
+    if [[ "${pid}" =~ ^[0-9]+$ ]]; then
+        STEAM_SESSION_DBUS_PID="${pid}"
+    fi
+    echo "Steam portal setup: started private session bus pid=${STEAM_SESSION_DBUS_PID:-unknown}" >> "${log}"
+}
+
+portal_binary() {
+    local name="$1"
+
+    if [[ -x "/usr/libexec/${name}" ]]; then
+        printf '%s\n' "/usr/libexec/${name}"
+        return
+    fi
+
+    command -v "${name}" 2>/dev/null || true
+}
+
+portal_filechooser_available() {
+    command -v gdbus >/dev/null 2>&1 || return 1
+    timeout 2 gdbus introspect --session \
+        --dest org.freedesktop.portal.Desktop \
+        --object-path /org/freedesktop/portal/desktop 2>/dev/null | \
+        grep -q "org.freedesktop.portal.FileChooser"
+}
+
+start_steam_portals() {
+    local portal_desktop="${BATOCERA_STEAM_PORTAL_DESKTOP:-labwc}"
+    local portal
+    local portal_gtk
+
+    [[ "${BATOCERA_STEAM_START_PORTALS:-1}" != "0" ]] || return
+
+    if portal_filechooser_available; then
+        echo "Steam portal setup: FileChooser already available" >> "${log}"
+        return
+    fi
+
+    portal="$(portal_binary xdg-desktop-portal)"
+    portal_gtk="$(portal_binary xdg-desktop-portal-gtk)"
+    if [[ -z "${portal}" || -z "${portal_gtk}" ]]; then
+        echo "Steam portal setup: portal binaries missing" >> "${log}"
+        return
+    fi
+
+    XDG_CURRENT_DESKTOP="${portal_desktop}" "${portal_gtk}" -r >> "${log}" 2>&1 &
+    STEAM_PORTAL_PIDS+=("$!")
+    sleep 0.1
+    XDG_CURRENT_DESKTOP="${portal_desktop}" "${portal}" -r >> "${log}" 2>&1 &
+    STEAM_PORTAL_PIDS+=("$!")
+
+    sleep 0.8
+    if portal_filechooser_available; then
+        echo "Steam portal setup: FileChooser available on session bus using ${portal_desktop}" >> "${log}"
+    else
+        echo "Steam portal setup: FileChooser still unavailable after portal start" >> "${log}"
+    fi
+}
+
+prepare_steam_portal_session() {
+    ensure_steam_session_bus
+    start_steam_portals
+}
+
 start_displaymanager_stub() {
     local stub="/usr/bin/batocera-displaymanager-stub"
     local stub_pattern='(^|/)batocera-displaymanager-stub([[:space:]]|$)'
@@ -777,6 +903,12 @@ start_uimode_watch() {
     echo "Steam UI mode watcher started" >> "${log}"
 }
 
+steam_update_terminal_enabled() {
+    [[ "${BATOCERA_STEAM_VISIBLE_UPDATE_PREFLIGHT:-0}" == "0" ]] || return 1
+    [[ "${BATOCERA_STEAM_UPDATE_TERMINAL:-1}" != "0" ]] || return 1
+    [[ -x /usr/bin/batocera-steam-gamescope-child && -x /usr/bin/batocera-steam-update-terminal ]]
+}
+
 
 start_nightmode_watch() {
     local watcher="/usr/bin/batocera-steam-nightmode-watch"
@@ -846,14 +978,67 @@ prepare_mangoapp_config() {
     echo "Steam MangoApp config: ${config_path}" >> "${log}"
 }
 
-start_decky_loader
-ensure_system_bus_address
-start_networkmanager_stub
-start_login1_stub
-start_consolekit_stub
-start_displaymanager_stub
-start_uimode_watch
-start_thor_backlight_mirror
+prepare_gamescope_child_lsfg_env() {
+    local key value item filtered_layers
+    local -a layer_items=()
+    local -a lsfg_keys=(
+        ENABLE_LSFG
+        LSFG_LEGACY
+        LSFG_DLL_PATH
+        LSFG_MULTIPLIER
+        LSFG_FLOW_SCALE
+        LSFG_PERFORMANCE_MODE
+        LSFG_HDR_MODE
+        LSFG_EXPERIMENTAL_PRESENT_MODE
+        LSFG_PROCESS
+        BATOCERA_LSFG_WINE_LAYER
+    )
+    STEAM_CHILD_LSFG_ENV=()
+
+    for key in "${lsfg_keys[@]}"; do
+        if [[ -v "${key}" ]]; then
+            value="${!key}"
+            STEAM_CHILD_LSFG_ENV+=("${key}=${value}")
+            unset "${key}"
+        fi
+    done
+
+    if [[ -v VK_INSTANCE_LAYERS && "${VK_INSTANCE_LAYERS}" == *"VK_LAYER_LS_frame_generation"* ]]; then
+        STEAM_CHILD_LSFG_ENV+=("VK_INSTANCE_LAYERS=${VK_INSTANCE_LAYERS}")
+        filtered_layers=""
+        IFS=':' read -r -a layer_items <<< "${VK_INSTANCE_LAYERS}"
+        for item in "${layer_items[@]}"; do
+            [[ -z "${item}" || "${item}" == "VK_LAYER_LS_frame_generation" ]] && continue
+            filtered_layers+="${filtered_layers:+:}${item}"
+        done
+        if [[ -n "${filtered_layers}" ]]; then
+            export VK_INSTANCE_LAYERS="${filtered_layers}"
+        else
+            unset VK_INSTANCE_LAYERS
+        fi
+    fi
+
+    if [[ "${#STEAM_CHILD_LSFG_ENV[@]}" -gt 0 ]]; then
+        if [[ -v VK_LAYER_PATH ]]; then
+            STEAM_CHILD_LSFG_ENV+=("VK_LAYER_PATH=${VK_LAYER_PATH}")
+            unset VK_LAYER_PATH
+        fi
+        if [[ -v LD_LIBRARY_PATH ]]; then
+            STEAM_CHILD_LSFG_ENV+=("LD_LIBRARY_PATH=${LD_LIBRARY_PATH}")
+        fi
+        echo "Steam gamescope: LSFG layer removed from gamescope compositor env and passed to Steam child." >> "${log}"
+    fi
+}
+
+start_decky_loader || true
+ensure_system_bus_address || true
+prepare_steam_portal_session || true
+start_networkmanager_stub || true
+start_login1_stub || true
+start_consolekit_stub || true
+start_displaymanager_stub || true
+start_uimode_watch || true
+start_thor_backlight_mirror || true
 
 if command -v gamescope >/dev/null 2>&1 && [[ "${BATOCERA_STEAM_USE_GAMESCOPE:-1}" != "0" ]]; then
     read -r out_w out_h <<< "$(detect_output_resolution)"
@@ -905,7 +1090,7 @@ if command -v gamescope >/dev/null 2>&1 && [[ "${BATOCERA_STEAM_USE_GAMESCOPE:-1
         append_gamescope_flag "--mangoapp"
     fi
 
-    if [[ "${BATOCERA_STEAM_GS_FORCE_WINDOWS_FULLSCREEN:-0}" != "0" ]]; then
+    if [[ "${BATOCERA_STEAM_GS_FORCE_WINDOWS_FULLSCREEN:-0}" != "0" ]] || steam_update_terminal_enabled; then
         append_gamescope_flag "--force-windows-fullscreen"
     fi
 
@@ -966,7 +1151,18 @@ if command -v gamescope >/dev/null 2>&1 && [[ "${BATOCERA_STEAM_USE_GAMESCOPE:-1
     echo "Steam gamescope args: ${gs_args[*]} fake_output_mm=${GAMESCOPE_FAKE_OUTPUT_MM:-unset}" >> "${log}"
     start_steam_install_callouts
     start_nightmode_watch
-    if gamescope "${gs_args[@]}" -- "$@"; then
+    prepare_gamescope_child_lsfg_env
+    child_cmd=("$@")
+    if steam_update_terminal_enabled; then
+        child_cmd=(/usr/bin/batocera-steam-gamescope-child "$@")
+    fi
+    if [[ "${#STEAM_CHILD_LSFG_ENV[@]}" -gt 0 ]]; then
+        if gamescope "${gs_args[@]}" -- env "${STEAM_CHILD_LSFG_ENV[@]}" "${child_cmd[@]}"; then
+            exit 0
+        fi
+        exit $?
+    fi
+    if gamescope "${gs_args[@]}" -- "${child_cmd[@]}"; then
         exit 0
     fi
     exit $?

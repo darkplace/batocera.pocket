@@ -12,10 +12,10 @@ BATOCERA_DESKTOPAPPS_PKGDIR = \
 
 # Base files
 BATOCERA_DESKTOPAPPS_SCRIPTS = filemanagerlauncher ftoolbox
-BATOCERA_DESKTOPAPPS_APPS    = xterm.desktop
-BATOCERA_DESKTOPAPPS_ICONS   =
+BATOCERA_DESKTOPAPPS_APPS    = xterm.desktop m3u-builder.desktop win9x-tool.desktop
+BATOCERA_DESKTOPAPPS_ICONS   = m3u-builder.png win9x-tool.png
 BATOCERA_DESKTOPAPPS_TOOLBOX =
-BATOCERA_DESKTOPAPPS_ACTIONS = system.md5sum.desktop
+BATOCERA_DESKTOPAPPS_ACTIONS = system.md5sum.desktop multidisc.toolbox.m3ufromdir.desktop
 BATOCERA_DESKTOPAPPS_STALE_APPS =
 BATOCERA_DESKTOPAPPS_STALE_ICONS =
 
@@ -127,6 +127,12 @@ endif
 ifeq ($(BR2_PACKAGE_HEROIC),y)
   BATOCERA_DESKTOPAPPS_APPS    += heroic.desktop
   BATOCERA_DESKTOPAPPS_ICONS   += heroic.png
+endif
+
+# n64 recomp launcher
+ifeq ($(BR2_PACKAGE_N64RECOMP_LAUNCHER),y)
+  BATOCERA_DESKTOPAPPS_APPS    += n64recomp-launcher.desktop
+  BATOCERA_DESKTOPAPPS_ICONS   += n64recomp-launcher.png
 endif
 
 # bundled desktop apps
@@ -266,6 +272,7 @@ ifeq ($(BR2_PACKAGE_WINE_TKG),y)
   BATOCERA_DESKTOPAPPS_ACTIONS += wine.toolbox.folder2autorun.desktop
   BATOCERA_DESKTOPAPPS_ACTIONS += wine.toolbox.file2autorun.desktop
   BATOCERA_DESKTOPAPPS_ACTIONS += wine.toolbox.extract.desktop
+  BATOCERA_DESKTOPAPPS_ACTIONS += wine.toolbox.steam-shortcut.desktop
 endif
 
 ifeq ($(BR2_PACKAGE_BATOCERA_APPS_AARCH64),y)

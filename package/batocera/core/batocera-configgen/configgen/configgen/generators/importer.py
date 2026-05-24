@@ -23,6 +23,7 @@ _GENERATOR_MAP: Final[dict[str, tuple[str, str]]] = {
     'sdlpop': ('sdlpop.sdlpopGenerator', 'SdlPopGenerator'),
     'melonds': ('melonds.melondsGenerator', 'MelonDSGenerator'),
     'eden': ('eden.edenGenerator', 'EdenGenerator'),
+    'yuzu': ('yuzu.yuzuGenerator', 'YuzuGenerator'),
     'devilutionx': ('devilutionx.devilutionxGenerator', 'DevilutionXGenerator'),
     'easyrpg': ('easyrpg.easyrpgGenerator', 'EasyRPGGenerator'),
     'xash3d_fwgs': ('xash3d_fwgs.xash3dFwgsGenerator', 'Xash3dFwgsGenerator'),
@@ -56,6 +57,7 @@ _GENERATOR_MAP: Final[dict[str, tuple[str, str]]] = {
     'shadps4': ('shadps4.shadps4Generator', 'shadPS4Generator'),
     'jazz2-native': ('jazz2_native.jazz2_nativeGenerator', 'Jazz2_NativeGenerator'),
     'dhewm3': ('dhewm3.dhewm3Generator', 'Dhewm3Generator'),
+    'opengoal': ('opengoal.opengoalGenerator', 'OpengoalGenerator'),
     'catacombgl': ('catacombgl.catacombglGenerator', 'CatacombGLGenerator'),
     'lindbergh-loader': ('lindbergh.lindberghGenerator', 'LindberghGenerator'),
     'vkquake': ('vkquake.vkquakeGenerator', 'VKQuakeGenerator'),
@@ -79,6 +81,7 @@ _GENERATOR_MAP: Final[dict[str, tuple[str, str]]] = {
     'touchhle': ('touchhle.touchhleGenerator', 'TouchHLEGenerator'),
     'heroic': ('sh.shGenerator', 'ShGenerator'),
     'lutris': ('sh.shGenerator', 'ShGenerator'),
+    'n64recomp': ('sh.shGenerator', 'ShGenerator'),
 }
 
 def get_generator(emulator: str) -> Generator:

@@ -136,7 +136,7 @@ for generated_game in generated_root.findall("game"):
             merged_child.text = generated_child.text
 
     basename = Path(path).name
-    if basename.startswith("steam-app-") and basename.endswith(".steam"):
+    if basename.endswith(".steam") and (basename.startswith("steam-app-") or basename.startswith("steam-shortcut-")):
         generated_image = child_text(generated_game, "image")
         merged_image = child_text(merged_game, "image")
         if not generated_image and is_generic_steam_image(merged_image):
@@ -343,6 +343,112 @@ copy_game_image() {
     printf '\n'
 }
 
+list_steam_shortcuts() {
+    python3 - "${steam_home}" <<'PY'
+from __future__ import annotations
+
+import struct
+import sys
+import zlib
+from pathlib import Path
+
+roots = [
+    Path(sys.argv[1]),
+    Path("/userdata/system/steam"),
+    Path("/userdata/system/.steam/steam"),
+    Path("/userdata/system/.local/share/Steam"),
+]
+
+
+def read_cstring(data: bytes, pos: int) -> tuple[str, int]:
+    end = data.find(b"\x00", pos)
+    if end < 0:
+        raise ValueError("unterminated string")
+    return data[pos:end].decode("utf-8", errors="replace"), end + 1
+
+
+def parse_object(data: bytes, pos: int = 0) -> tuple[dict[str, object], int]:
+    node: dict[str, object] = {}
+    while pos < len(data):
+        kind = data[pos]
+        pos += 1
+        if kind == 0x08:
+            return node, pos
+        key, pos = read_cstring(data, pos)
+        if kind == 0x00:
+            value, pos = parse_object(data, pos)
+        elif kind == 0x01:
+            value, pos = read_cstring(data, pos)
+        elif kind == 0x02:
+            value = struct.unpack_from("<i", data, pos)[0]
+            pos += 4
+        elif kind == 0x07:
+            value = struct.unpack_from("<Q", data, pos)[0]
+            pos += 8
+        else:
+            raise ValueError(f"unsupported binary VDF type 0x{kind:02x}")
+        node[key] = value
+    return node, pos
+
+
+def sort_key(value: str) -> tuple[int, str]:
+    return (int(value), value) if value.isdigit() else (999999, value)
+
+
+def normalized_appid(entry: dict[str, object]) -> int | None:
+    raw = entry.get("appid")
+    if raw is not None:
+        try:
+            return int(raw) & 0xFFFFFFFF
+        except (TypeError, ValueError):
+            pass
+
+    app_name = str(entry.get("AppName") or "").strip()
+    exe = str(entry.get("Exe") or "").strip()
+    if not app_name or not exe:
+        return None
+    return (zlib.crc32((exe.strip('"') + app_name).encode("utf-8")) | 0x80000000) & 0xFFFFFFFF
+
+
+def is_hidden(entry: dict[str, object]) -> bool:
+    try:
+        return int(entry.get("IsHidden") or 0) != 0
+    except (TypeError, ValueError):
+        return False
+
+
+seen_paths: set[str] = set()
+seen_appids: set[int] = set()
+for root in roots:
+    userdata = root / "userdata"
+    if not userdata.is_dir():
+        continue
+    for shortcuts_path in sorted(userdata.glob("*/config/shortcuts.vdf")):
+        resolved = str(shortcuts_path.resolve(strict=False))
+        if resolved in seen_paths or not shortcuts_path.is_file():
+            continue
+        seen_paths.add(resolved)
+        try:
+            parsed, _ = parse_object(shortcuts_path.read_bytes())
+        except Exception:
+            continue
+        shortcuts = parsed.get("shortcuts")
+        if not isinstance(shortcuts, dict):
+            continue
+        for key in sorted(shortcuts, key=sort_key):
+            entry = shortcuts.get(key)
+            if not isinstance(entry, dict) or is_hidden(entry):
+                continue
+            app_name = str(entry.get("AppName") or "").strip()
+            appid = normalized_appid(entry)
+            if not app_name or appid is None or appid in seen_appids:
+                continue
+            seen_appids.add(appid)
+            app_name = " ".join(app_name.split())
+            print(f"{appid}\t{app_name}")
+PY
+}
+
 write_base_launchers() {
     local default_mode="steamos"
     local default_gamescope="1"
@@ -362,11 +468,15 @@ write_base_launchers() {
     rm -f "${roms_dir}/Steam GamepadUI Gamescope.steam"
     rm -f "${roms_dir}/ProtonUp-Qt.steam"
     rm -f "${roms_dir}/Steam ROM Manager.steam"
+    rm -f "${roms_dir}/Add Non-Steam Game.steam"
+    rm -f "${roms_dir}"/steam-shortcut-*.steam
 
-    cat > "${roms_dir}/Steam GamepadUI Gamescope.steam" <<EOF
+cat > "${roms_dir}/Steam GamepadUI Gamescope.steam" <<EOF
 mode=steamos
 gamepadui=1
 gamescope=1
+visible_update_preflight=1
+update_preflight_no_update_secs=15
 EOF
 
     cat > "${roms_dir}/Steam GamepadUI.steam" <<EOF
@@ -396,6 +506,7 @@ es_add_game "./Steam Desktop.steam" "Steam (Desktop)" "${generic_image_rel}"
 declare -A seen_libraries=()
 declare -A seen_appids=()
 declare -i game_count=0
+declare -i shortcut_count=0
 
 while IFS= read -r library; do
     if [[ -z "${library}" || -n "${seen_libraries["${library}"]+x}" ]]; then
@@ -426,5 +537,26 @@ EOF
     done < <(find "${library}" -maxdepth 1 -type f -name 'appmanifest_*.acf' -print0 2>/dev/null)
 done < <(discover_libraries)
 
-echo "Steam launcher update complete: ${game_count} installed game(s) indexed." >> "${log}"
+while IFS=$'\t' read -r shortcut_appid shortcut_name; do
+    if [[ ! "${shortcut_appid}" =~ ^[0-9]+$ ]] || [[ -n "${seen_appids["${shortcut_appid}"]+x}" ]]; then
+        continue
+    fi
+
+    seen_appids["${shortcut_appid}"]=1
+    if [[ -z "${shortcut_name}" ]]; then
+        shortcut_name="Non-Steam App ${shortcut_appid}"
+    fi
+
+    launcher_name="steam-shortcut-${shortcut_appid}.steam"
+    cat > "${roms_dir}/${launcher_name}" <<EOF
+appid=${shortcut_appid}
+steam_uri=steam://rungameid/${shortcut_appid}
+EOF
+
+    image_rel="$(copy_game_image "${shortcut_appid}")"
+    es_add_game "./${launcher_name}" "${shortcut_name}" "${image_rel}"
+    shortcut_count+=1
+done < <(list_steam_shortcuts)
+
+echo "Steam launcher update complete: ${game_count} installed game(s), ${shortcut_count} non-Steam shortcut(s) indexed." >> "${log}"
 es_add_game_end

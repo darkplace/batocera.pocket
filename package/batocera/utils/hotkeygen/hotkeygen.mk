@@ -16,12 +16,22 @@ define HOTKEYGEN_INSTALL_TARGET_CMDS
 	mkdir -p $(TARGET_DIR)/etc/init.d
 	mkdir -p $(TARGET_DIR)/etc/hotkeygen
 	mkdir -p $(TARGET_DIR)/usr/share/hotkeygen
+	mkdir -p $(TARGET_DIR)/usr/share/batocera/services/allyhotkeys.d
+	mkdir -p $(TARGET_DIR)/usr/share/batocera/services
 	install -m 0755 $(HOTKEYGEN_PATH)/hotkeygen.py $(TARGET_DIR)/usr/bin/hotkeygen
 	install -m 0755 $(HOTKEYGEN_PATH)/hotkeygen.service $(TARGET_DIR)/etc/init.d/S90hotkeygen
 	install -m 0644 $(HOTKEYGEN_PATH)/conf/default_context.conf $(TARGET_DIR)/etc/hotkeygen/default_context.conf
 	install -m 0644 $(HOTKEYGEN_PATH)/conf/common_context.conf $(TARGET_DIR)/etc/hotkeygen/common_context.conf
 	install -m 0644 $(HOTKEYGEN_PATH)/conf/default_mapping.conf $(TARGET_DIR)/etc/hotkeygen/default_mapping.conf
-	install -m 0644 $(HOTKEYGEN_PATH)/conf/specific/*.mapping $(TARGET_DIR)/usr/share/hotkeygen/
+	for file in $(HOTKEYGEN_PATH)/conf/specific/*.mapping; do \
+		case "$$(basename "$$file")" in \
+			ASUS_ROG_Ally_*) ;; \
+			*) install -m 0644 "$$file" $(TARGET_DIR)/usr/share/hotkeygen/ ;; \
+		esac; \
+	done
+	install -m 0644 $(HOTKEYGEN_PATH)/conf/common_context.ally.conf $(TARGET_DIR)/usr/share/batocera/services/allyhotkeys.d/common_context.ally.conf
+	install -m 0644 $(HOTKEYGEN_PATH)/conf/specific/ASUS_ROG_Ally_*.mapping* $(TARGET_DIR)/usr/share/batocera/services/allyhotkeys.d/
+	install -m 0755 $(HOTKEYGEN_PATH)/allyhotkeys $(TARGET_DIR)/usr/share/batocera/services/allyhotkeys
 	install -m 0755 $(HOTKEYGEN_PATH)/batocera-hotkeys.py $(TARGET_DIR)/usr/bin/batocera-hotkeys
 endef
 

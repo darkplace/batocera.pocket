@@ -15,6 +15,8 @@ import websockets
 LOG = "/userdata/system/logs/steam-uimode-watch.log"
 CDP_LIST_URL = "http://127.0.0.1:8080/json/list"
 SWITCH_BIN = "/usr/bin/batocera-steam-desktop-switch"
+DIRECT_APP_SESSION_FLAG = "/var/run/batocera-steam-direct-app-session"
+PREFLIGHT_SESSION_FLAG = "/var/run/batocera-steam-update-preflight"
 TRIGGER_MODES = {7}
 DESKTOP_SWITCH_BANNER = "Switching to Desktop..."
 RECONNECT_DELAY_SECS = 1.0
@@ -48,6 +50,16 @@ def steam_stack_active() -> bool:
     return False
 
 
+def desktop_switch_blocked() -> bool:
+    if os.path.exists(DIRECT_APP_SESSION_FLAG):
+        log("desktop switch ignored during direct app session")
+        return True
+    if os.path.exists(PREFLIGHT_SESSION_FLAG):
+        log("desktop switch ignored during Steam updater preflight")
+        return True
+    return False
+
+
 def desktop_switch_running() -> bool:
     return (
         subprocess.run(
@@ -61,6 +73,9 @@ def desktop_switch_running() -> bool:
 
 
 def run_desktop_switch(reason: str) -> bool:
+    if desktop_switch_blocked():
+        return False
+
     if not (os.path.exists(SWITCH_BIN) and os.access(SWITCH_BIN, os.X_OK)):
         log(f"desktop switch helper missing: {SWITCH_BIN}")
         return False

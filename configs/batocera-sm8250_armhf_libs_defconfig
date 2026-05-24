@@ -1,4 +1,3 @@
-# SPDX-FileCopyrightText: Added/modified by suckbluefrog
 # from file batocera-board.libs
 # batocera-board.libs
 # Common configuration for 32-bit armhf library builds
@@ -65,6 +64,7 @@ BR2_CCACHE=y
 BR2_ENABLE_LOCALE_PURGE=n
 
 # from file batocera-h700_armhf_libs.packages
+# SPDX-FileCopyrightText: Added/modified by suckbluefrog
 # batocera-h700_armhf_libs.packages
 # 32-bit library packages for H700 multilib support
 # Adapted from knulli-h700_armhf_libs.packages
@@ -573,6 +573,7 @@ BR2_PACKAGE_QT5_JSCORE_AVAILABLE=y
 BR2_PACKAGE_QT6_GL_SUPPORTS=y
 
 # from file batocera-sm8250_armhf_libs.packages
+# SPDX-FileCopyrightText: Added/modified by suckbluefrog
 # batocera-sm8250_armhf_libs.packages
 # 32-bit library package set for SM8250 / PortMaster compatibility
 
@@ -583,6 +584,7 @@ BR2_PACKAGE_DXVK
 BR2_PACKAGE_DXVK_NVAPI
 
 ### from board file ###
+# SPDX-FileCopyrightText: Added/modified by suckbluefrog
 # batocera-sm8250_armhf_libs.board
 # 32-bit armhf library build for Qualcomm SM8250 boards
 # Produces libraries to be installed at /lib32 on the 64-bit image

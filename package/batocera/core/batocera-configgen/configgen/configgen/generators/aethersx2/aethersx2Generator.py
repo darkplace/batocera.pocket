@@ -31,6 +31,7 @@ def _prepare_aethersx2_layout() -> None:
         _AETHERSX2_CONFIG / "snaps",
         _AETHERSX2_CONFIG / "sstates",
         _AETHERSX2_CONFIG / "textures",
+        _AETHERSX2_CONFIG / "videos",
     ):
         path.mkdir(parents=True, exist_ok=True)
 
@@ -96,7 +97,14 @@ class AetherSX2Generator(Generator):
                 ini.add_section(section)
 
         ini.set("UI", "ConfirmShutdown", "false")
+        ini.set("UI", "InhibitScreensaver", "true")
+        ini.set("UI", "StartPaused", "false")
+        ini.set("UI", "PauseOnFocusLoss", "false")
         ini.set("UI", "StartFullscreen", "true")
+        ini.set("UI", "HideMouseCursor", "true")
+        ini.set("UI", "RenderToSeparateWindow", "false")
+        ini.set("UI", "HideMainWindowWhenRunning", "true")
+        ini.set("UI", "DoubleClickTogglesFullscreen", "false")
 
         ini.set("EmuCore/GS", "Renderer",
                 system.config.get("aethersx2_renderer", "-1"))
@@ -109,14 +117,20 @@ class AetherSX2Generator(Generator):
                                        return_values=("true", "false")))
         ini.set("EmuCore/GS", "mipmap_hw",
                 system.config.get("aethersx2_mipmapping", "-1"))
+        ini.set("EmuCore/GS", "TriFilter",
+                system.config.get("aethersx2_trilinear_filtering", "-1"))
         ini.set("EmuCore/GS", "texture_preloading",
                 system.config.get("aethersx2_texture_preload", "2"))
         ini.set("EmuCore/GS", "accurate_blending_unit",
                 system.config.get("aethersx2_blending", "1"))
         ini.set("EmuCore/GS", "AspectRatio",
                 system.config.get("aethersx2_aspect_ratio", "4:3"))
+        ini.set("EmuCore/GS", "FMVAspectRatioSwitch",
+                system.config.get("aethersx2_fmv_ratio", "off"))
         ini.set("EmuCore/GS", "filter",
                 system.config.get("aethersx2_bilinear", "2"))
+        ini.set("EmuCore/GS", "linear_present_mode",
+                system.config.get("aethersx2_bilinear_filtering", "1"))
         ini.set("EmuCore/GS", "VsyncEnable",
                 system.config.get("aethersx2_vsync", "0"))
         ini.set("EmuCore/GS", "deinterlace_mode",
@@ -126,6 +140,19 @@ class AetherSX2Generator(Generator):
         ini.set("EmuCore/GS", "IntegerScaling",
                 system.config.get_bool("aethersx2_integer_scaling",
                                        return_values=("true", "false")))
+        ini.set("EmuCore/GS", "pcrtc_antiblur",
+                system.config.get_bool("aethersx2_antiblur", True,
+                                       return_values=("true", "false")))
+        ini.set("EmuCore/GS", "LoadTextureReplacements",
+                system.config.get_bool("aethersx2_texture_replacements",
+                                       return_values=("true", "false")))
+        ini.set("EmuCore/GS", "OsdShowMessages",
+                system.config.get_bool("aethersx2_osd_messages", True,
+                                       return_values=("true", "false")))
+        ini.set("EmuCore/GS", "OsdMessagesPos",
+                system.config.get("aethersx2_osd_messages_position", "2"))
+        ini.set("EmuCore/GS", "OsdPerformancePos",
+                system.config.get("aethersx2_osd_performance_position", "0"))
         ini.set("EmuCore/GS", "OsdShowFPS",
                 system.config.get_bool("aethersx2_show_fps",
                                        return_values=("true", "false")))
@@ -161,6 +188,12 @@ class AetherSX2Generator(Generator):
         ini.set("EmuCore", "EnableGameFixes",
                 system.config.get_bool("aethersx2_game_fixes", True,
                                        return_values=("true", "false")))
+        ini.set("EmuCore", "AutoIncrementSlot",
+                system.config.get_bool("incrementalsavestates", True,
+                                       return_values=("true", "false")))
+        ini.set("EmuCore", "SaveStateOnShutdown",
+                system.config.get_bool("autosave",
+                                       return_values=("true", "false")))
 
         ini.set("SPU2/Mixing", "Interpolation",
                 system.config.get("aethersx2_audio_interpolation", "5"))
@@ -180,6 +213,22 @@ class AetherSX2Generator(Generator):
             ini.set("Achievements", "ChallengeMode",
                     system.config.get_bool("retroachievements.hardcore",
                                            return_values=("true", "false")))
+            ini.set("Achievements", "PrimedIndicators",
+                    system.config.get_bool("retroachievements.challenge_indicators",
+                                           return_values=("true", "false")))
+            ini.set("Achievements", "RichPresence",
+                    system.config.get_bool("retroachievements.richpresence",
+                                           return_values=("true", "false")))
+            ini.set("Achievements", "Leaderboards",
+                    system.config.get_bool("retroachievements.leaderboards",
+                                           return_values=("true", "false")))
+            ini.set("Achievements", "EncoreMode",
+                    system.config.get_bool("retroachievements.encore",
+                                           return_values=("true", "false")))
+            ini.set("Achievements", "UnofficialTestMode",
+                    system.config.get_bool("retroachievements.unofficial",
+                                           return_values=("true", "false")))
+        ini.set("Achievements", "TestMode", "false")
 
         ini.set("Folders", "Bios", str(BIOS / "ps2"))
         ini.set("Folders", "Savestates", str(SAVES / "ps2"))
@@ -190,6 +239,9 @@ class AetherSX2Generator(Generator):
         ini.set("Folders", "CheatsNI", "cheats_ni")
         ini.set("Folders", "Cache", "cache")
         ini.set("Folders", "Textures", "textures")
+        ini.set("Folders", "InputProfiles", "inputprofiles")
+        ini.set("Folders", "Logs", "logs")
+        ini.set("Folders", "Videos", "videos")
 
         if bios_name := _get_aethersx2_bios_name():
             ini.set("Filenames", "BIOS", bios_name)
@@ -253,11 +305,36 @@ class AetherSX2Generator(Generator):
         ini.set("Pad", "PointerXScale", "8")
         ini.set("Pad", "PointerYScale", "8")
 
+        multitap = 2
+        joystick_count = len(controllers)
+        multitap_config = system.config.get("aethersx2_multitap")
+        if multitap_config == "4":
+            if joystick_count > 2:
+                ini.set("Pad", "MultitapPort1", "true")
+                multitap = 4
+        elif multitap_config == "8":
+            if joystick_count > 4:
+                ini.set("Pad", "MultitapPort1", "true")
+                ini.set("Pad", "MultitapPort2", "true")
+                multitap = 8
+            elif joystick_count > 2:
+                ini.set("Pad", "MultitapPort1", "true")
+                multitap = 4
+
         ini.set("USB1", "Type", "None")
         ini.set("USB2", "Type", "None")
 
-        for nplayer, pad in enumerate(controllers[:8], start=1):
-            section = f"Pad{nplayer}"
+        configured_pads = set()
+        for nplayer, pad in enumerate(controllers, start=1):
+            if nplayer > multitap:
+                break
+
+            pad_index = nplayer
+            if multitap == 4 and pad.index != 0:
+                pad_index = nplayer + 1
+
+            section = f"Pad{pad_index}"
+            configured_pads.add(pad_index)
             sdl_num = f"SDL-{pad.index}"
 
             ini.set(section, "Type", "DualShock2")
@@ -298,8 +375,9 @@ class AetherSX2Generator(Generator):
             ini.set(section, "LargeMotor", sdl_num + "/LargeMotor")
             ini.set(section, "SmallMotor", sdl_num + "/SmallMotor")
 
-        for nplayer in range(len(controllers) + 1, 9):
-            ini.set(f"Pad{nplayer}", "Type", "None")
+        for nplayer in range(1, 9):
+            if nplayer not in configured_pads:
+                ini.set(f"Pad{nplayer}", "Type", "None")
 
         with ensure_parents_and_open(_AETHERSX2_INI, "w") as f:
             ini.write(f)

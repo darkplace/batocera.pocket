@@ -665,7 +665,7 @@ psp:
   manufacturer: Sony
   release: 2004
   hardware: portable
-  extensions: [iso, cso, pbp, chd]
+  extensions: [iso, cso, pbp, chd, zip]
   emulators:
     ppsspp:
       ppsspp: { requireAnyOf: [BR2_PACKAGE_PPSSPP] }
@@ -877,6 +877,24 @@ dos:
      O arquivo MT32_CONTROL.ROM precisa estar presente em /userdata/bios/scummvm/extra.
 
      Para mais informações: https://wiki.batocera.org/systems:dos
+
+win9x:
+  name:       Windows 9x
+  manufacturer: Microsoft
+  release: 1995
+  hardware: computer
+  extensions: [pc, m3u, m3u8, zip, dosz, iso, chd, cue, img, ima, vhd, jrc]
+  theme:      pc
+  platform:   pc
+  emulators:
+    libretro:
+      dosbox_pure:      { requireAnyOf: [BR2_PACKAGE_LIBRETRO_DOSBOX_PURE] }
+  comment_en: |
+    Windows 95/98 games launch through DOSBox Pure.
+
+    Use the Win9x Image Builder from the F1 desktop applications menu to create launchable .pc entries in /userdata/roms/win9x.
+
+    Put your own Windows install media and game media on /userdata, then use the builder to create an installer entry and per-image launch folders. DOSBox Pure stores installed Windows images in /userdata/bios.
 
 devilutionx:
   name: Diablo
@@ -2141,7 +2159,7 @@ triforce:
   manufacturer: Namco, Sega, Nintendo
   release: 2003
   hardware: arcade
-  extensions: [gcm, iso, gcz, ciso, wbfs, elf, dol, m3u]
+  extensions: [iso, rvz]
   platform: triforce, arcade
   emulators:
     dolphin:
@@ -3108,6 +3126,24 @@ lutris:
   comment_br: |
           Inicie atalhos do Lutris.
           Execute batocera-lutris-update para gerar lançadores a partir dos arquivos .desktop instalados.
+
+n64recomp:
+  name: N64 Recomp
+  manufacturer: N64 Recompiled
+  release: 2024
+  hardware: port
+  extensions: [sh]
+  platform: n64
+  path: n64recomp
+  emulators:
+    n64recomp:
+      regular: { requireAnyOf: [BR2_PACKAGE_N64RECOMP_LAUNCHER] }
+  comment_en: |
+          Launch N64 recomp shortcuts.
+          Use N64 Recomp Launcher to install games and create desktop shortcuts, then run batocera-n64recomp-update or update game lists to import them.
+  comment_br: |
+          Inicie atalhos do N64 Recomp.
+          Use o N64 Recomp Launcher para instalar jogos e criar atalhos da area de trabalho, depois execute batocera-n64recomp-update ou atualize as listas de jogos para importa-los.
 
 supervision:
   name:       Supervision
@@ -5687,6 +5723,44 @@ dusk:
     Coloque o RVZ original de GameCube do Twilight Princess aqui:
 
         /userdata/roms/dusk/Twilight Princess.rvz
+
+opengoal:
+  name: OpenGOAL
+  manufacturer: Ports
+  release:
+  hardware: port
+  extensions: [iso]
+  platform: ps2
+  path: opengoal
+  emulators:
+    opengoal:
+      opengoal: { requireAnyOf: [ BR2_PACKAGE_OPENGOAL ] }
+  comment_en: |
+    OpenGOAL runtime for the Jak and Daxter series.
+
+    Put your own clean PS2 ISO dumps in:
+
+        /userdata/roms/opengoal/
+
+    Recommended filenames:
+
+        Jak and Daxter.iso
+        Jak II.iso
+        Jak 3.iso
+
+    OpenGOAL appears only when this folder contains matching ISO files. First launch extracts and compiles the selected game into /userdata/saves/opengoal.
+  comment_fr: |
+    Runtime natif OpenGOAL pour la serie Jak and Daxter.
+
+    Placez vos propres dumps ISO PS2 propres dans :
+
+        /userdata/roms/opengoal/
+  comment_br: |
+    Runtime nativo OpenGOAL para a serie Jak and Daxter.
+
+    Coloque seus proprios dumps ISO PS2 limpos em:
+
+        /userdata/roms/opengoal/
 
 etlegacy:
   name: Wolfenstein - Enemy Territory

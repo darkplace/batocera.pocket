@@ -1,0 +1,57 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Buildroot <buildroot@buildroot.org>
+Date: Wed, 29 Apr 2026 18:10:00 +0300
+Subject: [PATCH] FindGBM: preserve pkg-config link dependencies
+
+Some GBM providers expose part of the GBM ABI through libraries listed by
+gbm.pc rather than through libgbm.so alone. The Mali provider used here
+requires libmali-hook/libmali for symbols such as gbm_bo_get_fd_for_plane.
+
+Preserve pkg-config's imported target or resolved link libraries in the
+GBM::GBM target so WebKit's GBM feature checks and final links see the full
+provider stack.
+
+Signed-off-by: Buildroot <buildroot@buildroot.org>
+---
+ Source/cmake/FindGBM.cmake | 12 +++++++++++-
+ 1 file changed, 11 insertions(+), 1 deletion(-)
+
+diff --git a/Source/cmake/FindGBM.cmake b/Source/cmake/FindGBM.cmake
+--- a/Source/cmake/FindGBM.cmake
++++ b/Source/cmake/FindGBM.cmake
+@@ -53,7 +53,7 @@ This will define the following variables in your project:
+ #]=======================================================================]
+ 
+ find_package(PkgConfig QUIET)
+-pkg_check_modules(PC_GBM QUIET gbm)
++pkg_check_modules(PC_GBM QUIET IMPORTED_TARGET gbm)
+ set(GBM_COMPILE_OPTIONS ${PC_GBM_CFLAGS_OTHER})
+ set(GBM_VERSION ${PC_GBM_VERSION})
+ 
+@@ -84,14 +84,23 @@ if (GBM_LIBRARY AND NOT TARGET GBM::GBM)
+     )
+     find_package(LibDRM REQUIRED)
+     target_link_libraries(GBM::GBM INTERFACE LibDRM::LibDRM)
++    if (TARGET PkgConfig::PC_GBM)
++        target_link_libraries(GBM::GBM INTERFACE PkgConfig::PC_GBM)
++    elseif (PC_GBM_LINK_LIBRARIES)
++        target_link_libraries(GBM::GBM INTERFACE ${PC_GBM_LINK_LIBRARIES})
++    endif ()
+ endif ()
+ 
+ mark_as_advanced(
+   GBM_INCLUDE_DIR
+   GBM_LIBRARY
+ )
+ 
+ if (GBM_FOUND)
+-    set(GBM_LIBRARIES ${GBM_LIBRARY})
++    if (PC_GBM_LINK_LIBRARIES)
++        set(GBM_LIBRARIES ${GBM_LIBRARY} ${PC_GBM_LINK_LIBRARIES})
++    else ()
++        set(GBM_LIBRARIES ${GBM_LIBRARY})
++    endif ()
+     set(GBM_INCLUDE_DIRS ${GBM_INCLUDE_DIR})
+ endif ()
+-- 
+2.47.0

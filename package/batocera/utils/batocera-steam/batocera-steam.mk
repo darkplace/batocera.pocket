@@ -40,6 +40,15 @@ define BATOCERA_STEAM_INSTALL_TARGET_CMDS
 	    $(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/utils/batocera-steam/batocera-steam-session \
 	    $(TARGET_DIR)/usr/bin/
 	install -m 0755 \
+	    $(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/utils/batocera-steam/batocera-steam-gamescope-child \
+	    $(TARGET_DIR)/usr/bin/
+	install -m 0755 \
+	    $(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/utils/batocera-steam/batocera-steam-update-terminal \
+	    $(TARGET_DIR)/usr/bin/
+	install -m 0755 \
+	    $(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/utils/batocera-steam/batocera-steam-update-preflight \
+	    $(TARGET_DIR)/usr/bin/
+	install -m 0755 \
 	    $(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/utils/batocera-steam/batocera-displaymanager-stub \
 	    $(TARGET_DIR)/usr/bin/
 	install -m 0755 \
@@ -55,6 +64,9 @@ define BATOCERA_STEAM_INSTALL_TARGET_CMDS
 	    $(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/utils/batocera-steam/batocera-steam-desktop-switch \
 	    $(TARGET_DIR)/usr/bin/
 	install -m 0755 \
+	    $(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/utils/batocera-steam/batocera-steam-desktop-launcher \
+	    $(TARGET_DIR)/usr/bin/
+	install -m 0755 \
 	    $(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/utils/batocera-steam/batocera-steam-uimode-watch \
 	    $(TARGET_DIR)/usr/bin/
 	install -m 0755 \
@@ -67,6 +79,12 @@ define BATOCERA_STEAM_INSTALL_TARGET_CMDS
 	    $(TARGET_DIR)/usr/bin/batocera-decky-install
 	install -m 0755 \
 	    $(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/utils/batocera-steam/batocera-steam-update \
+	    $(TARGET_DIR)/usr/bin/
+	install -m 0755 \
+	    $(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/utils/batocera-steam/batocera-steam-shortcuts \
+	    $(TARGET_DIR)/usr/bin/
+	install -m 0755 \
+	    $(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/utils/batocera-steam/xdg-user-dir \
 	    $(TARGET_DIR)/usr/bin/
 
 	mkdir -p $(TARGET_DIR)/etc/dbus-1/system.d

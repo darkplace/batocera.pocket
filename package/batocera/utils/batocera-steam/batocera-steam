@@ -1,5 +1,5 @@
 #!/bin/bash
-# SPDX-FileCopyrightText: Added/modified by suckbluefrog
+# SPDX-FileCopyrightText: 2026 suckbluefrog
 set -euo pipefail
 
 log="/userdata/system/logs/steam.log"
@@ -20,6 +20,366 @@ STEAM_BOOTSTRAP="/usr/share/steam/bootstrap"
 STEAM_BIN_STUB="/usr/share/steam/bin_steam.sh"
 STEAM_SH="${STEAM_HOME}/steam.sh"
 FIRST_RUN=0
+STEAM_FIRST_RUN_PENDING_STAMP="/userdata/system/.steam-first-run-pending"
+STEAM_SESSION_DBUS_PID=""
+STEAM_PORTAL_PIDS=()
+
+export HOME="/userdata/system"
+export XDG_DATA_HOME="${HOME}/.local/share"
+export XDG_CONFIG_HOME="${HOME}/.config"
+export XDG_CACHE_HOME="${HOME}/.cache"
+
+cleanup_steam_portal_session() {
+    local pid
+
+    for pid in "${STEAM_PORTAL_PIDS[@]}"; do
+        kill "${pid}" >/dev/null 2>&1 || true
+        wait "${pid}" >/dev/null 2>&1 || true
+    done
+    STEAM_PORTAL_PIDS=()
+
+    if [[ -n "${STEAM_SESSION_DBUS_PID}" ]]; then
+        kill "${STEAM_SESSION_DBUS_PID}" >/dev/null 2>&1 || true
+        wait "${STEAM_SESSION_DBUS_PID}" >/dev/null 2>&1 || true
+        STEAM_SESSION_DBUS_PID=""
+    fi
+}
+
+trap cleanup_steam_portal_session EXIT
+
+runtime_dir_usable() {
+    local candidate="$1"
+    local uid="$2"
+
+    [[ -n "${candidate}" ]] || return 1
+    [[ "${candidate}" != "/run" && "${candidate}" != "/var/run" ]] || return 1
+    [[ -d "${candidate}" && -w "${candidate}" ]] || return 1
+    [[ "$(stat -c %u "${candidate}" 2>/dev/null || echo -1)" == "${uid}" ]] || return 1
+}
+
+ensure_runtime_dir() {
+    local uid
+    local candidate
+
+    uid="$(id -u)"
+
+    if runtime_dir_usable "${XDG_RUNTIME_DIR:-}" "${uid}"; then
+        return
+    fi
+
+    candidate="/run/user/${uid}"
+    if mkdir -p "${candidate}" 2>/dev/null; then
+        chmod 700 "${candidate}" 2>/dev/null || true
+        if runtime_dir_usable "${candidate}" "${uid}"; then
+            export XDG_RUNTIME_DIR="${candidate}"
+            return
+        fi
+    fi
+
+    candidate="/tmp/runtime-${uid}"
+    mkdir -p "${candidate}"
+    chmod 700 "${candidate}" 2>/dev/null || true
+    export XDG_RUNTIME_DIR="${candidate}"
+}
+
+ensure_audio_env() {
+    local uid
+    local pulse_socket=""
+
+    ensure_runtime_dir
+    uid="$(id -u)"
+
+    if [[ -S /run/pulse/native ]]; then
+        pulse_socket="/run/pulse/native"
+    elif [[ -S "/run/user/${uid}/pulse/native" ]]; then
+        pulse_socket="/run/user/${uid}/pulse/native"
+    elif [[ -S "${XDG_RUNTIME_DIR}/pulse/native" ]]; then
+        pulse_socket="${XDG_RUNTIME_DIR}/pulse/native"
+    fi
+
+    if [[ -n "${pulse_socket}" ]]; then
+        export PULSE_SERVER="unix:${pulse_socket}"
+        export SDL_AUDIODRIVER="pulseaudio"
+        echo "Steam audio: using pulse socket ${pulse_socket}" >> "${log}"
+    else
+        echo "Steam audio: no pulse socket found; leaving default audio env" >> "${log}"
+    fi
+
+    if [[ -S /run/pipewire-0 ]]; then
+        export PIPEWIRE_RUNTIME_DIR="/run"
+        export PIPEWIRE_REMOTE="pipewire-0"
+    fi
+}
+
+session_bus_is_system_bus() {
+    [[ "${DBUS_SESSION_BUS_ADDRESS:-}" == *"/run/dbus/system_bus_socket"* ]] || \
+    [[ "${DBUS_SESSION_BUS_ADDRESS:-}" == *"/var/run/dbus/system_bus_socket"* ]]
+}
+
+session_bus_responds() {
+    command -v dbus-send >/dev/null 2>&1 || return 0
+    timeout 2 dbus-send --session --type=method_call \
+        --dest=org.freedesktop.DBus / org.freedesktop.DBus.ListNames >/dev/null 2>&1
+}
+
+ensure_steam_session_bus() {
+    local dbus_out
+    local address
+    local pid
+
+    ensure_runtime_dir
+
+    if [[ -n "${DBUS_SESSION_BUS_ADDRESS:-}" ]] && ! session_bus_is_system_bus && session_bus_responds; then
+        return
+    fi
+
+    if ! command -v dbus-daemon >/dev/null 2>&1; then
+        echo "Steam portal setup: dbus-daemon missing, keeping DBUS_SESSION_BUS_ADDRESS=${DBUS_SESSION_BUS_ADDRESS:-unset}" >> "${log}"
+        return
+    fi
+
+    dbus_out="$(dbus-daemon --session --fork --print-address=1 --print-pid=1 2>> "${log}" || true)"
+    address="$(printf '%s\n' "${dbus_out}" | sed -n '1p')"
+    pid="$(printf '%s\n' "${dbus_out}" | sed -n '2p')"
+    if [[ -z "${address}" ]]; then
+        echo "Steam portal setup: failed to create session bus" >> "${log}"
+        return
+    fi
+
+    export DBUS_SESSION_BUS_ADDRESS="${address}"
+    if [[ "${pid}" =~ ^[0-9]+$ ]]; then
+        STEAM_SESSION_DBUS_PID="${pid}"
+    fi
+    echo "Steam portal setup: started private session bus pid=${STEAM_SESSION_DBUS_PID:-unknown}" >> "${log}"
+}
+
+portal_binary() {
+    local name="$1"
+
+    if [[ -x "/usr/libexec/${name}" ]]; then
+        printf '%s\n' "/usr/libexec/${name}"
+        return
+    fi
+
+    command -v "${name}" 2>/dev/null || true
+}
+
+portal_filechooser_available() {
+    command -v gdbus >/dev/null 2>&1 || return 1
+    timeout 2 gdbus introspect --session \
+        --dest org.freedesktop.portal.Desktop \
+        --object-path /org/freedesktop/portal/desktop 2>/dev/null | \
+        grep -q "org.freedesktop.portal.FileChooser"
+}
+
+start_steam_portals() {
+    local portal_desktop="${BATOCERA_STEAM_PORTAL_DESKTOP:-labwc}"
+    local portal
+    local portal_gtk
+
+    [[ "${BATOCERA_STEAM_START_PORTALS:-1}" != "0" ]] || return
+
+    if portal_filechooser_available; then
+        echo "Steam portal setup: FileChooser already available" >> "${log}"
+        return
+    fi
+
+    portal="$(portal_binary xdg-desktop-portal)"
+    portal_gtk="$(portal_binary xdg-desktop-portal-gtk)"
+    if [[ -z "${portal}" || -z "${portal_gtk}" ]]; then
+        echo "Steam portal setup: portal binaries missing" >> "${log}"
+        return
+    fi
+
+    XDG_CURRENT_DESKTOP="${portal_desktop}" "${portal_gtk}" -r >> "${log}" 2>&1 &
+    STEAM_PORTAL_PIDS+=("$!")
+    sleep 0.1
+    XDG_CURRENT_DESKTOP="${portal_desktop}" "${portal}" -r >> "${log}" 2>&1 &
+    STEAM_PORTAL_PIDS+=("$!")
+
+    sleep 0.8
+    if portal_filechooser_available; then
+        echo "Steam portal setup: FileChooser available on session bus using ${portal_desktop}" >> "${log}"
+    else
+        echo "Steam portal setup: FileChooser still unavailable after portal start" >> "${log}"
+    fi
+}
+
+prepare_steam_portal_session() {
+    ensure_steam_session_bus
+    start_steam_portals
+}
+
+frontend_env_value() {
+    local pid="$1"
+    local key="$2"
+
+    [[ -r "/proc/${pid}/environ" ]] || return 1
+    tr '\0' '\n' < "/proc/${pid}/environ" | sed -n "s/^${key}=//p" | head -n 1
+}
+
+capture_frontend_env() {
+    local pid
+    local -a candidates=()
+
+    FRONTEND_DISPLAY=""
+    FRONTEND_WAYLAND_DISPLAY=""
+    FRONTEND_XDG_RUNTIME_DIR=""
+    FRONTEND_SWAYSOCK=""
+    FRONTEND_XDG_CURRENT_DESKTOP=""
+    FRONTEND_XDG_SESSION_TYPE=""
+    FRONTEND_XDG_SESSION_DESKTOP=""
+    FRONTEND_DBUS_SESSION_BUS_ADDRESS=""
+    FRONTEND_DBUS_SYSTEM_BUS_ADDRESS=""
+    FRONTEND_WLR_XWAYLAND_NO_AUTH=""
+
+    while IFS= read -r pid; do
+        [[ -n "${pid}" ]] && candidates+=("${pid}")
+    done < <(
+        {
+            pgrep -o -x labwc
+            pgrep -o -f 'emulationstation --exit-on-reboot-required'
+            pgrep -o -f 'emulationstation-standalone'
+        } 2>/dev/null | awk 'NF && !seen[$0]++'
+    )
+
+    for pid in "${candidates[@]}"; do
+        [[ -r "/proc/${pid}/environ" ]] || continue
+        FRONTEND_DISPLAY="$(frontend_env_value "${pid}" DISPLAY || true)"
+        FRONTEND_WAYLAND_DISPLAY="$(frontend_env_value "${pid}" WAYLAND_DISPLAY || true)"
+        FRONTEND_XDG_RUNTIME_DIR="$(frontend_env_value "${pid}" XDG_RUNTIME_DIR || true)"
+        FRONTEND_SWAYSOCK="$(frontend_env_value "${pid}" SWAYSOCK || true)"
+        FRONTEND_XDG_CURRENT_DESKTOP="$(frontend_env_value "${pid}" XDG_CURRENT_DESKTOP || true)"
+        FRONTEND_XDG_SESSION_TYPE="$(frontend_env_value "${pid}" XDG_SESSION_TYPE || true)"
+        FRONTEND_XDG_SESSION_DESKTOP="$(frontend_env_value "${pid}" XDG_SESSION_DESKTOP || true)"
+        FRONTEND_DBUS_SESSION_BUS_ADDRESS="$(frontend_env_value "${pid}" DBUS_SESSION_BUS_ADDRESS || true)"
+        FRONTEND_DBUS_SYSTEM_BUS_ADDRESS="$(frontend_env_value "${pid}" DBUS_SYSTEM_BUS_ADDRESS || true)"
+        FRONTEND_WLR_XWAYLAND_NO_AUTH="$(frontend_env_value "${pid}" WLR_XWAYLAND_NO_AUTH || true)"
+        return 0
+    done
+
+    return 1
+}
+
+resolve_wayland_display() {
+    local display="$1"
+    local frontend_runtime="$2"
+    local uid
+    local candidate_dir
+    local -a candidate_dirs=()
+
+    [[ -n "${display}" ]] || return 1
+
+    if [[ "${display}" == /* ]]; then
+        [[ -S "${display}" ]] && printf '%s\n' "${display}"
+        return
+    fi
+
+    uid="$(id -u)"
+    candidate_dirs+=("${XDG_RUNTIME_DIR:-}")
+    candidate_dirs+=("${frontend_runtime}")
+    candidate_dirs+=("/run" "/var/run" "/run/user/${uid}" "/tmp")
+
+    for candidate_dir in "${candidate_dirs[@]}"; do
+        [[ -n "${candidate_dir}" ]] || continue
+        if [[ -S "${candidate_dir}/${display}" ]]; then
+            if [[ "${candidate_dir}" == "${XDG_RUNTIME_DIR:-}" ]]; then
+                printf '%s\n' "${display}"
+            else
+                printf '%s\n' "${candidate_dir}/${display}"
+            fi
+            return
+        fi
+    done
+
+    return 1
+}
+
+sanitize_frontend_env() {
+    local ui_mode="$1"
+    local display=""
+    local uid=""
+    local wayland_display=""
+    local sway_sock=""
+    local runtime_dir=""
+
+    capture_frontend_env || true
+    uid="$(id -u)"
+
+    if [[ -S /tmp/.X11-unix/X0 ]]; then
+        display=":0"
+    elif [[ -n "${FRONTEND_DISPLAY:-}" ]]; then
+        display="${FRONTEND_DISPLAY}"
+    elif command -v getLocalXDisplay >/dev/null 2>&1; then
+        display="$(getLocalXDisplay 2>/dev/null || true)"
+    fi
+
+    if [[ -z "${display}" ]]; then
+        display="${DISPLAY:-:0}"
+    fi
+
+    unset GAMESCOPE_WAYLAND_DISPLAY
+    unset GAMESCOPE_DISPLAY
+    unset GAMESCOPE_SESSION
+    unset SDL_NO_OPENGL
+    unset SDL_RENDER_DRIVER
+    unset SDL_OPENGL_DRIVER
+    unset SDL_DYNAMIC_API
+    unset SDL_VIDEO_EGL_DRIVER
+    unset SDL_VIDEO_GL_DRIVER
+    unset SDL_VIDEODRIVER
+    unset STEAM_DECK
+    unset STEAMOS
+    unset XDG_SESSION_DESKTOP
+
+    runtime_dir="${FRONTEND_XDG_RUNTIME_DIR:-}"
+    if runtime_dir_usable "${runtime_dir}" "${uid}"; then
+        export XDG_RUNTIME_DIR="${runtime_dir}"
+    else
+        ensure_runtime_dir
+    fi
+
+    wayland_display="$(resolve_wayland_display "${FRONTEND_WAYLAND_DISPLAY:-wayland-0}" "${FRONTEND_XDG_RUNTIME_DIR:-}" || true)"
+    sway_sock="${FRONTEND_SWAYSOCK:-}"
+    if [[ -z "${sway_sock}" && -n "${XDG_RUNTIME_DIR:-}" && -S "${XDG_RUNTIME_DIR}/sway-ipc.0.sock" ]]; then
+        sway_sock="${XDG_RUNTIME_DIR}/sway-ipc.0.sock"
+    elif [[ -z "${sway_sock}" && -S /var/run/sway-ipc.0.sock ]]; then
+        sway_sock="/var/run/sway-ipc.0.sock"
+    fi
+
+    export DISPLAY="${display}"
+    if [[ -n "${wayland_display}" ]]; then
+        export WAYLAND_DISPLAY="${wayland_display}"
+    else
+        unset WAYLAND_DISPLAY
+    fi
+    if [[ -n "${sway_sock}" ]]; then
+        export SWAYSOCK="${sway_sock}"
+    else
+        unset SWAYSOCK
+    fi
+    if [[ -f /var/lib/.Xauthority ]]; then
+        export XAUTHORITY="/var/lib/.Xauthority"
+    else
+        unset XAUTHORITY
+    fi
+    export WLR_XWAYLAND_NO_AUTH="${FRONTEND_WLR_XWAYLAND_NO_AUTH:-1}"
+    export XDG_SESSION_TYPE="${FRONTEND_XDG_SESSION_TYPE:-wayland}"
+    export XDG_CURRENT_DESKTOP="${FRONTEND_XDG_CURRENT_DESKTOP:-labwc}"
+    export XDG_SESSION_DESKTOP="${FRONTEND_XDG_SESSION_DESKTOP:-${XDG_CURRENT_DESKTOP}}"
+    export DBUS_SESSION_BUS_ADDRESS="${FRONTEND_DBUS_SESSION_BUS_ADDRESS:-unix:path=/run/dbus/system_bus_socket}"
+    export DBUS_SYSTEM_BUS_ADDRESS="${FRONTEND_DBUS_SYSTEM_BUS_ADDRESS:-unix:path=/run/dbus/system_bus_socket}"
+
+    if [[ "${ui_mode}" == "desktop" ]]; then
+        export STEAM_GAMEPADUI=0
+        export STEAM_FORCE_DESKTOPUI=1
+    else
+        export STEAM_GAMEPADUI=1
+        export STEAM_FORCE_DESKTOPUI=0
+    fi
+
+    echo "Steam frontend env (${ui_mode}): DISPLAY=${DISPLAY}, WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-unset}, SWAYSOCK=${SWAYSOCK:-unset}, XAUTHORITY=${XAUTHORITY:-unset}, XDG_SESSION_TYPE=${XDG_SESSION_TYPE}, XDG_CURRENT_DESKTOP=${XDG_CURRENT_DESKTOP}, XDG_SESSION_DESKTOP=${XDG_SESSION_DESKTOP}, XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-unset}, DBUS_SESSION_BUS_ADDRESS=${DBUS_SESSION_BUS_ADDRESS}" >> "${log}"
+}
 
 seed_steam_tree() {
     if [[ -x "${STEAM_SH}" ]]; then
@@ -37,6 +397,8 @@ seed_steam_tree() {
         install -m 0755 "${STEAM_BIN_STUB}" "${STEAM_HOME}/bin_steam.sh"
     fi
     FIRST_RUN=1
+    mkdir -p "$(dirname "${STEAM_FIRST_RUN_PENDING_STAMP}")"
+    : > "${STEAM_FIRST_RUN_PENDING_STAMP}"
     echo "Seeded Steam bootstrap into ${STEAM_HOME}" >> "$log"
 }
 
@@ -56,6 +418,65 @@ patch_root_guard() {
     fi
 }
 
+ensure_compat_symlink() {
+    local path="$1"
+    local target="$2"
+
+    mkdir -p "$(dirname "${path}")"
+
+    if [[ -L "${path}" ]]; then
+        if [[ "$(readlink -f "${path}" 2>/dev/null || true)" == "$(readlink -f "${target}" 2>/dev/null || true)" ]]; then
+            return
+        fi
+        rm -f "${path}"
+        ln -s "${target}" "${path}"
+        echo "Steam compat: updated symlink ${path} -> ${target}" >> "${log}"
+        return
+    fi
+
+    if [[ ! -e "${path}" ]]; then
+        ln -s "${target}" "${path}"
+        echo "Steam compat: created symlink ${path} -> ${target}" >> "${log}"
+        return
+    fi
+
+    if [[ -f "${path}" && -f "${target}" ]] && cmp -s "${path}" "${target}"; then
+        rm -f "${path}"
+        ln -s "${target}" "${path}"
+        echo "Steam compat: replaced matching file ${path} with symlink to ${target}" >> "${log}"
+        return
+    fi
+
+    echo "Steam compat: leaving existing path unchanged: ${path}" >> "${log}"
+}
+
+ensure_local_share_steam_compat() {
+    local steam_local="${HOME}/.local/share/Steam"
+
+    mkdir -p "${steam_local}"
+    ensure_compat_symlink "${steam_local}/root" "${STEAM_HOME}"
+    ensure_compat_symlink "${steam_local}/steam.sh" "${STEAM_HOME}/steam.sh"
+    ensure_compat_symlink "${steam_local}/bin_steam.sh" "${STEAM_HOME}/bin_steam.sh"
+}
+
+apply_steam_user_selection() {
+    local selection="${1:-auto}"
+
+    case "${selection}" in
+        ""|auto|AUTO|Auto)
+            return 0
+            ;;
+    esac
+
+    if [[ ! -x /usr/bin/batocera-steam-users ]]; then
+        echo "Steam user selection requested but batocera-steam-users is missing" >> "${log}"
+        return 0
+    fi
+
+    BATOCERA_STEAM_HOME="${STEAM_HOME}" /usr/bin/batocera-steam-users apply "${selection}" >> "${log}" 2>&1 || \
+        echo "Steam user selection apply failed for '${selection}'" >> "${log}"
+}
+
 normalize_game_target() {
     local game="$1"
 
@@ -63,8 +484,8 @@ normalize_game_target() {
         return
     fi
 
-    if [[ "${game}" =~ ^steam://rungameid/([0-9]+)$ ]]; then
-        printf '%s' "${BASH_REMATCH[1]}"
+    if [[ "${game}" =~ ^steam://rungameid/[0-9]+$ ]]; then
+        printf '%s' "${game}"
         return
     fi
 
@@ -96,7 +517,7 @@ build_steam_args() {
     out_args=()
 
     if steam_gamepadui_enabled; then
-        out_args+=(-gamepadui)
+        out_args+=(-steamdeck -steamos3 -gamepadui)
     fi
 
     if [[ -n "${BATOCERA_STEAM_EXTRA_ARGS:-}" ]]; then
@@ -115,15 +536,43 @@ build_steam_args() {
     fi
 }
 
-launch_desktop() {
-    local game_target="$1"
+launch_frontend_mode() {
+    local ui_mode="$1"
+    local game_target="$2"
     local -a steam_args=()
+    local launcher_rc=0
+    local show_mouse=0
 
     build_steam_args steam_args "${game_target}"
+    ensure_audio_env
+    sanitize_frontend_env "${ui_mode}"
+    prepare_steam_portal_session
 
-    batocera-mouse show
-    DISPLAY="$(getLocalXDisplay)" "${STEAM_SH}" "${steam_args[@]}"
-    batocera-mouse hide
+    if [[ "${ui_mode}" == "desktop" ]]; then
+        batocera-mouse show || true
+        show_mouse=1
+    fi
+
+    echo "Launching Steam in frontend ${ui_mode} mode under the active ES/labwc session" >> "${log}"
+    set +e
+    "${STEAM_SH}" "${steam_args[@]}"
+    launcher_rc=$?
+    set -e
+
+    if [[ "${show_mouse}" == "1" ]]; then
+        batocera-mouse hide || true
+    fi
+
+    echo "Steam frontend ${ui_mode} launcher exited with status ${launcher_rc}" >> "${log}"
+    return "${launcher_rc}"
+}
+
+launch_desktop() {
+    launch_frontend_mode desktop "$1"
+}
+
+launch_gamepadui() {
+    launch_frontend_mode gamepadui "$1"
 }
 
 launch_steamos() {
@@ -137,6 +586,10 @@ launch_steamos() {
 
 seed_steam_tree
 patch_root_guard
+ensure_local_share_steam_compat
+BATOCERA_STEAM_HOME="${STEAM_HOME}" /usr/bin/batocera-steam-users defaults >> "${log}" 2>&1 || \
+    echo "Steam defaults apply failed" >> "${log}"
+apply_steam_user_selection "${BATOCERA_STEAM_USER:-auto}"
 
 GAME_TARGET="$(normalize_game_target "${GAME_ID}")"
 
@@ -146,8 +599,8 @@ case "${MODE}" in
         launch_desktop "${GAME_TARGET}"
         ;;
     gamepadui)
-        echo "Launching Steam in GamepadUI mode" >> "$log"
-        launch_desktop "${GAME_TARGET}"
+        echo "Launching Steam in gamepadui mode" >> "$log"
+        launch_gamepadui "${GAME_TARGET}"
         ;;
     steamos|gamescope|gamemode)
         echo "Launching Steam in SteamOS-like mode" >> "$log"

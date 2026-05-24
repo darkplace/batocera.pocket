@@ -1,0 +1,798 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import os
+import shlex
+import shutil
+import struct
+import subprocess
+import sys
+import time
+import zlib
+from pathlib import Path
+
+STEAM_ROOTS = (
+    Path("/userdata/system/steam"),
+    Path("/userdata/system/.local/share/Steam"),
+    Path("/userdata/system/.steam/steam"),
+)
+ROMS_ROOT = Path("/userdata/roms")
+WINDOWS_SUFFIXES = {".exe", ".pc", ".wine", ".wsquashfs", ".wtgz"}
+PACKED_WINDOWS_SUFFIXES = {".wsquashfs", ".wtgz"}
+BATOCERA_TARGET_EXE = "/usr/bin/emulatorlauncher"
+DEFAULT_TAGS = ("Batocera",)
+MODE_LABELS = {
+    "auto": "Auto - choose from path",
+    "batocera": "Batocera ROM - launch through ES",
+    "wine": "Windows executable - Steam Proton",
+    "direct": "Steam-managed file - set Proton in Steam",
+}
+
+
+def fail(message: str) -> int:
+    print(message, file=sys.stderr)
+    return 1
+
+
+def cstring(value: str) -> bytes:
+    return value.encode("utf-8", errors="surrogateescape") + b"\x00"
+
+
+def read_cstring(data: bytes, pos: int) -> tuple[str, int]:
+    end = data.find(b"\x00", pos)
+    if end < 0:
+        raise ValueError("unterminated string")
+    return data[pos:end].decode("utf-8", errors="replace"), end + 1
+
+
+def parse_object(data: bytes, pos: int = 0) -> tuple[dict[str, object], int]:
+    node: dict[str, object] = {}
+    while pos < len(data):
+        kind = data[pos]
+        pos += 1
+        if kind == 0x08:
+            return node, pos
+        key, pos = read_cstring(data, pos)
+        if kind == 0x00:
+            value, pos = parse_object(data, pos)
+        elif kind == 0x01:
+            value, pos = read_cstring(data, pos)
+        elif kind == 0x02:
+            if pos + 4 > len(data):
+                raise ValueError("short int32 value")
+            value = struct.unpack_from("<i", data, pos)[0]
+            pos += 4
+        elif kind == 0x07:
+            if pos + 8 > len(data):
+                raise ValueError("short uint64 value")
+            value = struct.unpack_from("<Q", data, pos)[0]
+            pos += 8
+        else:
+            raise ValueError(f"unsupported binary VDF type 0x{kind:02x}")
+        node[key] = value
+    return node, pos
+
+
+def load_shortcuts(path: Path) -> dict[str, object]:
+    if not path.exists() or path.stat().st_size == 0:
+        return {"shortcuts": {}}
+    parsed, _ = parse_object(path.read_bytes())
+    if not isinstance(parsed.get("shortcuts"), dict):
+        parsed["shortcuts"] = {}
+    return parsed
+
+
+def write_object(node: dict[str, object]) -> bytes:
+    out = bytearray()
+    for key, value in node.items():
+        if isinstance(value, dict):
+            out.append(0x00)
+            out.extend(cstring(key))
+            out.extend(write_object(value))
+        elif isinstance(value, int):
+            out.append(0x02)
+            out.extend(cstring(key))
+            number = value
+            if number > 0x7FFFFFFF:
+                number -= 0x100000000
+            if number < -0x80000000 or number > 0x7FFFFFFF:
+                number = 0
+            out.extend(struct.pack("<i", number))
+        else:
+            out.append(0x01)
+            out.extend(cstring(key))
+            out.extend(cstring(str(value)))
+    out.append(0x08)
+    return bytes(out)
+
+
+def save_shortcuts(path: Path, data: dict[str, object]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists():
+        backup = path.with_name(f"{path.name}.batocera-bak")
+        if not backup.exists():
+            shutil.copy2(path, backup)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_bytes(write_object(data))
+    tmp.replace(path)
+
+
+def vdf_text_escape(value: object) -> str:
+    return str(value).replace("\\", "\\\\").replace('"', '\\"')
+
+
+def read_vdf_quoted(text: str, pos: int) -> tuple[str, int]:
+    pos += 1
+    out: list[str] = []
+    while pos < len(text):
+        char = text[pos]
+        if char == '"':
+            return "".join(out), pos + 1
+        if char == "\\" and pos + 1 < len(text):
+            pos += 1
+            out.append(text[pos])
+        else:
+            out.append(char)
+        pos += 1
+    raise ValueError("unterminated quoted string")
+
+
+def tokenize_text_vdf(text: str) -> list[str]:
+    tokens: list[str] = []
+    pos = 0
+    while pos < len(text):
+        char = text[pos]
+        if char.isspace():
+            pos += 1
+            continue
+        if char in "{}":
+            tokens.append(char)
+            pos += 1
+            continue
+        if char == '"':
+            value, pos = read_vdf_quoted(text, pos)
+            tokens.append(value)
+            continue
+
+        end = pos
+        while end < len(text) and not text[end].isspace() and text[end] not in "{}":
+            end += 1
+        tokens.append(text[pos:end])
+        pos = end
+    return tokens
+
+
+def parse_text_vdf(text: str) -> dict[str, object]:
+    tokens = tokenize_text_vdf(text)
+
+    def parse_object(pos: int) -> tuple[dict[str, object], int]:
+        node: dict[str, object] = {}
+        while pos < len(tokens):
+            key = tokens[pos]
+            pos += 1
+            if key == "}":
+                return node, pos
+            if pos >= len(tokens):
+                raise ValueError(f"missing value for key {key}")
+            if tokens[pos] == "{":
+                value, pos = parse_object(pos + 1)
+            else:
+                value = tokens[pos]
+                pos += 1
+            node[key] = value
+        return node, pos
+
+    parsed, _ = parse_object(0)
+    return parsed
+
+
+def dump_text_vdf(node: dict[str, object], depth: int = 0) -> str:
+    lines: list[str] = []
+    indent = "\t" * depth
+    for key, value in node.items():
+        escaped_key = vdf_text_escape(key)
+        if isinstance(value, dict):
+            lines.append(f'{indent}"{escaped_key}"')
+            lines.append(f"{indent}{{")
+            lines.append(dump_text_vdf(value, depth + 1).rstrip("\n"))
+            lines.append(f"{indent}}}")
+        else:
+            lines.append(f'{indent}"{escaped_key}"\t\t"{vdf_text_escape(value)}"')
+    return "\n".join(lines) + "\n"
+
+
+def load_text_vdf(path: Path, default_root: str) -> dict[str, object]:
+    if not path.exists() or path.stat().st_size == 0:
+        return {default_root: {}}
+    return parse_text_vdf(path.read_text(encoding="utf-8", errors="replace"))
+
+
+def save_text_vdf(path: Path, data: dict[str, object]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists():
+        backup = path.with_name(f"{path.name}.batocera-bak")
+        if not backup.exists():
+            shutil.copy2(path, backup)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(dump_text_vdf(data), encoding="utf-8")
+    tmp.replace(path)
+
+
+def ensure_object(parent: dict[str, object], key: str) -> dict[str, object]:
+    value = parent.get(key)
+    if not isinstance(value, dict):
+        value = {}
+        parent[key] = value
+    return value
+
+
+def steam_roots() -> list[Path]:
+    roots: list[Path] = []
+    seen: set[str] = set()
+    env_roots: list[Path] = []
+    for env_name in ("BATOCERA_STEAM_HOME", "BATOCERA_STEAM_ROOT"):
+        value = os.environ.get(env_name)
+        if value:
+            env_roots.append(Path(value))
+
+    candidates = env_roots if env_roots else list(STEAM_ROOTS)
+    for root in candidates:
+        key = str(root.resolve(strict=False))
+        if key not in seen:
+            roots.append(root)
+            seen.add(key)
+    return roots
+
+
+def steam_user_config_dirs() -> list[Path]:
+    configs: list[Path] = []
+    seen: set[str] = set()
+    for root in steam_roots():
+        userdata = root / "userdata"
+        if not userdata.is_dir():
+            continue
+        for config in userdata.glob("*/config"):
+            if not config.is_dir():
+                continue
+            key = str(config.resolve(strict=False))
+            if key in seen:
+                continue
+            configs.append(config)
+            seen.add(key)
+    return configs
+
+
+def parse_autorun_value(value: str) -> str:
+    value = value.strip()
+    if not value:
+        return ""
+    try:
+        parsed = shlex.split(value, posix=True)
+    except ValueError:
+        parsed = []
+    if parsed:
+        return parsed[0]
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in ('"', "'"):
+        return value[1:-1]
+    return value
+
+
+def read_autorun_cmd(path: Path) -> tuple[str, str]:
+    cmd = ""
+    directory = "."
+    try:
+        lines = (path / "autorun.cmd").read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return "", ""
+
+    for line in lines:
+        line = line.strip().rstrip("\r")
+        if not line or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip().upper()
+        if key == "CMD":
+            cmd = parse_autorun_value(value)
+        elif key == "DIR":
+            directory = parse_autorun_value(value) or "."
+    return cmd, directory
+
+
+def resolve_autorun_exe(path: Path) -> Path | None:
+    cmd, directory = read_autorun_cmd(path)
+    if not cmd:
+        return None
+
+    cmd_path = Path(cmd)
+    if cmd_path.is_absolute():
+        candidate = cmd_path
+    else:
+        base = path / directory.replace("\\", "/")
+        candidate = base / cmd.replace("\\", "/")
+
+    candidate = candidate.resolve(strict=False)
+    if is_nonempty_exe(candidate):
+        return candidate
+
+    for found in path.rglob("*"):
+        if found.name.casefold() == cmd_path.name.casefold() and is_nonempty_exe(found):
+            return found.resolve(strict=False)
+    return None
+
+
+def is_nonempty_exe(path: Path) -> bool:
+    try:
+        return path.suffix.casefold() == ".exe" and path.is_file() and path.stat().st_size > 0
+    except OSError:
+        return False
+
+
+def resolve_steam_exe(path: Path) -> Path:
+    path = path.resolve(strict=False)
+    suffix = path.suffix.casefold()
+    if suffix == ".exe":
+        if not path.is_file():
+            raise FileNotFoundError(f"Expected a .exe file: {path}")
+        if path.stat().st_size <= 0:
+            raise ValueError(f"Selected .exe is empty: {path}")
+        return path
+    if suffix in (".pc", ".wine"):
+        if not path.is_dir():
+            raise FileNotFoundError(f"Expected a {suffix} folder: {path}")
+        resolved = resolve_autorun_exe(path)
+        if resolved is None:
+            raise ValueError(f"No usable autorun.cmd target found in {path}. Choose the .exe inside the folder instead.")
+        return resolved
+    if suffix in PACKED_WINDOWS_SUFFIXES:
+        raise ValueError(f"{suffix} archives cannot be added directly to Steam/Proton. Extract the game first, or choose a real .exe.")
+    return path
+
+
+def steam_quote(value: str) -> str:
+    return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def launch_arg(value: str) -> str:
+    return steam_quote(value)
+
+
+def display_name(path: Path) -> str:
+    name = path.name
+    for suffix in (
+        ".wsquashfs",
+        ".squashfs",
+        ".wine",
+        ".wtgz",
+        ".pc",
+        ".exe",
+        ".steam",
+    ):
+        if name.casefold().endswith(suffix):
+            name = name[: -len(suffix)]
+            break
+    return name.strip() or path.stem or "Non-Steam Game"
+
+
+def infer_system(path: Path) -> str:
+    try:
+        rel = path.resolve(strict=False).relative_to(ROMS_ROOT)
+    except ValueError:
+        return ""
+    return rel.parts[0] if rel.parts else ""
+
+
+def infer_mode(path: Path, requested: str, system: str) -> str:
+    if requested != "auto":
+        return requested
+    if path.suffix.casefold() in WINDOWS_SUFFIXES:
+        return "direct"
+    if system:
+        return "batocera"
+    if path.is_file() and os.access(path, os.X_OK):
+        return "direct"
+    return "direct"
+
+
+def mode_from_label(value: str) -> str:
+    normalized = value.strip().casefold()
+    for mode, label in MODE_LABELS.items():
+        if normalized == mode or normalized == label.casefold():
+            return mode
+    if normalized.startswith("auto"):
+        return "auto"
+    if normalized.startswith("batocera"):
+        return "batocera"
+    if normalized.startswith("windows") or normalized.startswith("wine"):
+        return "direct"
+    if normalized.startswith("direct"):
+        return "direct"
+    return "auto"
+
+
+def shortcut_appid(exe: str, app_name: str) -> int:
+    appid = shortcut_appid_unsigned(exe, app_name)
+    if appid >= 0x80000000:
+        appid -= 0x100000000
+    return appid
+
+
+def shortcut_appid_unsigned(exe: str, app_name: str) -> int:
+    crc = zlib.crc32((exe + app_name).encode("utf-8")) & 0xFFFFFFFF
+    return crc | 0x80000000
+
+
+def shortcut_entry(
+    app_name: str,
+    exe: str,
+    start_dir: Path,
+    launch_options: str,
+    tags: tuple[str, ...],
+) -> dict[str, object]:
+    return {
+        "appid": shortcut_appid(exe, app_name),
+        "AppName": app_name,
+        "Exe": steam_quote(exe),
+        "StartDir": steam_quote(str(start_dir)),
+        "icon": "",
+        "ShortcutPath": "",
+        "LaunchOptions": launch_options,
+        "IsHidden": 0,
+        "AllowDesktopConfig": 1,
+        "AllowOverlay": 1,
+        "OpenVR": 0,
+        "Devkit": 0,
+        "DevkitGameID": "",
+        "DevkitOverrideAppID": 0,
+        "LastPlayTime": 0,
+        "FlatpakAppID": "",
+        "tags": {str(index): tag for index, tag in enumerate(tags)},
+    }
+
+
+def merge_tags(*groups: tuple[str, ...]) -> tuple[str, ...]:
+    merged: list[str] = []
+    seen: set[str] = set()
+    for group in groups:
+        for tag in group:
+            key = tag.casefold()
+            if key in seen:
+                continue
+            merged.append(tag)
+            seen.add(key)
+    return tuple(merged)
+
+
+def shortcut_unsigned_appid(entry: dict[str, object]) -> int:
+    return int(entry["appid"]) & 0xFFFFFFFF
+
+
+def upsert_shortcut(shortcuts: dict[str, object], entry: dict[str, object]) -> str:
+    exe = entry.get("Exe")
+    launch_options = entry.get("LaunchOptions")
+    for key, raw in shortcuts.items():
+        if not isinstance(raw, dict):
+            continue
+        if raw.get("Exe") == exe and raw.get("LaunchOptions") == launch_options:
+            raw.update(entry)
+            return key
+
+    used = [int(key) for key in shortcuts.keys() if str(key).isdigit()]
+    key = str(max(used, default=-1) + 1)
+    shortcuts[key] = entry
+    return key
+
+
+def write_compat_tool_mapping(config_dir: Path, appid: int, compat_tool: str) -> Path:
+    localconfig_path = config_dir / "localconfig.vdf"
+    data = load_text_vdf(localconfig_path, "UserLocalConfigStore")
+    root = ensure_object(data, "UserLocalConfigStore")
+    software = ensure_object(root, "Software")
+    valve = ensure_object(software, "Valve")
+    steam = ensure_object(valve, "Steam")
+    mapping = ensure_object(steam, "CompatToolMapping")
+    mapping[str(appid)] = {
+        "name": compat_tool,
+        "config": "",
+        "priority": "250",
+    }
+    save_text_vdf(localconfig_path, data)
+    return localconfig_path
+
+
+def build_shortcut(path: Path, name: str, mode: str, system: str, tags: tuple[str, ...]) -> dict[str, object]:
+    path = path.resolve(strict=False)
+    if mode == "wine":
+        mode = "direct"
+
+    if mode == "batocera":
+        if not system:
+            raise ValueError("Batocera shortcut mode needs a system name")
+        launch_options = f"-system {system} -rom {launch_arg(str(path))} -systemname {system}"
+        return shortcut_entry(name, BATOCERA_TARGET_EXE, path.parent, launch_options, merge_tags(tags, (system,)))
+
+    extra_tags = ("Windows", "Proton") if path.suffix.casefold() == ".exe" else ("Direct",)
+    return shortcut_entry(name, str(path), path.parent, "", merge_tags(tags, extra_tags))
+
+
+def add_shortcut(path: Path, name: str, mode: str, system: str, tags: tuple[str, ...], compat_tool: str) -> list[Path]:
+    if not path.exists():
+        raise FileNotFoundError(f"Path does not exist: {path}")
+
+    configs = steam_user_config_dirs()
+    if not configs:
+        raise RuntimeError("No Steam user configs found. Launch Steam and log in once before adding shortcuts.")
+
+    if mode in ("direct", "wine"):
+        path = resolve_steam_exe(path)
+        mode = "direct"
+
+    if compat_tool.casefold() in ("", "auto", "none", "off", "0"):
+        compat_tool = ""
+
+    entry = build_shortcut(path, name, mode, system, tags)
+    appid = shortcut_unsigned_appid(entry)
+    updated: list[Path] = []
+    for config in configs:
+        shortcuts_path = config / "shortcuts.vdf"
+        data = load_shortcuts(shortcuts_path)
+        shortcuts = data.get("shortcuts")
+        if not isinstance(shortcuts, dict):
+            shortcuts = {}
+            data["shortcuts"] = shortcuts
+        upsert_shortcut(shortcuts, entry)
+        save_shortcuts(shortcuts_path, data)
+        updated.append(shortcuts_path)
+        if compat_tool:
+            updated.append(write_compat_tool_mapping(config, appid, compat_tool))
+    return updated
+
+
+def proc_cmdline(pid: str) -> str:
+    try:
+        return Path("/proc", pid, "cmdline").read_bytes().replace(b"\x00", b" ").decode("utf-8", errors="ignore")
+    except OSError:
+        return ""
+
+
+def proc_environ(pid: str) -> dict[str, str]:
+    try:
+        raw = Path("/proc", pid, "environ").read_bytes()
+    except OSError:
+        return {}
+
+    env: dict[str, str] = {}
+    for item in raw.split(b"\x00"):
+        if b"=" not in item:
+            continue
+        key, value = item.split(b"=", 1)
+        env[key.decode("utf-8", errors="ignore")] = value.decode("utf-8", errors="ignore")
+    return env
+
+
+def find_gui_environment() -> dict[str, str]:
+    candidates: list[tuple[int, dict[str, str]]] = []
+    wanted = {
+        "DISPLAY",
+        "WAYLAND_DISPLAY",
+        "XDG_RUNTIME_DIR",
+        "DBUS_SESSION_BUS_ADDRESS",
+        "DBUS_SYSTEM_BUS_ADDRESS",
+        "XDG_CURRENT_DESKTOP",
+        "XDG_SESSION_TYPE",
+        "SWAYSOCK",
+    }
+
+    for proc in Path("/proc").iterdir():
+        if not proc.name.isdigit():
+            continue
+        cmdline = proc_cmdline(proc.name)
+        if not cmdline:
+            continue
+
+        score = 0
+        if "emulationstation" in cmdline:
+            score = 30
+        elif "swaybg" in cmdline:
+            score = 25
+        elif "/sway" in cmdline or cmdline.strip() == "sway":
+            score = 20
+        elif "labwc" in cmdline:
+            score = 20
+        elif "Xwayland" in cmdline:
+            score = 10
+        if score == 0:
+            continue
+
+        env = {key: value for key, value in proc_environ(proc.name).items() if key in wanted and value}
+        if env:
+            candidates.append((score, env))
+
+    if not candidates:
+        return {}
+
+    candidates.sort(key=lambda item: item[0], reverse=True)
+    return candidates[0][1]
+
+
+def prepare_gui_environment() -> None:
+    gui_env = find_gui_environment()
+    for key, value in gui_env.items():
+        os.environ[key] = value
+
+    if "XDG_CURRENT_DESKTOP" not in os.environ:
+        if "SWAYSOCK" in os.environ or Path("/run/sway-ipc.0.sock").exists() or Path("/var/run/sway-ipc.0.sock").exists():
+            os.environ["XDG_CURRENT_DESKTOP"] = "sway"
+
+    if "XDG_SESSION_TYPE" not in os.environ and "WAYLAND_DISPLAY" in os.environ:
+        os.environ["XDG_SESSION_TYPE"] = "wayland"
+
+
+def run_swaymsg(criteria: str, command: str) -> None:
+    swaymsg = shutil.which("swaymsg")
+    if not swaymsg:
+        return
+
+    env = os.environ.copy()
+    if "SWAYSOCK" not in env:
+        for candidate in ("/run/sway-ipc.0.sock", "/var/run/sway-ipc.0.sock"):
+            if Path(candidate).exists():
+                env["SWAYSOCK"] = candidate
+                break
+
+    if "SWAYSOCK" not in env:
+        return
+
+    subprocess.run(
+        [swaymsg, f"{criteria} {command}"],
+        env=env,
+        check=False,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+
+
+def focus_yad_windows(title: str = "Add Non-Steam Game") -> None:
+    for criteria in ('[app_id="yad"]', f'[title="{title}"]'):
+        run_swaymsg(criteria, "floating enable")
+        run_swaymsg(criteria, "resize set width 900 px height 650 px")
+        run_swaymsg(criteria, "move position center")
+        run_swaymsg(criteria, "focus")
+
+
+def run_yad(args: list[str]) -> str:
+    prepare_gui_environment()
+
+    process = subprocess.Popen(
+        ["yad", "--center", *args],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env=os.environ.copy(),
+    )
+    time.sleep(0.3)
+    focus_yad_windows()
+    stdout, _stderr = process.communicate()
+    if process.returncode != 0:
+        raise SystemExit(1)
+    return stdout.rstrip("\n")
+
+
+def notify(message: str, error: bool = False) -> None:
+    if shutil.which("yad"):
+        title = "Steam Shortcut"
+        icon = "dialog-error" if error else "steam"
+        run_yad(["--title", title, "--image", icon, "--text", message, "--button=OK:0"])
+        return
+    print(message, file=sys.stderr if error else sys.stdout)
+
+
+def gui() -> int:
+    if not shutil.which("yad"):
+        return fail("yad is required for the Steam shortcut GUI.")
+
+    selected = run_yad([
+        "--file",
+        "--title=Add Non-Steam Game",
+        "--filename=/userdata/roms/",
+    ])
+    if not selected:
+        return 1
+
+    path = Path(selected)
+    default_system = infer_system(path)
+    inferred_mode = infer_mode(path, "auto", default_system)
+    default_name = display_name(path)
+    mode_options = [MODE_LABELS[inferred_mode]]
+    for mode in ("auto", "batocera", "wine", "direct"):
+        label = MODE_LABELS[mode]
+        if label not in mode_options:
+            mode_options.append(label)
+    form = run_yad([
+        "--form",
+        "--title=Add Non-Steam Game",
+        "--text=This writes a non-Steam shortcut into Steam userdata/config/shortcuts.vdf for every logged-in Steam user.\n\nWindows .exe entries are added as Steam-managed shortcuts. .pc/.wine folders use autorun.cmd when possible. .wsquashfs/.wtgz archives must be extracted first.\nAfter adding, set Compatibility to Proton 11 (ARM64) in Steam.",
+        "--separator=|",
+        "--field=Steam name",
+        "--field=Shortcut type:CB",
+        "--field=Batocera system",
+        "--field=Steam tags",
+        default_name,
+        "!".join(mode_options),
+        default_system,
+        ",".join(DEFAULT_TAGS),
+    ])
+    if not form:
+        return 1
+
+    values = form.split("|")
+    name = values[0].strip() if len(values) > 0 else default_name
+    mode = mode_from_label(values[1]) if len(values) > 1 else inferred_mode
+    system = values[2].strip() if len(values) > 2 else default_system
+    tags = tuple(tag.strip() for tag in (values[3] if len(values) > 3 else "").split(",") if tag.strip())
+
+    if mode == "auto":
+        mode = infer_mode(path, "auto", system)
+    if not name:
+        name = default_name
+    if not tags:
+        tags = DEFAULT_TAGS
+
+    try:
+        updated = add_shortcut(path, name, mode, system, tags, "none")
+    except Exception as exc:
+        notify(f"Failed to add Steam shortcut:\n{exc}", error=True)
+        return 1
+
+    notify(f"Added Steam shortcut for {name}.\nSet Compatibility to Proton 11 (ARM64) in Steam, then restart Steam/GamepadUI.\nUpdated {len(updated)} user config(s).")
+    return 0
+
+
+def parse_tags(value: str) -> tuple[str, ...]:
+    tags = tuple(tag.strip() for tag in value.split(",") if tag.strip())
+    return tags or DEFAULT_TAGS
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Add Batocera entries to Steam shortcuts.vdf.")
+    subparsers = parser.add_subparsers(dest="command")
+
+    add_parser = subparsers.add_parser("add", help="add or update a Steam shortcut")
+    add_parser.add_argument("path", type=Path)
+    add_parser.add_argument("--name", default="")
+    add_parser.add_argument("--mode", choices=("auto", "batocera", "wine", "direct"), default="auto")
+    add_parser.add_argument("--system", default="")
+    add_parser.add_argument("--tags", default=",".join(DEFAULT_TAGS))
+    add_parser.add_argument("--compat-tool", default="none")
+
+    subparsers.add_parser("gui", help="open a file picker and add a shortcut")
+
+    args = parser.parse_args()
+    command = args.command or "gui"
+
+    if command == "gui":
+        return gui()
+
+    path = args.path
+    system = args.system.strip() or infer_system(path)
+    mode = infer_mode(path, args.mode, system)
+    name = args.name.strip() or display_name(path)
+    tags = parse_tags(args.tags)
+
+    try:
+        updated = add_shortcut(path, name, mode, system, tags, args.compat_tool.strip())
+    except Exception as exc:
+        return fail(f"Failed to add Steam shortcut: {exc}")
+
+    print(f"Added Steam shortcut: {name}")
+    for updated_path in updated:
+        print(f"Updated: {updated_path}")
+    print("Set Compatibility to Proton 11 (ARM64) in Steam, then restart Steam/GamepadUI.")
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main())
+    except KeyboardInterrupt:
+        raise SystemExit(130)

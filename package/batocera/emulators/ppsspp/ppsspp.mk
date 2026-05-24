@@ -4,12 +4,16 @@
 #
 ################################################################################
 
-PPSSPP_VERSION = v1.19.3
+PPSSPP_VERSION = v1.20.4
 PPSSPP_SITE = https://github.com/hrydgard/ppsspp.git
 PPSSPP_SITE_METHOD=git
 PPSSPP_GIT_SUBMODULES=YES
 PPSSPP_LICENSE = GPLv2
+PPSSPP_SUPPORTS_IN_SOURCE_BUILD = NO
 PPSSPP_DEPENDENCIES = sdl2 sdl2_ttf libzip
+
+$(eval $(call register,ppsspp.emulator.yml))
+$(eval $(call register-if-kconfig,BR2_PACKAGE_BATOCERA_VULKAN,gfxbackend.ppsspp.emulator.yml))
 
 PPSSPP_CMAKE_BACKEND = ninja
 
@@ -104,22 +108,24 @@ PPSSPP_CONF_OPTS += -DCMAKE_C_FLAGS="$(PPSSPP_TARGET_CFLAGS)"
 PPSSPP_CONF_OPTS += -DCMAKE_CXX_FLAGS="$(PPSSPP_TARGET_CFLAGS)"
 
 define PPSSPP_UPDATE_INCLUDES
+	rm -rf $(@D)/CMakeCache.txt $(@D)/CMakeFiles
 	sed -i 's/unknown/"$(shell echo $(PPSSPP_VERSION) | cut -c 1-7)"/g' $(@D)/git-version.cmake
 	sed -i "s+/opt/vc+$(STAGING_DIR)/usr+g" $(@D)/CMakeLists.txt
 endef
 
 define PPSSPP_INSTALL_TARGET_CMDS
     mkdir -p $(TARGET_DIR)/usr/bin
-    $(INSTALL) -D -m 0755 $(@D)/$(PPSSPP_TARGET_BINARY) \
+    $(INSTALL) -D -m 0755 $(PPSSPP_BUILDDIR)/$(PPSSPP_TARGET_BINARY) \
         $(TARGET_DIR)/usr/bin/PPSSPP
     mkdir -p $(TARGET_DIR)/usr/share/ppsspp
     cp -R $(@D)/assets $(TARGET_DIR)/usr/share/ppsspp/PPSSPP
     # Fix PSP font rendering for CJK languages
     # (font from http://wenq.org/wqy2/index.cgi?Download#MicroHei_Beta)
     cp -f $(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/emulators/ppsspp/wqy-microhei.ttc \
-        $(TARGET_DIR)/usr/share/ppsspp/PPSSPP/Roboto-Condensed.ttf
+        $(TARGET_DIR)/usr/share/ppsspp/PPSSPP/Roboto_Condensed-Regular.ttf
 endef
 
 PPSSPP_PRE_CONFIGURE_HOOKS += PPSSPP_UPDATE_INCLUDES
 
 $(eval $(cmake-package))
+$(eval $(emulator-info-package))

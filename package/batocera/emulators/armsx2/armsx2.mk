@@ -11,7 +11,7 @@ ARMSX2_LICENSE = GPL-3.0-or-later
 ARMSX2_SUPPORTS_IN_SOURCE_BUILD = NO
 ARMSX2_SUBDIR = ARMSX2/app/src/main/cpp
 
-ARMSX2_DEPENDENCIES += alsa-lib libcurl dbus libpcap zlib
+ARMSX2_DEPENDENCIES += alsa-lib libcurl dbus ecm libpcap zlib
 
 ifeq ($(BR2_PACKAGE_BATOCERA_VULKAN),y)
 ARMSX2_DEPENDENCIES += vulkan-headers vulkan-loader

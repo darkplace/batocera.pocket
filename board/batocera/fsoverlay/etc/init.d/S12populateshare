@@ -83,9 +83,9 @@ fi
 if test "${DOUPDATE}" = 1
 then
     # Update launcher scripts and .steam entries for existing roms systems.
-    for DIR in roms/apps roms/heroic roms/lutris roms/steam
+    for DIR in roms/apps roms/emulator roms/heroic roms/lutris roms/steam
     do
-        find "$IN/$DIR" -mindepth 1 -maxdepth 1 -type f \( -name "*.sh" -o -name "*.steam" \) 2>/dev/null |
+        find "$IN/$DIR" -mindepth 1 -maxdepth 1 -type f \( -name "*.sh" -o -name "*.steam" -o -name "*.keys" \) 2>/dev/null |
             while read FILE
             do
                 RELATIVE_PATH="${FILE#$IN/}"
@@ -99,7 +99,7 @@ then
     done
 
     # Update lightweight metadata/assets so icons and gamelists follow image updates.
-    for DIR in roms/apps roms/steam
+    for DIR in roms/apps roms/emulator roms/steam
     do
         find "$IN/$DIR" -mindepth 1 -maxdepth 2 -type f \( -name "gamelist.xml" -o -name "*.png" -o -name "*.svg" \) 2>/dev/null |
             while read FILE

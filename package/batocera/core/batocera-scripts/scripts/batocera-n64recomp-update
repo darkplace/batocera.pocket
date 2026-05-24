@@ -1,0 +1,327 @@
+#!/bin/bash
+set -euo pipefail
+
+roms_dir="${BATOCERA_N64RECOMP_ROMS_DIR:-/userdata/roms/n64recomp}"
+base_dir="${BATOCERA_N64RECOMP_HOME:-/userdata/system/n64recomp-launcher}"
+app_dir="${BATOCERA_N64RECOMP_APP_DIR:-${base_dir}/app}"
+tmp_xml="/tmp/batocera-n64recomp-update.tmp"
+gamelist="${roms_dir}/gamelist.xml"
+es_server="http://127.0.0.1:1234"
+log="${BATOCERA_N64RECOMP_LOG:-/userdata/system/logs/n64recomp-update.log}"
+
+mkdir -p "${roms_dir}" "${roms_dir}/images" "$(dirname "${log}")"
+
+xml_escape() {
+    local value="$1"
+    value="${value//&/&amp;}"
+    value="${value//</&lt;}"
+    value="${value//>/&gt;}"
+    value="${value//\"/&quot;}"
+    value="${value//\'/&apos;}"
+    printf '%s' "${value}"
+}
+
+slugify() {
+    printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//'
+}
+
+desktop_value() {
+    local key="$1"
+    local desktop_file="$2"
+    sed -n -E "s/^[[:space:]]*${key}(\\[[^]]*\\])?[[:space:]]*=[[:space:]]*//p" "${desktop_file}" | head -n1 || true
+}
+
+normalize_exec() {
+    local line="$1"
+    for token in %f %F %u %U %i %c %k %d %D %n %N %v %m; do
+        line="${line//${token}/}"
+    done
+    printf '%s' "${line}" | sed -E 's/[[:space:]]+/ /g; s/^ //; s/ $//'
+}
+
+extract_run_title() {
+    local exec_line="$1"
+    python3 - "${exec_line}" <<'PY'
+import shlex
+import sys
+
+try:
+    args = shlex.split(sys.argv[1])
+except Exception:
+    raise SystemExit(1)
+
+for index, arg in enumerate(args):
+    if arg == "--run" and index + 1 < len(args):
+        print(args[index + 1])
+        raise SystemExit(0)
+
+raise SystemExit(1)
+PY
+}
+
+resolve_icon_file() {
+    local icon="$1"
+    local candidate
+    local search_dir
+    local hit
+
+    [[ -n "${icon}" ]] || return 1
+
+    if [[ "${icon}" = /* ]] && [[ -f "${icon}" ]]; then
+        printf '%s\n' "${icon}"
+        return 0
+    fi
+
+    if [[ "${icon}" == *.* ]]; then
+        for candidate in \
+            "${base_dir}/.local/share/icons/${icon}" \
+            "${app_dir}/Cache/Icons/${icon}" \
+            "/userdata/system/.local/share/icons/${icon}" \
+            "/usr/share/icons/${icon}" \
+            "/usr/share/pixmaps/${icon}"
+        do
+            [[ -f "${candidate}" ]] && printf '%s\n' "${candidate}" && return 0
+        done
+    else
+        for ext in png jpg jpeg webp svg xpm; do
+            for candidate in \
+                "${base_dir}/.local/share/icons/${icon}.${ext}" \
+                "${app_dir}/Cache/Icons/${icon}.${ext}" \
+                "/userdata/system/.local/share/icons/${icon}.${ext}" \
+                "/usr/share/icons/${icon}.${ext}" \
+                "/usr/share/pixmaps/${icon}.${ext}"
+            do
+                [[ -f "${candidate}" ]] && printf '%s\n' "${candidate}" && return 0
+            done
+        done
+    fi
+
+    for search_dir in \
+        "${base_dir}/.local/share/icons" \
+        "${app_dir}/Cache/Icons" \
+        "/userdata/system/.local/share/icons" \
+        "/usr/share/icons" \
+        "/usr/share/pixmaps"
+    do
+        [[ -d "${search_dir}" ]] || continue
+        if [[ "${icon}" == *.* ]]; then
+            hit="$(find "${search_dir}" -type f -name "${icon}" 2>/dev/null | head -n1 || true)"
+        else
+            hit="$(
+                find "${search_dir}" -type f \( \
+                    -name "${icon}.png" -o \
+                    -name "${icon}.jpg" -o \
+                    -name "${icon}.jpeg" -o \
+                    -name "${icon}.webp" \
+                \) 2>/dev/null | head -n1 || true
+            )"
+        fi
+        [[ -n "${hit}" ]] && printf '%s\n' "${hit}" && return 0
+    done
+
+    return 1
+}
+
+prepare_image() {
+    local slug="$1"
+    local icon="$2"
+    local image_src
+    local ext
+    local ext_lc
+    local image_name
+    local image_dest
+
+    image_src="$(resolve_icon_file "${icon}" || true)"
+    [[ -n "${image_src}" && -f "${image_src}" ]] || return 0
+
+    ext="${image_src##*.}"
+    ext_lc="$(printf '%s' "${ext}" | tr '[:upper:]' '[:lower:]')"
+    case "${ext_lc}" in
+        png|jpg|jpeg|webp) ;;
+        *) return 0 ;;
+    esac
+
+    image_name="n64recomp-auto-${slug}.${ext_lc}"
+    image_dest="${roms_dir}/images/${image_name}"
+    cp -f "${image_src}" "${image_dest}" 2>/dev/null || return 0
+    printf './images/%s' "${image_name}"
+}
+
+write_game_launcher() {
+    local script_path="$1"
+    local game_title="$2"
+    local escaped_title
+    escaped_title="$(printf '%q' "${game_title}")"
+
+    cat > "${script_path}" <<EOF
+#!/bin/bash
+set -euo pipefail
+if command -v batocera-mouse >/dev/null 2>&1; then
+    batocera-mouse show
+    trap 'batocera-mouse hide' EXIT
+fi
+
+game_title=${escaped_title}
+extra_args=()
+if [[ -n "\${BATOCERA_N64RECOMP_EXTRA_ARGS:-}" ]]; then
+    read -r -a extra_args <<< "\${BATOCERA_N64RECOMP_EXTRA_ARGS}"
+fi
+
+exec n64recomp-launcher --run "\${game_title}" "\${extra_args[@]}"
+EOF
+    chmod 0755 "${script_path}"
+}
+
+es_add_game_begin() {
+    echo "<gameList>" > "${tmp_xml}"
+}
+
+es_add_game() {
+    local game_path="$1"
+    local game_name="$2"
+    local game_image="${3:-}"
+    cat >> "${tmp_xml}" <<EOF
+<game>
+  <path>$(xml_escape "${game_path}")</path>
+  <name>$(xml_escape "${game_name}")</name>
+  <desc></desc>
+  <rating></rating>
+  <releasedate></releasedate>
+  <developer></developer>
+  <publisher></publisher>
+  <genre></genre>
+  <players></players>
+  <image>$(xml_escape "${game_image}")</image>
+  <manual></manual>
+  <video></video>
+</game>
+EOF
+}
+
+merge_gamelist() {
+    python3 - "${gamelist}" "${tmp_xml}" <<'PY'
+from __future__ import annotations
+
+import sys
+import xml.etree.ElementTree as ET
+from pathlib import Path
+
+gamelist_path = Path(sys.argv[1])
+updates_path = Path(sys.argv[2])
+
+def empty_gamelist() -> ET.Element:
+    return ET.Element("gameList")
+
+def parse_or_empty(path: Path) -> ET.Element:
+    if not path.exists() or path.stat().st_size == 0:
+        return empty_gamelist()
+    try:
+        return ET.parse(path).getroot()
+    except ET.ParseError:
+        return empty_gamelist()
+
+def indent(element: ET.Element, level: int = 0) -> None:
+    space = "\n" + level * "  "
+    child_space = "\n" + (level + 1) * "  "
+    if len(element):
+        if not element.text or not element.text.strip():
+            element.text = child_space
+        for child in element:
+            indent(child, level + 1)
+        if not element[-1].tail or not element[-1].tail.strip():
+            element[-1].tail = space
+    if level and (not element.tail or not element.tail.strip()):
+        element.tail = space
+
+root = parse_or_empty(gamelist_path)
+if root.tag != "gameList":
+    root = empty_gamelist()
+
+for game in list(root.findall("game")):
+    path = (game.findtext("path") or "").lstrip("./")
+    if path.startswith("n64recomp-auto-"):
+        root.remove(game)
+
+updates = parse_or_empty(updates_path)
+for game in updates.findall("game"):
+    path = (game.findtext("path") or "").lstrip("./")
+    if path.startswith("n64recomp-auto-"):
+        root.append(game)
+
+indent(root)
+tree = ET.ElementTree(root)
+gamelist_path.parent.mkdir(parents=True, exist_ok=True)
+tree.write(gamelist_path, encoding="utf-8", xml_declaration=True)
+PY
+}
+
+es_add_game_end() {
+    echo "</gameList>" >> "${tmp_xml}"
+    merge_gamelist
+    curl -s -X POST \
+        -H "Content-type: application/x-www-form-urlencoded" \
+        -H "Accept: text/plain" \
+        "${es_server}/addgames/n64recomp" \
+        -d @"${tmp_xml}" > /dev/null || true
+}
+
+desktop_dirs=(
+    "${app_dir}"
+    "${base_dir}/Desktop"
+    "${base_dir}/.local/share/applications"
+    "${app_dir}/Desktop"
+    "${app_dir}/.local/share/applications"
+    "/userdata/system/Desktop"
+    "/userdata/system/.local/share/applications"
+    "${HOME:-/userdata/system}/Desktop"
+    "${HOME:-/userdata/system}/.local/share/applications"
+)
+
+if [[ -n "${BATOCERA_N64RECOMP_DESKTOP_DIRS:-}" ]]; then
+    IFS=':' read -r -a extra_desktop_dirs <<< "${BATOCERA_N64RECOMP_DESKTOP_DIRS}"
+    desktop_dirs+=("${extra_desktop_dirs[@]}")
+fi
+
+echo "Refreshing N64 recomp launchers from desktop shortcuts." >> "${log}"
+find "${roms_dir}" -maxdepth 1 -type f -name 'n64recomp-auto-*.sh' -delete
+
+es_add_game_begin
+
+declare -a desktop_files=()
+for dir in "${desktop_dirs[@]}"; do
+    [[ -d "${dir}" ]] || continue
+    while IFS= read -r -d '' file; do
+        desktop_files+=("${file}")
+    done < <(find "${dir}" -maxdepth 1 -type f -name '*.desktop' -print0 2>/dev/null)
+done
+
+declare -A seen=()
+game_count=0
+for desktop_file in "${desktop_files[@]}"; do
+    name="$(desktop_value Name "${desktop_file}")"
+    icon="$(desktop_value Icon "${desktop_file}")"
+    exec_line="$(desktop_value Exec "${desktop_file}")"
+    exec_line="$(normalize_exec "${exec_line}")"
+
+    [[ -n "${name}" && -n "${exec_line}" ]] || continue
+    exec_lower="${exec_line,,}"
+    [[ "${exec_lower}" == *"n64recomplauncher"* || "${exec_lower}" == *"n64recomp-launcher"* ]] || continue
+
+    game_title="$(extract_run_title "${exec_line}" || true)"
+    [[ -n "${game_title}" ]] || continue
+
+    slug="$(slugify "${game_title}")"
+    [[ -n "${slug}" ]] || continue
+    [[ -n "${seen["${slug}"]+x}" ]] && continue
+    seen["${slug}"]=1
+
+    script_name="n64recomp-auto-${slug}.sh"
+    script_path="${roms_dir}/${script_name}"
+    game_image="$(prepare_image "${slug}" "${icon}")"
+    write_game_launcher "${script_path}" "${game_title}"
+    es_add_game "./${script_name}" "${game_title}" "${game_image}"
+    game_count=$((game_count + 1))
+done
+
+es_add_game_end
+echo "N64 recomp launcher update complete: ${game_count} game launcher(s) generated." >> "${log}"

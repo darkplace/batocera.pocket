@@ -122,6 +122,136 @@ Squash_Game() {
   mksquashfs "${2}" "${gname}" -comp zstd -percentage | yad --progress --text="<span font='${f[0]}'>Creating $gname${fx}" --auto-close
 }
 
+Trim_Autorun_Value() {
+  local value="$1"
+  value="${value%$'\r'}"
+  value="${value#"${value%%[![:space:]]*}"}"
+  value="${value%"${value##*[![:space:]]}"}"
+  if [[ "${value}" == \"*\" && "${value}" == *\" ]]; then
+    value="${value:1:${#value}-2}"
+  fi
+  printf '%s\n' "${value}"
+}
+
+Autorun_Exe_For_Steam() {
+  local game_dir="$1" autorun="${game_dir}/autorun.cmd"
+  local line key value cmd="" dir="." candidate exe base
+  [[ -f "${autorun}" ]] || return 1
+
+  while IFS= read -r line; do
+    [[ "${line}" == *=* ]] || continue
+    key="${line%%=*}"
+    value="${line#*=}"
+    key="${key^^}"
+    key="${key//[[:space:]]/}"
+    case "${key}" in
+      CMD) cmd="$(Trim_Autorun_Value "${value}")" ;;
+      DIR) dir="$(Trim_Autorun_Value "${value}")" ;;
+    esac
+  done < "${autorun}"
+
+  [[ -n "${cmd}" ]] || return 1
+  cmd="${cmd//\\//}"
+  dir="${dir//\\//}"
+  if [[ "${cmd}" == /* ]]; then
+    candidate="${cmd}"
+  else
+    candidate="${game_dir}/${dir:-.}/${cmd}"
+  fi
+  if [[ -s "${candidate}" && "${candidate,,}" == *.exe ]]; then
+    printf '%s\n' "${candidate}"
+    return 0
+  fi
+
+  base="$(basename "${cmd}")"
+  while IFS= read -r -d '' exe; do
+    [[ -s "${exe}" ]] || continue
+    if [[ "$(basename "${exe}")" == "${base}" ]]; then
+      printf '%s\n' "${exe}"
+      return 0
+    fi
+  done < <(find "${game_dir}" -type f -iname '*.exe' -print0 2>/dev/null)
+  return 1
+}
+
+Collect_Steam_Exes() {
+  local selected="$1" ext="${selected##*.}"
+  local exe suggested seen=""
+
+  case "${ext,,}" in
+    exe)
+      [[ -s "${selected}" ]] && printf '%s\n' "${selected}"
+    ;;
+    pc|wine)
+      [[ -d "${selected}" ]] || return 0
+      suggested="$(Autorun_Exe_For_Steam "${selected}" || true)"
+      if [[ -n "${suggested}" ]]; then
+        printf '%s\n' "${suggested}"
+        seen=$'\n'"${suggested}"$'\n'
+      fi
+      while IFS= read -r -d '' exe; do
+        [[ -s "${exe}" ]] || continue
+        [[ "${seen}" == *$'\n'"${exe}"$'\n'* ]] && continue
+        printf '%s\n' "${exe}"
+        seen+="${exe}"$'\n'
+      done < <(find "${selected}" -type f -iname '*.exe' -print0 2>/dev/null | sort -z)
+    ;;
+  esac
+}
+
+Short_Path_For_Steam_Menu() {
+  local path="$1" root="$2" label="$1"
+
+  if [[ -n "${root}" && "${path}" == "${root}/"* ]]; then
+    label="${path#"${root}/"}"
+  elif [[ "${path}" == /userdata/roms/windows/* ]]; then
+    label="${path#/userdata/roms/windows/}"
+  fi
+
+  printf '%s\n' "${label}"
+}
+
+Add_To_Steam() {
+  local output rc target="$1" ext="${1##*.}" selected_exe exe root label
+  local -a exes
+  local -a yad_items=()
+  [[ -e "$target" ]] || { echo "error: '$target' not found" | yad --text-info --wrap --fontname="${f[2]}"; return 1; }
+  command -v batocera-steam-shortcuts >/dev/null 2>&1 || { echo "error: batocera-steam-shortcuts not found" | yad --text-info --wrap --fontname="${f[2]}"; return 1; }
+
+  case "${ext,,}" in
+    wsquashfs|wtgz)
+      printf '%s cannot be added directly to Steam.\n\nSteam/Proton needs a real .exe. Extract the archive first, or choose an .exe inside an unpacked .pc/.wine folder.\n' "$(basename "${target}")" | yad --text-info --wrap --fontname="${f[2]}" --title="Steam Shortcut"
+      return 1
+    ;;
+  esac
+
+  readarray -t exes < <(Collect_Steam_Exes "${target}")
+  if [[ ${#exes[@]} -eq 0 ]]; then
+    printf 'No non-empty .exe target found for %s.\n\nIf this is a .pc/.wine folder, create/fix autorun.cmd or choose a real .exe inside the folder.\n' "$(basename "${target}")" | yad --text-info --wrap --fontname="${f[2]}" --title="Steam Shortcut"
+    return 1
+  elif [[ ${#exes[@]} -eq 1 ]]; then
+    selected_exe="${exes[0]}"
+  else
+    root="${target}"
+    [[ -d "${root}" ]] || root="$(dirname "${target}")"
+    for exe in "${exes[@]}"; do
+      label="$(Short_Path_For_Steam_Menu "${exe}" "${root}")"
+      yad_items+=("${label}" "${exe}")
+    done
+    selected_exe="$(yad --list --title="Choose Steam executable" --text="Choose the .exe for Steam/Proton.\nautorun.cmd is first when found." --width=760 --height=420 --column="Executable" --column="Path" --hide-column=2 "${yad_items[@]}" --separator= --print-column=2)"
+    [[ -n "${selected_exe}" ]] || return 1
+  fi
+
+  output=$(batocera-steam-shortcuts add "$selected_exe" --mode direct --compat-tool none --tags Batocera,Windows,Steam 2>&1)
+  rc=$?
+  if [[ $rc -eq 0 ]]; then
+    printf 'Steam shortcut added for %s.\n\nIn Steam, set Compatibility to Proton 11 (ARM64), then restart Steam/GamepadUI. Refresh ES gamelists if needed.\n' "$(basename "${selected_exe}")" | yad --text-info --wrap --fontname="${f[2]}" --title="Steam Shortcut"
+  else
+    printf 'Failed to add Steam shortcut:\n\n%s\n' "$output" | yad --text-info --wrap --fontname="${f[2]}" --title="Steam Shortcut"
+  fi
+  return "$rc"
+}
+
 #### MAIN ####
 
 #@DEVs please always check provided arguments for ex. count them
@@ -173,9 +303,13 @@ case ${1} in
     [[ ${#@} -eq 3 ]] || exit 1
     Squash_Game "$2" "$3"
   ;;
+  --add-to-steam)
+    #use %f as selected game path
+    [[ ${#@} -eq 2 ]] || exit 1
+    Add_To_Steam "$2"
+  ;;
   --setup-wine-toolboxfonts)
     #setup the toolbox fonts
     Setup_Fonts
   ;;
 esac
-

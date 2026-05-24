@@ -52,7 +52,8 @@ class LibretroGenerator(Generator):
             "name": "retroarch",
             "keys": { "exit": ["KEY_LEFTSHIFT", "KEY_ESC"], "menu": ["KEY_LEFTSHIFT", "KEY_F1"], "pause": ["KEY_LEFTSHIFT", "KEY_P"], "coin": "KEY_F12",
                       "save_state": ["KEY_LEFTSHIFT", "KEY_F3"], "restore_state": ["KEY_LEFTSHIFT", "KEY_F4"], "previous_slot": ["KEY_LEFTSHIFT", "KEY_F6"], "next_slot": ["KEY_LEFTSHIFT", "KEY_F5"],
-                      "rewind": ["KEY_LEFTSHIFT", "KEY_F11"], "fastforward": ["KEY_LEFTSHIFT", "KEY_F12"], "reset": ["KEY_LEFTSHIFT", "KEY_F10"], "translation": ["KEY_LEFTSHIFT", "KEY_F9"]
+                      "rewind": ["KEY_LEFTSHIFT", "KEY_F11"], "fastforward": ["KEY_LEFTSHIFT", "KEY_F12"], "reset": ["KEY_LEFTSHIFT", "KEY_F10"], "translation": ["KEY_LEFTSHIFT", "KEY_F9"],
+                      "disk_eject": ["KEY_LEFTSHIFT", "KEY_INSERT"], "next_disk": ["KEY_LEFTSHIFT", "KEY_PAGEUP"], "previous_disk": ["KEY_LEFTSHIFT", "KEY_PAGEDOWN"]
                      }
         }
 

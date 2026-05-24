@@ -1,17 +1,32 @@
 #!/bin/bash
-# SPDX-FileCopyrightText: Added/modified by suckbluefrog
+# SPDX-FileCopyrightText: 2026 suckbluefrog
 set -euo pipefail
 
 log="/userdata/system/logs/steam-desktop-switch.log"
 mkdir -p "$(dirname "${log}")"
 lock="/var/run/batocera-steam-desktop-switch.lock"
+direct_app_session_flag="/var/run/batocera-steam-direct-app-session"
+preflight_session_flag="/var/run/batocera-steam-update-preflight"
 steam_session_pattern='(^|/)batocera-steam-session([[:space:]]|$)'
-steam_direct_pattern='(^|/)steam-direct-session\.sh([[:space:]]|$)'
+desktop_launcher="/usr/bin/batocera-steam-desktop-launcher"
+desktop_launcher_pattern='(^|/)batocera-steam-desktop-launcher([[:space:]]|$)'
 ALLY_HOTKEY_DIR="/userdata/system/configs/hotkeygen"
 ALLY_ACTIVE_MAP="${ALLY_HOTKEY_DIR}/ASUS_ROG_Ally_Config-b05-1abe.mapping"
-ALLY_ES_MAP="${ALLY_HOTKEY_DIR}/ASUS_ROG_Ally_Config-b05-1abe.mapping.es"
-ALLY_DATAINIT_DIR="/usr/share/batocera/datainit/system/configs/hotkeygen"
+ALLY_COMMON_CONTEXT="${ALLY_HOTKEY_DIR}/common_context.ally.conf"
+ALLY_SYSTEM_DIR="/usr/share/batocera/services/allyhotkeys.d"
+ALLY_ES_MAP="${ALLY_SYSTEM_DIR}/ASUS_ROG_Ally_Config-b05-1abe.mapping.es"
+ALLY_DEFAULT_MAP="${ALLY_SYSTEM_DIR}/ASUS_ROG_Ally_Config-b05-1abe.mapping"
+HARD_KILL_ON_SWITCH="${BATOCERA_STEAM_DESKTOP_SWITCH_HARD_KILL:-1}"
 echo "[$(date +%F\ %T)] switch-to-desktop: process start" >> "${log}"
+
+if [[ -f "${direct_app_session_flag}" ]]; then
+    echo "[$(date +%F\ %T)] switch-to-desktop: ignored during direct app session ($(cat "${direct_app_session_flag}" 2>/dev/null || true))" >> "${log}"
+    exit 0
+fi
+if [[ -f "${preflight_session_flag}" ]]; then
+    echo "[$(date +%F\ %T)] switch-to-desktop: ignored during Steam updater preflight ($(cat "${preflight_session_flag}" 2>/dev/null || true))" >> "${log}"
+    exit 0
+fi
 
 if command -v flock >/dev/null 2>&1; then
     exec 9>"${lock}"
@@ -24,9 +39,10 @@ fi
 steam_stack_alive() {
     pgrep -x batocera-steam >/dev/null 2>&1 || \
     pgrep -f "${steam_session_pattern}" >/dev/null 2>&1 || \
-    pgrep -f "${steam_direct_pattern}" >/dev/null 2>&1 || \
     pgrep -x steam >/dev/null 2>&1 || \
     pgrep -x steamwebhelper >/dev/null 2>&1 || \
+    pgrep -x steam-runtime-supervisor >/dev/null 2>&1 || \
+    pgrep -x FEX >/dev/null 2>&1 || \
     pgrep -x gamescope >/dev/null 2>&1 || \
     pgrep -x gamescopereaper >/dev/null 2>&1 || \
     pgrep -x gamescopestream >/dev/null 2>&1 || \
@@ -37,44 +53,30 @@ steam_stack_alive() {
 
 hotkeys_restored=0
 
-emulationstation_alive() {
-    pgrep -f '(^|/)emulationstation([[:space:]]|$)' >/dev/null 2>&1
-}
-
 hotkeygen_permanent_running() {
     pgrep -f '(^|[[:space:]])(/usr/bin/)?hotkeygen([[:space:]].*)?--permanent([[:space:]]|$)' >/dev/null 2>&1
 }
 
+allyhotkeys_enabled() {
+    [ -f "${ALLY_COMMON_CONTEXT}" ]
+}
+
 recover_hotkeys() {
-    local helper
     local src
 
     if [ "${hotkeys_restored}" = "1" ]; then
         return
     fi
 
-    mkdir -p "${ALLY_HOTKEY_DIR}" 2>/dev/null || true
-    for src in \
-        "${ALLY_ES_MAP}" \
-        "${ALLY_DATAINIT_DIR}/ASUS_ROG_Ally_Config-b05-1abe.mapping.es" \
-        "${ALLY_DATAINIT_DIR}/ASUS_ROG_Ally_Config-b05-1abe.mapping"
-    do
-        if [ -f "${src}" ]; then
-            cp -f "${src}" "${ALLY_ACTIVE_MAP}" 2>/dev/null || true
-            break
-        fi
-    done
-
-    for helper in \
-        "/userdata/system/scripts/50-ally-steam-hotkeys.sh" \
-        "/usr/share/batocera/datainit/system/scripts/50-ally-steam-hotkeys.sh" \
-        "/usr/share/batocera/configgen/scripts/50-ally-steam-hotkeys.sh"
-    do
-        if [ -f "${helper}" ]; then
-            /bin/sh "${helper}" gameStop steam steam steam "" >> "${log}" 2>&1 || true
-            break
-        fi
-    done
+    if allyhotkeys_enabled; then
+        mkdir -p "${ALLY_HOTKEY_DIR}" 2>/dev/null || true
+        for src in "${ALLY_ES_MAP}" "${ALLY_DEFAULT_MAP}"; do
+            if [ -f "${src}" ]; then
+                cp -f "${src}" "${ALLY_ACTIVE_MAP}" 2>/dev/null || true
+                break
+            fi
+        done
+    fi
 
     if command -v hotkeygen >/dev/null 2>&1; then
         if ! hotkeygen_permanent_running && [ -x /etc/init.d/S90hotkeygen ]; then
@@ -110,17 +112,68 @@ wait_for_stack_exit() {
     return 1
 }
 
+start_desktop_launcher() {
+    if [[ ! -x "${desktop_launcher}" ]]; then
+        echo "[$(date +%F\ %T)] switch-to-desktop: desktop launcher missing or not executable: ${desktop_launcher}" >> "${log}"
+        return 1
+    fi
+
+    if pgrep -f "${desktop_launcher_pattern}" >/dev/null 2>&1; then
+        echo "[$(date +%F\ %T)] switch-to-desktop: detached desktop launcher already running" >> "${log}"
+        return 0
+    fi
+
+    if command -v setsid >/dev/null 2>&1; then
+        setsid "${desktop_launcher}" 9>&- >> "${log}" 2>&1 < /dev/null &
+    else
+        nohup "${desktop_launcher}" 9>&- >> "${log}" 2>&1 &
+    fi
+
+    sleep 0.1
+    if pgrep -f "${desktop_launcher_pattern}" >/dev/null 2>&1; then
+        echo "[$(date +%F\ %T)] switch-to-desktop: detached desktop launcher queued" >> "${log}"
+        return 0
+    fi
+
+    echo "[$(date +%F\ %T)] switch-to-desktop: detached desktop launcher failed to start" >> "${log}"
+    return 1
+}
+
 terminate_steam_stack() {
+    if [[ "${HARD_KILL_ON_SWITCH}" != "0" ]]; then
+        echo "[$(date +%F\ %T)] switch-to-desktop: using immediate hard-kill teardown" >> "${log}"
+        pkill -KILL -x batocera-steam >/dev/null 2>&1 || true
+        pkill -KILL -f "${steam_session_pattern}" >/dev/null 2>&1 || true
+        pkill -KILL -x steam >/dev/null 2>&1 || true
+        pkill -KILL -x steamwebhelper >/dev/null 2>&1 || true
+        pkill -KILL -x steam-runtime-supervisor >/dev/null 2>&1 || true
+        pkill -KILL -x FEX >/dev/null 2>&1 || true
+        pkill -KILL -x gamescope >/dev/null 2>&1 || true
+        pkill -KILL -x gamescopereaper >/dev/null 2>&1 || true
+        pkill -KILL -x gamescopestream >/dev/null 2>&1 || true
+        pkill -KILL -x gamescopectl >/dev/null 2>&1 || true
+        pkill -KILL -f '/userdata/system/homebrew/services/PluginLoader' >/dev/null 2>&1 || true
+        pkill -KILL -f 'pressure-vessel' >/dev/null 2>&1 || true
+        pkill -KILL -f '/userdata/system/steam/steam.sh|/usr/share/steam/bin_steam.sh|emulatorlauncher.*-system steam|Steam GamepadUI\.steam|Steam Desktop\.steam' >/dev/null 2>&1 || true
+
+        if command -v killall >/dev/null 2>&1; then
+            killall -q -9 batocera-steam steam steamwebhelper steam-runtime-supervisor FEX gamescope gamescopereaper gamescopestream gamescopectl >/dev/null 2>&1 || true
+        fi
+
+        wait_for_stack_exit 15 || true
+        return
+    fi
+
     pkill -TERM -x batocera-steam >/dev/null 2>&1 || true
     pkill -TERM -f "${steam_session_pattern}" >/dev/null 2>&1 || true
-    pkill -TERM -f "${steam_direct_pattern}" >/dev/null 2>&1 || true
     pkill -TERM -x steam >/dev/null 2>&1 || true
     pkill -TERM -x steamwebhelper >/dev/null 2>&1 || true
+    pkill -TERM -x steam-runtime-supervisor >/dev/null 2>&1 || true
+    pkill -TERM -x FEX >/dev/null 2>&1 || true
     pkill -TERM -x gamescope >/dev/null 2>&1 || true
     pkill -TERM -x gamescopereaper >/dev/null 2>&1 || true
     pkill -TERM -x gamescopestream >/dev/null 2>&1 || true
     pkill -TERM -x gamescopectl >/dev/null 2>&1 || true
-    pkill -TERM -x steam-runtime-supervisor >/dev/null 2>&1 || true
     pkill -TERM -f '/userdata/system/homebrew/services/PluginLoader' >/dev/null 2>&1 || true
     pkill -TERM -f 'pressure-vessel' >/dev/null 2>&1 || true
     pkill -TERM -f '/userdata/system/steam/steam.sh|/usr/share/steam/bin_steam.sh|emulatorlauncher.*-system steam|Steam GamepadUI\.steam|Steam Desktop\.steam' >/dev/null 2>&1 || true
@@ -131,69 +184,30 @@ terminate_steam_stack() {
 
     pkill -KILL -x batocera-steam >/dev/null 2>&1 || true
     pkill -KILL -f "${steam_session_pattern}" >/dev/null 2>&1 || true
-    pkill -KILL -f "${steam_direct_pattern}" >/dev/null 2>&1 || true
     pkill -KILL -x steam >/dev/null 2>&1 || true
     pkill -KILL -x steamwebhelper >/dev/null 2>&1 || true
+    pkill -KILL -x steam-runtime-supervisor >/dev/null 2>&1 || true
+    pkill -KILL -x FEX >/dev/null 2>&1 || true
     pkill -KILL -x gamescope >/dev/null 2>&1 || true
     pkill -KILL -x gamescopereaper >/dev/null 2>&1 || true
     pkill -KILL -x gamescopestream >/dev/null 2>&1 || true
     pkill -KILL -x gamescopectl >/dev/null 2>&1 || true
-    pkill -KILL -x steam-runtime-supervisor >/dev/null 2>&1 || true
     pkill -KILL -f '/userdata/system/homebrew/services/PluginLoader' >/dev/null 2>&1 || true
     pkill -KILL -f 'pressure-vessel' >/dev/null 2>&1 || true
     pkill -KILL -f '/userdata/system/steam/steam.sh|/usr/share/steam/bin_steam.sh|emulatorlauncher.*-system steam|Steam GamepadUI\.steam|Steam Desktop\.steam' >/dev/null 2>&1 || true
 
     if command -v killall >/dev/null 2>&1; then
-        killall -q -9 steam steamwebhelper gamescope gamescopereaper gamescopestream gamescopectl steam-runtime-supervisor >/dev/null 2>&1 || true
+        killall -q -9 steam steamwebhelper steam-runtime-supervisor FEX gamescope gamescopereaper gamescopestream gamescopectl >/dev/null 2>&1 || true
     fi
 
     wait_for_stack_exit 30 || true
 }
 
-launch_desktop_steam() {
-    local attempt
-    local i
-    for attempt in 1 2; do
-        BATOCERA_STEAM_MODE=desktop \
-        BATOCERA_STEAM_GAMEPADUI=0 \
-        BATOCERA_STEAM_USE_GAMESCOPE=0 \
-        nohup /usr/bin/batocera-steam >> "${log}" 2>&1 &
-
-        for i in $(seq 1 30); do
-            if pgrep -x steam >/dev/null 2>&1 || pgrep -x steamwebhelper >/dev/null 2>&1; then
-                return 0
-            fi
-            sleep 0.2
-        done
-
-        echo "[$(date +%F\ %T)] switch-to-desktop: desktop steam launch attempt ${attempt} did not come up" >> "${log}"
-        pkill -TERM -x batocera-steam >/dev/null 2>&1 || true
-        pkill -TERM -x steam >/dev/null 2>&1 || true
-        pkill -TERM -x steamwebhelper >/dev/null 2>&1 || true
-        sleep 0.5
-    done
-    return 1
-}
-
-restore_emulationstation() {
-    if emulationstation_alive; then
-        return 0
-    fi
-
-    if pgrep -x sway >/dev/null 2>&1 || pgrep -x labwc >/dev/null 2>&1 || pgrep -x openbox >/dev/null 2>&1; then
-        echo "[$(date +%F\ %T)] switch-to-desktop: starting EmulationStation frontend" >> "${log}"
-        nohup /usr/bin/emulationstation-standalone >> "${log}" 2>&1 &
-        return 0
-    fi
-
-    if [ -x /etc/init.d/S31emulationstation ]; then
-        echo "[$(date +%F\ %T)] switch-to-desktop: starting EmulationStation service" >> "${log}"
-        /etc/init.d/S31emulationstation start >/dev/null 2>&1 || \
-            /etc/init.d/S31emulationstation restart >/dev/null 2>&1 || true
-    fi
-}
-
 echo "[$(date +%F\ %T)] switch-to-desktop: invoked" >> "${log}"
+launcher_started=0
+if start_desktop_launcher; then
+    launcher_started=1
+fi
 echo "[$(date +%F\ %T)] switch-to-desktop: stopping steam stack" >> "${log}"
 recover_hotkeys_force
 terminate_steam_stack
@@ -202,25 +216,20 @@ if steam_stack_alive; then
     echo "[$(date +%F\ %T)] switch-to-desktop: steam stack still alive after kill attempts" >> "${log}"
 fi
 
-if [ "${1:-return}" != "desktop" ]; then
-    echo "[$(date +%F\ %T)] switch-to-desktop: returning to EmulationStation" >> "${log}"
-    restore_emulationstation
-    recover_hotkeys_force
-    echo "[$(date +%F\ %T)] switch-to-desktop: done" >> "${log}"
+if [[ "${launcher_started}" -eq 1 ]]; then
+    echo "[$(date +%F\ %T)] switch-to-desktop: handoff to detached desktop launcher complete" >> "${log}"
     exit 0
 fi
 
-echo "[$(date +%F\ %T)] switch-to-desktop: launching desktop steam" >> "${log}"
+echo "[$(date +%F\ %T)] switch-to-desktop: detached launch failed, running desktop launcher inline" >> "${log}"
 
-if ! launch_desktop_steam; then
-    echo "[$(date +%F\ %T)] switch-to-desktop: failed to launch desktop steam after retries" >> "${log}"
+if ! "${desktop_launcher}" >> "${log}" 2>&1; then
+    echo "[$(date +%F\ %T)] switch-to-desktop: inline desktop launcher failed" >> "${log}"
     recover_hotkeys_force
     exit 1
 fi
 
-# Apply ES profile again after desktop Steam appears, then one more time shortly
-# after to avoid late profile/context overrides by other hooks.
 recover_hotkeys_force
 sleep 0.6
 recover_hotkeys_force
-echo "[$(date +%F\ %T)] switch-to-desktop: done" >> "${log}"
+echo "[$(date +%F\ %T)] switch-to-desktop: inline desktop launcher complete" >> "${log}"

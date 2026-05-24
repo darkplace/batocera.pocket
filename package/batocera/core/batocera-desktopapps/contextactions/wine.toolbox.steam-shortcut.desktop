@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Action
+Name=WINE: Add to Steam
+Folders=*/windows*;
+Basenames=*.pc;*.PC;*.wine;*.WINE;*.exe;*.EXE;*.wsquashfs;*.WSQUASHFS;*.wtgz;*.WTGZ;
+Profiles=Batocera
+SelectionCount==1
+
+[X-Action-Profile Batocera]
+MimeTypes=all/all
+Exec=/usr/share/file-manager/actions/toolbox/wine.toolbox --add-to-steam %f

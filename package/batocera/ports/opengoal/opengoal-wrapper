@@ -1,0 +1,288 @@
+#!/bin/sh
+
+set -eu
+
+OPENGOAL_VERSION="v0.3.3"
+OPENGOAL_ROOT="/usr/lib/opengoal"
+STATE_ROOT="/userdata/saves/opengoal"
+PROJECT_DIR="${STATE_ROOT}/project"
+ROMS_DIR="/userdata/roms/opengoal"
+GAME="auto"
+REBUILD="0"
+ROM=""
+NO_AVX2="0"
+RESOLUTION=""
+WINDOW_SIZE=""
+ASPECT="auto"
+FPS=""
+MSAA=""
+VSYNC=""
+SKIP_MOVIES=""
+
+while [ "$#" -gt 0 ]; do
+	case "$1" in
+		--game)
+			GAME="${2:-auto}"
+			shift 2
+			;;
+		--rebuild)
+			REBUILD="1"
+			shift
+			;;
+		--no-avx2)
+			NO_AVX2="1"
+			shift
+			;;
+		--resolution)
+			RESOLUTION="${2:-}"
+			shift 2
+			;;
+		--window-size)
+			WINDOW_SIZE="${2:-}"
+			shift 2
+			;;
+		--aspect)
+			ASPECT="${2:-auto}"
+			shift 2
+			;;
+		--fps)
+			FPS="${2:-}"
+			shift 2
+			;;
+		--msaa)
+			MSAA="${2:-}"
+			shift 2
+			;;
+		--vsync)
+			VSYNC="${2:-}"
+			shift 2
+			;;
+		--skip-movies)
+			SKIP_MOVIES="${2:-}"
+			shift 2
+			;;
+		--)
+			shift
+			break
+			;;
+		*)
+			if [ -z "${ROM}" ]; then
+				ROM="$1"
+			fi
+			shift
+			;;
+	esac
+done
+
+USE_BOX64="0"
+case "$(uname -m)" in
+	x86_64|amd64)
+		;;
+	*)
+		USE_BOX64="1"
+		NO_AVX2="1"
+		;;
+esac
+
+if [ "${USE_BOX64}" = "1" ] && ! command -v box64 >/dev/null 2>&1; then
+	echo "box64 is required to run OpenGOAL x86_64 binaries on this target." >&2
+	exit 1
+fi
+
+detect_game() {
+	local name
+	name="$(basename "${ROM:-}" | tr '[:upper:]' '[:lower:]')"
+
+	case "${name}" in
+		*jak3*|*jak\ 3*)
+			echo "jak3"
+			;;
+		*jak2*|*jak\ 2*|*jak\ ii*)
+			echo "jak2"
+			;;
+		*)
+			echo "jak1"
+			;;
+	esac
+}
+
+if [ "${GAME}" = "auto" ]; then
+	GAME="$(detect_game)"
+fi
+
+case "${GAME}" in
+	jak1|jak2|jak3)
+		;;
+	*)
+		echo "Unsupported OpenGOAL game '${GAME}'." >&2
+		exit 1
+		;;
+esac
+
+if [ -z "${ROM}" ]; then
+	case "${GAME}" in
+		jak1) ROM="${ROMS_DIR}/Jak and Daxter.iso" ;;
+		jak2) ROM="${ROMS_DIR}/Jak II.iso" ;;
+		jak3) ROM="${ROMS_DIR}/Jak 3.iso" ;;
+	esac
+fi
+
+mkdir -p "${STATE_ROOT}" "${PROJECT_DIR}" "${PROJECT_DIR}/iso_data" \
+	"${PROJECT_DIR}/decompiler_out" "${PROJECT_DIR}/out" "${PROJECT_DIR}/log" \
+	"${STATE_ROOT}/config/${GAME}"
+
+for dir in goal_src custom_assets decompiler game launcher; do
+	if [ -e "${OPENGOAL_ROOT}/data/${dir}" ]; then
+		ln -sfn "${OPENGOAL_ROOT}/data/${dir}" "${PROJECT_DIR}/${dir}"
+	fi
+done
+
+run_opengoal() {
+	if [ "${USE_BOX64}" = "1" ]; then
+		(cd "${OPENGOAL_ROOT}" && env BOX64_LOG="${BOX64_LOG:-0}" box64 "$@")
+	else
+		(cd "${OPENGOAL_ROOT}" && "$@")
+	fi
+}
+
+exec_opengoal() {
+	cd "${OPENGOAL_ROOT}"
+	if [ "${USE_BOX64}" = "1" ]; then
+		exec env BOX64_LOG="${BOX64_LOG:-0}" box64 "$@"
+	fi
+	exec "$@"
+}
+
+gc_bool() {
+	case "$1" in
+		1|yes|true|on|enabled|Enabled)
+			echo "#t"
+			;;
+		*)
+			echo "#f"
+			;;
+	esac
+}
+
+parse_size() {
+	case "$1" in
+		[0-9]*x[0-9]*)
+			printf '%s %s\n' "${1%x*}" "${1#*x}"
+			return 0
+			;;
+	esac
+	return 1
+}
+
+replace_setting() {
+	local file="$1"
+	local key="$2"
+	local value="$3"
+
+	grep -q "^[[:space:]]*(${key} " "${file}" 2>/dev/null || return 0
+	sed -i "s|^[[:space:]]*(${key} .*|  (${key} ${value})|" "${file}"
+}
+
+apply_pc_settings() {
+	local settings="${STATE_ROOT}/config/${GAME}/OpenGOAL/${GAME}/settings/pc-settings.gc"
+	local width height aspect_symbol aspect_x aspect_y aspect_auto size
+
+	[ -f "${settings}" ] || return 0
+
+	if [ -n "${RESOLUTION}" ]; then
+		size="$(parse_size "${RESOLUTION}" 2>/dev/null || true)"
+		if [ -n "${size}" ]; then
+			set -- ${size}
+			width="$1"
+			height="$2"
+			replace_setting "${settings}" "game-size" "${width} ${height}"
+		fi
+	fi
+
+	if [ -n "${WINDOW_SIZE}" ]; then
+		case "${WINDOW_SIZE}" in
+			fullscreen|auto)
+				replace_setting "${settings}" "window-size" "0 0"
+				;;
+			*)
+				size="$(parse_size "${WINDOW_SIZE}" 2>/dev/null || true)"
+				if [ -n "${size}" ]; then
+					set -- ${size}
+					width="$1"
+					height="$2"
+					replace_setting "${settings}" "window-size" "${width} ${height}"
+				fi
+				;;
+		esac
+	fi
+
+	case "${ASPECT}" in
+		auto|"")
+			aspect_symbol="aspect4x3"
+			aspect_x="4"
+			aspect_y="3"
+			aspect_auto="#t"
+			;;
+		4:3)
+			aspect_symbol="aspect4x3"
+			aspect_x="4"
+			aspect_y="3"
+			aspect_auto="#f"
+			;;
+		16:9)
+			aspect_symbol="aspect16x9"
+			aspect_x="16"
+			aspect_y="9"
+			aspect_auto="#f"
+			;;
+		16:10)
+			aspect_symbol="aspect4x3"
+			aspect_x="16"
+			aspect_y="10"
+			aspect_auto="#f"
+			;;
+		21:9)
+			aspect_symbol="aspect4x3"
+			aspect_x="21"
+			aspect_y="9"
+			aspect_auto="#f"
+			;;
+		*)
+			aspect_symbol=""
+			;;
+	esac
+	if [ -n "${aspect_symbol}" ]; then
+		replace_setting "${settings}" "aspect-state" "${aspect_symbol} ${aspect_x} ${aspect_y} ${aspect_auto}"
+	fi
+
+	[ -n "${FPS}" ] && replace_setting "${settings}" "fps" "${FPS}"
+	[ -n "${MSAA}" ] && replace_setting "${settings}" "msaa" "${MSAA}"
+	[ -n "${VSYNC}" ] && replace_setting "${settings}" "vsync" "$(gc_bool "${VSYNC}")"
+	[ -n "${SKIP_MOVIES}" ] && replace_setting "${settings}" "skip-movies?" "$(gc_bool "${SKIP_MOVIES}")"
+}
+
+STAMP="${PROJECT_DIR}/.${GAME}.${OPENGOAL_VERSION}.ready"
+if [ "${REBUILD}" = "1" ] || [ ! -e "${STAMP}" ]; then
+	if [ ! -e "${ROM}" ]; then
+		echo "Missing OpenGOAL ISO: ${ROM}" >&2
+		echo "Place your own game dump in ${ROMS_DIR}, or select it in EmulationStation." >&2
+		exit 1
+	fi
+
+	rm -f "${STAMP}"
+	run_opengoal ./extractor --disable-ansi --proj-path "${PROJECT_DIR}" \
+		--extract-path "${PROJECT_DIR}/iso_data" -g "${GAME}" -e "${ROM}"
+	run_opengoal ./extractor --disable-ansi --proj-path "${PROJECT_DIR}" \
+		-g "${GAME}" -d -c "${ROM}"
+	touch "${STAMP}"
+fi
+
+apply_pc_settings
+
+if [ "${NO_AVX2}" = "1" ]; then
+	exec_opengoal ./gk --disable-ansi --no-avx2 --proj-path "${PROJECT_DIR}" \
+		--config-path "${STATE_ROOT}/config/${GAME}" -g "${GAME}" -- -boot -fakeiso
+fi
+
+exec_opengoal ./gk --disable-ansi --proj-path "${PROJECT_DIR}" \
+	--config-path "${STATE_ROOT}/config/${GAME}" -g "${GAME}" -- -boot -fakeiso

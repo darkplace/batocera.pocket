@@ -1,0 +1,23 @@
+#!/bin/bash
+set -euo pipefail
+
+log="/userdata/system/logs/steam.log"
+mkdir -p "$(dirname "${log}")"
+
+if [[ $# -lt 1 ]]; then
+    echo "Steam gamescope child wrapper needs a command." >> "${log}"
+    exit 1
+fi
+
+if [[ "${BATOCERA_STEAM_UPDATE_TERMINAL:-1}" != "0" && -x /usr/bin/batocera-steam-update-terminal ]]; then
+    bootstrap_log="${BATOCERA_STEAM_ROOT:-/userdata/system/.local/share/Steam}/logs/bootstrap_log.txt"
+    baseline=0
+    if [[ -f "${bootstrap_log}" ]]; then
+        baseline="$(wc -l < "${bootstrap_log}" 2>/dev/null || echo 0)"
+    fi
+    BATOCERA_STEAM_UPDATE_BASELINE="${baseline}" \
+        /usr/bin/batocera-steam-update-terminal watch "${baseline}" >> "${log}" 2>&1 &
+    echo "Steam update terminal watcher started with bootstrap baseline ${baseline}." >> "${log}"
+fi
+
+exec "$@"

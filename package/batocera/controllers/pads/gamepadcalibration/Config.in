@@ -1,14 +1,14 @@
 config BR2_PACKAGE_GAMEPAD_CALIBRATION
 	bool "gamepadcalibration"
-	depends on BR2_PACKAGE_BATOCERA_TARGET_SM8550
+	depends on BR2_PACKAGE_BATOCERA_TARGET_SM8550 || BR2_PACKAGE_BATOCERA_TARGET_SM8250
 	depends on BR2_PACKAGE_HOST_RUSTC_TARGET_ARCH_SUPPORTS
 	select BR2_PACKAGE_PYTHON3
 	select BR2_PACKAGE_PYTHON_PYXEL
 	help
-	  GPcal gamepad calibration utility for SM8550 RSInput handhelds.
+	  GPcal gamepad calibration utility for Qualcomm RSInput handhelds.
 	  It writes calibration values to /sys/module/rsinput/parameters
 	  and persists them under /userdata/system/configs/rsinput.
 
 comment "gamepadcalibration needs Rust target support"
-	depends on BR2_PACKAGE_BATOCERA_TARGET_SM8550
+	depends on BR2_PACKAGE_BATOCERA_TARGET_SM8550 || BR2_PACKAGE_BATOCERA_TARGET_SM8250
 	depends on !BR2_PACKAGE_HOST_RUSTC_TARGET_ARCH_SUPPORTS
