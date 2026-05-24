@@ -24,9 +24,28 @@ declare -a DISABLED_BINFMT=()
 declare -a REGISTERED_BINFMT=()
 declare -a ENABLED_BINFMT=()
 PROTON11_TOOLMANIFEST_WATCHER_PID=""
+STEAM_GPU_PROFILE_STATE=""
 
 log_msg() {
     printf '%s\n' "$*" >> "${log}"
+}
+
+apply_sm8550_gpu_profile() {
+    [[ "$(cat /usr/share/batocera/batocera.arch 2>/dev/null || true)" == "sm8550" ]] || return 0
+    command -v batocera-gpu-profile >/dev/null 2>&1 || return 0
+
+    STEAM_GPU_PROFILE_STATE="/var/run/batocera-gpu-profile/steam.$$"
+    batocera-gpu-profile highperformance "${STEAM_GPU_PROFILE_STATE}" >> "${log}" 2>&1 || true
+    log_msg "sm8550 GPU profile pinned for Steam launcher"
+}
+
+restore_sm8550_gpu_profile() {
+    [[ -n "${STEAM_GPU_PROFILE_STATE}" ]] || return 0
+    command -v batocera-gpu-profile >/dev/null 2>&1 || return 0
+
+    batocera-gpu-profile restore "${STEAM_GPU_PROFILE_STATE}" >> "${log}" 2>&1 || true
+    STEAM_GPU_PROFILE_STATE=""
+    log_msg "sm8550 GPU profile restored after Steam launcher"
 }
 
 flash_msg() {
@@ -1105,6 +1124,7 @@ cleanup() {
         PROTON11_TOOLMANIFEST_WATCHER_PID=""
     fi
     restore_host_binfmt
+    restore_sm8550_gpu_profile
 }
 
 steam_update_exit_detected() {
@@ -1198,6 +1218,7 @@ launch_steam_deck_session() {
 }
 
 trap cleanup EXIT
+apply_sm8550_gpu_profile
 
 ensure_runtime_dir
 start_compat_shims

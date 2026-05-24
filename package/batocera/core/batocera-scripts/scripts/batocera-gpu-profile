@@ -1,0 +1,159 @@
+#!/bin/bash
+
+set -euo pipefail
+
+STATE_FILE="${2:-}"
+
+read_node() {
+    local node="$1"
+
+    [[ -r "${node}" ]] || return 1
+    cat "${node}" 2>/dev/null
+}
+
+write_node() {
+    local node="$1"
+    local value="$2"
+
+    [[ -e "${node}" ]] || return 0
+    printf '%s\n' "${value}" > "${node}" 2>/dev/null || true
+}
+
+arch_supports_gpu_profile() {
+    local arch
+
+    arch="$(read_node /usr/share/batocera/batocera.arch || true)"
+    case "${arch,,}" in
+        sm8550|qcs6490)
+            return 0
+            ;;
+    esac
+
+    return 1
+}
+
+find_gpu_devfreq() {
+    local candidate
+    local name
+
+    if [[ -d /sys/class/devfreq/3d00000.gpu ]]; then
+        printf '%s\n' /sys/class/devfreq/3d00000.gpu
+        return 0
+    fi
+
+    for candidate in /sys/class/devfreq/*; do
+        [[ -e "${candidate}" ]] || continue
+        name="$(read_node "${candidate}/name" || basename "${candidate}")"
+        case "${name,,}" in
+            *gpu*)
+                printf '%s\n' "${candidate}"
+                return 0
+                ;;
+        esac
+    done
+
+    return 1
+}
+
+save_node() {
+    local node="$1"
+    local value
+
+    [[ -n "${STATE_FILE}" && -e "${node}" ]] || return 0
+    mkdir -p "$(dirname "${STATE_FILE}")"
+    touch "${STATE_FILE}"
+    if cut -f1 "${STATE_FILE}" 2>/dev/null | grep -Fxq "${node}"; then
+        return 0
+    fi
+
+    value="$(read_node "${node}" || true)"
+    [[ -n "${value}" ]] || return 0
+    printf '%s\t%s\n' "${node}" "${value}" >> "${STATE_FILE}"
+}
+
+available_governors() {
+    local devfreq="$1"
+
+    read_node "${devfreq}/available_governors" || true
+}
+
+set_first_available_governor() {
+    local devfreq="$1"
+    shift
+    local available
+    local governor
+
+    available=" $(available_governors "${devfreq}") "
+    for governor in "$@"; do
+        if [[ "${available}" == *" ${governor} "* ]]; then
+            save_node "${devfreq}/governor"
+            write_node "${devfreq}/governor" "${governor}"
+            return 0
+        fi
+    done
+}
+
+apply_highperformance() {
+    local devfreq=""
+    local node
+    local max_freq
+
+    devfreq="$(find_gpu_devfreq || true)"
+
+    for node in \
+        "${devfreq:+${devfreq}/power/control}" \
+        /sys/devices/platform/soc@0/3d00000.gpu/power/control \
+        /sys/devices/platform/soc@0/3d6a000.gmu/power/control \
+        /sys/class/drm/card0/device/power/control \
+        /sys/class/drm/card*/device/power/control
+    do
+        [[ -n "${node}" && -e "${node}" ]] || continue
+        save_node "${node}"
+        write_node "${node}" on
+    done
+
+    if [[ -n "${devfreq}" ]]; then
+        set_first_available_governor "${devfreq}" performance userspace
+        max_freq="$(read_node "${devfreq}/max_freq" || true)"
+        if [[ -n "${max_freq}" ]]; then
+            save_node "${devfreq}/min_freq"
+            write_node "${devfreq}/min_freq" "${max_freq}"
+        fi
+    fi
+}
+
+restore_profile() {
+    local node
+    local value
+    local -a nodes=()
+    local -a values=()
+    local index
+
+    [[ -n "${STATE_FILE}" && -f "${STATE_FILE}" ]] || return 0
+
+    while IFS=$'\t' read -r node value; do
+        [[ -n "${node}" ]] || continue
+        nodes+=("${node}")
+        values+=("${value}")
+    done < "${STATE_FILE}"
+
+    for ((index=${#nodes[@]} - 1; index >= 0; index--)); do
+        write_node "${nodes[index]}" "${values[index]}"
+    done
+
+    rm -f "${STATE_FILE}"
+}
+
+case "${1:-}" in
+    highperformance|high|performance)
+        arch_supports_gpu_profile || exit 0
+        apply_highperformance
+        ;;
+    restore)
+        restore_profile
+        ;;
+    *)
+        echo "Usage: $0 highperformance|restore [state-file]" >&2
+        exit 1
+        ;;
+esac

@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 set -eu
 
@@ -6,6 +6,11 @@ SYSTEM_DIR="${BATOCERA_N64RECOMP_SYSTEM_DIR:-/usr/share/n64recomp-launcher}"
 BASE_DIR="${BATOCERA_N64RECOMP_HOME:-/userdata/system/n64recomp-launcher}"
 APP_DIR="${BATOCERA_N64RECOMP_APP_DIR:-${BASE_DIR}/app}"
 GAMES_DIR="${BATOCERA_N64RECOMP_GAMES_DIR:-${BASE_DIR}/games}"
+LOG="${BATOCERA_N64RECOMP_LOG:-/userdata/system/logs/n64recomp-launcher.log}"
+PACKAGE_VERSION="${BATOCERA_N64RECOMP_LAUNCHER_VERSION:-1.70}"
+UPDATER_SCRIPT="/tmp/N64RecompLauncher_Updater.sh"
+UPDATER_PATTERN="[/]tmp/N64RecompLauncher_Updater.sh"
+GPU_PROFILE_STATE=""
 
 copy_if_missing() {
     src="${SYSTEM_DIR}/$1"
@@ -15,6 +20,57 @@ copy_if_missing() {
 }
 
 mkdir -p "$APP_DIR" "$GAMES_DIR" "$BASE_DIR/.config" "$BASE_DIR/.local/share" "$BASE_DIR/.cache"
+mkdir -p "$(dirname "$LOG")"
+
+# The upstream updater inherits stdout/stderr and otherwise holds ES' launch
+# pipe open while waiting on the original launcher process. Keep all child
+# output in a dedicated log so the wrapper can reap/update/relaunch cleanly.
+exec >> "$LOG" 2>&1
+echo "[$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null || echo n64recomp)] launch start: $*"
+
+restore_gpu_profile() {
+    if [ -n "$GPU_PROFILE_STATE" ] && command -v batocera-gpu-profile >/dev/null 2>&1; then
+        batocera-gpu-profile restore "$GPU_PROFILE_STATE" || true
+    fi
+}
+
+log_gpu_profile_state() {
+    for node in \
+        /sys/class/devfreq/3d00000.gpu/governor \
+        /sys/class/devfreq/3d00000.gpu/min_freq \
+        /sys/class/devfreq/3d00000.gpu/max_freq \
+        /sys/class/devfreq/3d00000.gpu/power/control \
+        /sys/devices/platform/soc@0/3d00000.gpu/power/control \
+        /sys/devices/platform/soc@0/3d6a000.gmu/power/control \
+        /sys/class/drm/card0/device/power/control
+    do
+        [ -e "$node" ] || continue
+        echo "gpu-profile ${node}=$(cat "$node" 2>/dev/null || true)"
+    done
+}
+
+cleanup() {
+    rc="$?"
+    trap - EXIT INT TERM
+    restore_gpu_profile
+    exit "$rc"
+}
+
+enable_sm8550_gpu_profile() {
+    [ "$(cat /usr/share/batocera/batocera.arch 2>/dev/null || true)" = "sm8550" ] || return 0
+    command -v batocera-gpu-profile >/dev/null 2>&1 || return 0
+
+    GPU_PROFILE_STATE="/var/run/batocera-gpu-profile/n64recomp-launcher.$$"
+    batocera-gpu-profile highperformance "$GPU_PROFILE_STATE" || true
+    export DISABLE_MANGOHUD=1
+    export DISABLE_LSFG=1
+    export SDL_RENDER_VSYNC=0
+    echo "sm8550 GPU profile pinned for N64RecompLauncher"
+    log_gpu_profile_state
+}
+
+trap cleanup EXIT INT TERM
+enable_sm8550_gpu_profile
 
 needs_seed=0
 if [ ! -x "$APP_DIR/N64RecompLauncher" ]; then
@@ -41,6 +97,52 @@ if [ ! -f "$APP_DIR/settings.json" ] && [ -f "$SYSTEM_DIR/default-settings.json"
     sed "s|@GAMES_DIR@|$GAMES_DIR|g" "$SYSTEM_DIR/default-settings.json" > "$APP_DIR/settings.json"
 fi
 
+write_update_cache() {
+    cat > "$APP_DIR/update_check.json" << EOF
+{"CurrentVersion":"v${PACKAGE_VERSION}","LastCheckTime":"$(date -u '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || echo 2099-01-01T00:00:00Z)","LastKnownVersion":"v${PACKAGE_VERSION}","ETag":"","UpdateAvailable":false}
+EOF
+}
+
+updater_running() {
+    pgrep -f "$UPDATER_PATTERN" >/dev/null 2>&1
+}
+
+launcher_running() {
+    pgrep -f "${APP_DIR}/N64RecompLauncher" >/dev/null 2>&1
+}
+
+wait_for_updater() {
+    i=0
+    while updater_running; do
+        if [ "$i" -ge 240 ]; then
+            echo "N64RecompLauncher updater did not finish within timeout."
+            return 1
+        fi
+        i=$((i + 1))
+        sleep 1
+    done
+    return 0
+}
+
+wait_for_detached_launcher() {
+    i=0
+    while [ "$i" -lt 40 ]; do
+        launcher_running && break
+        i=$((i + 1))
+        sleep 0.25
+    done
+
+    while launcher_running; do
+        sleep 1
+    done
+}
+
+if ! updater_running; then
+    rm -f "$UPDATER_SCRIPT" "/tmp/N64RecompLauncher-v${PACKAGE_VERSION}-Linux-ARM64.zip" 2>/dev/null || true
+    rm -rf /tmp/N64RecompLauncher_temp_update 2>/dev/null || true
+fi
+write_update_cache
+
 export HOME="$BASE_DIR"
 export XDG_CONFIG_HOME="$BASE_DIR/.config"
 export XDG_DATA_HOME="$BASE_DIR/.local/share"
@@ -48,4 +150,21 @@ export XDG_CACHE_HOME="$BASE_DIR/.cache"
 export LD_LIBRARY_PATH="$APP_DIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 
 cd "$APP_DIR"
-exec "$APP_DIR/N64RecompLauncher" "$@"
+launcher_rc=0
+"$APP_DIR/N64RecompLauncher" "$@" &
+launcher_pid="$!"
+echo "N64RecompLauncher started pid=${launcher_pid}"
+if ! wait "$launcher_pid"; then
+    launcher_rc="$?"
+fi
+echo "N64RecompLauncher exited status=${launcher_rc}"
+
+if [ -f "$UPDATER_SCRIPT" ] || updater_running; then
+    echo "N64RecompLauncher updater detected; waiting for update handoff."
+    wait_for_updater || launcher_rc=1
+    wait_for_detached_launcher
+    write_update_cache
+fi
+
+echo "N64RecompLauncher wrapper exiting status=${launcher_rc}"
+exit "$launcher_rc"

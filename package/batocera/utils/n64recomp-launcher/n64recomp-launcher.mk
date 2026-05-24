@@ -37,6 +37,8 @@ define N64RECOMP_LAUNCHER_INSTALL_TARGET_CMDS
 	mkdir -p $(TARGET_DIR)/usr/share/batocera/datainit/roms/n64recomp/images
 	$(INSTALL) -m 0755 $(N64RECOMP_LAUNCHER_PKGDIR)/files/N64\ Recomp\ Launcher.sh \
 		$(TARGET_DIR)/usr/share/batocera/datainit/roms/n64recomp/N64\ Recomp\ Launcher.sh
+	$(INSTALL) -m 0644 $(N64RECOMP_LAUNCHER_PKGDIR)/files/N64\ Recomp\ Launcher.sh.keys \
+		$(TARGET_DIR)/usr/share/batocera/datainit/roms/n64recomp/N64\ Recomp\ Launcher.sh.keys
 	$(INSTALL) -m 0644 $(N64RECOMP_LAUNCHER_PKGDIR)/files/gamelist.xml \
 		$(TARGET_DIR)/usr/share/batocera/datainit/roms/n64recomp/gamelist.xml
 	$(INSTALL) -m 0644 $(N64RECOMP_LAUNCHER_PKGDIR)/files/n64recomp-launcher.png \

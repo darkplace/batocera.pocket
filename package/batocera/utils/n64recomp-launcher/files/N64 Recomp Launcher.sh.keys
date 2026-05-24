@@ -1,0 +1,33 @@
+{
+  "actions_player1": [
+    {
+      "trigger": "joystick1",
+      "type": "mouse",
+      "description": "Move Mouse"
+    },
+    {
+      "trigger": "a",
+      "type": "key",
+      "target": "BTN_LEFT",
+      "description": "Left Click"
+    },
+    {
+      "trigger": "b",
+      "type": "key",
+      "target": "BTN_RIGHT",
+      "description": "Right Click"
+    },
+    {
+      "trigger": "start",
+      "type": "key",
+      "target": "KEY_ENTER",
+      "description": "Enter"
+    },
+    {
+      "trigger": "select",
+      "type": "key",
+      "target": "KEY_ESC",
+      "description": "Back"
+    }
+  ]
+}

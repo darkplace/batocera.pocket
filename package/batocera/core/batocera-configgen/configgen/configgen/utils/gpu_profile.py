@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 _logger = logging.getLogger(__name__)
 
 _AUTO_ARCHS = {"sm8550", "qcs6490"}
-_AUTO_SYSTEMS = {"odcommander", "scummvm", "android", "waydroid"}
+_AUTO_SYSTEMS = {"odcommander", "scummvm", "android", "waydroid", "n64recomp", "steam"}
 _AUTO_ROM_MARKERS = (
     "portmaster",
     "vacuumtube",

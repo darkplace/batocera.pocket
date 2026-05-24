@@ -7,11 +7,30 @@ DIRECT_APP_SESSION_FLAG="/var/run/batocera-steam-direct-app-session"
 CLEANUP_DONE=0
 ES_PROCESS_PATTERN='(^|/)emulationstation([[:space:]]|$)'
 ES_STANDALONE_PATTERN='(^|/)emulationstation-standalone([[:space:]]|$)'
+STEAM_GPU_PROFILE_STATE=""
 
 mkdir -p "$(dirname "${LOG}")"
 
 log() {
     echo "steam-direct-session: $*" >> "${LOG}"
+}
+
+apply_sm8550_gpu_profile() {
+    [[ "$(cat /usr/share/batocera/batocera.arch 2>/dev/null || true)" == "sm8550" ]] || return 0
+    command -v batocera-gpu-profile >/dev/null 2>&1 || return 0
+
+    STEAM_GPU_PROFILE_STATE="/var/run/batocera-gpu-profile/steam-direct-session.$$"
+    batocera-gpu-profile highperformance "${STEAM_GPU_PROFILE_STATE}" >> "${LOG}" 2>&1 || true
+    log "pinned sm8550 GPU profile"
+}
+
+restore_sm8550_gpu_profile() {
+    [[ -n "${STEAM_GPU_PROFILE_STATE}" ]] || return 0
+    command -v batocera-gpu-profile >/dev/null 2>&1 || return 0
+
+    batocera-gpu-profile restore "${STEAM_GPU_PROFILE_STATE}" >> "${LOG}" 2>&1 || true
+    STEAM_GPU_PROFILE_STATE=""
+    log "restored sm8550 GPU profile"
 }
 
 normalize_bool() {
@@ -615,14 +634,17 @@ cleanup() {
     fi
     if session_select_return_active; then
         log "frontend restore deferred to steamos-session-select"
+        restore_sm8550_gpu_profile
         exit "${rc}"
     fi
     terminate_steam_stack
     restore_frontend
+    restore_sm8550_gpu_profile
     exit "${rc}"
 }
 
 trap cleanup EXIT INT TERM
+apply_sm8550_gpu_profile
 
 log "requested direct Steam session launch"
 
