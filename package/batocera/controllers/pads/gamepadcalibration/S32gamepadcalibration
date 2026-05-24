@@ -1,6 +1,7 @@
 #!/bin/sh
 
 CALIBRATION="/userdata/system/configs/rsinput/rsinput-calibration.conf"
+GPCAL_AUTOSTART="/userdata/system/.config/autostart/GPcal.sh"
 PARAM_DIR="/sys/module/rsinput/parameters"
 LOG="/userdata/system/logs/gamepadcalibration.log"
 LAUNCHER_SRC="/usr/share/gpcal/launcher/Gamepad_Calibration.sh"
@@ -44,10 +45,11 @@ EOF
 apply_calibration() {
 	local key
 	local value
-	local num
 	local i
 
-	[ -f "${CALIBRATION}" ] || return 0
+	if [ ! -f "${CALIBRATION}" ] && [ ! -f "${GPCAL_AUTOSTART}" ]; then
+		return 0
+	fi
 
 	mkdir -p "$(dirname "${LOG}")"
 	for i in $(seq 1 20); do
@@ -60,37 +62,84 @@ apply_calibration() {
 		return 0
 	fi
 
-	echo "Applying RSInput gamepad calibration from ${CALIBRATION}" >> "${LOG}"
-	while IFS='=' read -r key value; do
-		case "${key}" in
-			''|\#*)
-				continue
-				;;
-			axis_leftx_min|axis_leftx_max|axis_leftx_center|axis_leftx_deadzone|axis_leftx_antideadzone|\
-			axis_lefty_min|axis_lefty_max|axis_lefty_center|axis_lefty_deadzone|axis_lefty_antideadzone|\
-			axis_rightx_min|axis_rightx_max|axis_rightx_center|axis_rightx_deadzone|axis_rightx_antideadzone|\
-			axis_righty_min|axis_righty_max|axis_righty_center|axis_righty_deadzone|axis_righty_antideadzone|\
-			trigger_left_max|trigger_left_deadzone|trigger_left_antideadzone|\
-			trigger_right_max|trigger_right_deadzone|trigger_right_antideadzone|\
-			update_params)
-				;;
-			*)
+	if [ -f "${CALIBRATION}" ]; then
+		echo "Applying RSInput gamepad calibration from ${CALIBRATION}" >> "${LOG}"
+		while IFS='=' read -r key value; do
+			case "${key}" in
+				''|\#*)
+					continue
+					;;
+			esac
+
+			if ! valid_calibration_key "${key}"; then
 				echo "Ignoring unknown RSInput calibration key: ${key}" >> "${LOG}"
 				continue
+			fi
+
+			write_calibration_value "${key}" "${value}"
+		done < "${CALIBRATION}"
+	fi
+
+	if [ -f "${GPCAL_AUTOSTART}" ]; then
+		echo "Applying RSInput gamepad calibration from ${GPCAL_AUTOSTART}" >> "${LOG}"
+		apply_gpcal_autostart
+	fi
+}
+
+valid_calibration_key() {
+	case "$1" in
+		axis_leftx_min|axis_leftx_max|axis_leftx_center|axis_leftx_deadzone|axis_leftx_antideadzone|\
+		axis_lefty_min|axis_lefty_max|axis_lefty_center|axis_lefty_deadzone|axis_lefty_antideadzone|\
+		axis_rightx_min|axis_rightx_max|axis_rightx_center|axis_rightx_deadzone|axis_rightx_antideadzone|\
+		axis_righty_min|axis_righty_max|axis_righty_center|axis_righty_deadzone|axis_righty_antideadzone|\
+		trigger_left_max|trigger_left_deadzone|trigger_left_antideadzone|\
+		trigger_right_max|trigger_right_deadzone|trigger_right_antideadzone|\
+		update_params)
+			return 0
+			;;
+	esac
+
+	return 1
+}
+
+write_calibration_value() {
+	local key="$1"
+	local value="$2"
+	local num
+
+	valid_calibration_key "${key}" || return 0
+
+	num="${value#-}"
+	case "${num}" in
+		''|*[!0-9]*)
+			echo "Ignoring invalid RSInput calibration value: ${key}=${value}" >> "${LOG}"
+			return 0
+			;;
+	esac
+
+	[ -w "${PARAM_DIR}/${key}" ] || return 0
+	printf '%s' "${value}" > "${PARAM_DIR}/${key}" 2>> "${LOG}" || true
+}
+
+apply_gpcal_autostart() {
+	local cmd
+	local value
+	local redirect
+	local target
+	local extra
+	local key
+
+	while read -r cmd value redirect target extra; do
+		[ "${cmd}" = "echo" ] || continue
+		[ "${redirect}" = ">" ] || continue
+		[ -z "${extra}" ] || continue
+		case "${target}" in
+			"${PARAM_DIR}"/*)
+				key="${target##*/}"
+				write_calibration_value "${key}" "${value}"
 				;;
 		esac
-
-		num="${value#-}"
-		case "${num}" in
-			''|*[!0-9]*)
-				echo "Ignoring invalid RSInput calibration value: ${key}=${value}" >> "${LOG}"
-				continue
-				;;
-		esac
-
-		[ -w "${PARAM_DIR}/${key}" ] || continue
-		printf '%s' "${value}" > "${PARAM_DIR}/${key}" 2>> "${LOG}" || true
-	done < "${CALIBRATION}"
+	done < "${GPCAL_AUTOSTART}"
 }
 
 case "$1" in
