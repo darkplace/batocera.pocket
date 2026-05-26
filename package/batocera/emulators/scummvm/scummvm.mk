@@ -12,7 +12,7 @@ SCUMMVM_DEPENDENCIES += libpng libtheora faad2 freetype libjpeg-bato fluidsynth
 
 SCUMMVM_ADDITIONAL_FLAGS += -I$(STAGING_DIR)/usr/include -lpthread -lm
 
-ifeq ($(BR2_PACKAGE_BATOCERA_TARGET_SM8550),y)
+ifeq ($(BR2_PACKAGE_BATOCERA_TARGET_SM8X50),y)
 SCUMMVM_OPENGL_MODE = none
 SCUMMVM_CONF_OPTS += --disable-opengl-game --disable-opengl-game-classic --disable-opengl-game-shaders
 else

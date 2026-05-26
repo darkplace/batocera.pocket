@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Any
 import toml
 
 from ... import Command
-from ...batoceraPaths import CACHE, CONFIGS, SAVES, configure_emulator, mkdir_if_not_exists
+from ...batoceraPaths import BATOCERA_SHARE_DIR, CACHE, CONFIGS, SAVES, configure_emulator, mkdir_if_not_exists
 from ...controller import generate_sdl_game_controller_config
 from ...utils import lsfg, vulkan, wine
 from ..Generator import Generator
@@ -62,10 +62,16 @@ def _cfg_get_int(system: Any, key: str, default: int, *aliases: str) -> int:
 def _wine_path_from_unix(path: Path) -> str:
     return 'Z:\\' + str(path).lstrip('/').replace('/', '\\')
 
-def _xenia_achievement_sound_path(core: str) -> str:
-    if core == 'xenia-edge':
+def _xenia_achievement_sound_path(core: str, native_linux: bool = False) -> str:
+    if native_linux or core == 'xenia-edge':
         return str(_XBOX360_ACHIEVEMENT_SOUND)
     return _wine_path_from_unix(_XBOX360_ACHIEVEMENT_SOUND)
+
+def _batocera_arch() -> str:
+    try:
+        return (BATOCERA_SHARE_DIR / 'batocera.arch').read_text().strip().lower()
+    except OSError:
+        return ''
 
 
 class XeniaGenerator(Generator):
@@ -180,11 +186,40 @@ exit $EXIT_CODE
         xeniaConfig = CONFIGS / 'xenia'
         xeniaCache = CACHE / 'xenia'
         xeniaSaves = SAVES / 'xbox360'
+        xeniaCanaryConfig = CONFIGS / 'xenia-canary'
+        xeniaCanaryCache = CACHE / 'xenia-canary'
         xeniaEdgeConfig = CONFIGS / 'xenia-edge'
         xeniaEdgeCache = CACHE / 'xenia-edge'
         emupath = wine_runner.bottle_dir / 'xenia'
         canarypath = wine_runner.bottle_dir / 'xenia-canary'
+        canaryPatchesSource = Path('/usr/share/xenia-canary/patches')
         edgePatchesSource = Path('/usr/share/xenia-edge/patches')
+        is_aarch64 = self.is_aarch64()
+        batocera_arch = _batocera_arch()
+
+        if is_aarch64 and core == 'xenia':
+            _logger.error("Xenia Wine/D3D12 path is not supported on aarch64")
+            sys.exit()
+        if is_aarch64 and core == 'xenia-canary' and batocera_arch not in ('sm8550', 'sm8750'):
+            _logger.error("Native Xenia Canary is gated to sm8x50; current target is %s", batocera_arch or "unknown")
+            sys.exit()
+
+        native_canary = core == 'xenia-canary' and Path('/usr/bin/xenia-canary').exists()
+        native_linux = core == 'xenia-edge' or native_canary
+        if is_aarch64 and core == 'xenia-canary' and not native_canary:
+            _logger.error("Native Xenia Canary binary is missing on aarch64")
+            sys.exit()
+        if core == 'xenia-edge' and not Path('/usr/bin/xenia-edge').exists():
+            _logger.error("Native Xenia Edge binary is missing")
+            sys.exit()
+
+        allow_d3d12 = not native_linux and not is_aarch64
+        default_gpu_backend = 'Vulkan' if core == 'xenia-canary' or not allow_d3d12 else 'D3D12'
+        configured_gpu_backend = str(_cfg_get(system, 'gpu', _cfg_get(system, 'xenia_api', default_gpu_backend), 'xenia_api'))
+        if not allow_d3d12 and configured_gpu_backend.lower() in ('', 'any', 'd3d12'):
+            _logger.info("Forcing native Vulkan for this Xenia target")
+            system.config['gpu'] = "Vulkan"
+            system.config['xenia_api'] = "Vulkan"
 
         # check Vulkan first before doing anything
         if vulkan.is_available():
@@ -193,7 +228,7 @@ exit $EXIT_CODE
             if vulkan_version > "1.3":
                 _logger.debug("Using Vulkan version: %s", vulkan_version)
             else:
-                if str(_cfg_get(system, 'xenia_api', 'D3D12', 'gpu')).upper() == "D3D12":
+                if str(_cfg_get(system, 'xenia_api', default_gpu_backend, 'gpu')).upper() == "D3D12":
                     _logger.debug("Vulkan version: %s is not compatible with Xenia when using D3D12", vulkan_version)
                     _logger.debug("You may have performance & graphical errors, switching to native Vulkan")
                     system.config['xenia_api'] = "Vulkan"
@@ -210,6 +245,13 @@ exit $EXIT_CODE
             mkdir_if_not_exists(xeniaEdgeConfig / 'patches')
             if edgePatchesSource.exists():
                 self.sync_directories(edgePatchesSource, xeniaEdgeConfig / 'patches')
+        elif native_canary:
+            mkdir_if_not_exists(xeniaCanaryConfig)
+            mkdir_if_not_exists(xeniaCanaryCache)
+            mkdir_if_not_exists(xeniaSaves)
+            mkdir_if_not_exists(xeniaCanaryConfig / 'patches')
+            if canaryPatchesSource.exists():
+                self.sync_directories(canaryPatchesSource, xeniaCanaryConfig / 'patches')
         else:
             # set to 64bit environment by default
             os.environ['WINEARCH'] = 'win64'
@@ -246,7 +288,9 @@ exit $EXIT_CODE
 
             wine_runner.install_wine_trick('vcrun2022')
 
-            dll_files = ["d3d12.dll", "d3d12core.dll", "d3d11.dll", "d3d10core.dll", "d3d9.dll", "d3d8.dll", "dxgi.dll"]
+            dll_files = ["d3d11.dll", "d3d10core.dll", "d3d9.dll", "d3d8.dll", "dxgi.dll"]
+            if allow_d3d12:
+                dll_files.extend(["d3d12.dll", "d3d12core.dll"])
             # Create symbolic links for 64-bit DLLs
             for dll in dll_files:
                 try:
@@ -268,6 +312,13 @@ exit $EXIT_CODE
                     dest_path.symlink_to(src_path)
                 except Exception as e:
                     _logger.debug("Error creating 32-bit link for %s: %s", dll, e)
+
+            if not allow_d3d12:
+                for dll in ("d3d12.dll", "d3d12core.dll"):
+                    for windows_dir in ("system32", "syswow64"):
+                        dest_path = wine_runner.bottle_dir / "drive_c" / "windows" / windows_dir / dll
+                        if dest_path.is_symlink():
+                            dest_path.unlink()
 
         # If we got a directory, attempt to resolve the first ISO recursively.
         if rom.is_dir():
@@ -309,7 +360,7 @@ exit $EXIT_CODE
         # adjust the config toml file accordingly
         config: dict[str, dict[str, Any]] = {}
         if core == 'xenia-canary':
-            toml_file = canarypath / 'xenia-canary.config.toml'
+            toml_file = (xeniaCanaryConfig if native_canary else canarypath) / 'xenia-canary.config.toml'
         elif core == 'xenia-edge':
             toml_file = xeniaEdgeConfig / 'xenia-edge.config.toml'
         else:
@@ -322,7 +373,7 @@ exit $EXIT_CODE
         xenia_achievement_sound = _cfg_get_bool(system, 'xenia_achievement_sound', True)
         xenia_achievement_sound_path = ''
         if xenia_achievement_sound and _cfg_get_bool(system, 'xenia_achievement', False):
-            xenia_achievement_sound_path = _xenia_achievement_sound_path(core)
+            xenia_achievement_sound_path = _xenia_achievement_sound_path(core, native_linux)
 
         cpu_cfg = config.setdefault('CPU', {})
         cpu_cfg['break_on_unimplemented_instructions'] = _cfg_get_bool(system, 'break_on_unimplemented_instructions', False)
@@ -369,8 +420,8 @@ exit $EXIT_CODE
         )
 
         gpu_cfg = config.setdefault('GPU', {})
-        gpu_backend = str(_cfg_get(system, 'gpu', _cfg_get(system, 'xenia_api', 'D3D12'), 'xenia_api')).lower()
-        if core == 'xenia-edge' and gpu_backend == 'd3d12':
+        gpu_backend = str(_cfg_get(system, 'gpu', _cfg_get(system, 'xenia_api', default_gpu_backend), 'xenia_api')).lower()
+        if not allow_d3d12 and gpu_backend in ('', 'any', 'd3d12'):
             gpu_backend = 'vulkan'
         gpu_cfg['gpu'] = gpu_backend
         gpu_cfg['vsync'] = _cfg_get_bool(system, 'vsync', _cfg_get_bool(system, 'xenia_vsync', True), 'xenia_vsync')
@@ -430,10 +481,20 @@ exit $EXIT_CODE
         memory_cfg['scribble_heap'] = _cfg_get_bool(system, 'scribble_heap', False)
 
         storage_cfg = config.setdefault('Storage', {})
-        storage_cfg['cache_root'] = str(xeniaEdgeCache if core == 'xenia-edge' else xeniaCache)
+        if core == 'xenia-edge':
+            native_config_root = xeniaEdgeConfig
+            native_cache_root = xeniaEdgeCache
+        elif native_canary:
+            native_config_root = xeniaCanaryConfig
+            native_cache_root = xeniaCanaryCache
+        else:
+            native_config_root = xeniaConfig
+            native_cache_root = xeniaCache
+
+        storage_cfg['cache_root'] = str(native_cache_root)
         storage_cfg['content_root'] = str(xeniaSaves)
         storage_cfg['mount_scratch'] = True
-        storage_cfg['storage_root'] = str(xeniaEdgeConfig if core == 'xenia-edge' else xeniaConfig)
+        storage_cfg['storage_root'] = str(native_config_root)
         storage_cfg['mount_cache'] = _cfg_get_bool(system, 'mount_cache', _cfg_get_bool(system, 'xenia_cache', True), 'xenia_cache')
 
         ui_cfg = config.setdefault('UI', {})
@@ -467,7 +528,12 @@ exit $EXIT_CODE
         # simplify the name for matching
         rom_name = re.sub(r'\[.*?\]', '', rom_name)
         rom_name = re.sub(r'\(.*?\)', '', rom_name)
-        patch_root = xeniaEdgeConfig / 'patches' if core == 'xenia-edge' else canarypath / 'patches'
+        if core == 'xenia-edge':
+            patch_root = xeniaEdgeConfig / 'patches'
+        elif native_canary:
+            patch_root = xeniaCanaryConfig / 'patches'
+        else:
+            patch_root = canarypath / 'patches'
         if system.config.get_bool('xenia_patches'):
             # pattern to search for matching .patch.toml files
             matching_files = [file_path for file_path in patch_root.glob(f'*{rom_name}*.patch.toml') if re.search(rom_name, file_path.name, re.IGNORECASE)]
@@ -489,7 +555,7 @@ exit $EXIT_CODE
 
         # Determine the executable path
         if core == 'xenia-canary':
-            xenia_exe = canarypath / 'xenia_canary.exe'
+            xenia_exe = Path('/usr/bin/xenia-canary') if native_canary else canarypath / 'xenia_canary.exe'
         elif core == 'xenia-edge':
             xenia_exe = Path('/usr/bin/xenia-edge')
         else:
@@ -498,13 +564,15 @@ exit $EXIT_CODE
         # Get wine64 binary path
         wine64_bin = str(wine_runner.wine64)
 
-        # Native Linux xenia-edge path
-        if core == 'xenia-edge':
+        # Native Linux Xenia paths
+        if native_linux:
             commandArray = [
                 str(xenia_exe),
-                f'--storage_root={xeniaEdgeConfig}',
+                f'--config={toml_file}',
+                f'--gpu={gpu_backend}',
+                f'--storage_root={native_config_root}',
                 f'--content_root={xeniaSaves}',
-                f'--cache_root={xeniaEdgeCache}',
+                f'--cache_root={native_cache_root}',
             ]
             if not configure_emulator(rom):
                 commandArray.append(str(rom))
@@ -518,7 +586,7 @@ exit $EXIT_CODE
             return Command.Command(array=commandArray, env=environment)
 
         # Check for aarch64 and setup box64 wrapping
-        use_box64 = self.is_aarch64()
+        use_box64 = is_aarch64
         use_uclamp = system.config.get_bool("perf_uclamp", True) and use_box64
         uclamp_min = system.config.get_int("perf_uclamp_min", UCLAMP_MIN)
 
@@ -557,6 +625,10 @@ exit $EXIT_CODE
 
         # Build environment
         environment = wine_runner.get_environment()
+        dll_overrides = "winemenubuilder.exe=;dxgi,d3d8,d3d9,d3d10core,d3d11=n"
+        if allow_d3d12:
+            dll_overrides = "winemenubuilder.exe=;dxgi,d3d8,d3d9,d3d10core,d3d11,d3d12,d3d12core=n"
+
         environment.update(
             {
                 'LD_LIBRARY_PATH': f'/usr/lib:{environment["LD_LIBRARY_PATH"]}',
@@ -564,7 +636,7 @@ exit $EXIT_CODE
                 'SDL_GAMECONTROLLERCONFIG': generate_sdl_game_controller_config(playersControllers),
                 'SDL_JOYSTICK_HIDAPI': '0',
                 'VKD3D_SHADER_CACHE_PATH': str(xeniaCache),
-                'WINEDLLOVERRIDES': "winemenubuilder.exe=;dxgi,d3d8,d3d9,d3d10core,d3d11,d3d12,d3d12core=n",
+                'WINEDLLOVERRIDES': dll_overrides,
             }
         )
 

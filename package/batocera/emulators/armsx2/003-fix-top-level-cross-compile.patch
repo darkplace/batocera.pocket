@@ -1,0 +1,86 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Mon, 25 May 2026 00:00:00 +0000
+Subject: [PATCH] cmake: use target architecture and preset host geometry for cross builds
+
+The ARMSX2-PC Qt build is cross-compiled from x86_64 to aarch64 in
+Buildroot. Use CMAKE_SYSTEM_PROCESSOR for architecture selection while
+cross-compiling, avoid Apple-only ARM flags on Linux, and honor
+HOST_PAGE_SIZE/HOST_CACHE_LINE_SIZE presets so configure does not try to
+execute target binaries on the host.
+---
+ cmake/BuildParameters.cmake | 29 +++++++++++++++++++----------
+ cmake/Pcsx2Utils.cmake      | 12 ++++++++++++
+ 2 files changed, 31 insertions(+), 10 deletions(-)
+
+diff --git a/cmake/BuildParameters.cmake b/cmake/BuildParameters.cmake
+index 1111111..2222222 100644
+--- a/cmake/BuildParameters.cmake
++++ b/cmake/BuildParameters.cmake
+@@ -75,7 +75,13 @@ mark_as_advanced(CMAKE_C_FLAGS_DEVEL CMAKE_CXX_FLAGS_DEVEL CMAKE_LINKER_FLAGS_D
+ #-------------------------------------------------------------------------------
+ # Select the architecture
+ #-------------------------------------------------------------------------------
+-if("${CMAKE_HOST_SYSTEM_PROCESSOR}" STREQUAL "x86_64" OR "${CMAKE_HOST_SYSTEM_PROCESSOR}" STREQUAL "amd64" OR
+-   "${CMAKE_HOST_SYSTEM_PROCESSOR}" STREQUAL "AMD64" OR "${CMAKE_OSX_ARCHITECTURES}" STREQUAL "x86_64")
++if(CMAKE_CROSSCOMPILING)
++	set(_PCSX2_TARGET_PROCESSOR "${CMAKE_SYSTEM_PROCESSOR}")
++else()
++	set(_PCSX2_TARGET_PROCESSOR "${CMAKE_HOST_SYSTEM_PROCESSOR}")
++endif()
++
++if("${_PCSX2_TARGET_PROCESSOR}" STREQUAL "x86_64" OR "${_PCSX2_TARGET_PROCESSOR}" STREQUAL "amd64" OR
++   "${_PCSX2_TARGET_PROCESSOR}" STREQUAL "AMD64" OR "${CMAKE_OSX_ARCHITECTURES}" STREQUAL "x86_64")
+ 	# Multi-ISA only exists on x86.
+ 	option(DISABLE_ADVANCE_SIMD "Disable advance use of SIMD (SSE2+ & AVX)" OFF)
+@@ -104,12 +110,17 @@ if("${CMAKE_HOST_SYSTEM_PROCESSOR}" STREQUAL "x86_64" OR "${CMAKE_HOST_SYSTEM_PR
+ 			# Can't use march=native on Apple Silicon.
+-			if(NOT APPLE OR "${CMAKE_HOST_SYSTEM_PROCESSOR}" STREQUAL "x86_64")
++			if(NOT APPLE OR "${_PCSX2_TARGET_PROCESSOR}" STREQUAL "x86_64")
+ 				add_compile_options("-march=native")
+ 			endif()
+ 		endif()
+ 	endif()
+-elseif("${CMAKE_HOST_SYSTEM_PROCESSOR}" STREQUAL "arm64" OR "${CMAKE_HOST_SYSTEM_PROCESSOR}" STREQUAL "aarch64" OR
++elseif("${_PCSX2_TARGET_PROCESSOR}" STREQUAL "arm64" OR "${_PCSX2_TARGET_PROCESSOR}" STREQUAL "aarch64" OR
+        "${CMAKE_OSX_ARCHITECTURES}" STREQUAL "arm64")
+-	message(STATUS "Building for Apple Silicon (ARM64).")
+ 	list(APPEND PCSX2_DEFS _M_ARM64=1)
+ 	set(_M_ARM64 TRUE)
+-	add_compile_options("-march=armv8.4-a" "-mcpu=apple-m1")
++	if(APPLE)
++		message(STATUS "Building for Apple Silicon (ARM64).")
++		add_compile_options("-march=armv8.4-a" "-mcpu=apple-m1")
++	else()
++		message(STATUS "Building for ARM64.")
++		add_compile_options("-march=armv8.1-a")
++	endif()
+@@ -132,3 +143,3 @@ elseif("${CMAKE_HOST_SYSTEM_PROCESSOR}" STREQUAL "arm64" OR "${CMAKE_HOST_SYSTE
+ else()
+-	message(FATAL_ERROR "Unsupported architecture: ${CMAKE_HOST_SYSTEM_PROCESSOR}")
++	message(FATAL_ERROR "Unsupported architecture: ${_PCSX2_TARGET_PROCESSOR}")
+ endif()
+diff --git a/cmake/Pcsx2Utils.cmake b/cmake/Pcsx2Utils.cmake
+index 1111111..2222222 100644
+--- a/cmake/Pcsx2Utils.cmake
++++ b/cmake/Pcsx2Utils.cmake
+@@ -227,2 +227,8 @@ function(detect_page_size)
++	# Allow cross-compile builds to skip the try_run by pre-setting HOST_PAGE_SIZE
++	# (e.g. -DHOST_PAGE_SIZE=0x1000 for typical 4 KiB ARM64).
++	if(DEFINED HOST_PAGE_SIZE)
++		message(STATUS "Host page size (preset): ${HOST_PAGE_SIZE}")
++		return()
++	endif()
+ 	message(STATUS "Determining host page size")
+ 	set(detect_page_size_file ${CMAKE_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/CMakeTmp/src.c)
+@@ -253,2 +259,8 @@ function(detect_cache_line_size)
++	# Allow cross-compile builds to skip the try_run by pre-setting
++	# HOST_CACHE_LINE_SIZE (e.g. -DHOST_CACHE_LINE_SIZE=64 for typical ARM64).
++	if(DEFINED HOST_CACHE_LINE_SIZE)
++		message(STATUS "Host cache line size (preset): ${HOST_CACHE_LINE_SIZE}")
++		return()
++	endif()
+ 	message(STATUS "Determining host cache line size")
+ 	set(detect_cache_line_size_file ${CMAKE_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/CMakeTmp/src.c)
+-- 
+2.50.1

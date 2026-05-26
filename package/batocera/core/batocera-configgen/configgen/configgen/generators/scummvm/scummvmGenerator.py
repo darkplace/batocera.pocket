@@ -19,7 +19,7 @@ scummSave: Final = SAVES / "scummvm"
 
 def _is_sm8550() -> bool:
     try:
-        return (BATOCERA_SHARE_DIR / "batocera.arch").read_text().strip() == "sm8550"
+        return (BATOCERA_SHARE_DIR / "batocera.arch").read_text().strip() in ("sm8550", "sm8750")
     except OSError:
         return False
 

@@ -409,6 +409,27 @@ is_game_controls_bottom_launch() {
     [ "$(get_lower_screen_controls "${SYSTEM_NAME}" "${GAME_NAME}")" = "retroarch" ]
 }
 
+is_steam_launch() {
+    local SYSTEM_NAME="$1"
+    local EMULATOR_NAME="$2"
+    local CORE_NAME="$3"
+    local GAME_NAME="$4"
+
+    case "${SYSTEM_NAME}:${EMULATOR_NAME}:${CORE_NAME}" in
+        steam:*|*:steam:*|*:*:steam)
+            return 0
+            ;;
+    esac
+
+    case "${GAME_NAME}" in
+        *.steam)
+            return 0
+            ;;
+    esac
+
+    return 1
+}
+
 pause_aux_display() {
     local CPU_PROFILE="$1"
     local SYSTEM_NAME="$2"
@@ -421,6 +442,7 @@ pause_aux_display() {
     is_dual_screen_emulator "${SYSTEM_NAME}" "${EMULATOR_NAME}" "${CORE_NAME}" "${GAME_NAME}" && return 0
     is_flycast_vmu_bottom_launch "${SYSTEM_NAME}" "${EMULATOR_NAME}" "${CORE_NAME}" "${GAME_NAME}" && return 0
     is_game_controls_bottom_launch "${SYSTEM_NAME}" "${EMULATOR_NAME}" "${CORE_NAME}" "${GAME_NAME}" && return 0
+    is_steam_launch "${SYSTEM_NAME}" "${EMULATOR_NAME}" "${CORE_NAME}" "${GAME_NAME}" && return 0
     command -v batocera-backglass >/dev/null 2>&1 || return 0
     case "$(/usr/bin/batocera-settings-get-master backglass.theme 2>/dev/null)" in
         control-center|waydroid|kodi)

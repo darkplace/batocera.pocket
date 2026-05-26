@@ -1,4 +1,3 @@
-# Locally computed for:
-# https://git.eden-emu.dev/eden-emu/eden/releases/download/v0.2.0/Eden-Linux-v0.2.0-aarch64-clang-pgo.AppImage
-
+# Locally generated with sha256sum after Buildroot git archive/download.
+sha256  374c268ca041b0fe77abc1a76f1fe513163a1f6813e2fd2e56270fcbf850af53  eden-71167958c91465faf12c4834f531af1dbe9b4f38-git4.tar.gz
 sha256  43855be376f2f42d13f61c3bfc5b2126ddd32e49f78b5c03bea7758cefbbbe04  Eden-Linux-v0.2.0-aarch64-clang-pgo.AppImage

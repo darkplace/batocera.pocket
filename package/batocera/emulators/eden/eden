@@ -1,6 +1,7 @@
 #!/bin/sh
 set -eu
 
+native="${BATOCERA_EDEN_NATIVE_BINARY:-/usr/share/eden/native/eden}"
 src="${BATOCERA_EDEN_SYSTEM_APPIMAGE:-/usr/share/eden/eden.AppImage}"
 home="${BATOCERA_EDEN_HOME:-/userdata/system}"
 local_app="${BATOCERA_EDEN_LOCAL_APPIMAGE:-$home/eden.AppImage}"
@@ -15,7 +16,11 @@ export QT_QPA_PLATFORM="${QT_QPA_PLATFORM:-xcb}"
 
 mkdir -p "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_CACHE_HOME" "$XDG_RUNTIME_DIR" 2>/dev/null || true
 
-if [ ! -x "$app" ] && [ -f "$src" ]; then
+if [ "${BATOCERA_EDEN_FORCE_APPIMAGE:-0}" != "1" ] && [ -x "$native" ]; then
+	app="$native"
+fi
+
+if [ "$app" = "$src" ] && [ ! -x "$app" ] && [ -f "$src" ]; then
 	cp -f "$src" "$local_app"
 	chmod 0755 "$local_app" 2>/dev/null || true
 	app="$local_app"

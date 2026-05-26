@@ -11,6 +11,11 @@
     <image>./images/aethersx2.png</image>
   </game>
   <game>
+    <path>./Configure_ARMSX2.sh</path>
+    <name>Configure ARMSX2</name>
+    <image>./images/armsx2.png</image>
+  </game>
+  <game>
     <path>./Configure_Azahar.sh</path>
     <name>Configure Azahar</name>
     <image>./images/azahar.png</image>
@@ -59,6 +64,11 @@
     <path>./Configure_Vita3K.sh</path>
     <name>Configure Vita3K</name>
     <image>./images/vita3k.png</image>
+  </game>
+  <game>
+    <path>./Configure_Xenia_Canary.sh</path>
+    <name>Configure Xenia Canary</name>
+    <image>./images/xenia-canary.png</image>
   </game>
   <game>
     <path>./Configure_Xenia_Edge.sh</path>

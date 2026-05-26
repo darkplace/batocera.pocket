@@ -11,7 +11,7 @@ BATOCERA_DESKTOPAPPS_PKGDIR = \
     $(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/core/batocera-desktopapps
 
 # Base files
-BATOCERA_DESKTOPAPPS_SCRIPTS = filemanagerlauncher ftoolbox
+BATOCERA_DESKTOPAPPS_SCRIPTS = filemanagerlauncher ftoolbox batocera-config-gpu-wrapper
 BATOCERA_DESKTOPAPPS_APPS    = xterm.desktop m3u-builder.desktop win9x-tool.desktop
 BATOCERA_DESKTOPAPPS_ICONS   = m3u-builder.png win9x-tool.png
 BATOCERA_DESKTOPAPPS_TOOLBOX =
@@ -40,6 +40,13 @@ ifeq ($(BR2_PACKAGE_AETHERSX2),y)
   BATOCERA_DESKTOPAPPS_SCRIPTS += batocera-config-aethersx2
   BATOCERA_DESKTOPAPPS_APPS    += aethersx2-config.desktop
   BATOCERA_DESKTOPAPPS_ICONS   += aethersx2.png
+endif
+
+# armsx2
+ifeq ($(BR2_PACKAGE_ARMSX2),y)
+  BATOCERA_DESKTOPAPPS_SCRIPTS += batocera-config-armsx2
+  BATOCERA_DESKTOPAPPS_APPS    += armsx2-config.desktop
+  BATOCERA_DESKTOPAPPS_ICONS   += armsx2.png
 endif
 
 # dolphin

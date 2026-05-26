@@ -1,0 +1,30 @@
+#!/bin/bash
+
+set -u
+
+if [ "$#" -eq 0 ]; then
+    echo "Usage: $0 COMMAND [ARG...]" >&2
+    exit 1
+fi
+
+GPU_PROFILE_STATE=""
+
+restore_gpu_profile() {
+    [ -n "${GPU_PROFILE_STATE}" ] || return 0
+    command -v batocera-gpu-profile >/dev/null 2>&1 || return 0
+    batocera-gpu-profile restore "${GPU_PROFILE_STATE}" >/dev/null 2>&1 || true
+}
+
+if command -v batocera-gpu-profile >/dev/null 2>&1; then
+    mkdir -p /var/run/batocera-gpu-profile
+    GPU_PROFILE_STATE="/var/run/batocera-gpu-profile/$(basename "$1").$$"
+    batocera-gpu-profile highperformance "${GPU_PROFILE_STATE}" >/dev/null 2>&1 || true
+    trap restore_gpu_profile EXIT HUP INT TERM
+fi
+
+"$@"
+rc=$?
+
+restore_gpu_profile
+trap - EXIT HUP INT TERM
+exit "${rc}"

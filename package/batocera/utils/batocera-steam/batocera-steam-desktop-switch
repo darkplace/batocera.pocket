@@ -8,6 +8,7 @@ lock="/var/run/batocera-steam-desktop-switch.lock"
 direct_app_session_flag="/var/run/batocera-steam-direct-app-session"
 preflight_session_flag="/var/run/batocera-steam-update-preflight"
 steam_session_pattern='(^|/)batocera-steam-session([[:space:]]|$)'
+decky_stack_pattern='/userdata/system/homebrew/services/PluginLoader|Decky Loader|/userdata/system/homebrew/plugins/'
 desktop_launcher="/usr/bin/batocera-steam-desktop-launcher"
 desktop_launcher_pattern='(^|/)batocera-steam-desktop-launcher([[:space:]]|$)'
 ALLY_HOTKEY_DIR="/userdata/system/configs/hotkeygen"
@@ -47,7 +48,7 @@ steam_stack_alive() {
     pgrep -x gamescopereaper >/dev/null 2>&1 || \
     pgrep -x gamescopestream >/dev/null 2>&1 || \
     pgrep -x gamescopectl >/dev/null 2>&1 || \
-    pgrep -f '/userdata/system/homebrew/services/PluginLoader' >/dev/null 2>&1 || \
+    pgrep -f "${decky_stack_pattern}" >/dev/null 2>&1 || \
     pgrep -f '/userdata/system/steam/steam.sh|/usr/share/steam/bin_steam.sh|emulatorlauncher.*-system steam|Steam GamepadUI\.steam|Steam Desktop\.steam' >/dev/null 2>&1
 }
 
@@ -152,7 +153,7 @@ terminate_steam_stack() {
         pkill -KILL -x gamescopereaper >/dev/null 2>&1 || true
         pkill -KILL -x gamescopestream >/dev/null 2>&1 || true
         pkill -KILL -x gamescopectl >/dev/null 2>&1 || true
-        pkill -KILL -f '/userdata/system/homebrew/services/PluginLoader' >/dev/null 2>&1 || true
+        pkill -KILL -f "${decky_stack_pattern}" >/dev/null 2>&1 || true
         pkill -KILL -f 'pressure-vessel' >/dev/null 2>&1 || true
         pkill -KILL -f '/userdata/system/steam/steam.sh|/usr/share/steam/bin_steam.sh|emulatorlauncher.*-system steam|Steam GamepadUI\.steam|Steam Desktop\.steam' >/dev/null 2>&1 || true
 
@@ -174,7 +175,7 @@ terminate_steam_stack() {
     pkill -TERM -x gamescopereaper >/dev/null 2>&1 || true
     pkill -TERM -x gamescopestream >/dev/null 2>&1 || true
     pkill -TERM -x gamescopectl >/dev/null 2>&1 || true
-    pkill -TERM -f '/userdata/system/homebrew/services/PluginLoader' >/dev/null 2>&1 || true
+    pkill -TERM -f "${decky_stack_pattern}" >/dev/null 2>&1 || true
     pkill -TERM -f 'pressure-vessel' >/dev/null 2>&1 || true
     pkill -TERM -f '/userdata/system/steam/steam.sh|/usr/share/steam/bin_steam.sh|emulatorlauncher.*-system steam|Steam GamepadUI\.steam|Steam Desktop\.steam' >/dev/null 2>&1 || true
 
@@ -192,7 +193,7 @@ terminate_steam_stack() {
     pkill -KILL -x gamescopereaper >/dev/null 2>&1 || true
     pkill -KILL -x gamescopestream >/dev/null 2>&1 || true
     pkill -KILL -x gamescopectl >/dev/null 2>&1 || true
-    pkill -KILL -f '/userdata/system/homebrew/services/PluginLoader' >/dev/null 2>&1 || true
+    pkill -KILL -f "${decky_stack_pattern}" >/dev/null 2>&1 || true
     pkill -KILL -f 'pressure-vessel' >/dev/null 2>&1 || true
     pkill -KILL -f '/userdata/system/steam/steam.sh|/usr/share/steam/bin_steam.sh|emulatorlauncher.*-system steam|Steam GamepadUI\.steam|Steam Desktop\.steam' >/dev/null 2>&1 || true
 

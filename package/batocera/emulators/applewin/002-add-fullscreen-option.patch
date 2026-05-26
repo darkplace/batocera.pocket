@@ -1,0 +1,62 @@
+--- a/source/frontends/common2/argparser.cpp
++++ b/source/frontends/common2/argparser.cpp
+@@ -40,6 +40,7 @@ namespace
+
+     constexpr int NO_VIDEO_UPDATE = 1024;
+     constexpr int EV_DEVICE_NAME = 1025;
++    constexpr int FULLSCREEN = 1026;
+
+     struct OptionData_t
+     {
+@@ -209,6 +210,7 @@ namespace
+                  {"timer",                   no_argument,          TIMER,            "Synchronise with timer"},
+                  {"no-imgui",                no_argument,          NO_IMGUI,         "Plain SDL2 renderer"},
+                  {"geometry",                required_argument,    GEOMETRY,         "WxH[+X+Y]"},
++                 {"fullscreen",              no_argument,          FULLSCREEN,       "Start in fullscreen desktop mode"},
+                  {"aspect-ratio",            no_argument,          ASPECT_RATIO,     "Always preserve correct aspect ratio"},
+                  {"game-controller",         required_argument,    GAME_CONTROLLER,  "SDL_GameControllerOpen"},
+                  {"game-mapping-file",       required_argument,    MAPPING_FILE,     "SDL_GameControllerAddMappingsFromFile"},
+@@ -413,6 +415,11 @@ namespace
+                 parseGeometry(optarg, options.geometry);
+                 break;
+             }
++            case FULLSCREEN:
++            {
++                options.fullscreen = true;
++                break;
++            }
+             case ASPECT_RATIO:
+             {
+                 options.aspectRatio = true;
+--- a/source/frontends/common2/programoptions.h
++++ b/source/frontends/common2/programoptions.h
+@@ -53,6 +53,7 @@ namespace common2
+         int sdlDriver = -1;               // default = -1 to let SDL choose
+         bool imgui = true;                // use imgui renderer
+         std::optional<Geometry> geometry; // must be initialised with defaults
++        bool fullscreen = false;          // fullscreen desktop mode
+         bool aspectRatio = false;         // preserve aspect ratio
+         int glSwapInterval = 1;           // SDL_GL_SetSwapInterval
+         std::optional<int> gameControllerIndex;
+--- a/source/frontends/sdl/sdlframe.cpp
++++ b/source/frontends/sdl/sdlframe.cpp
+@@ -136,7 +136,7 @@ namespace sa2
+         , myPreserveAspectRatio(options.aspectRatio)
+         , myForceCapsLock(true)
+         , myMultiplier(1)
+-        , myFullscreen(false)
++        , myFullscreen(options.fullscreen)
+         , myDragAndDropSlot(SLOT6)
+         , myDragAndDropDrive(DRIVE_1)
+         , myScrollLockFullSpeed(false)
+@@ -192,6 +192,10 @@ namespace sa2
+     {
+         CommonFrame::Begin();
+         setGLSwapInterval(myTargetGLSwap);
++        if (myFullscreen && SDL_SetWindowFullscreen(myWindow.get(), SDL_WINDOW_FULLSCREEN_DESKTOP))
++        {
++            throw std::runtime_error(decorateSDLError("SDL_SetWindowFullscreen"));
++        }
+     }
+
+     void SDLFrame::FrameRefreshStatus(int drawflags)

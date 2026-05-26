@@ -1,0 +1,49 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Tue, 26 May 2026 00:00:00 +0000
+Subject: [PATCH] linux: prefer PipeWire/PulseAudio players for sound effects
+
+Batocera uses PipeWire/PulseAudio and the shared RetroAchievements sound
+assets are OGG files. Try pw-play and paplay before the existing aplay
+and GStreamer fallbacks so PCSX2/ARMSX2 achievement sounds can use the
+system-selected Batocera sound.
+---
+ common/Linux/LnxMisc.cpp | 16 ++++++++++++++--
+ 1 file changed, 14 insertions(+), 2 deletions(-)
+
+diff --git a/common/Linux/LnxMisc.cpp b/common/Linux/LnxMisc.cpp
+index 1111111..2222222 100644
+--- a/common/Linux/LnxMisc.cpp
++++ b/common/Linux/LnxMisc.cpp
+@@ -358,6 +358,18 @@ bool Common::PlaySoundAsync(const char* path)
+ {
+ #if defined(__linux__) && !defined(__ANDROID__)
+ 	// This is... pretty awful. But I can't think of a better way without linking to e.g. gstreamer.
++	const char* sound_player_cmdnames[] = {"pw-play", "paplay"};
++	for (const char* sound_player_cmdname : sound_player_cmdnames)
++	{
++		const char* sound_player_argv[] = {sound_player_cmdname, path, nullptr};
++		pid_t pid;
++
++		// Since we set SA_NOCLDWAIT in Qt, we don't need to wait here.
++		const int res = posix_spawnp(&pid, sound_player_cmdname, nullptr, nullptr, const_cast<char**>(sound_player_argv), environ);
++		if (res == 0)
++			return true;
++	}
++
+ 	const char* cmdname = "aplay";
+ 	const char* argv[] = {cmdname, path, nullptr};
+ 	pid_t pid;
+@@ -370,8 +381,8 @@ bool Common::PlaySoundAsync(const char* path)
+ 
+ 	// Try gst-play-1.0.
+ 	const char* gst_play_cmdname = "gst-play-1.0";
+-	const char* gst_play_argv[] = {cmdname, path, nullptr};
+-	res = posix_spawnp(&pid, gst_play_cmdname, nullptr, nullptr, const_cast<char**>(gst_play_argv), environ);
++	const char* gst_play_argv[] = {gst_play_cmdname, path, nullptr};
++	res = posix_spawnp(&pid, gst_play_cmdname, nullptr, nullptr, const_cast<char**>(gst_play_argv), environ);
+ 	if (res == 0)
+ 		return true;
+ 
+-- 
+2.50.1

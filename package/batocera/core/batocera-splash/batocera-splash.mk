@@ -26,7 +26,7 @@ ifeq ($(BR2_PACKAGE_BATOCERA_SPLASH_MPV),y)
     else ifeq ($(BR2_PACKAGE_BATOCERA_TARGET_RK3568),y)
         # use v4l2request-copy for the VeriSilicon Hantro decoder
         BATOCERA_SPLASH_PLAYER_OPTIONS=--vo=gpu --hwdec=auto
-    else ifeq ($(BR2_PACKAGE_BATOCERA_TARGET_SM8550),y)
+    else ifeq ($(BR2_PACKAGE_BATOCERA_TARGET_SM8X50),y)
         # use v4l2m2m-copy for the Iris decoder
         BATOCERA_SPLASH_PLAYER_OPTIONS=--vo=drm,sdl --hwdec=v4l2m2m-copy
     else ifeq ($(BR2_PACKAGE_ROCKCHIP_RGA)$(BR2_PACKAGE_BATOCERA_TARGET_QCS6490)$(BR2_PACKAGE_BATOCERA_TARGET_SM8250),y)

@@ -2,10 +2,14 @@
 # SPDX-FileCopyrightText: Added/modified by suckbluefrog
 set -euo pipefail
 
+exec 8>&- 2>/dev/null || true
+
 log="/userdata/system/logs/steam.log"
 mkdir -p "$(dirname "$log")"
 lock="/var/run/steamos-session-select.lock"
+gamescope_es_session_flag="/var/run/batocera-steam-es-gamescope-session"
 steam_session_pattern='(^|/)batocera-steam-session([[:space:]]|$)'
+decky_stack_pattern='/userdata/system/homebrew/services/PluginLoader|Decky Loader|/userdata/system/homebrew/plugins/'
 ASYNC="${STEAMOS_SESSION_SELECT_ASYNC:-0}"
 ALLY_HOTKEY_DIR="/userdata/system/configs/hotkeygen"
 ALLY_ACTIVE_MAP="${ALLY_HOTKEY_DIR}/ASUS_ROG_Ally_Config-b05-1abe.mapping"
@@ -71,6 +75,7 @@ run_frontend_detached() {
     else
         run_frontend_env nohup "$@" </dev/null >/dev/null 2>&1 &
     fi
+    disown "$!" 2>/dev/null || true
 }
 
 emulationstation_running() {
@@ -162,7 +167,7 @@ steam_stack_alive() {
     pgrep -x gamescopectl >/dev/null 2>&1 || \
     pgrep -x wineserver >/dev/null 2>&1 || \
     pgrep -f 'SteamLaunch AppId=|pw-audio-namespace|/proton waitforexitandrun|steam\.exe' >/dev/null 2>&1 || \
-    pgrep -f '/userdata/system/homebrew/services/PluginLoader' >/dev/null 2>&1 || \
+    pgrep -f "${decky_stack_pattern}" >/dev/null 2>&1 || \
     pgrep -f '/userdata/system/steam/steam.sh|/usr/share/steam/bin_steam.sh|emulatorlauncher.*-system steam|Steam GamepadUI\.steam|Steam Desktop\.steam' >/dev/null 2>&1
 }
 
@@ -184,6 +189,7 @@ terminate_steam_stack() {
     pkill -KILL -f '(^|[[:space:]/])batocera-steam-nightmode-watch([[:space:]]|$)' >/dev/null 2>&1 || true
     pkill -KILL -x wineserver >/dev/null 2>&1 || true
     pkill -KILL -f 'SteamLaunch AppId=|pw-audio-namespace|/proton waitforexitandrun|steam\.exe' >/dev/null 2>&1 || true
+    pkill -KILL -f "${decky_stack_pattern}" >/dev/null 2>&1 || true
     pkill -KILL -f 'pressure-vessel' >/dev/null 2>&1 || true
     pkill -KILL -f '/userdata/system/steam/steam.sh|/usr/share/steam/bin_steam.sh|emulatorlauncher.*-system steam|Steam GamepadUI\.steam|Steam Desktop\.steam' >/dev/null 2>&1 || true
 
@@ -244,6 +250,14 @@ restore_ally_hotkeys_es() {
 
 case "${request}" in
     plasma|desktop)
+        if [[ -e "${gamescope_es_session_flag}" ]]; then
+            echo "SteamOS session switch returning to ES-launched gamescope session: ${request}" >> "${log}"
+            restore_ally_hotkeys_es
+            terminate_steam_stack
+            restore_ally_hotkeys_es
+            exit 0
+        fi
+
         if [[ "${ASYNC}" != "1" ]]; then
             echo "Session switch requested: ${request} (async detach)" >> "${log}"
             STEAMOS_SESSION_SELECT_ASYNC=1 run_detached "$0" "${request}"

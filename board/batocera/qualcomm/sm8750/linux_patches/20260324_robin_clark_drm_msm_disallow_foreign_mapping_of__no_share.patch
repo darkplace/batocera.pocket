@@ -1,0 +1,38 @@
+From git@z Thu Jan  1 00:00:00 1970
+Subject: [PATCH 1/2] drm/msm: Disallow foreign mapping of _NO_SHARE
+From: Rob Clark <robin.clark@oss.qualcomm.com>
+Date: Tue, 24 Mar 2026 14:40:31 -0700
+Message-Id: <20260324214033.1219113-1-robin.clark@oss.qualcomm.com>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+
+This restriction applies to mapping of _NO_SHARE objs in the kms vm as
+well as importing/exporting BOs.  Since the DPU has it's own VM, scanout
+counts as "exporting" a BO from outside of it's host VM.
+
+Signed-off-by: Rob Clark <robin.clark@oss.qualcomm.com>
+---
+ drivers/gpu/drm/msm/msm_gem_vma.c | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/drivers/gpu/drm/msm/msm_gem_vma.c b/drivers/gpu/drm/msm/msm_gem_vma.c
+index 1c6b0920c0d8..68a8f8f592fb 100644
+--- a/drivers/gpu/drm/msm/msm_gem_vma.c
++++ b/drivers/gpu/drm/msm/msm_gem_vma.c
+@@ -373,6 +373,12 @@ msm_gem_vma_new(struct drm_gpuvm *gpuvm, struct drm_gem_object *obj,
+ 	struct msm_gem_vma *vma;
+ 	int ret;
+ 
++	/* _NO_SHARE objs cannot be mapped outside of their "host" vm: */
++	if ((to_msm_bo(obj)->flags & MSM_BO_NO_SHARE) &&
++	    GEM_WARN_ON(obj->resv != drm_gpuvm_resv(gpuvm))) {
++		return ERR_PTR(-EINVAL);
++	}
++
+ 	drm_gpuvm_resv_assert_held(&vm->base);
+ 
+ 	vma = kzalloc(sizeof(*vma), GFP_KERNEL);
+-- 
+2.53.0
+

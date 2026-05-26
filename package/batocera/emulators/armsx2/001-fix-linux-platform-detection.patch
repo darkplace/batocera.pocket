@@ -3,30 +3,12 @@ From: suckbluefrog <suckbluefrog@proton.me>
 Date: Mon, 27 Apr 2026 00:00:00 +0000
 Subject: [PATCH] cmake: detect Linux by CMAKE_SYSTEM_NAME
 
-Buildroot's cross toolchain file reports CMAKE_SYSTEM_NAME=Linux, but
-the CMake LINUX variable is not set in this configuration.  Treat the
-system name as authoritative so the cross build does not fail with
+Buildroot's cross toolchain file reports CMAKE_SYSTEM_NAME=Linux. Treat
+the system name as authoritative so the cross build does not fail with
 "Unsupported platform".
 ---
- ARMSX2/app/src/main/cpp/cmake/Pcsx2Utils.cmake | 4 +---
- cmake/Pcsx2Utils.cmake                         | 4 +---
- 2 files changed, 2 insertions(+), 6 deletions(-)
-
-diff --git a/ARMSX2/app/src/main/cpp/cmake/Pcsx2Utils.cmake b/ARMSX2/app/src/main/cpp/cmake/Pcsx2Utils.cmake
-index 1111111..2222222 100644
---- a/ARMSX2/app/src/main/cpp/cmake/Pcsx2Utils.cmake
-+++ b/ARMSX2/app/src/main/cpp/cmake/Pcsx2Utils.cmake
-@@ -2,9 +2,7 @@ function(detect_operating_system)
- 	message(STATUS "CMake Version: ${CMAKE_VERSION}")
- 	message(STATUS "CMake System Name: ${CMAKE_SYSTEM_NAME}")
- 
--	# LINUX wasn't added until CMake 3.25.
--	if (CMAKE_VERSION VERSION_LESS 3.25.0 AND CMAKE_SYSTEM_NAME MATCHES "Linux")
--		# Have to make it visible in this scope as well for below.
-+	if (CMAKE_SYSTEM_NAME MATCHES "Linux")
- 		set(LINUX TRUE PARENT_SCOPE)
- 		set(LINUX TRUE)
- 	endif()
+ cmake/Pcsx2Utils.cmake | 4 +---
+ 1 file changed, 1 insertion(+), 3 deletions(-)
 
 diff --git a/cmake/Pcsx2Utils.cmake b/cmake/Pcsx2Utils.cmake
 index 1111111..2222222 100644

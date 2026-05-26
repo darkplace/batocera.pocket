@@ -3,10 +3,15 @@ set -euo pipefail
 
 LOG="/userdata/system/logs/steam.log"
 ES_SERVICE="/etc/init.d/S31emulationstation"
+DIRECT_SESSION_LOCK="/var/run/batocera-steam-direct-session.lock"
+DIRECT_SESSION_LOCK_DIR="/var/run/batocera-steam-direct-session.lock.d"
 DIRECT_APP_SESSION_FLAG="/var/run/batocera-steam-direct-app-session"
+GAMESCOPE_ES_SESSION_FLAG="/var/run/batocera-steam-es-gamescope-session"
 CLEANUP_DONE=0
+DIRECT_SESSION_LOCK_ACQUIRED=0
 ES_PROCESS_PATTERN='(^|/)emulationstation([[:space:]]|$)'
 ES_STANDALONE_PATTERN='(^|/)emulationstation-standalone([[:space:]]|$)'
+DECKY_STACK_PATTERN='/userdata/system/homebrew/services/PluginLoader|Decky Loader|/userdata/system/homebrew/plugins/'
 STEAM_GPU_PROFILE_STATE=""
 
 mkdir -p "$(dirname "${LOG}")"
@@ -15,13 +20,45 @@ log() {
     echo "steam-direct-session: $*" >> "${LOG}"
 }
 
+acquire_direct_session_lock() {
+    if command -v flock >/dev/null 2>&1; then
+        exec 8>"${DIRECT_SESSION_LOCK}"
+        if ! flock -n 8; then
+            log "another Steam direct session is already running; ignoring duplicate launch"
+            exit 0
+        fi
+        printf '%s\n' "$$" 1>&8 || true
+        DIRECT_SESSION_LOCK_ACQUIRED=1
+        return 0
+    fi
+
+    if ! mkdir "${DIRECT_SESSION_LOCK_DIR}" 2>/dev/null; then
+        log "another Steam direct session is already running; ignoring duplicate launch"
+        exit 0
+    fi
+    printf '%s\n' "$$" > "${DIRECT_SESSION_LOCK_DIR}/pid" 2>/dev/null || true
+    DIRECT_SESSION_LOCK_ACQUIRED=1
+}
+
+release_direct_session_lock() {
+    [[ "${DIRECT_SESSION_LOCK_ACQUIRED}" == "1" ]] || return 0
+    flock -u 8 >/dev/null 2>&1 || true
+    exec 8>&- 2>/dev/null || true
+    rm -f "${DIRECT_SESSION_LOCK}" 2>/dev/null || true
+    rm -rf "${DIRECT_SESSION_LOCK_DIR}" 2>/dev/null || true
+    DIRECT_SESSION_LOCK_ACQUIRED=0
+}
+
 apply_sm8550_gpu_profile() {
-    [[ "$(cat /usr/share/batocera/batocera.arch 2>/dev/null || true)" == "sm8550" ]] || return 0
+    case "$(cat /usr/share/batocera/batocera.arch 2>/dev/null || true)" in
+        sm8550|sm8750) ;;
+        *) return 0 ;;
+    esac
     command -v batocera-gpu-profile >/dev/null 2>&1 || return 0
 
     STEAM_GPU_PROFILE_STATE="/var/run/batocera-gpu-profile/steam-direct-session.$$"
     batocera-gpu-profile highperformance "${STEAM_GPU_PROFILE_STATE}" >> "${LOG}" 2>&1 || true
-    log "pinned sm8550 GPU profile"
+    log "pinned sm8x50 GPU profile"
 }
 
 restore_sm8550_gpu_profile() {
@@ -30,7 +67,7 @@ restore_sm8550_gpu_profile() {
 
     batocera-gpu-profile restore "${STEAM_GPU_PROFILE_STATE}" >> "${LOG}" 2>&1 || true
     STEAM_GPU_PROFILE_STATE=""
-    log "restored sm8550 GPU profile"
+    log "restored sm8x50 GPU profile"
 }
 
 normalize_bool() {
@@ -102,25 +139,83 @@ ensure_runtime_dir() {
     export XDG_RUNTIME_DIR="${candidate}"
 }
 
+find_wayland_socket() {
+    local runtime
+    local display
+    local path
+
+    for runtime in /var/run /run "${XDG_RUNTIME_DIR:-}"; do
+        [[ -n "${runtime}" ]] || continue
+        for display in "${WAYLAND_DISPLAY:-}" wayland-1 wayland-0; do
+            [[ -n "${display}" ]] || continue
+            if [[ "${display}" == /* ]]; then
+                path="${display}"
+                display="$(basename "${display}")"
+            else
+                path="${runtime}/${display}"
+            fi
+            [[ -S "${path}" ]] || continue
+            printf '%s\t%s\n' "$(dirname "${path}")" "${display}"
+            return 0
+        done
+    done
+
+    return 1
+}
+
+find_sway_socket() {
+    local socket
+
+    for socket in /var/run/sway-ipc.0.sock /run/sway-ipc.0.sock "${SWAYSOCK:-}" "${I3SOCK:-}"; do
+        [[ -n "${socket}" ]] || continue
+        [[ -S "${socket}" ]] || continue
+        printf '%s\n' "${socket}"
+        return 0
+    done
+
+    return 1
+}
+
 prepare_nested_wayland_runtime() {
-    local parent_runtime="${XDG_RUNTIME_DIR:-/var/run}"
-    local parent_wayland="${WAYLAND_DISPLAY:-wayland-1}"
-    local parent_sway="${SWAYSOCK:-}"
+    local parent_info
+    local parent_runtime=""
+    local parent_wayland=""
+    local parent_sway=""
     local runtime
     local sway_link
+
+    parent_info="$(find_wayland_socket || true)"
+    if [[ -n "${parent_info}" ]]; then
+        parent_runtime="${parent_info%%	*}"
+        parent_wayland="${parent_info#*	}"
+    fi
+    parent_sway="$(find_sway_socket || true)"
 
     ensure_runtime_dir
     runtime="${XDG_RUNTIME_DIR}"
 
-    if [[ -S "${parent_runtime}/${parent_wayland}" ]]; then
-        ln -sfn "${parent_runtime}/${parent_wayland}" "${runtime}/${parent_wayland}"
+    if [[ -n "${parent_runtime}" && -n "${parent_wayland}" && -S "${parent_runtime}/${parent_wayland}" ]]; then
+        if [[ "${parent_runtime}" != "${runtime}" ]]; then
+            rm -f "${runtime}/${parent_wayland}"
+            ln -sfn "${parent_runtime}/${parent_wayland}" "${runtime}/${parent_wayland}"
+        fi
         export WAYLAND_DISPLAY="${parent_wayland}"
     fi
 
-    if [[ -n "${parent_sway}" && -S "${parent_sway}" ]]; then
-        sway_link="${runtime}/$(basename "${parent_sway}")"
-        ln -sfn "${parent_sway}" "${sway_link}"
-        export SWAYSOCK="${sway_link}"
+    if [[ -n "${parent_sway}" ]]; then
+        if [[ "$(dirname "${parent_sway}")" == "${runtime}" ]]; then
+            export SWAYSOCK="${parent_sway}"
+        else
+            sway_link="${runtime}/$(basename "${parent_sway}")"
+            rm -f "${sway_link}"
+            ln -sfn "${parent_sway}" "${sway_link}"
+            export SWAYSOCK="${sway_link}"
+        fi
+        export I3SOCK="${SWAYSOCK}"
+    fi
+
+    if [[ -S /tmp/.X11-unix/X0 ]]; then
+        export DISPLAY="${DISPLAY:-:0}"
     fi
 }
 
@@ -453,6 +548,7 @@ stop_emulationstation() {
 
     /usr/bin/emulationstation-standalone --stop-rebooting >/dev/null 2>&1 || true
     pkill "-${signal}" -f "${ES_PROCESS_PATTERN}" >/dev/null 2>&1 || true
+    pkill "-${signal}" -f "${ES_STANDALONE_PATTERN}" >/dev/null 2>&1 || true
 }
 
 restore_sway_display_config() {
@@ -500,12 +596,54 @@ session_select_return_active() {
     pgrep -f '(^|[[:space:]/])steamos-session-select[[:space:]]+(plasma|desktop)([[:space:]]|$)' >/dev/null 2>&1
 }
 
+is_thor_top_bottom_display() {
+    local model=""
+
+    if command -v batocera-info >/dev/null 2>&1; then
+        model="$(batocera-info 2>/dev/null | awk -F': ' '/^Model:/ {print $2; exit}')"
+    fi
+    [[ "${model}" == "AYN_Thor" ]] || return 1
+    [[ "$(batocera-settings-get-master display.position 2>/dev/null || true)" == "top-bottom" ]] || return 1
+    [[ -n "$(batocera-settings-get-master global.videooutput2 2>/dev/null || true)" ]]
+}
+
+restore_backglass_widget() {
+    is_thor_top_bottom_display || return 0
+    [[ -s /var/run/batocera-backglass.params ]] || return 0
+    command -v batocera-backglass >/dev/null 2>&1 || return 0
+
+    log "restoring Thor backglass widget"
+    (
+        exec 8>&- 2>/dev/null || true
+        env \
+            XDG_CURRENT_DESKTOP=sway \
+            XDG_SESSION_TYPE=wayland \
+            XDG_RUNTIME_DIR=/var/run \
+            WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-wayland-1}" \
+            SWAYSOCK="${SWAYSOCK:-/var/run/sway-ipc.0.sock}" \
+            WLR_XWAYLAND_NO_AUTH=1 \
+            batocera-backglass restart >/dev/null 2>&1 || true
+    )
+}
+
 run_frontend_env() {
+    local frontend_runtime="/var/run"
+    local frontend_wayland="${WAYLAND_DISPLAY:-wayland-1}"
+    local frontend_sway="/var/run/sway-ipc.0.sock"
+    local frontend_info
+
+    if [[ ! -S "${frontend_runtime}/${frontend_wayland}" ]]; then
+        frontend_info="$(find_wayland_socket || true)"
+        if [[ -n "${frontend_info}" ]]; then
+            frontend_runtime="${frontend_info%%	*}"
+            frontend_wayland="${frontend_info#*	}"
+        fi
+    fi
+    if [[ ! -S "${frontend_sway}" ]]; then
+        frontend_sway="$(find_sway_socket || true)"
+    fi
+
     env \
-        -u WAYLAND_DISPLAY \
-        -u DISPLAY \
-        -u SWAYSOCK \
-        -u I3SOCK \
         -u GAMESCOPE_DISPLAY \
         -u GAMESCOPE_WAYLAND_DISPLAY \
         -u GAMESCOPE_SESSION \
@@ -518,13 +656,96 @@ run_frontend_env() {
         -u XKB_DEFAULT_VARIANT \
         XDG_CURRENT_DESKTOP=sway \
         XDG_SESSION_TYPE=wayland \
-        XDG_RUNTIME_DIR=/var/run \
+        XDG_RUNTIME_DIR="${frontend_runtime}" \
+        WAYLAND_DISPLAY="${frontend_wayland}" \
+        DISPLAY="${DISPLAY:-:0}" \
+        SWAYSOCK="${frontend_sway}" \
+        I3SOCK="${frontend_sway}" \
         WLR_XWAYLAND_NO_AUTH=1 \
         "$@"
 }
 
 run_frontend_service_cmd() {
     run_frontend_env "$@" >/dev/null 2>&1
+}
+
+sway_emulationstation_window_ready() {
+    command -v swaymsg >/dev/null 2>&1 || return 1
+    command -v jq >/dev/null 2>&1 || return 1
+    pgrep -x sway >/dev/null 2>&1 || return 1
+
+    env \
+        XDG_RUNTIME_DIR=/var/run \
+        SWAYSOCK="${SWAYSOCK:-/var/run/sway-ipc.0.sock}" \
+        WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-wayland-1}" \
+        WLR_XWAYLAND_NO_AUTH=1 \
+        swaymsg -t get_tree 2>/dev/null | \
+        jq -e '
+            .. | objects |
+            select(
+                ((.app_id? // "") == "emulationstation") or
+                ((.name? // "") | contains("EmulationStation")) or
+                ((.name? // "") | contains("ES-DE"))
+            )
+        ' >/dev/null 2>&1
+}
+
+emulationstation_display_ready() {
+    emulationstation_running || return 1
+
+    if pgrep -x sway >/dev/null 2>&1; then
+        sway_emulationstation_window_ready || return 1
+    fi
+}
+
+wait_for_emulationstation_ready() {
+    local max_tries="${1:-160}"
+    local i
+
+    for i in $(seq 1 "${max_tries}"); do
+        emulationstation_display_ready && return 0
+        sleep 0.25
+    done
+
+    return 1
+}
+
+wait_for_emulationstation_standalone_stop() {
+    local i
+
+    for i in $(seq 1 40); do
+        emulationstation_standalone_running || return 0
+        sleep 0.1
+    done
+
+    return 1
+}
+
+stop_stale_emulationstation_standalone() {
+    emulationstation_standalone_running || return 0
+
+    log "stopping stale EmulationStation standalone wrapper"
+    pkill -TERM -f "${ES_STANDALONE_PATTERN}" >/dev/null 2>&1 || true
+    if ! wait_for_emulationstation_standalone_stop; then
+        pkill -KILL -f "${ES_STANDALONE_PATTERN}" >/dev/null 2>&1 || true
+        wait_for_emulationstation_standalone_stop || true
+    fi
+}
+
+start_emulationstation_standalone() {
+    command -v emulationstation-standalone >/dev/null 2>&1 || return 1
+
+    log "starting EmulationStation frontend inside existing compositor"
+    if command -v setsid >/dev/null 2>&1; then
+        run_frontend_env setsid /bin/sh -c \
+            'exec 8>&- 2>/dev/null || true; nohup /usr/bin/emulationstation-standalone </dev/null >> "$1" 2>&1 &' \
+            sh "${LOG}" >/dev/null 2>&1 &
+    else
+        run_frontend_env /bin/sh -c \
+            'exec 8>&- 2>/dev/null || true; nohup /usr/bin/emulationstation-standalone </dev/null >> "$1" 2>&1 &' \
+            sh "${LOG}" >/dev/null 2>&1 &
+    fi
+    disown "$!" 2>/dev/null || true
 }
 
 steam_stack_alive() {
@@ -542,6 +763,7 @@ steam_stack_alive() {
     pgrep -x gamescopestream >/dev/null 2>&1 || \
     pgrep -x gamescopectl >/dev/null 2>&1 || \
     pgrep -x wineserver >/dev/null 2>&1 || \
+    pgrep -f "${DECKY_STACK_PATTERN}" >/dev/null 2>&1 || \
     pgrep -f 'SteamLaunch AppId=|pw-audio-namespace|/proton waitforexitandrun|steam\.exe' >/dev/null 2>&1
 }
 
@@ -564,6 +786,7 @@ terminate_steam_stack() {
     pkill -TERM -x gamescopestream >/dev/null 2>&1 || true
     pkill -TERM -x gamescopectl >/dev/null 2>&1 || true
     pkill -TERM -x wineserver >/dev/null 2>&1 || true
+    pkill -TERM -f "${DECKY_STACK_PATTERN}" >/dev/null 2>&1 || true
     pkill -TERM -f 'SteamLaunch AppId=|pw-audio-namespace|/proton waitforexitandrun|steam\.exe' >/dev/null 2>&1 || true
 
     for i in $(seq 1 20); do
@@ -586,18 +809,42 @@ terminate_steam_stack() {
     pkill -KILL -x gamescopestream >/dev/null 2>&1 || true
     pkill -KILL -x gamescopectl >/dev/null 2>&1 || true
     pkill -KILL -x wineserver >/dev/null 2>&1 || true
+    pkill -KILL -f "${DECKY_STACK_PATTERN}" >/dev/null 2>&1 || true
     pkill -KILL -f 'SteamLaunch AppId=|pw-audio-namespace|/proton waitforexitandrun|steam\.exe' >/dev/null 2>&1 || true
 }
 
 restore_frontend() {
     if pgrep -x sway >/dev/null 2>&1 || pgrep -x labwc >/dev/null 2>&1 || pgrep -x openbox >/dev/null 2>&1; then
-        if emulationstation_running; then
-            log "EmulationStation already running after Steam exit"
+        if emulationstation_display_ready; then
+            log "EmulationStation display is ready after Steam exit"
             return 0
         fi
-        log "starting EmulationStation frontend after Steam exit"
-        nohup /usr/bin/emulationstation-standalone >> "${LOG}" 2>&1 &
-        return 0
+
+        if emulationstation_standalone_running && ! emulationstation_running; then
+            stop_stale_emulationstation_standalone
+        fi
+
+        if ! emulationstation_standalone_running; then
+            start_emulationstation_standalone || true
+        else
+            log "waiting for existing EmulationStation standalone wrapper after Steam exit"
+        fi
+
+        if wait_for_emulationstation_ready 160; then
+            log "EmulationStation display became ready after Steam exit"
+            return 0
+        fi
+
+        log "EmulationStation standalone did not become ready after Steam exit"
+        stop_stale_emulationstation_standalone
+        start_emulationstation_standalone || true
+        if wait_for_emulationstation_ready 160; then
+            log "EmulationStation display became ready after standalone retry"
+            return 0
+        fi
+
+        log "EmulationStation display restore failed inside existing compositor"
+        return 1
     fi
 
     if emulationstation_running; then
@@ -614,10 +861,13 @@ restore_frontend() {
         log "starting EmulationStation service after Steam exit"
         run_frontend_service_cmd "${ES_SERVICE}" start || run_frontend_service_cmd "${ES_SERVICE}" restart || true
     fi
+
+    wait_for_emulationstation_ready 160 || true
 }
 
 cleanup() {
     local rc=$?
+    local es_gamescope_session=0
 
     trap - EXIT INT TERM
     if [[ "${CLEANUP_DONE}" == "1" ]]; then
@@ -626,25 +876,27 @@ cleanup() {
     CLEANUP_DONE=1
 
     log "Steam session exited with status ${rc}"
+    [[ -e "${GAMESCOPE_ES_SESSION_FLAG}" ]] && es_gamescope_session=1
     rm -f "${DIRECT_APP_SESSION_FLAG}"
+    rm -f "${GAMESCOPE_ES_SESSION_FLAG}"
     restore_sway_display_config
     if [[ "${BATOCERA_STEAM_GS_BACKEND:-}" == "drm" && "${BATOCERA_STEAM_RESET_DSI_AFTER_GAMESCOPE:-0}" == "1" ]]; then
         log "resetting DSI connector state after DRM gamescope exit"
         reset_dsi_connectors
     fi
-    if session_select_return_active; then
+    if [[ "${es_gamescope_session}" != "1" ]] && session_select_return_active; then
         log "frontend restore deferred to steamos-session-select"
         restore_sm8550_gpu_profile
+        release_direct_session_lock
         exit "${rc}"
     fi
     terminate_steam_stack
-    restore_frontend
+    restore_frontend || true
+    restore_backglass_widget
     restore_sm8550_gpu_profile
+    release_direct_session_lock
     exit "${rc}"
 }
-
-trap cleanup EXIT INT TERM
-apply_sm8550_gpu_profile
 
 log "requested direct Steam session launch"
 
@@ -654,6 +906,10 @@ case "${1:-}" in
         exit 0
         ;;
 esac
+
+acquire_direct_session_lock
+trap cleanup EXIT INT TERM
+apply_sm8550_gpu_profile
 
 export BATOCERA_STEAM_GS_BACKEND="${BATOCERA_STEAM_GS_BACKEND:-$(default_gamescope_backend)}"
 
@@ -675,16 +931,22 @@ esac
 
 if [[ "${direct_app_session}" == "1" ]]; then
     printf '%s\n' "${steam_args[*]}" > "${DIRECT_APP_SESSION_FLAG}" || true
+else
+    printf '%s\n' "$$" > "${GAMESCOPE_ES_SESSION_FLAG}" || true
 fi
 
 if [[ "${BATOCERA_STEAM_VISIBLE_UPDATE_PREFLIGHT:-0}" != "0" && -x /usr/bin/batocera-steam-update-preflight ]]; then
     if emulationstation_running; then
-        log "stopping EmulationStation before visible Steam updater preflight"
-        stop_emulationstation TERM
-        if ! wait_for_emulationstation_stop; then
-            log "EmulationStation did not stop cleanly before visible Steam updater preflight"
-            stop_emulationstation KILL
-            wait_for_emulationstation_stop || true
+        if is_thor_top_bottom_display; then
+            log "keeping EmulationStation running during Thor visible Steam updater preflight"
+        else
+            log "stopping EmulationStation before visible Steam updater preflight"
+            stop_emulationstation TERM
+            if ! wait_for_emulationstation_stop; then
+                log "EmulationStation did not stop cleanly before visible Steam updater preflight"
+                stop_emulationstation KILL
+                wait_for_emulationstation_stop || true
+            fi
         fi
     fi
     log "running visible Steam updater preflight before Gamescope"
@@ -698,6 +960,7 @@ if [[ "${BATOCERA_STEAM_VISIBLE_UPDATE_PREFLIGHT:-0}" != "0" && -x /usr/bin/bato
     else
         log "visible Steam updater preflight failed; continuing to Gamescope"
     fi
+    restore_backglass_widget
 fi
 
 if [[ "${BATOCERA_STEAM_GS_BACKEND}" == "wayland" ]]; then
@@ -710,6 +973,7 @@ if [[ "${BATOCERA_STEAM_GS_BACKEND}" == "wayland" ]]; then
             wait_for_emulationstation_stop || true
         fi
     fi
+    restore_backglass_widget
 elif [[ -x "${ES_SERVICE}" ]]; then
     log "stopping EmulationStation frontend before Steam launch"
     "${ES_SERVICE}" stop >/dev/null 2>&1 || true
@@ -788,8 +1052,11 @@ log "using gamescope defaults backend=${BATOCERA_STEAM_GS_BACKEND} connector=${B
 ensure_cef_remote_debugging_markers
 
 log "launching batocera-steam with mode=${BATOCERA_STEAM_MODE} args=${steam_args[*]:-<none>}"
-if command -v dbus-run-session >/dev/null 2>&1; then
-    dbus-run-session -- /usr/bin/batocera-steam "${steam_args[@]}"
-else
-    /usr/bin/batocera-steam "${steam_args[@]}"
-fi
+(
+    exec 8>&- 2>/dev/null || true
+    if command -v dbus-run-session >/dev/null 2>&1; then
+        dbus-run-session -- /usr/bin/batocera-steam "${steam_args[@]}"
+    else
+        /usr/bin/batocera-steam "${steam_args[@]}"
+    fi
+)

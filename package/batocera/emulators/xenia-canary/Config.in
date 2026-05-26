@@ -1,10 +1,20 @@
 config BR2_PACKAGE_XENIA_CANARY
     bool "xenia-canary"
-    depends on BR2_x86_64
-    select BR2_PACKAGE_WINE_PROTON
+    depends on BR2_x86_64 || BR2_aarch64
+    select BR2_PACKAGE_WINE_PROTON if BR2_x86_64
+    select BR2_PACKAGE_SDL2 if BR2_aarch64
+    select BR2_PACKAGE_VULKAN_HEADERS if BR2_aarch64
+    select BR2_PACKAGE_VULKAN_LOADER if BR2_aarch64
+    select BR2_PACKAGE_LZ4 if BR2_aarch64
+    select BR2_PACKAGE_ALSA_LIB if BR2_aarch64
+    select BR2_PACKAGE_LIBGTK3 if BR2_aarch64
+    select BR2_PACKAGE_XLIB_LIBX11 if BR2_aarch64
+    select BR2_PACKAGE_LIBXCB if BR2_aarch64
     select BR2_PACKAGE_PYTHON_TOML
     help
         Xenia is an open source research project for emulating Xbox 360 games on modern PCs.
-        This is the bleeding edge canary release.
+        This is the bleeding edge canary release. On x86_64 Batocera uses the
+        Windows build through Wine. On aarch64 this package builds the
+        experimental native Linux Vulkan path from source.
 
         https://xenia.jp/

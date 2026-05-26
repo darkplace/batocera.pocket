@@ -24,7 +24,7 @@ arch_supports_gpu_profile() {
 
     arch="$(read_node /usr/share/batocera/batocera.arch || true)"
     case "${arch,,}" in
-        sm8550|qcs6490)
+        sm8550|sm8750|qcs6490)
             return 0
             ;;
     esac

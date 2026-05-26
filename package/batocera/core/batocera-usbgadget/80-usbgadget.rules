@@ -1,0 +1,3 @@
+SUBSYSTEMS=="extcon", ACTION=="change", RUN+="/usr/bin/usbgadget trigger"
+ACTION=="add", SUBSYSTEM=="net", ENV{DEVTYPE}=="gadget", NAME="gadget"
+

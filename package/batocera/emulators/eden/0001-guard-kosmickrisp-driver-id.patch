@@ -1,0 +1,28 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Batocera Linux <batocera@batocera.org>
+Date: Mon, 25 May 2026 00:00:00 +0000
+Subject: [PATCH] guard KosmicKrisp Vulkan driver id
+
+VK_DRIVER_ID_MESA_KOSMICKRISP is only available in newer Vulkan headers.
+Keep building against the Buildroot Vulkan headers used by sm8550.
+---
+ src/video_core/vulkan_common/vulkan_wrapper.cpp | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/src/video_core/vulkan_common/vulkan_wrapper.cpp b/src/video_core/vulkan_common/vulkan_wrapper.cpp
+index 871ce52678..fdcb12ac3d 100644
+--- a/src/video_core/vulkan_common/vulkan_wrapper.cpp
++++ b/src/video_core/vulkan_common/vulkan_wrapper.cpp
+@@ -1059,8 +1059,10 @@ const char* AvailableDevice::GetDriverName() const {
+         return "PVR";
+     case VK_DRIVER_ID_MESA_HONEYKRISP:
+         return "HoneyKrisp";
++#ifdef VK_DRIVER_ID_MESA_KOSMICKRISP
+     case VK_DRIVER_ID_MESA_KOSMICKRISP:
+         return "KosmicKrisp";
++#endif
+     case VK_DRIVER_ID_GGP_PROPRIETARY:
+     case VK_DRIVER_ID_COREAVI_PROPRIETARY:
+     case VK_DRIVER_ID_JUICE_PROPRIETARY:
+--
+2.50.1

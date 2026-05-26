@@ -144,6 +144,9 @@ dl-dir:
 	@$(MAKE_BUILDROOT) batocera-$*_defconfig
 
 %-build: batocera-docker-image %-config ccache-dir dl-dir
+	@$(PROJECT_DIR)/scripts/linux/relocate-buildroot-output.sh \
+		$(OUTPUT_DIR)/$* \
+		$(if $(DIRECT_BUILD),$(abspath $(OUTPUT_DIR)/$*),/$*)
 	@mkdir -p $(OUTPUT_DIR)/$*/.br-progress
 	@$(MAKE_BUILDROOT) show-build-order > $(OUTPUT_DIR)/$*/.br-progress/build-order.txt
 	@$(MAKE_BUILDROOT) show-info > $(OUTPUT_DIR)/$*/.br-progress/show-info.json

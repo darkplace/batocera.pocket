@@ -1,5 +1,5 @@
-# Hash from: https://download.qt.io/official_releases/qt/6.9/6.9.2/submodules/qtcharts-everywhere-src-6.9.2.tar.xz.sha256
-sha256  9f01f15f64e73f18ee8b17b490c1b0ca02e969bc58919cf46bd1152c01a4ff4b  qtcharts-everywhere-src-6.9.2.tar.xz
+# Hash from: https://download.qt.io/archive/qt/6.10/6.10.1/submodules/qtcharts-everywhere-src-6.10.1.tar.xz.sha256
+sha256  17992278017cfb8fafef74b61e35559d29482df959ba469327a45b3bb66e2af4  qtcharts-everywhere-src-6.10.1.tar.xz
 
 # Hashes for license files
 sha256  8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903  LICENSES/GPL-3.0-only.txt

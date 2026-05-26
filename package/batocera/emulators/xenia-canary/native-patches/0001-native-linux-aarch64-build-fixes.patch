@@ -1,0 +1,218 @@
+From: Batocera Linux Team <batocera@batocera.linux>
+Date: Mon, 25 May 2026 00:00:00 +0000
+Subject: [PATCH] build: fix native Linux/aarch64 cross build with GCC
+
+---
+ CMakeLists.txt                          | 18 ++++++++++--------
+ src/xenia/apu/xma_context_master.cc     |  1 +
+ src/xenia/apu/xma_context_old.cc        |  1 +
+ src/xenia/base/clock_arm64.cc           |  6 +++++-
+ src/xenia/base/cvar.h                   |  4 ++--
+ src/xenia/base/utf8.cc                  |  1 +
+ src/xenia/cpu/backend/a64/a64_seq_util.h |  6 +++++-
+ src/xenia/gpu/command_processor.h       |  1 -
+ src/xenia/kernel/kernel_state.h         | 12 ++++--------
+ src/xenia/kernel/xam/xdbf/spa_info.cc   |  2 ++
+ src/xenia/kernel/xam/xdbf/spa_info.h    |  1 +
+ 11 files changed, 31 insertions(+), 22 deletions(-)
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 1111111..2222222 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -38,6 +38,7 @@ message(STATUS "Target architecture: XE_TARGET_AARCH64=${XE_TARGET_AARCH64} XE_T
+ # Options
+ option(XENIA_BUILD_TESTS "Build test suites" OFF)
+ option(XENIA_BUILD_MISC "Build misc subprojects (trace viewers, shader compiler, vfs-dump, demos)" OFF)
++option(XENIA_ENABLE_LTO "Enable link-time optimization in Release builds" ON)
+
+ # Toggle profiler
+ add_compile_definitions(XE_OPTION_PROFILING=0)
+@@ -296,16 +297,18 @@ else()
+   )
+   add_compile_options($<$<CONFIG:Release>:-O3>)
+   # Link-time optimization (use lld and llvm-ar/ranlib to avoid system
+-  # linker/archiver LTO plugin version mismatch with clang's bitcode)
+-  add_compile_options($<$<CONFIG:Release>:-flto=thin>)
+-  add_link_options($<$<CONFIG:Release>:-flto=thin>)
+-  add_link_options($<$<CONFIG:Release>:-fuse-ld=lld>)
+-  find_program(LLVM_AR NAMES llvm-ar)
+-  find_program(LLVM_RANLIB NAMES llvm-ranlib)
+-  if(LLVM_AR)
+-    set(CMAKE_AR "${LLVM_AR}" CACHE FILEPATH "" FORCE)
+-  endif()
+-  if(LLVM_RANLIB)
+-    set(CMAKE_RANLIB "${LLVM_RANLIB}" CACHE FILEPATH "" FORCE)
+-  endif()
++  # linker/archiver LTO plugin version mismatch with clang's bitcode).
++  if(XENIA_ENABLE_LTO)
++    add_compile_options($<$<CONFIG:Release>:-flto=thin>)
++    add_link_options($<$<CONFIG:Release>:-flto=thin>)
++    add_link_options($<$<CONFIG:Release>:-fuse-ld=lld>)
++    find_program(LLVM_AR NAMES llvm-ar)
++    find_program(LLVM_RANLIB NAMES llvm-ranlib)
++    if(LLVM_AR)
++      set(CMAKE_AR "${LLVM_AR}" CACHE FILEPATH "" FORCE)
++    endif()
++    if(LLVM_RANLIB)
++      set(CMAKE_RANLIB "${LLVM_RANLIB}" CACHE FILEPATH "" FORCE)
++    endif()
++  endif()
+   # No symbols in release on non-Windows
+diff --git a/src/xenia/apu/xma_context_master.cc b/src/xenia/apu/xma_context_master.cc
+index 1111111..2222222 100644
+--- a/src/xenia/apu/xma_context_master.cc
++++ b/src/xenia/apu/xma_context_master.cc
+@@ -10,6 +10,7 @@
+ #include "xenia/apu/xma_context_master.h"
+
+ #include <cstring>
++#include <tuple>
+
+ #include "xenia/apu/xma_decoder.h"
+ #include "xenia/apu/xma_helpers.h"
+diff --git a/src/xenia/apu/xma_context_old.cc b/src/xenia/apu/xma_context_old.cc
+index 1111111..2222222 100644
+--- a/src/xenia/apu/xma_context_old.cc
++++ b/src/xenia/apu/xma_context_old.cc
+@@ -10,6 +10,7 @@
+ #include "xenia/apu/xma_context_old.h"
+
+ #include <cstring>
++#include <tuple>
+
+ #include "xenia/apu/xma_decoder.h"
+ #include "xenia/apu/xma_helpers.h"
+diff --git a/src/xenia/base/clock_arm64.cc b/src/xenia/base/clock_arm64.cc
+index 1111111..2222222 100644
+--- a/src/xenia/base/clock_arm64.cc
++++ b/src/xenia/base/clock_arm64.cc
+@@ -19,9 +19,13 @@
+ constexpr uint32_t CNTFRQ_EL0 = ARM64_SYSREG(3, 3, 14, 0, 0);
+ constexpr uint32_t CNTVCT_EL0 = ARM64_SYSREG(3, 3, 14, 0, 2);
+ #define xe_cpu_mrs(reg) _ReadStatusReg(reg)
+-#elif XE_COMPILER_CLANG || XE_COMPILER_GNUC
++#elif XE_COMPILER_CLANG
+ #include <arm_acle.h>
+ #define xe_cpu_mrs(reg) __arm_rsr64(#reg)
++#elif XE_COMPILER_GNUC
++#define xe_cpu_mrs(reg) []() -> uint64_t { \
++  uint64_t value; asm volatile("mrs %0, " #reg : "=r"(value)); return value; \
++}()
+ #else
+ #error "No cpu instruction wrappers for current compiler implemented."
+ #endif
+diff --git a/src/xenia/base/cvar.h b/src/xenia/base/cvar.h
+index 1111111..2222222 100644
+--- a/src/xenia/base/cvar.h
++++ b/src/xenia/base/cvar.h
+@@ -59,7 +59,7 @@ class IConfigVar : virtual public ICommandVar {
+ template <class T>
+ class CommandVar : virtual public ICommandVar {
+  public:
+-  CommandVar<T>(const char* name, T* default_value, const char* description);
++  CommandVar(const char* name, T* default_value, const char* description);
+   const std::string& name() const override;
+   const std::string& description() const override;
+   void AddToLaunchOptions(cxxopts::Options* options) override;
+@@ -83,7 +83,7 @@ class CommandVar : virtual public ICommandVar {
+ template <class T>
+ class ConfigVar : public CommandVar<T>, virtual public IConfigVar {
+  public:
+-  ConfigVar<T>(const char* name, T* default_value, const char* description,
++  ConfigVar(const char* name, T* default_value, const char* description,
+                const char* category, bool is_transient);
+   std::string config_value() const override;
+   const T& GetTypedConfigValue() const;
+diff --git a/src/xenia/base/utf8.cc b/src/xenia/base/utf8.cc
+index 1111111..2222222 100644
+--- a/src/xenia/base/utf8.cc
++++ b/src/xenia/base/utf8.cc
+@@ -11,6 +11,7 @@
+
+ #include <algorithm>
+ #include <cstdint>
++#include <tuple>
+
+ // https://github.com/nemtrif/utfcpp/issues/85
+ #if defined(_MSVC_LANG) && _MSVC_LANG > __cplusplus
+diff --git a/src/xenia/cpu/backend/a64/a64_seq_util.h b/src/xenia/cpu/backend/a64/a64_seq_util.h
+index 1111111..2222222 100644
+--- a/src/xenia/cpu/backend/a64/a64_seq_util.h
++++ b/src/xenia/cpu/backend/a64/a64_seq_util.h
+@@ -23,9 +23,13 @@
+ #include <intrin.h>
+ constexpr uint32_t DCZID_EL0 = ARM64_SYSREG(0b11, 0b011, 0b0000, 0b0000, 0b111);
+ #define xe_cpu_mrs(reg) _ReadStatusReg(reg)
+-#elif XE_COMPILER_CLANG || XE_COMPILER_GNUC
++#elif XE_COMPILER_CLANG
+ #include <arm_acle.h>
+ #define xe_cpu_mrs(reg) __arm_rsr64(#reg)
++#elif XE_COMPILER_GNUC
++#define xe_cpu_mrs(reg) []() -> uint64_t { \
++  uint64_t value; asm volatile("mrs %0, " #reg : "=r"(value)); return value; \
++}()
+ #else
+ #error "No MRS wrapper available for current compiler implemented."
+ #endif
+diff --git a/src/xenia/gpu/command_processor.h b/src/xenia/gpu/command_processor.h
+index 1111111..2222222 100644
+--- a/src/xenia/gpu/command_processor.h
++++ b/src/xenia/gpu/command_processor.h
+@@ -202,7 +202,6 @@ class CommandProcessor {
+   virtual void WriteRegistersFromMem(uint32_t start_index, uint32_t* base,
+                                      uint32_t num_registers);
+
+-  XE_FORCEINLINE
+   virtual void WriteRegisterRangeFromRing(xe::RingBuffer* ring, uint32_t base,
+                                           uint32_t num_registers);
+
+diff --git a/src/xenia/kernel/kernel_state.h b/src/xenia/kernel/kernel_state.h
+index 1111111..2222222 100644
+--- a/src/xenia/kernel/kernel_state.h
++++ b/src/xenia/kernel/kernel_state.h
+@@ -143,15 +143,9 @@ struct DPCImpersonationScope {
+ };
+
+ struct KernelVersion {
+-  union {
+-    xe::be<uint64_t> value;
+-
+-    struct {
+-      xe::be<uint16_t> major;
+-      xe::be<uint16_t> minor;
+-      xe::be<uint16_t> build;
+-      xe::be<uint16_t> qfe;
+-    };
+-  };
++  xe::be<uint16_t> major;
++  xe::be<uint16_t> minor;
++  xe::be<uint16_t> build;
++  xe::be<uint16_t> qfe;
+
+   KernelVersion(uint16_t build_ver = kBaseKernelBuildVersion) {
+diff --git a/src/xenia/kernel/xam/xdbf/spa_info.cc b/src/xenia/kernel/xam/xdbf/spa_info.cc
+index 1111111..2222222 100644
+--- a/src/xenia/kernel/xam/xdbf/spa_info.cc
++++ b/src/xenia/kernel/xam/xdbf/spa_info.cc
+@@ -8,6 +8,8 @@
+
+ #include "xenia/kernel/xam/xdbf/spa_info.h"
+
++#include <tuple>
++
+ namespace xe {
+ namespace kernel {
+ namespace xam {
+diff --git a/src/xenia/kernel/xam/xdbf/spa_info.h b/src/xenia/kernel/xam/xdbf/spa_info.h
+index 1111111..2222222 100644
+--- a/src/xenia/kernel/xam/xdbf/spa_info.h
++++ b/src/xenia/kernel/xam/xdbf/spa_info.h
+@@ -10,6 +10,7 @@
+
+ #include "xenia/kernel/xam/xdbf/xdbf_io.h"
+
++#include <algorithm>
+ #include <map>
+ #include <numeric>
+ #include <optional>

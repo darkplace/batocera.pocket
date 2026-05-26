@@ -1,0 +1,69 @@
+diff --git a/es-app/src/guis/GuiMenu.cpp b/es-app/src/guis/GuiMenu.cpp
+index 2f7bb91..44b4671 100644
+--- a/es-app/src/guis/GuiMenu.cpp
++++ b/es-app/src/guis/GuiMenu.cpp
+@@ -28,6 +28,7 @@
+ #include <SDL_events.h>
+ #include <algorithm>
+ #include "utils/Platform.h"
++#include "utils/StringUtil.h"
+ #include "utils/FileSystemUtil.h"
+ 
+ #include "SystemConf.h"
+@@ -4382,6 +4383,56 @@ void GuiMenu::openNetworkSettings(bool selectWifiEnable)
+ 		s->addInputTextConfigRow(_("DNS SERVER"), "network.dns", false);
+ 	}
+ #endif
++#if !WIN32
++	const std::string usbGadgetScript = "/usr/bin/usbgadget";
++	if (Utils::FileSystem::exists(usbGadgetScript))
++	{
++		auto getUsbGadgetOutput = [](const std::string& command) -> std::string
++		{
++			std::array<char, 128> buffer;
++			std::string result;
++			std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(command.c_str(), "r"), pclose);
++
++			if (!pipe)
++				return "";
++
++			while (fgets(buffer.data(), buffer.size(), pipe.get()) != nullptr)
++				result += buffer.data();
++
++			return Utils::String::trim(result);
++		};
++
++		auto optionsUSBGadget = std::make_shared<OptionListComponent<std::string>>(mWindow, _("USB GADGET FUNCTION"), false);
++		std::string selectedUSBGadget = getUsbGadgetOutput(usbGadgetScript + " --saved");
++		if (selectedUSBGadget.empty())
++			selectedUSBGadget = "disabled";
++
++		bool hasUSBGadgetOptions = false;
++		std::string usbGadgetOption;
++		for (std::stringstream ss(getUsbGadgetOutput(usbGadgetScript + " --options")); getline(ss, usbGadgetOption, ' '); )
++		{
++			usbGadgetOption = Utils::String::trim(usbGadgetOption);
++			if (!usbGadgetOption.empty())
++			{
++				optionsUSBGadget->add(usbGadgetOption, usbGadgetOption, usbGadgetOption == selectedUSBGadget);
++				hasUSBGadgetOptions = true;
++			}
++		}
++
++		if (!hasUSBGadgetOptions)
++			optionsUSBGadget->add("disabled", "disabled", true);
++
++		s->addWithLabel(_("USB GADGET FUNCTION"), optionsUSBGadget);
++		s->addSaveFunc([window, usbGadgetScript, optionsUSBGadget, getUsbGadgetOutput] {
++			if (optionsUSBGadget->changed())
++			{
++				Utils::Platform::ProcessStartInfo(usbGadgetScript + " " + optionsUSBGadget->getSelected()).run();
++				if (optionsUSBGadget->getSelected() == "network")
++					window->pushGui(new GuiMsgBox(window, _("USB NETWORKING ENABLED. DEVICE IP: ") + getUsbGadgetOutput(usbGadgetScript + " address"), _("OK"), nullptr));
++			}
++		});
++	}
++#endif
+ 
+ 	// Wifi enable
+ 	auto enable_wifi = std::make_shared<SwitchComponent>(mWindow);

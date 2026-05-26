@@ -10,6 +10,7 @@ WINETRICKS_ALL_URL="https://raw.githubusercontent.com/Winetricks/winetricks/mast
 KRON4EK_RELEASES_URL="https://api.github.com/repos/Kron4ek/Wine-Builds/releases?per_page=300"
 WINE_GE_RELEASES_URL="https://api.github.com/repos/GloriousEggroll/wine-ge-custom/releases?per_page=100"
 PROTON_GE_RELEASES_URL="https://api.github.com/repos/GloriousEggroll/proton-ge-custom/releases?per_page=100"
+FREE_WINDOWS_GAMES_BASE_URL="https://raw.githubusercontent.com/foclabroc/toolbox/refs/heads/main/windows"
 
 clear_screen() {
     clear >/dev/null 2>&1 || true
@@ -427,6 +428,90 @@ ge_proton_menu() {
     download_release_selection "GE-Proton" "Select GE-Proton builds to download:" "$filtered"
 }
 
+translate_free_game_installer() {
+    local script="$1"
+
+    sed -i \
+        -e 's/Foclabroc Toolbox/Batocera Wine Tools/g' \
+        -e 's/export LANG=fr_FR.UTF-8/export LANG=en_US.UTF-8/g' \
+        -e 's/export LC_ALL=fr_FR.UTF-8/export LC_ALL=en_US.UTF-8/g' \
+        -e 's/Suppression ancien \$GAME_NAME si existant/Removing old \$GAME_NAME if present/g' \
+        -e 's/echo -e "\\n\\n.*chargement de \$GAME_NAME\.\.\."/echo -e "\\n\\nDownloading $GAME_NAME..."/g' \
+        -e 's/echo -e "\\nVitesse : ${SPEED_MO} Mo\/s .*"/echo -e "\\nSpeed: ${SPEED_MO} MB\/s | Downloaded: ${CURRENT_MB} \/ ${TOTAL_MB} MB"/g' \
+        -e 's/echo -e "\\n\\n.*compression de \$GAME_NAME\.\.\."/echo -e "\\n\\nExtracting $GAME_NAME..."/g' \
+        -e 's/echo -e "\\n\\n.*chargement du pad2key\.\.\."/echo -e "\\n\\nDownloading pad2key..."/g' \
+        -e 's/--title "Installation de \$GAME_NAME"/--title "Installing $GAME_NAME"/g' \
+        -e 's/--gauge "\\n.*chargement et installation de \$GAME_NAME en cours\.\.\."/--gauge "\\nDownloading and installing $GAME_NAME..."/g' \
+        -e 's/--title "Edition du gamelist" --gauge "\\nAjout images et video au gamelist windows\.\.\."/--title "Editing gamelist" --gauge "\\nAdding images and videos to the Windows gamelist..."/g' \
+        -e 's|dialog --backtitle "Batocera Wine Tools" --title "Installation .*|dialog --backtitle "Batocera Wine Tools" --title "Installation complete" --msgbox "\\n$GAME_NAME has been added to Windows.\\n\\nRefresh gamelists to make it appear in the menu.\\n$INFO_MESSAGE" 13 70 2>\&1 >/dev/tty|g' \
+        "$script"
+}
+
+install_free_windows_games_menu() {
+    require_commands curl bash || return 1
+    local games=(
+        "Celeste 64|Madeline returns in 3D. (39.8 MB)|c64.sh"
+        "Celeste Pico-8|Help Madeline survive her inner demons on Celeste Mountain. (14.8 MB)|celeste.sh"
+        "Crash Bandicoot Bit|Fan-made Crash Bandicoot with a custom stage editor. (230 MB)|cbit.sh"
+        "Donkey Kong Advanced|Remake of the classic arcade game. (19.4 MB)|dka.sh"
+        "TMNT Rescue-Palooza|Free beat-'em-up game. (168 MB)|tmntrp.sh"
+        "Spelunky|Two-dimensional platform game starring a cave explorer. (24.2 MB)|spelunky.sh"
+        "Sonic Triple Trouble|Fan game based on the Game Gear Sonic Triple Trouble. (115 MB)|stt.sh"
+        "Pokemon Uranium|Fan game based on the Pokemon series. (332 MB)|pokeura.sh"
+        "MiniDoom 2|DOOM tribute reworked as an action platformer. (114 MB)|minidoom2.sh"
+        "AM2R|Unofficial remake of Metroid II for Game Boy. (85.6 MB)|am2r.sh"
+        "Mega Man X II|8-bit style Mega Man X Innocent Impulse fan game. (354 MB)|mmxii.sh"
+        "SuperTuxKart|Open-source kart racer with online mode. (662 MB)|supertuxkart.sh"
+        "Streets of Rage Remake 5.2|Remake of Streets of Rage 1/2/3 for Windows. (331 MB)|sorr52.sh"
+        "Mega Man 2.5D|Mega Man fan game in 2.5D. (855 MB)|megaman25.sh"
+        "Sonic Smackdown|Sonic-universe fighting fan game. (1.6 GB)|sonicsmash.sh"
+        "Maldita Castilla|Fan game in a Ghouls 'n Ghosts style. (60.2 MB)|maldita.sh"
+        "Super Smash Crusade|Fan-made Super Smash Bros Crusade. (1.45 GB)|supersc.sh"
+        "Rayman Redemption|Fan-made Rayman Redemption. (976 MB)|raymanr.sh"
+        "Power Bomberman|Fan-made Bomberman game. (616 MB)|powerb.sh"
+        "Mushroom Kingdom Fusion|Fan-made Mario crossover with many game franchises. (962 MB)|mushkf.sh"
+        "Dr. Robotnik's Racers|Sonic-universe kart racer fan game. (698 MB)|drrobo.sh"
+    )
+    local options=() idx entry name desc installer choice selected url tmp_script rc
+
+    for idx in "${!games[@]}"; do
+        IFS='|' read -r name desc installer <<<"${games[$idx]}"
+        options+=("$((idx + 1))" "${name} - ${desc}")
+    done
+
+    choice=$(dialog --clear --backtitle "Batocera Wine Tools" \
+        --title "Free Windows Games" \
+        --menu "Choose a free Windows game to install:" \
+        33 124 15 \
+        "${options[@]}" \
+        2>&1 >/dev/tty) || {
+            clear_screen
+            return 1
+        }
+    clear_screen
+
+    selected="${games[$((choice - 1))]}"
+    IFS='|' read -r name desc installer <<<"${selected}"
+
+    yes_no "Install ${name} now?\n\nThe installer will download the game and add it under ${ROOT_ROMS_WINDOWS}." || return 1
+
+    url="${FREE_WINDOWS_GAMES_BASE_URL}/${installer}"
+    tmp_script="$(mktemp)"
+    if ! curl -fsSL "$url" -o "$tmp_script"; then
+        rm -f "$tmp_script"
+        msg_box "Failed to download the installer script:\n${url}\n\nCheck the network connection and try again."
+        return 1
+    fi
+
+    translate_free_game_installer "$tmp_script"
+    chmod +x "$tmp_script"
+    bash "$tmp_script"
+    rc=$?
+    rm -f "$tmp_script"
+    curl -fsS http://127.0.0.1:1234/reloadgames >/dev/null 2>&1 || true
+    return "$rc"
+}
+
 prepare_dependency_installers() {
     require_commands wget curl || return 1
     local options selected tag
@@ -677,6 +762,52 @@ add_windows_game_to_steam_menu() {
         msg_box "Failed to add Steam shortcut:\n\n${output}"
     fi
     return "$rc"
+}
+
+steam_client_installed() {
+    local path
+    local -a candidates=(
+        "/userdata/system/.local/share/Steam/steamrtarm64/steam"
+        "/userdata/system/.local/share/Steam/steam.sh"
+        "/userdata/system/steam/steam.sh"
+        "/userdata/system/.steam/steam/steam.sh"
+    )
+
+    for path in "${candidates[@]}"; do
+        [[ -x "${path}" ]] && return 0
+    done
+
+    return 1
+}
+
+install_decky_loader_menu() {
+    local output rc summary
+
+    if ! command -v batocera-steam-decky-install >/dev/null 2>&1; then
+        msg_box "Decky installer is not available in this image.\n\nInstall or enable Batocera Steam support first."
+        return 1
+    fi
+
+    if ! steam_client_installed; then
+        msg_box "Steam needs to be installed first.\n\nLaunch Steam GamepadUI once and complete its initial setup, then run this Decky installer again."
+        return 1
+    fi
+
+    yes_no "Install or update Decky PluginLoader now?\n\nDecky will auto-start the next time Steam GamepadUI is launched through Batocera." || return 1
+
+    info_box "Installing Decky PluginLoader..."
+    output=$(batocera-steam-decky-install 2>&1)
+    rc=$?
+    clear_screen
+    summary="$(printf '%s\n' "${output}" | tail -n 20)"
+
+    if [ "${rc}" -eq 0 ]; then
+        msg_box "Decky PluginLoader installed.\n\nDecky will auto-start the next time Steam GamepadUI is launched through Batocera.\n\n${summary}"
+    else
+        msg_box "Decky PluginLoader install failed:\n\n${summary}"
+    fi
+
+    return "${rc}"
 }
 
 create_autorun_cmd_menu() {
@@ -947,6 +1078,8 @@ main_menu() {
             9 "Compress .wine folder to .wsquashfs or .wtgz"
             10 "Decompress .wsquashfs / .wtgz back to .wine"
             11 "Add Windows game to Steam"
+            12 "Install Decky PluginLoader for Steam"
+            13 "Install free Windows games"
             99 "Exit"
         )
 
@@ -973,6 +1106,8 @@ main_menu() {
             9) compress_wine_folder ;;
             10) decompress_wine_archive ;;
             11) add_windows_game_to_steam_menu ;;
+            12) install_decky_loader_menu ;;
+            13) install_free_windows_games_menu ;;
             99) break ;;
         esac
     done

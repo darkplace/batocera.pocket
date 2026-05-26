@@ -12,6 +12,7 @@ ES_PROCESS_PATTERN='(^|/)emulationstation([[:space:]]|$)'
 ES_STANDALONE_PATTERN='(^|/)emulationstation-standalone([[:space:]]|$)'
 PREFLIGHT_SESSION_FLAG="/var/run/batocera-steam-update-preflight"
 PREFLIGHT_FLAG_ACTIVE=0
+PREFLIGHT_WINDOW_PLACER_PID=""
 MOUSE_SHOWN=0
 mkdir -p "${LOG_DIR}"
 
@@ -32,6 +33,7 @@ clear_preflight_active() {
 
 cleanup_preflight_process() {
     clear_preflight_active
+    stop_background_helper "${PREFLIGHT_WINDOW_PLACER_PID}"
     if [[ "${MOUSE_SHOWN}" == "1" ]]; then
         batocera-mouse hide >/dev/null 2>&1 || true
     fi
@@ -149,6 +151,10 @@ wait_for_emulationstation_stop() {
 
 stop_emulationstation_for_update() {
     if ! emulationstation_running; then
+        return 0
+    fi
+    if is_thor_top_bottom_display; then
+        log "keeping EmulationStation running during Thor visible Steam updater preflight"
         return 0
     fi
 
@@ -333,6 +339,127 @@ stop_background_helper() {
     kill "${pid}" >/dev/null 2>&1 || true
 }
 
+is_thor_top_bottom_display() {
+    local model=""
+
+    if command -v batocera-info >/dev/null 2>&1; then
+        model="$(batocera-info 2>/dev/null | awk -F': ' '/^Model:/ {print $2; exit}')"
+    fi
+    [[ "${model}" == "AYN_Thor" ]] || return 1
+    [[ "$(batocera-settings-get-master display.position 2>/dev/null || true)" == "top-bottom" ]] || return 1
+    [[ -n "$(batocera-settings-get-master global.videooutput2 2>/dev/null || true)" ]]
+}
+
+setup_sway_env() {
+    local runtime
+
+    for runtime in "${XDG_RUNTIME_DIR:-}" /var/run /run/user/0 /var/run/0-runtime-dir /run/0-runtime-dir; do
+        [[ -n "${runtime}" ]] || continue
+        if [[ -S "${runtime}/sway-ipc.0.sock" ]]; then
+            export XDG_RUNTIME_DIR="${runtime}"
+            export SWAYSOCK="${runtime}/sway-ipc.0.sock"
+            export I3SOCK="${SWAYSOCK}"
+            return 0
+        fi
+    done
+
+    return 1
+}
+
+thor_top_panel_info() {
+    is_thor_top_bottom_display || return 1
+    command -v swaymsg >/dev/null 2>&1 || return 1
+    command -v jq >/dev/null 2>&1 || return 1
+    setup_sway_env || return 1
+
+    swaymsg -t get_outputs 2>/dev/null | jq -r '
+        ((map(select(.active and .name == "DSI-2"))[0]) //
+        (map(select(.active)) | sort_by(.rect.y, .rect.x) | .[0])) |
+        select(. != null) |
+        [.current_workspace, .rect.x, .rect.y, .rect.width, .rect.height] | @tsv
+    '
+}
+
+preflight_window_ids() {
+    command -v swaymsg >/dev/null 2>&1 || return 1
+    command -v jq >/dev/null 2>&1 || return 1
+    setup_sway_env || return 1
+
+    swaymsg -t get_tree 2>/dev/null | jq -r '
+        .. | objects |
+        select((.type? == "con") or (.type? == "floating_con")) |
+        . as $node |
+        (($node.name // "") | ascii_downcase) as $name |
+        (($node.app_id // $node.window_properties.class // "") | ascii_downcase) as $app |
+        select(
+            ((($app | contains("xterm")) or ($app | contains("steam"))) and
+             (($name | contains("steam")) or
+              ($name | contains("update")) or
+              ($name | contains("updat")) or
+              ($name | contains("verify")) or
+              ($name | contains("verifying")) or
+              ($name | contains("verification")) or
+              ($name | contains("bootstrap")) or
+              ($name | contains("preflight")))) or
+            ($name | contains("steam update")) or
+            ($name | contains("updating steam")) or
+            ($name | contains("steam setup/update preflight")) or
+            ($name | contains("verification")) or
+            ($name | contains("verifying installation"))
+        ) |
+        .id
+    '
+}
+
+place_preflight_windows_on_top_panel() {
+    local id
+    local info
+    local workspace
+    local x
+    local y
+    local width
+    local height
+
+    info="$(thor_top_panel_info)" || return 0
+    read -r workspace x y width height <<< "${info}"
+    [[ -n "${workspace}" && "${width}" =~ ^[0-9]+$ && "${height}" =~ ^[0-9]+$ ]] || return 0
+
+    while IFS= read -r id; do
+        [[ -n "${id}" ]] || continue
+        swaymsg "[con_id=${id}]" fullscreen disable >/dev/null 2>&1 || true
+        swaymsg "[con_id=${id}]" floating enable >/dev/null 2>&1 || true
+        swaymsg "[con_id=${id}]" move to workspace "${workspace}" >/dev/null 2>&1 || true
+        swaymsg "[con_id=${id}]" resize set width "${width}" px height "${height}" px >/dev/null 2>&1 || true
+        swaymsg "[con_id=${id}]" move position "${x}" "${y}" >/dev/null 2>&1 || true
+        swaymsg "[con_id=${id}]" fullscreen enable >/dev/null 2>&1 || true
+    done < <(preflight_window_ids || true)
+}
+
+start_preflight_window_placer_once() {
+    local max_secs="${BATOCERA_STEAM_PREFLIGHT_WINDOW_PLACER_SECS:-1800}"
+    local max_ticks
+
+    is_thor_top_bottom_display || return 0
+    command -v swaymsg >/dev/null 2>&1 || return 0
+    command -v jq >/dev/null 2>&1 || return 0
+    if [[ -n "${PREFLIGHT_WINDOW_PLACER_PID}" ]] && kill -0 "${PREFLIGHT_WINDOW_PLACER_PID}" >/dev/null 2>&1; then
+        return 0
+    fi
+
+    log "starting Thor top-panel preflight window placer"
+    [[ "${max_secs}" =~ ^[0-9]+$ ]] || max_secs=1800
+    max_ticks=$((max_secs * 4))
+    (
+        local waited=0
+        while (( waited < max_ticks )); do
+            place_preflight_windows_on_top_panel
+            sleep 0.25
+            waited=$((waited + 1))
+        done
+    ) &
+    PREFLIGHT_WINDOW_PLACER_PID="$!"
+}
+
 start_update_progress_xterm() {
     local baseline="$1"
     local display="$2"
@@ -340,6 +467,7 @@ start_update_progress_xterm() {
     steam_update_progress_xterm_enabled || return 0
     [[ -n "${display}" ]] || return 0
 
+    start_preflight_window_placer_once
     log "starting Steam updater xterm progress monitor baseline=${baseline}"
     BASELINE="${baseline}" \
     BOOTSTRAP_LOG="${BOOTSTRAP_LOG}" \
@@ -537,6 +665,7 @@ run_external_steam_updater() {
     fi
 
     mark_preflight_active
+    start_preflight_window_placer_once
     prepare_user_env
     prepare_steam_client_env
     seed_steam_updater_resources
@@ -648,6 +777,7 @@ run_in_terminal() {
     local -a extra_args=()
 
     mark_preflight_active
+    start_preflight_window_placer_once
     stop_emulationstation_for_update
     prepare_user_env
     prepare_steam_client_env
@@ -689,6 +819,13 @@ run_in_terminal() {
             draw_status "${baseline}" "Steam updater already completed."
             stop_steam_stack
             sleep 2
+            return 0
+        fi
+        if verification_complete "${baseline}"; then
+            log "Steam updater verification completed with no update activity"
+            draw_status "${baseline}" "Verification complete. Starting gamescope next..."
+            stop_steam_stack
+            sleep 1
             return 0
         fi
         sleep 1
@@ -756,6 +893,7 @@ launch_terminal() {
 
     batocera-mouse show >/dev/null 2>&1 || true
     MOUSE_SHOWN=1
+    start_preflight_window_placer_once
     /usr/bin/xterm -fs 14 -fg white -bg black -fa "Monospace" -en UTF-8 -sb -rightbar \
         -geometry "${geometry}" \
         -T "Steam Update" \

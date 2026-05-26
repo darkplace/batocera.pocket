@@ -4,9 +4,10 @@
 #
 ################################################################################
 
-# Version: Commits on Jan 7, 2026
-ROCKNIX_ABL_VERSION = 402954ce6860ae662f0e430c9112b74112a30dfb
-ROCKNIX_ABL_SITE = $(call github,ROCKNIX,abl,$(ROCKNIX_ABL_VERSION))
+# Version: v1.1
+ROCKNIX_ABL_VERSION = 1.1
+ROCKNIX_ABL_SOURCE = rocknix-abl-v$(ROCKNIX_ABL_VERSION).tar.gz
+ROCKNIX_ABL_SITE = https://github.com/ROCKNIX/abl/releases/download/v$(ROCKNIX_ABL_VERSION)
 
 ROCKNIX_ABL_DEPENDENCIES = pv
 
@@ -15,6 +16,8 @@ ifeq ($(BR2_PACKAGE_BATOCERA_TARGET_SM8250),y)
 ROCKNIX_ABL_MODEL = SM8250
 else ifeq ($(BR2_PACKAGE_BATOCERA_TARGET_SM8550),y)
 ROCKNIX_ABL_MODEL = SM8550
+else ifeq ($(BR2_PACKAGE_BATOCERA_TARGET_SM8750),y)
+ROCKNIX_ABL_MODEL = SM8750
 endif
 
 define ROCKNIX_ABL_INSTALL_TARGET_CMDS

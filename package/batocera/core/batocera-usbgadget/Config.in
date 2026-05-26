@@ -1,0 +1,14 @@
+config BR2_PACKAGE_BATOCERA_USBGADGET
+	bool "batocera-usbgadget"
+	depends on BR2_PACKAGE_BATOCERA_TARGET_SM8X50
+	depends on BR2_USE_MMU
+	depends on BR2_TOOLCHAIN_HAS_THREADS
+	depends on BR2_TOOLCHAIN_HEADERS_AT_LEAST_3_15
+	select BR2_PACKAGE_DNSMASQ
+	select BR2_PACKAGE_DNSMASQ_DHCP
+	select BR2_PACKAGE_IPROUTE2
+	select BR2_PACKAGE_UMTPRD
+	help
+	  USB gadget modes for handheld/device targets.
+
+	  Provides MTP file transfer and USB NCM networking.

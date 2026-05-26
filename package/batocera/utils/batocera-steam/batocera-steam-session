@@ -30,6 +30,7 @@ STEAM_SETUP_KIND="${BATOCERA_STEAM_SETUP_KIND:-}"
 STEAM_INSTALL_CALLOUT_PID=""
 THOR_BRIGHTNESS_WATCH_PID=""
 STEAM_SESSION_DBUS_PID=""
+DECKY_STARTER_PID=""
 STEAM_PORTAL_PIDS=()
 STEAM_CHILD_LSFG_ENV=()
 ALLY_HOTKEY_DIR="/userdata/system/configs/hotkeygen"
@@ -323,6 +324,9 @@ cleanup_steam_portal_session() {
 cleanup_hotkeys_on_exit() {
     # "Switch to Desktop" kills the original session outside configgen's normal cleanup path.
     # Restore an explicit default context and ES profile when that happens.
+    if declare -F stop_decky_loader >/dev/null 2>&1; then
+        stop_decky_loader
+    fi
     stop_steam_install_callouts
     stop_thor_backlight_mirror
     cleanup_steam_portal_session
@@ -441,21 +445,124 @@ setup_cef_remote_debugging() {
     done
 }
 
+decky_process_pids() {
+    local proc
+    local pid
+    local cmd
+
+    for proc in /proc/[0-9]*; do
+        pid="${proc##*/}"
+        [[ "${pid}" != "$$" && "${pid}" != "${BASHPID:-$$}" ]] || continue
+        cmd="$(tr '\0' ' ' 2>/dev/null < "${proc}/cmdline" || true)"
+        [[ -n "${cmd}" ]] || continue
+        case "${cmd}" in
+            *"/userdata/system/homebrew/services/PluginLoader"*|*"Decky Loader"*|*"/userdata/system/homebrew/plugins/"*)
+                printf '%s\n' "${pid}"
+                ;;
+        esac
+    done
+}
+
+decky_process_alive() {
+    [[ -n "$(decky_process_pids | head -n 1)" ]]
+}
+
+kill_decky_processes() {
+    local signal="$1"
+    local pid
+
+    while IFS= read -r pid; do
+        [[ -n "${pid}" ]] || continue
+        kill "-${signal}" "${pid}" >/dev/null 2>&1 || true
+    done < <(decky_process_pids | sort -u)
+}
+
+wait_for_decky_processes_to_exit() {
+    local max_tries="${1:-20}"
+    local i
+
+    for i in $(seq 1 "${max_tries}"); do
+        decky_process_alive || return 0
+        sleep 0.2
+    done
+
+    return 1
+}
+
+stop_decky_loader() {
+    if [[ -n "${DECKY_STARTER_PID}" ]]; then
+        kill "${DECKY_STARTER_PID}" >/dev/null 2>&1 || true
+        wait "${DECKY_STARTER_PID}" >/dev/null 2>&1 || true
+        DECKY_STARTER_PID=""
+    fi
+
+    decky_process_alive || return 0
+    echo "Stopping Decky Loader process stack" >> "${log}"
+    kill_decky_processes TERM
+    if ! wait_for_decky_processes_to_exit 25; then
+        kill_decky_processes KILL
+        wait_for_decky_processes_to_exit 10 || true
+    fi
+}
+
+steam_cef_remote_debugging_ready() {
+    if command -v curl >/dev/null 2>&1; then
+        curl -fsS --max-time 1 http://127.0.0.1:8080/json >/dev/null 2>&1 && return 0
+    fi
+    if command -v wget >/dev/null 2>&1; then
+        wget -q -T 1 -O - http://127.0.0.1:8080/json >/dev/null 2>&1 && return 0
+    fi
+    if command -v ss >/dev/null 2>&1; then
+        ss -ltn 2>/dev/null | grep -q '127[.]0[.]0[.]1:8080' && return 0
+    fi
+
+    return 1
+}
+
 start_decky_loader() {
     local decky_bin="${BATOCERA_STEAM_DECKY_BIN:-/userdata/system/homebrew/services/PluginLoader}"
     local decky_log="/userdata/system/logs/decky-loader.log"
+    local max_secs="${BATOCERA_STEAM_DECKY_WAIT_SECS:-120}"
 
     if [[ ! -x "${decky_bin}" ]]; then
         return
     fi
 
-    if pgrep -x "$(basename "${decky_bin}")" >/dev/null 2>&1; then
-        return
+    setup_cef_remote_debugging
+    stop_decky_loader
+
+    [[ "${max_secs}" =~ ^[0-9]+$ ]] || max_secs=120
+    if (( max_secs < 1 )); then
+        max_secs=120
     fi
 
-    setup_cef_remote_debugging
-    echo "Starting Decky Loader from ${decky_bin}" >> "${log}"
-    nohup "${decky_bin}" >> "${decky_log}" 2>&1 &
+    echo "Decky Loader: waiting for Steam CEF before starting ${decky_bin}" >> "${log}"
+    (
+        local waited=0
+
+        exec 8>&- 2>/dev/null || true
+        while (( waited < max_secs )); do
+            if steam_cef_remote_debugging_ready; then
+                echo "Starting Decky Loader from ${decky_bin}" >> "${log}"
+                exec env \
+                    HOME="${HOME}" \
+                    XDG_DATA_HOME="${XDG_DATA_HOME}" \
+                    XDG_CONFIG_HOME="${XDG_CONFIG_HOME}" \
+                    XDG_CACHE_HOME="${XDG_CACHE_HOME}" \
+                    STEAM_COMPAT_CLIENT_INSTALL_PATH="${XDG_DATA_HOME}/Steam" \
+                    STEAM_ROOT="${XDG_DATA_HOME}/Steam" \
+                    STEAM_BASE_FOLDER="${XDG_DATA_HOME}/Steam" \
+                    DECKY_HOME="/userdata/system/homebrew" \
+                    "${decky_bin}" </dev/null >> "${decky_log}" 2>&1
+            fi
+            sleep 1
+            waited=$((waited + 1))
+        done
+
+        echo "Decky Loader: Steam CEF did not become ready after ${max_secs}s; not starting Decky" >> "${log}"
+        exit 0
+    ) &
+    DECKY_STARTER_PID="$!"
 }
 
 parse_resolution() {
@@ -944,14 +1051,14 @@ prepare_mangoapp_config() {
         return
     fi
 
-    [[ -z "${MANGOHUD_CONFIGFILE:-}" ]] || return
+    [[ -z "${MANGOHUD_CONFIGFILE:-}" ]] || return 0
 
     case "${visible}" in
         0|false|False|FALSE|off|Off|OFF|no|No|NO)
             return
             ;;
         auto|"")
-            aarch64_host || return
+            aarch64_host || return 0
             ;;
     esac
 
@@ -972,7 +1079,7 @@ prepare_mangoapp_config() {
         printf '%s\n' "ram=1"
         printf '%s\n' "battery=1"
         printf '%s\n' "hud_no_margin=1"
-    } > "${config_path}" || return
+    } > "${config_path}" || return 0
 
     export MANGOHUD_CONFIGFILE="${config_path}"
     echo "Steam MangoApp config: ${config_path}" >> "${log}"

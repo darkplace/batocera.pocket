@@ -57,7 +57,10 @@ cleanup() {
 }
 
 enable_sm8550_gpu_profile() {
-    [ "$(cat /usr/share/batocera/batocera.arch 2>/dev/null || true)" = "sm8550" ] || return 0
+    case "$(cat /usr/share/batocera/batocera.arch 2>/dev/null || true)" in
+        sm8550|sm8750) ;;
+        *) return 0 ;;
+    esac
     command -v batocera-gpu-profile >/dev/null 2>&1 || return 0
 
     GPU_PROFILE_STATE="/var/run/batocera-gpu-profile/n64recomp-launcher.$$"
@@ -65,7 +68,7 @@ enable_sm8550_gpu_profile() {
     export DISABLE_MANGOHUD=1
     export DISABLE_LSFG=1
     export SDL_RENDER_VSYNC=0
-    echo "sm8550 GPU profile pinned for N64RecompLauncher"
+    echo "sm8x50 GPU profile pinned for N64RecompLauncher"
     log_gpu_profile_state
 }
 

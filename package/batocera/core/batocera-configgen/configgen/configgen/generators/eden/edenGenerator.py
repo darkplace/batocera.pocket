@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ... import Command
-from ...batoceraPaths import BIOS, CONFIGS, SAVES, CACHE, mkdir_if_not_exists, ensure_parents_and_open
+from ...batoceraPaths import BATOCERA_SHARE_DIR, BIOS, CONFIGS, SAVES, CACHE, mkdir_if_not_exists, ensure_parents_and_open
 from ...controller import Controllers
 from ...utils import lsfg, vulkan
 from ...utils.configparser import CaseSensitiveRawConfigParser
@@ -33,6 +33,20 @@ _SWITCH_KEYS = ("prod.keys", "title.keys")
 UCLAMP_MIN = 819
 UCLAMP_MAX = 1024
 _QLAUNCH_SUFFIX = ".qlaunch"
+_NATIVE_EDEN_BINARY = Path("/usr/share/eden/native/eden")
+
+
+def _is_aarch64() -> bool:
+    return os.uname().machine.lower() in ("aarch64", "arm64")
+
+def _batocera_arch() -> str:
+    try:
+        return (BATOCERA_SHARE_DIR / "batocera.arch").read_text().strip().lower()
+    except OSError:
+        return ""
+
+def _has_native_eden() -> bool:
+    return _NATIVE_EDEN_BINARY.exists()
 
 
 class EdenGenerator(Generator):
@@ -396,6 +410,12 @@ exit $EXIT_CODE
 
         set_override("Cpu", "cpu_accuracy",
                      system.config.get("eden_cpuaccuracy", "0"))
+
+        cpu_backend = system.config.get("eden_cpu_backend", "")
+        if _is_aarch64() and (cpu_backend in ("0", "1") or _has_native_eden() or _batocera_arch() in ("sm8550", "sm8750")):
+            set_override("Cpu", "cpu_backend", cpu_backend if cpu_backend in ("0", "1") else "1")
+        else:
+            c.set("Cpu", "cpu_backend\\default", "true")
 
         # ---------- System ----------
         if not c.has_section("System"):

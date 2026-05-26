@@ -2070,7 +2070,7 @@ apple2:
   manufacturer: Apple
   release: 1977
   hardware: computer
-  extensions: [nib, do, po, dsk, mfi, dfi, rti, edd, woz, wav, zip, 7z, chd, hdv, 2mg]
+  extensions: [nib, do, po, dsk, mfi, dfi, rti, edd, woz, wav, zip, 7z, chd, hdv, 2mg, m3u]
   emulators:
     libretro:
       mame: { requireAnyOf: [BR2_PACKAGE_LIBRETRO_MAME] }
@@ -2081,6 +2081,17 @@ apple2:
       gsplus: { requireAnyOf: [BR2_PACKAGE_GSPLUS], incompatible_extensions: [mfi, dfi, rti, edd, woz, wav, zip, 7z, chd, hdv, 2mg] }
     applewin:
       applewin: { requireAnyOf: [BR2_PACKAGE_APPLEWIN], incompatible_extensions: [chd] }
+  comment_en: |
+    Apple II disk images go in /userdata/roms/apple2.
+
+    AppleWin supports floppy images such as .dsk, .do, .po, .woz and .nib, and hard disk images such as .hdv and .2mg. Launch a single image directly, or create an .m3u playlist for a multi-disk title. Put one image path per line; relative paths are resolved from the playlist folder. The first entry is inserted in drive 1 and the second entry is inserted in drive 2.
+
+    Example:
+    Oregon Trail.m3u
+    Oregon Trail/Oregon Trail Disk 1.dsk
+    Oregon Trail/Oregon Trail Disk 2.dsk
+
+    For a manually selected second disk, open the game's advanced options and set FLOPPY DRIVE 2 IMAGE. While AppleWin is running, press F3 to open the Disks tab, then choose Open on drive 1 or drive 2 to change disks. F5 swaps the active floppy drive.
 
 saturn:
   name: Saturn
@@ -4648,27 +4659,32 @@ xbox360:
   extensions: [iso, xex, xbox360, zar]
   emulators:
     xenia:
+      archs_include: [x86_64, x86-64-v3]
       xenia: { requireAnyOf: [BR2_PACKAGE_XENIA], incompatible_extensions: [zar] }
     xenia-canary:
+      archs_include: [x86_64, x86-64-v3, sm8550, sm8750]
       xenia-canary: { requireAnyOf: [BR2_PACKAGE_XENIA_CANARY] }
     xenia-edge:
+      archs_include: [qcs6490, sm8250, sm8550, sm8750]
       xenia-edge: { requireAnyOf: [BR2_PACKAGE_XENIA_EDGE] }
   comment_en: |
-    Xenia and Xenia Canary currently run under WINE and are restricted to systems capable of Vulkan 1.3+ only.
-    Xenia Edge runs natively on Linux and focuses on Vulkan and Linux enhancements.
-    The Xenia emulators use Vulkan by default, while the WINE builds also offer an experimental D3D12 -> Vulkan (VKD3D) option.
+    Xenia and Xenia Canary require Vulkan 1.3+.
+    Xenia and x86_64 Xenia Canary run through Wine; aarch64 Xenia Canary and Xenia Edge run natively on Linux with Vulkan.
+    D3D12/VKD3D is experimental and exposed only on x86_64 builds; aarch64 builds force the native Vulkan path.
 
-    Note: An internet connection is required to create the initial WINE bottle.
+    Note: Wine cores require an internet connection to create the initial WINE bottle.
   comment_fr: |
-    Actuellement, les émulateurs Xenia fonctionnent sous WINE et sont limités aux systèmes compatibles uniquement avec Vulkan 1.3+.
-    Les émulateurs Xenia utiliseront Vulkan natif par défaut, mais une option expérimentale D3D12 -> Vulkan (VKD3D) est fournie.
+    Xenia et Xenia Canary nécessitent Vulkan 1.3+.
+    Xenia et Xenia Canary x86_64 fonctionnent via Wine; Xenia Canary aarch64 et Xenia Edge fonctionnent nativement sous Linux avec Vulkan.
+    D3D12/VKD3D est expérimental et affiché uniquement sur les builds x86_64; les builds aarch64 forcent le chemin Vulkan natif.
 
-    Remarque : Une connexion Internet est requise pour créer la bouteille de VIN initiale.
+    Remarque : les cores Wine nécessitent une connexion Internet pour créer la bouteille Wine initiale.
   comment_br: |
-    Atualmente os emuladores Xenia rodam em WINE e estão restritos apenas a sistemas capazes de Vulkan 1.3+.
-    Os emuladores Xenia usarão Vulkan nativo por padrão, no entanto, uma opção experimental D3D12 -> Vulkan (VKD3D) é fornecida.
+    Xenia e Xenia Canary exigem Vulkan 1.3+.
+    Xenia e Xenia Canary x86_64 rodam via Wine; Xenia Canary aarch64 e Xenia Edge rodam nativamente no Linux com Vulkan.
+    D3D12/VKD3D é experimental e aparece apenas em builds x86_64; builds aarch64 forçam o caminho Vulkan nativo.
 
-    Nota: É necessária uma ligação à Internet para criar a garrafa de WINE inicial.
+    Nota: os cores Wine exigem conexão com a Internet para criar a garrafa Wine inicial.
 
 ngage:
   name: N-Gage

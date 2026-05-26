@@ -1,6 +1,6 @@
 config BR2_PACKAGE_ARES
 	bool "ares"
-	depends on BR2_PACKAGE_BATOCERA_TARGET_SM8550
+	depends on BR2_PACKAGE_BATOCERA_TARGET_SM8X50
 	depends on BR2_INSTALL_LIBSTDCPP
 	depends on BR2_PACKAGE_HOST_RUSTC_ARCH_SUPPORTS # libgtk3
 	depends on BR2_USE_WCHAR # libgtk3

@@ -1,0 +1,21 @@
+#!/bin/sh
+
+case "$1" in
+	start)
+		/usr/bin/usbgadget --start >/dev/null 2>&1
+		;;
+	stop)
+		/usr/bin/usbgadget disabled >/dev/null 2>&1
+		;;
+	restart)
+		/usr/bin/usbgadget disabled >/dev/null 2>&1
+		/usr/bin/usbgadget --start >/dev/null 2>&1
+		;;
+	*)
+		echo "Usage: $0 {start|stop|restart}"
+		exit 1
+		;;
+esac
+
+exit 0
+

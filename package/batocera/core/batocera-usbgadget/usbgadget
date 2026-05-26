@@ -1,0 +1,448 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0
+
+CACHEDIR=/userdata/system/configs/usbgadget
+RUNDIR=/var/run/usbgadget
+GADGETCONF="${CACHEDIR}/usbgadget.conf"
+GADGETNETCONF="${CACHEDIR}/network.conf"
+SERIALFILE="${CACHEDIR}/serial"
+
+CONFIGFS=/sys/kernel/config
+GADGET_ROOT="${CONFIGFS}/usb_gadget"
+G_CDC="${GADGET_ROOT}/cdc"
+G_MTP="${GADGET_ROOT}/mtp"
+FFS_DIR=/dev/ffs-umtp
+
+DNSMASQCONF="${RUNDIR}/dnsmasq.conf"
+DNSMASQPIDFILE="${RUNDIR}/dnsmasq.pid"
+
+mkdir -p "${CACHEDIR}" "${RUNDIR}"
+
+get_udc_name() {
+	ls -1 /sys/class/udc 2>/dev/null | head -n1
+}
+
+wait_for_udc() {
+	i=0
+	while [ "${i}" -lt 50 ]; do
+		udc=$(get_udc_name)
+		if [ -n "${udc}" ]; then
+			printf '%s\n' "${udc}"
+			return 0
+		fi
+		i=$((i + 1))
+		sleep 0.1
+	done
+
+	return 1
+}
+
+wait_for_ffs_endpoints() {
+	i=0
+	while [ "${i}" -lt 50 ]; do
+		if [ -e "${FFS_DIR}/ep1" ] && [ -e "${FFS_DIR}/ep2" ] && [ -e "${FFS_DIR}/ep3" ]; then
+			return 0
+		fi
+		i=$((i + 1))
+		sleep 0.1
+	done
+
+	return 1
+}
+
+write_if_writable() {
+	if [ -w "$1" ]; then
+		printf '%s\n' "$2" > "$1" 2>/dev/null || true
+	fi
+}
+
+ensure_configfs() {
+	if [ -d "${GADGET_ROOT}" ]; then
+		return 0
+	fi
+
+	mkdir -p "${CONFIGFS}" 2>/dev/null || true
+	mount -t configfs configfs "${CONFIGFS}" 2>/dev/null || true
+	[ -d "${GADGET_ROOT}" ]
+}
+
+get_serial() {
+	if [ -s "${SERIALFILE}" ]; then
+		cat "${SERIALFILE}"
+		return
+	fi
+
+	serial=""
+	for file in /userdata/system/uuid /etc/machine-id /proc/sys/kernel/random/boot_id; do
+		if [ -r "${file}" ]; then
+			serial=$(tr -cd '[:alnum:]' < "${file}" | cut -c1-32)
+			[ -n "${serial}" ] && break
+		fi
+	done
+
+	if [ -z "${serial}" ] && command -v od >/dev/null 2>&1; then
+		serial=$(od -An -N16 -tx1 /dev/urandom 2>/dev/null | tr -d ' \n')
+	fi
+	[ -n "${serial}" ] || serial="batocera00000001"
+
+	printf '%s\n' "${serial}" > "${SERIALFILE}"
+	printf '%s\n' "${serial}"
+}
+
+get_product() {
+	arch=""
+	if [ -r /usr/share/batocera/batocera.arch ]; then
+		arch=$(cat /usr/share/batocera/batocera.arch 2>/dev/null)
+	fi
+
+	if [ -n "${arch}" ]; then
+		printf 'Batocera %s\n' "${arch}"
+	else
+		printf 'Batocera Device\n'
+	fi
+}
+
+saved_mode() {
+	USB_MODE=disabled
+	if [ -r "${GADGETCONF}" ]; then
+		. "${GADGETCONF}" 2>/dev/null || true
+	fi
+
+	case "${USB_MODE}" in
+		cdc|network)
+			printf 'network\n'
+			;;
+		mtp|file_transfer)
+			printf 'file_transfer\n'
+			;;
+		*)
+			printf 'disabled\n'
+			;;
+	esac
+}
+
+save_mode() {
+	printf 'USB_MODE=%s\n' "$1" > "${GADGETCONF}"
+}
+
+current_mode() {
+	udc=$(get_udc_name)
+	if [ -n "${udc}" ] && [ -r "/sys/class/udc/${udc}/function" ]; then
+		function=$(cat "/sys/class/udc/${udc}/function" 2>/dev/null)
+		case "${function}" in
+			cdc|ncm*)
+				printf 'network\n'
+				return
+				;;
+			mtp|ffs.mtp)
+				printf 'file_transfer\n'
+				return
+				;;
+		esac
+	fi
+
+	if [ -r "${G_CDC}/UDC" ] && [ -n "$(cat "${G_CDC}/UDC" 2>/dev/null)" ]; then
+		printf 'network\n'
+	elif [ -r "${G_MTP}/UDC" ] && [ -n "$(cat "${G_MTP}/UDC" 2>/dev/null)" ]; then
+		printf 'file_transfer\n'
+	else
+		printf 'disabled\n'
+	fi
+}
+
+set_role() {
+	for role in /sys/class/usb_role/*/role /sys/class/udc/*/device/usb_role/*/role; do
+		[ -w "${role}" ] || continue
+		printf '%s\n' "$1" > "${role}" 2>/dev/null || true
+	done
+}
+
+host_mac_from_serial() {
+	serialhex=$(get_serial | tr -cd '0-9a-fA-F' | tr 'A-F' 'a-f' | cut -c1-10)
+	while [ "${#serialhex}" -lt 10 ]; do
+		serialhex="${serialhex}0"
+	done
+	serialtail=$(printf '%s' "${serialhex}" | sed 's/../&:/g;s/:$//')
+	printf '12:%s\n' "${serialtail}"
+}
+
+prepare_usb_network() {
+	ensure_configfs || return 1
+
+	mkdir -p "${G_CDC}/strings/0x409" \
+		"${G_CDC}/configs/c.1/strings/0x409" \
+		"${G_CDC}/functions/ncm.usb0" || return 1
+
+	write_if_writable "${G_CDC}/bcdUSB" "0x0200"
+	write_if_writable "${G_CDC}/bDeviceClass" "2"
+	write_if_writable "${G_CDC}/idVendor" "0x1d6b"
+	write_if_writable "${G_CDC}/idProduct" "0x0104"
+	write_if_writable "${G_CDC}/bcdDevice" "0x0100"
+	write_if_writable "${G_CDC}/strings/0x409/manufacturer" "Batocera"
+	write_if_writable "${G_CDC}/strings/0x409/product" "$(get_product)"
+	write_if_writable "${G_CDC}/strings/0x409/serialnumber" "$(get_serial)"
+
+	write_if_writable "${G_CDC}/configs/c.1/bmAttributes" "0xC0"
+	write_if_writable "${G_CDC}/configs/c.1/MaxPower" "0xfe"
+	write_if_writable "${G_CDC}/configs/c.1/strings/0x409/configuration" "CDC"
+
+	write_if_writable "${G_CDC}/functions/ncm.usb0/os_desc/interface.ncm/compatible_id" "WINNCM"
+	write_if_writable "${G_CDC}/os_desc/use" "1"
+	write_if_writable "${G_CDC}/os_desc/b_vendor_code" "0xcd"
+	write_if_writable "${G_CDC}/os_desc/qw_sign" "MSFT100"
+	write_if_writable "${G_CDC}/functions/ncm.usb0/dev_addr" "82:ba:1c:92:78:b1"
+	write_if_writable "${G_CDC}/functions/ncm.usb0/host_addr" "$(host_mac_from_serial)"
+
+	ln -s "${G_CDC}/functions/ncm.usb0" "${G_CDC}/configs/c.1/ncm.usb0" 2>/dev/null || true
+}
+
+prepare_usb_mtp() {
+	ensure_configfs || return 1
+
+	mkdir -p "${G_MTP}/strings/0x409" \
+		"${G_MTP}/configs/c.1/strings/0x409" \
+		"${G_MTP}/functions/ffs.mtp" || return 1
+
+	write_if_writable "${G_MTP}/bcdUSB" "0x0200"
+	write_if_writable "${G_MTP}/bDeviceClass" "0x00"
+	write_if_writable "${G_MTP}/idVendor" "0x1d6b"
+	write_if_writable "${G_MTP}/idProduct" "0x0100"
+	write_if_writable "${G_MTP}/bcdDevice" "0x0100"
+	write_if_writable "${G_MTP}/strings/0x409/manufacturer" "Batocera"
+	write_if_writable "${G_MTP}/strings/0x409/product" "$(get_product)"
+	write_if_writable "${G_MTP}/strings/0x409/serialnumber" "$(get_serial)"
+
+	write_if_writable "${G_MTP}/configs/c.1/bmAttributes" "0xC0"
+	write_if_writable "${G_MTP}/configs/c.1/MaxPower" "0xfe"
+	write_if_writable "${G_MTP}/configs/c.1/strings/0x409/configuration" "mtp"
+
+	ln -s "${G_MTP}/functions/ffs.mtp" "${G_MTP}/configs/c.1/ffs.mtp" 2>/dev/null || true
+}
+
+ensure_network_config() {
+	if [ ! -f "${GADGETNETCONF}" ]; then
+		cat > "${GADGETNETCONF}" <<EOF
+IP=169.254.170.2
+NETMASK=255.255.0.0
+HOSTIP=169.254.170.1
+EOF
+	fi
+}
+
+stop_dnsmasq() {
+	if [ -s "${DNSMASQPIDFILE}" ]; then
+		kill "$(cat "${DNSMASQPIDFILE}")" >/dev/null 2>&1 || true
+	fi
+	rm -f "${DNSMASQCONF}" "${DNSMASQPIDFILE}"
+}
+
+stop_umtprd() {
+	if command -v pidof >/dev/null 2>&1; then
+		pids=$(pidof umtprd 2>/dev/null)
+		[ -z "${pids}" ] || kill ${pids} >/dev/null 2>&1 || true
+	fi
+
+	if grep -qs " ${FFS_DIR} " /proc/mounts; then
+		umount "${FFS_DIR}" >/dev/null 2>&1 || true
+	fi
+	rmdir "${FFS_DIR}" >/dev/null 2>&1 || true
+}
+
+disable_gadgets() {
+	for gadget in "${G_CDC}" "${G_MTP}"; do
+		if [ -w "${gadget}/UDC" ]; then
+			printf '\n' > "${gadget}/UDC" 2>/dev/null || true
+		fi
+	done
+}
+
+stop_active_mode() {
+	disable_gadgets
+	stop_dnsmasq
+	stop_umtprd
+	set_role host
+}
+
+configure_network_iface() {
+	ensure_network_config
+	. "${GADGETNETCONF}" 2>/dev/null || true
+	: "${IP:=169.254.170.2}"
+	: "${NETMASK:=255.255.0.0}"
+	: "${HOSTIP:=169.254.170.1}"
+
+	iface=""
+	i=0
+	while [ "${i}" -lt 50 ]; do
+		if [ -e /sys/class/net/gadget ]; then
+			iface=gadget
+			break
+		fi
+		if [ -r "${G_CDC}/functions/ncm.usb0/ifname" ]; then
+			iface=$(cat "${G_CDC}/functions/ncm.usb0/ifname" 2>/dev/null)
+			[ -e "/sys/class/net/${iface}" ] && break
+		fi
+		i=$((i + 1))
+		sleep 0.1
+	done
+
+	[ -n "${iface}" ] || return 1
+
+	ip address flush dev "${iface}" scope global 2>/dev/null || true
+	ip address add "${IP}/${NETMASK}" dev "${iface}" 2>/dev/null || true
+	ip -6 address add "fe80::2/64" dev "${iface}" scope link 2>/dev/null || true
+	ip link set "${iface}" up 2>/dev/null || true
+
+	stop_dnsmasq
+	cat > "${DNSMASQCONF}" <<EOF
+interface=${iface}
+bind-interfaces
+except-interface=lo
+dhcp-range=${HOSTIP},${HOSTIP},${NETMASK},24h
+dhcp-option=121,0.0.0.0/32,${IP}
+dhcp-option=249,0.0.0.0/32,${IP}
+dhcp-leasefile=/dev/null
+pid-file=${DNSMASQPIDFILE}
+port=0
+no-resolv
+no-hosts
+EOF
+
+	dnsmasq --conf-file="${DNSMASQCONF}" >/dev/null 2>&1 || true
+}
+
+start_network() {
+	stop_active_mode
+	sleep 1
+	prepare_usb_network || return 1
+	set_role device
+	udc=$(wait_for_udc) || return 1
+	printf '%s\n' "${udc}" > "${G_CDC}/UDC" 2>/dev/null || return 1
+	configure_network_iface
+	save_mode network
+}
+
+start_file_transfer() {
+	stop_active_mode
+	sleep 1
+	prepare_usb_mtp || return 1
+
+	mkdir -p "${FFS_DIR}" || return 1
+	if ! grep -qs " ${FFS_DIR} " /proc/mounts; then
+		mount -t functionfs mtp "${FFS_DIR}" >/dev/null 2>&1 || return 1
+	fi
+	/usr/sbin/umtprd >/dev/null 2>&1 &
+	wait_for_ffs_endpoints || return 1
+
+	set_role device
+	udc=$(wait_for_udc) || return 1
+	printf '%s\n' "${udc}" > "${G_MTP}/UDC" 2>/dev/null || return 1
+	save_mode file_transfer
+}
+
+set_mode() {
+	case "$1" in
+		network)
+			save_mode network
+			start_network
+			;;
+		file_transfer)
+			save_mode file_transfer
+			start_file_transfer
+			;;
+		disabled|"")
+			save_mode disabled
+			stop_active_mode
+			;;
+		*)
+			return 1
+			;;
+	esac
+}
+
+cleanup_gadgets() {
+	stop_active_mode
+
+	rm -f "${G_CDC}/configs/c.1/ncm.usb0" "${G_MTP}/configs/c.1/ffs.mtp"
+	rmdir "${G_CDC}/functions/ncm.usb0" \
+		"${G_CDC}/configs/c.1/strings/0x409" \
+		"${G_CDC}/configs/c.1" \
+		"${G_CDC}/strings/0x409" \
+		"${G_CDC}" >/dev/null 2>&1 || true
+	rmdir "${G_MTP}/functions/ffs.mtp" \
+		"${G_MTP}/configs/c.1/strings/0x409" \
+		"${G_MTP}/configs/c.1" \
+		"${G_MTP}/strings/0x409" \
+		"${G_MTP}" >/dev/null 2>&1 || true
+}
+
+case "$1" in
+	--options)
+		echo "disabled network file_transfer"
+		;;
+	--saved)
+		saved_mode
+		;;
+	--current)
+		current_mode
+		;;
+	--start)
+		mode=$(saved_mode)
+		[ "${mode}" = "disabled" ] || set_mode "${mode}"
+		;;
+	"")
+		saved_mode
+		;;
+	disabled|network|file_transfer)
+		set_mode "$1"
+		;;
+	address)
+		ensure_network_config
+		. "${GADGETNETCONF}" 2>/dev/null || true
+		echo "${IP:-169.254.170.2}"
+		;;
+	trigger)
+		mode=$(saved_mode)
+		[ "${mode}" = "disabled" ] || set_mode "${mode}"
+		;;
+	prepare)
+		prepare_usb_network
+		prepare_usb_mtp
+		;;
+	cleanup)
+		cleanup_gadgets
+		;;
+	start)
+		case "$2" in
+			cdc) set_mode network ;;
+			mtp) set_mode file_transfer ;;
+			*) set_mode "$(saved_mode)" ;;
+		esac
+		;;
+	stop)
+		stop_active_mode
+		;;
+	restart)
+		stop_active_mode
+		case "$2" in
+			cdc) set_mode network ;;
+			mtp) set_mode file_transfer ;;
+			*) set_mode "$(saved_mode)" ;;
+		esac
+		;;
+	*)
+		echo "Usage:"
+		echo "$0 --options                  List available modes"
+		echo "$0 --saved                    Show configured mode"
+		echo "$0 --current                  Show active mode"
+		echo "$0 --start                    Restore previously chosen mode"
+		echo "$0                            Show configured mode"
+		echo "$0 disabled                   Disable USB gadget"
+		echo "$0 <network|file_transfer>    Activate specified mode"
+		echo "$0 address                    Show network gadget IP address"
+		echo
+		echo "Deprecated usage: usbgadget [prepare|start|trigger|stop|restart|cleanup|address]"
+		exit 1
+		;;
+esac
+
+exit $?

@@ -4,6 +4,7 @@ set -euo pipefail
 log="/userdata/system/logs/steam-desktop-switch.log"
 mkdir -p "$(dirname "${log}")"
 steam_session_pattern='(^|/)batocera-steam-session([[:space:]]|$)'
+decky_stack_pattern='/userdata/system/homebrew/services/PluginLoader|Decky Loader|/userdata/system/homebrew/plugins/'
 es_service="/etc/init.d/S31emulationstation"
 ALLY_HOTKEY_DIR="/userdata/system/configs/hotkeygen"
 ALLY_ACTIVE_MAP="${ALLY_HOTKEY_DIR}/ASUS_ROG_Ally_Config-b05-1abe.mapping"
@@ -13,6 +14,10 @@ ALLY_ES_MAP="${ALLY_SYSTEM_DIR}/ASUS_ROG_Ally_Config-b05-1abe.mapping.es"
 ALLY_DEFAULT_MAP="${ALLY_SYSTEM_DIR}/ASUS_ROG_Ally_Config-b05-1abe.mapping"
 
 echo "[$(date +%F\ %T)] desktop-launcher: process start" >> "${log}"
+
+log_msg() {
+    echo "[$(date +%F\ %T)] desktop-launcher: $*" >> "${log}"
+}
 
 steam_stack_alive() {
     pgrep -x batocera-steam >/dev/null 2>&1 || \
@@ -25,7 +30,7 @@ steam_stack_alive() {
     pgrep -x gamescopereaper >/dev/null 2>&1 || \
     pgrep -x gamescopestream >/dev/null 2>&1 || \
     pgrep -x gamescopectl >/dev/null 2>&1 || \
-    pgrep -f '/userdata/system/homebrew/services/PluginLoader' >/dev/null 2>&1 || \
+    pgrep -f "${decky_stack_pattern}" >/dev/null 2>&1 || \
     pgrep -f '/userdata/system/steam/steam.sh|/usr/share/steam/bin_steam.sh|emulatorlauncher.*-system steam|Steam GamepadUI\.steam|Steam Desktop\.steam' >/dev/null 2>&1
 }
 
@@ -83,14 +88,66 @@ wait_for_desktop_steam() {
     return 1
 }
 
-frontend_display_ready() {
-    pgrep -x labwc >/dev/null 2>&1 || \
-    pgrep -x sway >/dev/null 2>&1 || \
-    pgrep -x openbox >/dev/null 2>&1 || \
-    pgrep -f '(^|/)emulationstation([[:space:]]|$)' >/dev/null 2>&1 || \
-    return 1
+wayland_socket_ready() {
+    [[ -S /run/wayland-1 || -S /var/run/wayland-1 || -S /run/wayland-0 || -S /var/run/wayland-0 ]]
+}
 
-    [[ -S /run/wayland-0 || -S /var/run/wayland-0 || -S /tmp/.X11-unix/X0 ]]
+x11_socket_ready() {
+    [[ -S /tmp/.X11-unix/X0 ]]
+}
+
+dual_top_bottom_display() {
+    [[ "$(batocera-settings-get-master display.position 2>/dev/null || true)" == "top-bottom" ]] || return 1
+    [[ -n "$(batocera-settings-get-master global.videooutput2 2>/dev/null || true)" ]]
+}
+
+sway_outputs_ready() {
+    local active_count
+    local outputs
+    local runtime
+    local sock
+
+    for sock in "${SWAYSOCK:-}" /var/run/sway-ipc.0.sock /run/user/0/sway-ipc.0.sock /var/run/0-runtime-dir/sway-ipc.0.sock /run/0-runtime-dir/sway-ipc.0.sock; do
+        [[ -n "${sock}" && -S "${sock}" ]] || continue
+        runtime="$(dirname "${sock}")"
+        if outputs="$(XDG_RUNTIME_DIR="${runtime}" SWAYSOCK="${sock}" swaymsg -t get_outputs 2>/dev/null)"; then
+            if command -v jq >/dev/null 2>&1; then
+                active_count="$(printf '%s\n' "${outputs}" | jq '[.[] | select(.active)] | length' 2>/dev/null || printf '0')"
+                active_count="${active_count:-0}"
+                [[ "${active_count}" -ge 1 ]] || continue
+                if dual_top_bottom_display; then
+                    printf '%s\n' "${outputs}" | jq -e '[.[] | select(.active and (.name == "DSI-1" or .name == "DSI-2"))] | length >= 2' >/dev/null 2>&1 || continue
+                fi
+            else
+                active_count="$(printf '%s\n' "${outputs}" | grep -c '"active": true' || true)"
+                [[ "${active_count}" -ge 1 ]] || continue
+            fi
+            return 0
+        fi
+    done
+
+    return 1
+}
+
+frontend_process_ready() {
+    pgrep -x labwc >/dev/null 2>&1 || \
+    pgrep -x openbox >/dev/null 2>&1 || \
+    pgrep -f '(^|/)emulationstation([[:space:]]|$)' >/dev/null 2>&1
+}
+
+emulationstation_runner_alive() {
+    pgrep -f '(^|/)emulationstation-standalone([[:space:]]|$)' >/dev/null 2>&1
+}
+
+frontend_display_ready() {
+    frontend_process_ready || return 1
+
+    if pgrep -x sway >/dev/null 2>&1; then
+        sway_outputs_ready || return 1
+    fi
+
+    wayland_socket_ready || x11_socket_ready || return 1
+    x11_socket_ready
 }
 
 wait_for_frontend_display() {
@@ -110,23 +167,42 @@ wait_for_frontend_display() {
 restore_frontend() {
     local i
 
-    if pgrep -x emulationstation >/dev/null 2>&1 || pgrep -x labwc >/dev/null 2>&1; then
-        echo "[$(date +%F\ %T)] desktop-launcher: frontend already running after desktop steam exit" >> "${log}"
+    if frontend_display_ready; then
+        log_msg "frontend display is ready after desktop steam exit"
         return 0
     fi
 
     if [[ -x "${es_service}" ]]; then
-        echo "[$(date +%F\ %T)] desktop-launcher: starting EmulationStation after desktop steam exit" >> "${log}"
-        "${es_service}" restart >/dev/null 2>&1 || "${es_service}" start >/dev/null 2>&1 || true
-        for i in $(seq 1 30); do
-            if pgrep -x emulationstation >/dev/null 2>&1 || pgrep -x labwc >/dev/null 2>&1; then
+        if pgrep -x sway >/dev/null 2>&1 || pgrep -x labwc >/dev/null 2>&1 || pgrep -x openbox >/dev/null 2>&1; then
+            if ! pgrep -f '(^|/)emulationstation([[:space:]]|$)' >/dev/null 2>&1 && ! emulationstation_runner_alive && command -v emulationstation-standalone >/dev/null 2>&1; then
+                log_msg "starting EmulationStation frontend inside existing compositor"
+                nohup /usr/bin/emulationstation-standalone >> "${log}" 2>&1 &
+            fi
+        else
+            log_msg "starting EmulationStation after desktop steam exit"
+            "${es_service}" restart >/dev/null 2>&1 || "${es_service}" start >/dev/null 2>&1 || true
+        fi
+
+        for i in $(seq 1 240); do
+            if frontend_display_ready; then
+                log_msg "frontend display became ready after restart/start"
                 return 0
             fi
-            sleep 0.2
+            sleep 0.25
         done
 
-        echo "[$(date +%F\ %T)] desktop-launcher: frontend did not return after restart/start" >> "${log}"
+        log_msg "frontend did not become display-ready after restart/start"
     fi
+
+    return 1
+}
+
+restore_backglass_widget() {
+    [[ -s /var/run/batocera-backglass.params ]] || return 0
+    command -v batocera-backglass >/dev/null 2>&1 || return 0
+
+    log_msg "restarting backglass widget after frontend display restore"
+    batocera-backglass restart >> "${log}" 2>&1 || true
 }
 
 launch_desktop_steam_supervised() {
@@ -155,14 +231,16 @@ if ! wait_for_stack_exit 100; then
 fi
 
 sleep 0.5
-restore_frontend
-if ! wait_for_frontend_display 80; then
-    echo "[$(date +%F\ %T)] desktop-launcher: frontend display was not ready before desktop steam launch" >> "${log}"
+if ! restore_frontend || ! wait_for_frontend_display 240; then
+    log_msg "frontend display was not ready; not launching desktop steam"
+    recover_hotkeys_force
+    exit 1
 fi
-echo "[$(date +%F\ %T)] desktop-launcher: launching desktop steam" >> "${log}"
+restore_backglass_widget
+log_msg "launching desktop steam"
 
 if ! launch_desktop_steam_supervised; then
-    echo "[$(date +%F\ %T)] desktop-launcher: failed to launch desktop steam after retries" >> "${log}"
+    log_msg "failed to launch desktop steam after retries"
     recover_hotkeys_force
     exit 1
 fi
@@ -172,4 +250,5 @@ sleep 0.6
 recover_hotkeys_force
 sleep 2
 restore_frontend
-echo "[$(date +%F\ %T)] desktop-launcher: done" >> "${log}"
+restore_backglass_widget
+log_msg "done"

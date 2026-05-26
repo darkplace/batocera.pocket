@@ -170,6 +170,7 @@ shared:
       - qcs6490
       - sm8250
       - sm8550
+      - sm8750
       prompt: ENABLE GAMESCOPE
       submenu: GAMESCOPE
       description: Run the game inside gamescope for SteamOS-like fullscreen behavior.
@@ -182,6 +183,7 @@ shared:
       - qcs6490
       - sm8250
       - sm8550
+      - sm8750
       prompt: OUTPUT RESOLUTION
       submenu: GAMESCOPE
       description: Resolution of the gamescope output surface. Leave blank to use current display resolution.
@@ -214,6 +216,7 @@ shared:
       - qcs6490
       - sm8250
       - sm8550
+      - sm8750
       prompt: CUSTOM OUTPUT RESOLUTION
       submenu: GAMESCOPE
       description: 'Custom output resolution in WIDTHxHEIGHT format (example: 1706x960).'
@@ -224,6 +227,7 @@ shared:
       - qcs6490
       - sm8250
       - sm8550
+      - sm8750
       prompt: GAME RESOLUTION
       submenu: GAMESCOPE
       description: Resolution for the nested game surface. Leave blank to inherit output resolution.
@@ -256,6 +260,7 @@ shared:
       - qcs6490
       - sm8250
       - sm8550
+      - sm8750
       prompt: CUSTOM GAME RESOLUTION
       submenu: GAMESCOPE
       description: 'Custom game resolution in WIDTHxHEIGHT format (example: 1280x720).'
@@ -266,6 +271,7 @@ shared:
       - qcs6490
       - sm8250
       - sm8550
+      - sm8750
       prompt: REFRESH RATE
       submenu: GAMESCOPE
       description: Force gamescope refresh rate in Hz.
@@ -276,6 +282,7 @@ shared:
       - qcs6490
       - sm8250
       - sm8550
+      - sm8750
       prompt: FRAME RATE LIMIT
       submenu: GAMESCOPE
       description: Set gamescope frame limiter.
@@ -302,6 +309,7 @@ shared:
       - qcs6490
       - sm8250
       - sm8550
+      - sm8750
       prompt: CUSTOM FRAME RATE LIMIT
       submenu: GAMESCOPE
       description: Custom frame rate limit in FPS (integer value).
@@ -312,6 +320,7 @@ shared:
       - qcs6490
       - sm8250
       - sm8550
+      - sm8750
       prompt: SCALER
       submenu: GAMESCOPE
       choices:
@@ -325,6 +334,7 @@ shared:
       - qcs6490
       - sm8250
       - sm8550
+      - sm8750
       prompt: UPSCALER FILTER
       submenu: GAMESCOPE
       choices:
@@ -339,6 +349,7 @@ shared:
       - qcs6490
       - sm8250
       - sm8550
+      - sm8750
       prompt: SHARPNESS
       submenu: GAMESCOPE
       choices:
@@ -357,6 +368,7 @@ shared:
       - qcs6490
       - sm8250
       - sm8550
+      - sm8750
       prompt: CUSTOM SHARPNESS
       submenu: GAMESCOPE
       description: Custom sharpness value passed directly to gamescope.
@@ -367,6 +379,7 @@ shared:
       - qcs6490
       - sm8250
       - sm8550
+      - sm8750
       prompt: HDR
       submenu: GAMESCOPE
       choices:
@@ -378,6 +391,7 @@ shared:
       - qcs6490
       - sm8250
       - sm8550
+      - sm8750
       prompt: ADAPTIVE SYNC
       submenu: GAMESCOPE
       description: Enable gamescope variable refresh synchronization.
@@ -390,6 +404,7 @@ shared:
       - qcs6490
       - sm8250
       - sm8550
+      - sm8750
       prompt: DISABLE DAMAGE TRACKING
       submenu: GAMESCOPE
       description: Can reduce visual issues on some drivers. Disable if performance is worse.
@@ -402,6 +417,7 @@ shared:
       - qcs6490
       - sm8250
       - sm8550
+      - sm8750
       prompt: DISABLE HW COMPOSITION
       submenu: GAMESCOPE
       description: Disable hardware overlays/composition in gamescope.
@@ -414,6 +430,7 @@ shared:
       - qcs6490
       - sm8250
       - sm8550
+      - sm8750
       prompt: FORCE COMPOSITION PIPELINE
       submenu: GAMESCOPE
       description: Force composition pipeline in gamescope.
@@ -426,6 +443,7 @@ shared:
       - qcs6490
       - sm8250
       - sm8550
+      - sm8750
       prompt: BACKEND
       submenu: GAMESCOPE
       description: Force gamescope rendering backend.
@@ -442,6 +460,7 @@ shared:
       - qcs6490
       - sm8250
       - sm8550
+      - sm8750
       prompt: XWAYLAND SERVERS
       submenu: GAMESCOPE
       description: Number of Xwayland servers to create.
@@ -458,6 +477,7 @@ shared:
       - qcs6490
       - sm8250
       - sm8550
+      - sm8750
       prompt: CUSTOM XWAYLAND COUNT
       submenu: GAMESCOPE
       description: Custom number of Xwayland servers.
@@ -468,6 +488,7 @@ shared:
       - qcs6490
       - sm8250
       - sm8550
+      - sm8750
       prompt: PREFER VK DEVICE
       submenu: GAMESCOPE
       description: Prefer Vulkan device for compositing (for example 1002:73bf).
@@ -478,6 +499,7 @@ shared:
       - qcs6490
       - sm8250
       - sm8550
+      - sm8750
       prompt: ENABLE MANGOHUD
       submenu: GAMESCOPE
       description: Enable the gamescope MangoApp/MangoHud performance overlay.
@@ -490,6 +512,7 @@ shared:
       - qcs6490
       - sm8250
       - sm8550
+      - sm8750
       prompt: FORCE WINDOWS FULLSCREEN
       submenu: GAMESCOPE
       description: Force windows to nested display size.
@@ -502,6 +525,7 @@ shared:
       - qcs6490
       - sm8250
       - sm8550
+      - sm8750
       prompt: UNFOCUSED REFRESH
       submenu: GAMESCOPE
       description: Refresh rate when nested game window is unfocused.
@@ -518,6 +542,7 @@ shared:
       - qcs6490
       - sm8250
       - sm8550
+      - sm8750
       prompt: CUSTOM UNFOCUSED REFRESH
       submenu: GAMESCOPE
       description: Custom unfocused refresh rate in Hz.
@@ -528,6 +553,7 @@ shared:
       - qcs6490
       - sm8250
       - sm8550
+      - sm8750
       prompt: IMMEDIATE FLIPS
       submenu: GAMESCOPE
       description: Lower latency but may introduce tearing.
@@ -540,6 +566,7 @@ shared:
       - qcs6490
       - sm8250
       - sm8550
+      - sm8750
       prompt: STATS PATH
       submenu: GAMESCOPE
       description: Optional file path for gamescope performance statistics.
@@ -550,6 +577,7 @@ shared:
       - qcs6490
       - sm8250
       - sm8550
+      - sm8750
       prompt: DISABLE COLOR MANAGEMENT
       submenu: GAMESCOPE
       description: Debug option. Disable gamescope color management.
@@ -562,6 +590,7 @@ shared:
       - qcs6490
       - sm8250
       - sm8550
+      - sm8750
       prompt: DISABLE XRES
       submenu: GAMESCOPE
       description: Debug/compat option. Disable XRes PID lookup.
@@ -871,6 +900,7 @@ libretro:
       - qcs6490
       - sm8250
       - sm8550
+      - sm8750
       - rk3588
       - rk3588-sdio
       prompt: GRAPHICS API
@@ -955,6 +985,7 @@ libretro:
       description: Show a RetroArch save/load/runtime control panel on the lower screen while this game is running.
       archs_include:
       - sm8550
+      - sm8750
       - qcs6490
       choices:
         Off (Default): off
@@ -8688,6 +8719,7 @@ hypseus-singe:
       - qcs6490
       - sm8250
       - sm8550
+      - sm8750
       - rk3588
       - rk3588-sdio
       prompt: GRAPHICS API
@@ -8859,6 +8891,7 @@ dolphin:
           - qcs6490
           - sm8250
           - sm8550
+          - sm8750
           - rk3588
           - rk3588-sdio
           submenu: RENDERING
@@ -9530,6 +9563,7 @@ duckstation:
       - qcs6490
       - sm8250
       - sm8550
+      - sm8750
       - rk3588
       - rk3588-sdio
       prompt: GRAPHICS API
@@ -10986,6 +11020,7 @@ ppsspp:
       - qcs6490
       - sm8250
       - sm8550
+      - sm8750
       - rk3588
       - rk3588-sdio
       prompt: GRAPHICS API
@@ -12258,6 +12293,7 @@ mame:
       - qcs6490
       - sm8250
       - sm8550
+      - sm8750
       - rk3588
       - rk3588-sdio
       prompt: BGFX GRAPHICS API
@@ -13530,6 +13566,7 @@ wine:
       - qcs6490
       - sm8250
       - sm8550
+      - sm8750
       submenu: LSFG-VK
       prompt: LSFG-VK FRAME GENERATION
       description: Enables the Lossless Scaling Frame Generation Vulkan layer. Requires
@@ -13544,12 +13581,10 @@ wine:
       - qcs6490
       - sm8250
       - sm8550
+      - sm8750
       submenu: LSFG-VK
       prompt: LOSSLESS.DLL PATH
-      description: Leave blank for automatic lookup. Default Lossless.dll path is
-        /userdata/system/wine/lossless-scaling/Lossless.dll. The lsfg-vk layer path
-        is built in (/usr/lib on ARM, /usr/wine/lsfg-vk/x64 on x64/FEX). To override,
-        enter a full path such as /userdata/roms/windows/MyGame.pc/drive_c/Program Files/Lossless Scaling/Lossless.dll.
+      description: Put Lossless.dll at the default path /userdata/system/wine/lossless-scaling/Lossless.dll, or choose a full path to Lossless.dll inside a Lossless Scaling install. For example, select /userdata/roms/windows/MyGame.pc/drive_c/Program Files/Lossless Scaling/Lossless.dll. The lsfg-vk layer path is automatic (/usr/lib on ARM, /usr/wine/lsfg-vk/x64 on x64/FEX).
       preset: input
     lsfg_vk_multiplier:
       archs_include:
@@ -13558,6 +13593,7 @@ wine:
       - qcs6490
       - sm8250
       - sm8550
+      - sm8750
       submenu: LSFG-VK
       prompt: LSFG MULTIPLIER
       choices:
@@ -13571,6 +13607,7 @@ wine:
       - qcs6490
       - sm8250
       - sm8550
+      - sm8750
       submenu: LSFG-VK
       prompt: LSFG FLOW SCALE
       choices:
@@ -13585,6 +13622,7 @@ wine:
       - qcs6490
       - sm8250
       - sm8550
+      - sm8750
       submenu: LSFG-VK
       prompt: LSFG PERFORMANCE MODE
       choices:
@@ -13597,6 +13635,7 @@ wine:
       - qcs6490
       - sm8250
       - sm8550
+      - sm8750
       submenu: LSFG-VK
       prompt: LSFG HDR MODE
       choices:
@@ -13609,6 +13648,7 @@ wine:
       - qcs6490
       - sm8250
       - sm8550
+      - sm8750
       submenu: LSFG-VK
       prompt: LSFG PRESENT MODE
       choices:
@@ -13836,6 +13876,7 @@ wine:
       - qcs6490
       - sm8250
       - sm8550
+      - sm8750
       group: ADVANCED OPTIONS
       prompt: RUNTIME INJECTOR
       description: Install common winetricks runtimes into this Wine prefix once.
@@ -13859,6 +13900,7 @@ wine:
       - qcs6490
       - sm8250
       - sm8550
+      - sm8750
       group: ADVANCED OPTIONS
       prompt: CUSTOM RUNTIME VERBS
       description: Custom winetricks verbs separated by spaces or commas.
@@ -14486,6 +14528,102 @@ gsplus:
         ROM.00: ROM.00
         APPLE2GS.ROM: APPLE2GS.ROM
         APPLE2GS-BIOS.ROM: APPLE2GS-BIOS.ROM
+applewin:
+  features:
+  - padtokeyboard
+  shared:
+  - powermode
+  - tdp
+  - videomode
+  cfeatures:
+    applewin_media:
+      group: ADVANCED OPTIONS
+      prompt: LOAD SELECTED IMAGE AS
+      description: Choose which AppleWin drive receives the launched image.
+      choices:
+        Auto (Default): auto
+        Floppy Drive 1: d1
+        Floppy Drive 2: d2
+        Hard Disk 1: h1
+        Hard Disk 2: h2
+    applewin_disk2:
+      group: ADVANCED OPTIONS
+      prompt: FLOPPY DRIVE 2 IMAGE
+      description: Optional second floppy image to insert at launch.
+      preset: files
+    applewin_hard2:
+      group: ADVANCED OPTIONS
+      prompt: HARD DISK 2 IMAGE
+      description: Optional second hard disk image to insert at launch.
+      preset: files
+    applewin_fullscreen:
+      group: ADVANCED OPTIONS
+      prompt: FULLSCREEN
+      description: Start AppleWin in fullscreen desktop mode.
+      choices:
+        On (Default): 1
+        'Off': 0
+    applewin_mockingboard:
+      group: ADVANCED OPTIONS
+      prompt: MOCKINGBOARD / PHASOR
+      description: Choose which sound card AppleWin inserts for this game.
+      choices:
+        Auto (Default): auto
+        'Off': 'off'
+        Mockingboard Slot 4: mockingboard_slot4
+        Mockingboard Slot 5: mockingboard_slot5
+        Mockingboard Slots 4 and 5: mockingboard_dual
+        Phasor Slot 4: phasor_slot4
+        Phasor Slot 5: phasor_slot5
+    applewin_no_imgui:
+      group: ADVANCED OPTIONS
+      prompt: SETTINGS UI
+      description: Disable only if the in-game AppleWin disk picker causes trouble.
+      choices:
+        On (Default): 0
+        'Off': 1
+    applewin_aspect:
+      group: ADVANCED OPTIONS
+      prompt: PRESERVE ASPECT RATIO
+      choices:
+        Off (Default): 0
+        'On': 1
+    applewin_fixedspeed:
+      group: ADVANCED OPTIONS
+      prompt: FIXED EMULATION SPEED
+      choices:
+        Off (Default): 0
+        'On': 1
+    applewin_timer:
+      group: ADVANCED OPTIONS
+      prompt: TIMER SYNC
+      description: Use the timer synchronizer instead of video sync.
+      choices:
+        Off (Default): 0
+        'On': 1
+    applewin_no_squaring:
+      group: ADVANCED OPTIONS
+      prompt: GAMEPAD SQUARING
+      description: Disable when an analog controller already reports a square range.
+      choices:
+        On (Default): 0
+        'Off': 1
+    applewin_gl_swap:
+      group: ADVANCED OPTIONS
+      prompt: GL SWAP INTERVAL
+      choices:
+        Auto (Default): auto
+        Immediate: 0
+        VSync: 1
+        Half Rate: 2
+    applewin_audio_buffer:
+      group: ADVANCED OPTIONS
+      prompt: AUDIO BUFFER
+      choices:
+        Auto / 46 ms (Default): auto
+        23 ms: 23
+        64 ms: 64
+        92 ms: 92
 play:
   features:
   - padtokeyboard
@@ -14975,6 +15113,7 @@ steam:
       - qcs6490
       - sm8250
       - sm8550
+      - sm8750
       submenu: LSFG-VK
       prompt: LSFG-VK FRAME GENERATION
       description: Enables the Lossless Scaling Frame Generation Vulkan layer for
@@ -14990,12 +15129,10 @@ steam:
       - qcs6490
       - sm8250
       - sm8550
+      - sm8750
       submenu: LSFG-VK
       prompt: LOSSLESS.DLL PATH
-      description: Leave blank for automatic lookup. Default Lossless.dll path is
-        /userdata/system/wine/lossless-scaling/Lossless.dll. The lsfg-vk layer path
-        is built in (/usr/lib on ARM, /usr/wine/lsfg-vk/x64 on x64/FEX). To override,
-        enter a full path such as /userdata/roms/windows/MyGame.pc/drive_c/Program Files/Lossless Scaling/Lossless.dll.
+      description: Put Lossless.dll at the default path /userdata/system/wine/lossless-scaling/Lossless.dll, or choose a full path to Lossless.dll inside a Lossless Scaling install. For example, select /userdata/roms/windows/MyGame.pc/drive_c/Program Files/Lossless Scaling/Lossless.dll. The lsfg-vk layer path is automatic (/usr/lib on ARM, /usr/wine/lsfg-vk/x64 on x64/FEX).
       preset: input
     lsfg_vk_multiplier:
       archs_include:
@@ -15004,6 +15141,7 @@ steam:
       - qcs6490
       - sm8250
       - sm8550
+      - sm8750
       submenu: LSFG-VK
       prompt: LSFG MULTIPLIER
       choices:
@@ -15017,6 +15155,7 @@ steam:
       - qcs6490
       - sm8250
       - sm8550
+      - sm8750
       submenu: LSFG-VK
       prompt: LSFG FLOW SCALE
       choices:
@@ -15031,6 +15170,7 @@ steam:
       - qcs6490
       - sm8250
       - sm8550
+      - sm8750
       submenu: LSFG-VK
       prompt: LSFG PERFORMANCE MODE
       choices:
@@ -15043,6 +15183,7 @@ steam:
       - qcs6490
       - sm8250
       - sm8550
+      - sm8750
       submenu: LSFG-VK
       prompt: LSFG HDR MODE
       choices:
@@ -15055,6 +15196,7 @@ steam:
       - qcs6490
       - sm8250
       - sm8550
+      - sm8750
       submenu: LSFG-VK
       prompt: LSFG PRESENT MODE
       choices:
@@ -15245,6 +15387,7 @@ citron:
       - qcs6490
       - sm8250
       - sm8550
+      - sm8750
       submenu: LSFG-VK
       prompt: LSFG-VK FRAME GENERATION
       description: Enables the Lossless Scaling Frame Generation Vulkan layer when
@@ -15258,18 +15401,17 @@ citron:
       - qcs6490
       - sm8250
       - sm8550
+      - sm8750
       submenu: LSFG-VK
       prompt: LOSSLESS.DLL PATH
-      description: Leave blank for automatic lookup. Default Lossless.dll path is
-        /userdata/system/wine/lossless-scaling/Lossless.dll. The lsfg-vk layer path
-        is built in (/usr/lib on ARM, /usr/wine/lsfg-vk/x64 on x64/FEX). To override,
-        enter a full path such as /userdata/roms/windows/MyGame.pc/drive_c/Program Files/Lossless Scaling/Lossless.dll.
+      description: Put Lossless.dll at the default path /userdata/system/wine/lossless-scaling/Lossless.dll, or choose a full path to Lossless.dll inside a Lossless Scaling install. For example, select /userdata/roms/windows/MyGame.pc/drive_c/Program Files/Lossless Scaling/Lossless.dll. The lsfg-vk layer path is automatic (/usr/lib on ARM, /usr/wine/lsfg-vk/x64 on x64/FEX).
       preset: input
     lsfg_vk_multiplier:
       archs_include:
       - qcs6490
       - sm8250
       - sm8550
+      - sm8750
       submenu: LSFG-VK
       prompt: LSFG MULTIPLIER
       choices:
@@ -15281,6 +15423,7 @@ citron:
       - qcs6490
       - sm8250
       - sm8550
+      - sm8750
       submenu: LSFG-VK
       prompt: LSFG FLOW SCALE
       choices:
@@ -15293,6 +15436,7 @@ citron:
       - qcs6490
       - sm8250
       - sm8550
+      - sm8750
       submenu: LSFG-VK
       prompt: LSFG PERFORMANCE MODE
       choices:
@@ -15303,6 +15447,7 @@ citron:
       - qcs6490
       - sm8250
       - sm8550
+      - sm8750
       submenu: LSFG-VK
       prompt: LSFG HDR MODE
       choices:
@@ -15313,6 +15458,7 @@ citron:
       - qcs6490
       - sm8250
       - sm8550
+      - sm8750
       submenu: LSFG-VK
       prompt: LSFG PRESENT MODE
       choices:
@@ -15605,6 +15751,7 @@ eden:
       - qcs6490
       - sm8250
       - sm8550
+      - sm8750
       submenu: LSFG-VK
       prompt: LSFG-VK FRAME GENERATION
       description: Enables the Lossless Scaling Frame Generation Vulkan layer when
@@ -15618,18 +15765,17 @@ eden:
       - qcs6490
       - sm8250
       - sm8550
+      - sm8750
       submenu: LSFG-VK
       prompt: LOSSLESS.DLL PATH
-      description: Leave blank for automatic lookup. Default Lossless.dll path is
-        /userdata/system/wine/lossless-scaling/Lossless.dll. The lsfg-vk layer path
-        is built in (/usr/lib on ARM, /usr/wine/lsfg-vk/x64 on x64/FEX). To override,
-        enter a full path such as /userdata/roms/windows/MyGame.pc/drive_c/Program Files/Lossless Scaling/Lossless.dll.
+      description: Put Lossless.dll at the default path /userdata/system/wine/lossless-scaling/Lossless.dll, or choose a full path to Lossless.dll inside a Lossless Scaling install. For example, select /userdata/roms/windows/MyGame.pc/drive_c/Program Files/Lossless Scaling/Lossless.dll. The lsfg-vk layer path is automatic (/usr/lib on ARM, /usr/wine/lsfg-vk/x64 on x64/FEX).
       preset: input
     lsfg_vk_multiplier:
       archs_include:
       - qcs6490
       - sm8250
       - sm8550
+      - sm8750
       submenu: LSFG-VK
       prompt: LSFG MULTIPLIER
       choices:
@@ -15641,6 +15787,7 @@ eden:
       - qcs6490
       - sm8250
       - sm8550
+      - sm8750
       submenu: LSFG-VK
       prompt: LSFG FLOW SCALE
       choices:
@@ -15653,6 +15800,7 @@ eden:
       - qcs6490
       - sm8250
       - sm8550
+      - sm8750
       submenu: LSFG-VK
       prompt: LSFG PERFORMANCE MODE
       choices:
@@ -15663,6 +15811,7 @@ eden:
       - qcs6490
       - sm8250
       - sm8550
+      - sm8750
       submenu: LSFG-VK
       prompt: LSFG HDR MODE
       choices:
@@ -15673,6 +15822,7 @@ eden:
       - qcs6490
       - sm8250
       - sm8550
+      - sm8750
       submenu: LSFG-VK
       prompt: LSFG PRESENT MODE
       choices:
@@ -15773,6 +15923,11 @@ eden:
         Accurate: 1
         Unsafe: 2
     eden_cpu_backend:
+      archs_include:
+      - qcs6490
+      - sm8250
+      - sm8550
+      - sm8750
       submenu: CPU
       prompt: CPU BACKEND (AARCH64 ONLY)
       description: Select Dynamic or NCE backend on aarch64 targets.
@@ -15935,10 +16090,7 @@ yuzu:
       - x86-64-v3
       submenu: LSFG-VK
       prompt: LOSSLESS.DLL PATH
-      description: Leave blank for automatic lookup. Default Lossless.dll path is
-        /userdata/system/wine/lossless-scaling/Lossless.dll. The lsfg-vk layer path
-        is built in (/usr/lib on ARM, /usr/wine/lsfg-vk/x64 on x64/FEX). To override,
-        enter a full path such as /userdata/roms/windows/MyGame.pc/drive_c/Program Files/Lossless Scaling/Lossless.dll.
+      description: Put Lossless.dll at the default path /userdata/system/wine/lossless-scaling/Lossless.dll, or choose a full path to Lossless.dll inside a Lossless Scaling install. For example, select /userdata/roms/windows/MyGame.pc/drive_c/Program Files/Lossless Scaling/Lossless.dll. The lsfg-vk layer path is automatic (/usr/lib on ARM, /usr/wine/lsfg-vk/x64 on x64/FEX).
       preset: input
     lsfg_vk_multiplier:
       archs_include:
@@ -16526,6 +16678,9 @@ xenia:
   - videomode
   cfeatures:
     xenia_api:
+      archs_include:
+      - x86_64
+      - x86-64-v3
       prompt: GRAPHICS API
       description: Choose which graphics API library to use. D3D12 may yield better
         results with faster GPUs.
@@ -16725,6 +16880,9 @@ xenia:
         Disabled: false
         Enabled (Default): true
     xenia_queue_priority:
+      archs_include:
+      - x86_64
+      - x86-64-v3
       group: ADVANCED OPTIONS
       prompt: D3D12 QUEUE PRIORITY
       description: Change the graphics queue scheduling priority.
@@ -16733,6 +16891,9 @@ xenia:
         Normal (Default): 0
         High: 1
     xenia_d3d12_debug:
+      archs_include:
+      - x86_64
+      - x86-64-v3
       group: ADVANCED OPTIONS
       prompt: D3D12 DEBUG LAYER
       description: Enable extra Direct3D12 validation. Useful for troubleshooting but
@@ -16788,6 +16949,9 @@ xenia:
         Disabled: false
         Enabled: true
     xenia_target_path:
+      archs_include:
+      - x86_64
+      - x86-64-v3
       group: ADVANCED OPTIONS
       prompt: RENDER TARGET PATH
       description: Render target emulation path to use on Direct3D 12. Try changing
@@ -16811,6 +16975,9 @@ xenia:
         '750': 750
         1000 (Default): 1000
     xenia_readback_resolve:
+      archs_include:
+      - x86_64
+      - x86-64-v3
       group: ADVANCED OPTIONS
       prompt: READBACK RESOLVE
       description: D3D12, read render-to-texture results on the CPU. Needed in some
@@ -16941,12 +17108,15 @@ xenia-canary:
         1920x540: 15
         1920x1080: 16
     xenia_api:
+      archs_include:
+      - x86_64
+      - x86-64-v3
       prompt: GRAPHICS API
-      description: Choose which graphics API library to use. D3D12 may yield better
-        results with faster GPUs.
+      description: Native Vulkan is the default renderer. D3D12/VKD3D is experimental
+        and only exposed on x86_64 builds.
       choices:
-        D3D12 (Default): D3D12
-        Native Vulkan: Vulkan
+        Native Vulkan (Default): Vulkan
+        D3D12 / VKD3D [EXPERIMENTAL]: D3D12
     xenia_vsync:
       prompt: VSYNC
       description: Fix screen tearing. With Some games you need to turn VSync on in
@@ -17135,6 +17305,9 @@ xenia-canary:
         Disabled: false
         Enabled (Default): true
     xenia_queue_priority:
+      archs_include:
+      - x86_64
+      - x86-64-v3
       group: ADVANCED OPTIONS
       prompt: D3D12 QUEUE PRIORITY
       description: Change the graphics queue scheduling priority.
@@ -17143,6 +17316,9 @@ xenia-canary:
         Normal (Default): 0
         High: 1
     xenia_d3d12_debug:
+      archs_include:
+      - x86_64
+      - x86-64-v3
       group: ADVANCED OPTIONS
       prompt: D3D12 DEBUG LAYER
       description: Enable extra Direct3D12 validation. Useful for troubleshooting but
@@ -17205,6 +17381,9 @@ xenia-canary:
         Disabled: false
         Enabled: true
     xenia_target_path:
+      archs_include:
+      - x86_64
+      - x86-64-v3
       group: ADVANCED OPTIONS
       prompt: RENDER TARGET PATH
       description: Render target emulation path to use on Direct3D 12. Try changing
@@ -17228,6 +17407,9 @@ xenia-canary:
         '750': 750
         1000 (Default): 1000
     xenia_readback_resolve:
+      archs_include:
+      - x86_64
+      - x86-64-v3
       group: ADVANCED OPTIONS
       prompt: READBACK RESOLVE
       description: D3D12, read render-to-texture results on the CPU. Needed in some
@@ -17400,6 +17582,7 @@ xenia-edge:
       - qcs6490
       - sm8250
       - sm8550
+      - sm8750
       submenu: LSFG-VK
       prompt: LSFG-VK FRAME GENERATION
       description: Enables the Lossless Scaling Frame Generation Vulkan layer for
@@ -17415,12 +17598,10 @@ xenia-edge:
       - qcs6490
       - sm8250
       - sm8550
+      - sm8750
       submenu: LSFG-VK
       prompt: LOSSLESS.DLL PATH
-      description: Leave blank for automatic lookup. Default Lossless.dll path is
-        /userdata/system/wine/lossless-scaling/Lossless.dll. The lsfg-vk layer path
-        is built in (/usr/lib on ARM, /usr/wine/lsfg-vk/x64 on x64/FEX). To override,
-        enter a full path such as /userdata/roms/windows/MyGame.pc/drive_c/Program Files/Lossless Scaling/Lossless.dll.
+      description: Put Lossless.dll at the default path /userdata/system/wine/lossless-scaling/Lossless.dll, or choose a full path to Lossless.dll inside a Lossless Scaling install. For example, select /userdata/roms/windows/MyGame.pc/drive_c/Program Files/Lossless Scaling/Lossless.dll. The lsfg-vk layer path is automatic (/usr/lib on ARM, /usr/wine/lsfg-vk/x64 on x64/FEX).
       preset: input
     lsfg_vk_multiplier:
       archs_include:
@@ -17429,6 +17610,7 @@ xenia-edge:
       - qcs6490
       - sm8250
       - sm8550
+      - sm8750
       submenu: LSFG-VK
       prompt: LSFG MULTIPLIER
       choices:
@@ -17442,6 +17624,7 @@ xenia-edge:
       - qcs6490
       - sm8250
       - sm8550
+      - sm8750
       submenu: LSFG-VK
       prompt: LSFG FLOW SCALE
       choices:
@@ -17456,6 +17639,7 @@ xenia-edge:
       - qcs6490
       - sm8250
       - sm8550
+      - sm8750
       submenu: LSFG-VK
       prompt: LSFG PERFORMANCE MODE
       choices:
@@ -17468,6 +17652,7 @@ xenia-edge:
       - qcs6490
       - sm8250
       - sm8550
+      - sm8750
       submenu: LSFG-VK
       prompt: LSFG HDR MODE
       choices:
@@ -17480,6 +17665,7 @@ xenia-edge:
       - qcs6490
       - sm8250
       - sm8550
+      - sm8750
       submenu: LSFG-VK
       prompt: LSFG PRESENT MODE
       choices:
@@ -17675,6 +17861,9 @@ xenia-edge:
         Disabled: false
         Enabled (Default): true
     xenia_queue_priority:
+      archs_include:
+      - x86_64
+      - x86-64-v3
       group: ADVANCED OPTIONS
       prompt: D3D12 QUEUE PRIORITY
       description: Change the graphics queue scheduling priority.
@@ -17683,6 +17872,9 @@ xenia-edge:
         Normal (Default): 0
         High: 1
     xenia_d3d12_debug:
+      archs_include:
+      - x86_64
+      - x86-64-v3
       group: ADVANCED OPTIONS
       prompt: D3D12 DEBUG LAYER
       description: Enable extra Direct3D12 validation. Useful for troubleshooting but
@@ -17745,6 +17937,9 @@ xenia-edge:
         Disabled: false
         Enabled: true
     xenia_target_path:
+      archs_include:
+      - x86_64
+      - x86-64-v3
       group: ADVANCED OPTIONS
       prompt: RENDER TARGET PATH
       description: Render target emulation path to use on Direct3D 12. Try changing
@@ -17768,6 +17963,9 @@ xenia-edge:
         '750': 750
         1000 (Default): 1000
     xenia_readback_resolve:
+      archs_include:
+      - x86_64
+      - x86-64-v3
       group: ADVANCED OPTIONS
       prompt: READBACK RESOLVE
       description: D3D12, read render-to-texture results on the CPU. Needed in some
@@ -20297,6 +20495,7 @@ azahar:
       - qcs6490
       - sm8250
       - sm8550
+      - sm8750
       - rk3588
       - rk3588-sdio
       submenu: GRAPHICS
