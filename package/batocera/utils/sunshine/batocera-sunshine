@@ -42,7 +42,13 @@ config="$SUNSHINE_CONFIG_DIR/sunshine.conf"
 if [ ! -s "$config" ]; then
 	output_name=""
 	if command -v swaymsg >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
-		output_name="$(swaymsg -t get_outputs 2>/dev/null | jq -r '[.[] | select(.active) | {name, area:(.rect.width * .rect.height)}] | max_by(.area).name // empty' 2>/dev/null || true)"
+		output_name="$(swaymsg -t get_outputs 2>/dev/null | jq -r '
+			[.[] | select(.active) | {name, area:(.rect.width * .rect.height)}] as $outputs |
+			($outputs[] | select(.name == "DSI-2").name) //
+			($outputs[] | select(.name == "DSI-1").name) //
+			($outputs | max_by(.area).name) //
+			empty
+		' 2>/dev/null || true)"
 	fi
 	{
 		echo "capture = wlr"

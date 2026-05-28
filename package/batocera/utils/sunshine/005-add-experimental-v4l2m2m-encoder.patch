@@ -1,0 +1,333 @@
+--- a/src/video.cpp
++++ b/src/video.cpp
+@@ -6,6 +6,7 @@
+ #include <array>
+ #include <atomic>
+ #include <bitset>
++#include <cstring>
+ #include <list>
+ #include <thread>
+
+@@ -70,6 +71,117 @@
+       BOOST_LOG(error) << "No display devices are active at the moment! Cannot probe the encoders.";
+       return false;
+     }
++
++    constexpr auto npos = std::numeric_limits<std::size_t>::max();
++
++    std::size_t find_h264_start_code(const std::uint8_t *data, std::size_t size, std::size_t offset, std::size_t &start_code_len) {
++      for (std::size_t i = offset; i + 3 <= size; i++) {
++        if (data[i] == 0 && data[i + 1] == 0 && data[i + 2] == 1) {
++          start_code_len = 3;
++          return i;
++        }
++
++        if (i + 4 <= size && data[i] == 0 && data[i + 1] == 0 && data[i + 2] == 0 && data[i + 3] == 1) {
++          start_code_len = 4;
++          return i;
++        }
++      }
++
++      start_code_len = 0;
++      return npos;
++    }
++
++    bool avpacket_contains_h264_annexb_nal(const AVPacket *packet, std::uint8_t nal_type) {
++      if (!packet || !packet->data || packet->size <= 0) {
++        return false;
++      }
++
++      const auto *data = packet->data;
++      const auto size = (std::size_t) packet->size;
++      std::size_t start_code_len = 0;
++
++      for (auto offset = find_h264_start_code(data, size, 0, start_code_len); offset != npos; offset = find_h264_start_code(data, size, offset + start_code_len, start_code_len)) {
++        auto nal_start = offset + start_code_len;
++        if (nal_start < size && ((data[nal_start] & 0x1f) == nal_type)) {
++          return true;
++        }
++      }
++
++      return false;
++    }
++
++    std::vector<std::uint8_t> avpacket_extract_h264_annexb_parameter_sets(const AVPacket *packet) {
++      std::vector<std::uint8_t> parameter_sets;
++      if (!packet || !packet->data || packet->size <= 0) {
++        return parameter_sets;
++      }
++
++      const auto *data = packet->data;
++      const auto size = (std::size_t) packet->size;
++      std::size_t start_code_len = 0;
++
++      for (auto offset = find_h264_start_code(data, size, 0, start_code_len); offset != npos;) {
++        auto nal_start = offset + start_code_len;
++        auto next_start_code_len = std::size_t {};
++        auto next = find_h264_start_code(data, size, nal_start, next_start_code_len);
++        auto nal_end = next == npos ? size : next;
++
++        if (nal_start < nal_end) {
++          auto nal_type = data[nal_start] & 0x1f;
++          if (nal_type == 7 || nal_type == 8) {
++            parameter_sets.insert(std::end(parameter_sets), data + offset, data + nal_end);
++          }
++        }
++
++        if (next == npos) {
++          break;
++        }
++
++        offset = next;
++        start_code_len = next_start_code_len;
++      }
++
++      return parameter_sets;
++    }
++
++    bool avpacket_contains_h264_parameter_sets(const AVPacket *packet) {
++      return avpacket_contains_h264_annexb_nal(packet, 7) && avpacket_contains_h264_annexb_nal(packet, 8);
++    }
++
++    bool avpacket_contains_h264_idr(const AVPacket *packet) {
++      if (!packet || !packet->data || packet->size <= 0) {
++        return false;
++      }
++
++      if (avpacket_contains_h264_annexb_nal(packet, 5)) {
++        return true;
++      }
++
++      const auto *data = packet->data;
++      const auto size = (std::size_t) packet->size;
++
++      for (auto length_size : {4u, 2u, 1u}) {
++        std::size_t offset = 0;
++        while (offset + length_size < size) {
++          std::uint32_t nal_size = 0;
++          for (auto i = 0u; i < length_size; i++) {
++            nal_size = (nal_size << 8) | data[offset + i];
++          }
++
++          if (nal_size == 0 || offset + length_size + nal_size > size) {
++            break;
++          }
++
++          if ((data[offset + length_size] & 0x1f) == 5) {
++            return true;
++          }
++
++          offset += length_size + nal_size;
++        }
++      }
++
++      return false;
++    }
+   }  // namespace
+
+   void free_ctx(AVCodecContext *ctx) {
+@@ -303,6 +415,10 @@
+     YUV444_SUPPORT = 1 << 10,  ///< Encoder may support 4:4:4 chroma sampling depending on hardware
+     ASYNC_TEARDOWN = 1 << 11,  ///< Encoder supports async teardown on a different thread
+     FIXED_GOP_SIZE = 1 << 12,  ///< Use fixed small GOP size (encoder doesn't support on-demand IDR frames)
++    EXPLICIT_ONLY = 1 << 13,  ///< Do not probe unless specifically selected
++    TRUST_CODEC_SUPPORT = 1 << 14,  ///< Avoid validation encode for unstable drivers
++    ALIGN_DIMENSIONS_32 = 1 << 15,  ///< Allocate frames on 32-pixel boundaries for strict V4L2 drivers
++    LOW_LATENCY_FIXED_GOP = 1 << 16,  ///< Keep fixed-GOP encoders closer to client recovery cadence
+   };
+
+   class avcodec_encode_session_t: public encode_session_t {
+@@ -334,6 +450,7 @@
+       device = std::move(other.device);
+       avcodec_ctx = std::move(other.avcodec_ctx);
+       replacements = std::move(other.replacements);
++      h264_parameter_sets = std::move(other.h264_parameter_sets);
+       sps = std::move(other.sps);
+       vps = std::move(other.vps);
+
+@@ -350,6 +467,11 @@
+     }
+
+     void request_idr_frame() override {
++      if (avcodec_ctx && avcodec_ctx->codec && avcodec_ctx->codec->name &&
++          std::string_view(avcodec_ctx->codec->name).find("_v4l2m2m"sv) != std::string_view::npos) {
++        return;
++      }
++
+       if (device && device->frame) {
+         auto &frame = device->frame;
+         frame->pict_type = AV_PICTURE_TYPE_I;
+@@ -374,6 +496,7 @@
+     std::unique_ptr<platf::avcodec_encode_device_t> device;
+
+     std::vector<packet_raw_t::replace_t> replacements;
++    std::vector<std::uint8_t> h264_parameter_sets;
+
+     cbs::nal_t sps;
+     cbs::nal_t vps;
+@@ -958,6 +1081,36 @@
+   };
+
+ #if defined(__linux__) || defined(linux) || defined(__linux) || defined(__FreeBSD__)
++  encoder_t v4l2m2m {
++    "v4l2m2m"sv,
++    std::make_unique<encoder_platform_formats_avcodec>(
++      AV_HWDEVICE_TYPE_NONE,
++      AV_HWDEVICE_TYPE_NONE,
++      AV_PIX_FMT_NONE,
++      AV_PIX_FMT_NV12,
++      AV_PIX_FMT_NONE,
++      AV_PIX_FMT_NONE,
++      AV_PIX_FMT_NONE,
++      nullptr
++    ),
++    {},  // AV1 unsupported
++    {},  // HEVC unsupported for now
++    {
++      // Common options
++      {
++        {"num_output_buffers"s, 4},
++        {"num_capture_buffers"s, 4},
++      },
++      {},  // SDR-specific options
++      {},  // HDR-specific options
++      {},  // YUV444 SDR-specific options
++      {},  // YUV444 HDR-specific options
++      {},  // Fallback options
++      "h264_v4l2m2m"s,
++    },
++    H264_ONLY | PARALLEL_ENCODING | FIXED_GOP_SIZE | SINGLE_SLICE_ONLY | NO_RC_BUF_LIMIT | EXPLICIT_ONLY | TRUST_CODEC_SUPPORT | ALIGN_DIMENSIONS_32 | LOW_LATENCY_FIXED_GOP
++  };
++
+   encoder_t vaapi {
+     "vaapi"sv,
+     std::make_unique<encoder_platform_formats_avcodec>(
+@@ -1173,7 +1326,10 @@
+ #ifdef __APPLE__
+     &videotoolbox,
+ #endif
+-    &software
++    &software,
++#if defined(__linux__) || defined(linux) || defined(__linux) || defined(__FreeBSD__)
++    &v4l2m2m
++#endif
+   };
+
+   static encoder_t *chosen_encoder;
+@@ -1536,6 +1692,30 @@
+         return ret;
+       }
+
++      if (!(av_packet->flags & AV_PKT_FLAG_KEY) && ctx->codec_id == AV_CODEC_ID_H264 && avpacket_contains_h264_idr(av_packet)) {
++        av_packet->flags |= AV_PKT_FLAG_KEY;
++        BOOST_LOG(debug) << "Frame "sv << frame_nr << ": IDR Keyframe inferred from H.264 bitstream"sv;
++      }
++
++      if (ctx->codec_id == AV_CODEC_ID_H264) {
++        auto parameter_sets = avpacket_extract_h264_annexb_parameter_sets(av_packet);
++        if (!parameter_sets.empty()) {
++          session.h264_parameter_sets = std::move(parameter_sets);
++          BOOST_LOG(debug) << "Frame "sv << frame_nr << ": cached H.264 SPS/PPS headers"sv;
++        } else if ((av_packet->flags & AV_PKT_FLAG_KEY) && !session.h264_parameter_sets.empty() && !avpacket_contains_h264_parameter_sets(av_packet)) {
++          auto header_size = session.h264_parameter_sets.size();
++          auto payload_size = av_packet->size;
++          auto err = av_grow_packet(av_packet, header_size);
++          if (err < 0) {
++            return err;
++          }
++
++          std::memmove(av_packet->data + header_size, av_packet->data, payload_size);
++          std::memcpy(av_packet->data, session.h264_parameter_sets.data(), header_size);
++          BOOST_LOG(debug) << "Frame "sv << frame_nr << ": prepended cached H.264 SPS/PPS headers"sv;
++        }
++      }
++
+       if (av_packet->flags & AV_PKT_FLAG_KEY) {
+         BOOST_LOG(debug) << "Frame "sv << frame_nr << ": IDR Keyframe (AV_FRAME_FLAG_KEY)"sv;
+       }
+@@ -1666,6 +1846,15 @@
+       ctx.reset(avcodec_alloc_context3(codec));
+       ctx->width = config.width;
+       ctx->height = config.height;
++      if (encoder.flags & ALIGN_DIMENSIONS_32) {
++        auto aligned_width = (ctx->width + 31) & ~31;
++        auto aligned_height = (ctx->height + 31) & ~31;
++        if (aligned_width != ctx->width || aligned_height != ctx->height) {
++          BOOST_LOG(warning) << "Aligning encoder dimensions from "sv << ctx->width << 'x' << ctx->height << " to "sv << aligned_width << 'x' << aligned_height;
++          ctx->width = aligned_width;
++          ctx->height = aligned_height;
++        }
++      }
+       ctx->time_base = AVRational {1, config.framerate};
+       ctx->framerate = AVRational {config.framerate, 1};
+       if (config.framerateX100 > 0) {
+@@ -1704,8 +1893,11 @@
+       // Exception: encoders with FIXED_GOP_SIZE flag don't support on-demand IDR
+       if (encoder.flags & FIXED_GOP_SIZE) {
+         // Fixed GOP for encoders that don't support on-demand IDR (e.g. Media Foundation)
+-        ctx->gop_size = 120;  // ~2 seconds at 60 FPS - larger to reduce oversized IDR frame frequency
+-        ctx->keyint_min = 120;
++        auto fixed_gop_size = (encoder.flags & LOW_LATENCY_FIXED_GOP) ?
++                                (config.framerate > 1 ? config.framerate / 2 : 1) :
++                                120;  // ~2 seconds at 60 FPS - larger to reduce oversized IDR frame frequency
++        ctx->gop_size = fixed_gop_size;
++        ctx->keyint_min = fixed_gop_size;
+       } else {
+         ctx->gop_size = encoder.flags & LIMITED_GOP_SIZE ?
+                           std::numeric_limits<std::int16_t>::max() :
+@@ -2643,6 +2835,21 @@
+       return false;
+     }
+
++    if (encoder.flags & TRUST_CODEC_SUPPORT) {
++      BOOST_LOG(warning) << "Encoder ["sv << encoder.name << "] is enabled without validation encode"sv;
++
++      encoder.h264.capabilities.reset();
++      encoder.hevc.capabilities.reset();
++      encoder.av1.capabilities.reset();
++
++      encoder.h264[encoder_t::PASSED] = avcodec_find_encoder_by_name(encoder.h264.name.c_str()) &&
++                                         disp->is_codec_supported(encoder.h264.name, config_autoselect);
++      encoder.h264[encoder_t::VUI_PARAMETERS] = true;
++
++      fg.disable();
++      return encoder.h264[encoder_t::PASSED];
++    }
++
+     // If we're expecting failure, use the autoselect ref config first since that will always succeed
+     // if the encoder is available.
+     auto max_ref_frames_h264 = expect_failure ? -1 : validate_config(disp, encoder, config_max_ref_frames);
+@@ -2863,6 +3070,11 @@
+       KITTY_WHILE_LOOP(auto pos = std::begin(encoder_list), pos != std::end(encoder_list), {
+         auto encoder = *pos;
+
++        if ((encoder->flags & EXPLICIT_ONLY) && encoder->name != config::video.encoder) {
++          pos++;
++          continue;
++        }
++
+         // Remove the encoder from the list entirely if it fails validation
+         if (!validate_encoder(*encoder, previous_encoder && previous_encoder != encoder)) {
+           pos = encoder_list.erase(pos);
+@@ -2896,6 +3108,11 @@
+       KITTY_WHILE_LOOP(auto pos = std::begin(encoder_list), pos != std::end(encoder_list), {
+         auto encoder = *pos;
+
++        if ((encoder->flags & EXPLICIT_ONLY) && encoder->name != config::video.encoder) {
++          pos++;
++          continue;
++        }
++
+         // If we've used a previous encoder and it's not this one, we expect this encoder to
+         // fail to validate. It will use a slightly different order of checks to more quickly
+         // eliminate failing encoders.
+--- a/src/video.h
++++ b/src/video.h
+@@ -234,6 +234,7 @@
+
+ #if defined(__linux__) || defined(linux) || defined(__linux) || defined(__FreeBSD__)
+   extern encoder_t vaapi;
++  extern encoder_t v4l2m2m;
+ #endif
+
+ #ifdef __APPLE__

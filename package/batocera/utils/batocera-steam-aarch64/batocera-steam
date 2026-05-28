@@ -718,39 +718,6 @@ EOF
     esac
 }
 
-patch_arm64_steamwebhelper_launcher() {
-    local helper_script="${STEAM_ROOT}/steamrtarm64/steamwebhelper.sh"
-
-    [[ -f "${helper_script}" ]] || return 0
-    if grep -q 'BATOCERA_STEAMWEBHELPER_TASKSET_FALLBACK' "${helper_script}" 2>/dev/null; then
-        return
-    fi
-
-    cat > "${helper_script}" <<'EOF'
-#!/bin/bash
-# BATOCERA_STEAMWEBHELPER_TASKSET_FALLBACK
-
-SCRIPTPATH="$(dirname -- "${BASH_SOURCE[0]}")"
-cd "$SCRIPTPATH" || exit 1
-
-if [ -z "${DISPLAY:-}" ]; then
-    echo "steamwebhelper: DISPLAY not set -- defaulting to :0"
-    export DISPLAY=:0
-fi
-
-echo "setting LIBGL_KOPPER_DISABLE=true for steamwebhelper to get store working properly"
-export LIBGL_KOPPER_DISABLE=true
-
-log="${HOME:-/userdata/system}/.steam/steam/logs/steamwebhelper.log"
-if command -v taskset >/dev/null 2>&1; then
-    exec taskset 0x7e "$(pwd)/steamwebhelper" "$@" &> "$log"
-fi
-
-exec "$(pwd)/steamwebhelper" "$@" &> "$log"
-EOF
-    chmod +x "${helper_script}" 2>/dev/null || true
-}
-
 ensure_arm64_steam_runtime() {
     local archive="${STEAM_ROOT}/steam-runtime-steamrt-arm64.tar.xz"
     local url="https://repo.steampowered.com/steamrt3c/images/latest-public-beta/steam-runtime-steamrt-arm64.tar.xz"
@@ -823,7 +790,6 @@ prepare_arm64_steam_layout() {
         [[ -e "${STEAM_ROOT}/steamrtarm64/${helper}" ]] || continue
         chmod +x "${STEAM_ROOT}/steamrtarm64/${helper}" 2>/dev/null || true
     done
-
 }
 
 write_compatibilitytool_vdf() {

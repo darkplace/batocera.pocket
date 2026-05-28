@@ -1,0 +1,26 @@
+#!/bin/sh
+# Steam's ARM64 helper may call taskset even on images without util-linux.
+
+if [ "$#" -lt 2 ]; then
+    echo "usage: taskset mask command [args...]" >&2
+    exit 1
+fi
+
+case "$1" in
+    -p|--pid)
+        echo "taskset shim: pid mode is not supported" >&2
+        exit 1
+        ;;
+    -a|--all-tasks)
+        shift
+        ;;
+    -c|--cpu-list)
+        shift
+        [ "$#" -gt 0 ] || exit 1
+        shift
+        exec "$@"
+        ;;
+esac
+
+shift
+exec "$@"

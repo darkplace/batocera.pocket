@@ -12,6 +12,9 @@ define BATOCERA_STEAM_AARCH64_INSTALL_TARGET_CMDS
 	install -D -m 0755 \
 		$(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/utils/batocera-steam-aarch64/batocera-steam \
 		$(TARGET_DIR)/usr/bin/batocera-steam
+	install -D -m 0755 \
+		$(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/utils/batocera-steam-aarch64/taskset \
+		$(TARGET_DIR)/usr/bin/taskset
 	install -D -m 0644 \
 		$(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/utils/batocera-steam-aarch64/compatibilitytool.vdf \
 		$(TARGET_DIR)/usr/share/steam/compatibilitytool.vdf

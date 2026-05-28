@@ -1,0 +1,182 @@
+--- a/src/platform/linux/wayland.h
++++ b/src/platform/linux/wayland.h
+@@ -115,7 +115,7 @@
+
+     void xdg_done(zxdg_output_v1 *) {}
+
+-    void wl_geometry(wl_output *wl_output, std::int32_t x, std::int32_t y, std::int32_t physical_width, std::int32_t physical_height, std::int32_t subpixel, const char *make, const char *model, std::int32_t transform) {}
++    void wl_geometry(wl_output *wl_output, std::int32_t x, std::int32_t y, std::int32_t physical_width, std::int32_t physical_height, std::int32_t subpixel, const char *make, const char *model, std::int32_t transform);
+
+     void wl_mode(wl_output *wl_output, std::uint32_t flags, std::int32_t width, std::int32_t height, std::int32_t refresh);
+
+@@ -126,6 +126,7 @@
+     wl_output *output;
+     std::string name;
+     std::string description;
++    std::int32_t transform;
+     platf::touch_port_t viewport;
+     wl_output_listener wl_listener;
+     zxdg_output_v1_listener xdg_listener;
+--- a/src/platform/linux/wayland.cpp
++++ b/src/platform/linux/wayland.cpp
+@@ -109,6 +109,7 @@
+
+   inline monitor_t::monitor_t(wl_output *output):
+       output {output},
++      transform {WL_OUTPUT_TRANSFORM_NORMAL},
+       wl_listener {
+         &CLASS_CALL(monitor_t, wl_geometry),
+         &CLASS_CALL(monitor_t, wl_mode),
+@@ -149,6 +150,21 @@
+     BOOST_LOG(info) << "[wayland] Logical size: "sv << width << 'x' << height;
+   }
+
++  void monitor_t::wl_geometry(
++    wl_output *wl_output,
++    std::int32_t x,
++    std::int32_t y,
++    std::int32_t physical_width,
++    std::int32_t physical_height,
++    std::int32_t subpixel,
++    const char *make,
++    const char *model,
++    std::int32_t transform
++  ) {
++    this->transform = transform;
++    BOOST_LOG(info) << "[wayland] Transform: "sv << transform;
++  }
++
+   void monitor_t::wl_mode(
+     wl_output *wl_output,
+     std::uint32_t flags,
+--- a/src/platform/linux/wlgrab.cpp
++++ b/src/platform/linux/wlgrab.cpp
+@@ -3,7 +3,10 @@
+  * @brief Definitions for wlgrab capture.
+  */
+ // standard includes
++#include <cstdlib>
++#include <cstring>
+ #include <thread>
++#include <vector>
+
+ // local includes
+ #include "cuda.h"
+@@ -26,6 +29,36 @@
+     }
+   };
+
++  static bool transform_rotates_90(std::int32_t transform) {
++    switch (transform) {
++      case WL_OUTPUT_TRANSFORM_90:
++      case WL_OUTPUT_TRANSFORM_270:
++      case WL_OUTPUT_TRANSFORM_FLIPPED_90:
++      case WL_OUTPUT_TRANSFORM_FLIPPED_270:
++        return true;
++      default:
++        return false;
++    }
++  }
++
++  static void rotate_bgra_from_output_transform(const std::uint8_t *src, std::uint8_t *dst, int src_width, int src_height, int dst_pitch, std::int32_t transform) {
++    constexpr int pixel_pitch = 4;
++
++    for (int y = 0; y < src_height; ++y) {
++      for (int x = 0; x < src_width; ++x) {
++        int dst_x = src_height - 1 - y;
++        int dst_y = x;
++
++        if (transform == WL_OUTPUT_TRANSFORM_270 || transform == WL_OUTPUT_TRANSFORM_FLIPPED_270) {
++          dst_x = y;
++          dst_y = src_width - 1 - x;
++        }
++
++        std::memcpy(dst + dst_y * dst_pitch + dst_x * pixel_pitch, src + (y * src_width + x) * pixel_pitch, pixel_pitch);
++      }
++    }
++  }
++
+   class wlr_t: public platf::display_t {
+   public:
+     int init(platf::mem_type_e hwdevice_type, const std::string &display_name, const ::video::config_t &config) {
+@@ -92,10 +125,17 @@
+
+       output = monitor->output;
+
++      source_width = monitor->viewport.width;
++      source_height = monitor->viewport.height;
++      output_transform = monitor->transform;
++      if (const char *forced_transform = std::getenv("SUNSHINE_WLGRAB_TRANSFORM")) {
++        output_transform = std::atoi(forced_transform);
++      }
++
+       offset_x = monitor->viewport.offset_x;
+       offset_y = monitor->viewport.offset_y;
+-      width = monitor->viewport.width;
+-      height = monitor->viewport.height;
++      width = source_width;
++      height = source_height;
+
+       this->env_width = ::wl::env_width;
+       this->env_height = ::wl::env_height;
+@@ -103,6 +143,15 @@
+       this->logical_width = monitor->viewport.logical_width;
+       this->logical_height = monitor->viewport.logical_height;
+
++      if (transform_rotates_90(output_transform) &&
++          logical_width > 0 &&
++          logical_height > 0 &&
++          logical_width == source_height &&
++          logical_height == source_width) {
++        width = logical_width;
++        height = logical_height;
++      }
++
+       int desktop_logical_width = 0;
+       int desktop_logical_height = 0;
+       for (auto &monitor_entry : interface.monitors) {
+@@ -118,6 +167,7 @@
+       BOOST_LOG(debug) << "[wlgrab] Offset: "sv << offset_x << 'x' << offset_y;
+       BOOST_LOG(debug) << "[wlgrab] Resolution: "sv << width << 'x' << height;
+       BOOST_LOG(debug) << "[wlgrab] Logical Resolution: "sv << logical_width << 'x' << logical_height;
++      BOOST_LOG(debug) << "[wlgrab] Source Resolution: "sv << source_width << 'x' << source_height << " transform "sv << output_transform;
+       BOOST_LOG(debug) << "[wlgrab] Desktop Resolution: "sv << env_width << 'x' << env_height;
+       BOOST_LOG(debug) << "[wlgrab] Logical Desktop Resolution: "sv << env_logical_width << 'x' << env_logical_height;
+
+@@ -144,8 +194,8 @@
+
+       if (
+         dmabuf.status == dmabuf_t::REINIT ||
+-        current_frame->sd.width != width ||
+-        current_frame->sd.height != height
++        current_frame->sd.width != source_width ||
++        current_frame->sd.height != source_height
+       ) {
+         return platf::capture_e::reinit;
+       }
+@@ -162,6 +212,9 @@
+     dmabuf_t dmabuf;
+
+     wl_output *output;
++    int source_width {};
++    int source_height {};
++    std::int32_t output_transform {WL_OUTPUT_TRANSFORM_NORMAL};
+   };
+
+   class wlr_ram_t: public wlr_t {
+@@ -238,7 +291,14 @@
+       gl::ctx.GetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &h);
+       BOOST_LOG(debug) << "[wlgrab] width and height: w "sv << w << " h "sv << h;
+
+-      gl::ctx.GetTextureSubImage((*rgb_opt)->tex[0], 0, 0, 0, 0, width, height, 1, GL_BGRA, GL_UNSIGNED_BYTE, img_out->height * img_out->row_pitch, img_out->data);
++      if (transform_rotates_90(output_transform) && source_width != width && source_height != height) {
++        std::vector<std::uint8_t> source(source_width * source_height * 4);
++        gl::ctx.GetTextureSubImage((*rgb_opt)->tex[0], 0, 0, 0, 0, source_width, source_height, 1, GL_BGRA, GL_UNSIGNED_BYTE, source.size(), source.data());
++        rotate_bgra_from_output_transform(source.data(), img_out->data, source_width, source_height, img_out->row_pitch, output_transform);
++      } else {
++        gl::ctx.GetTextureSubImage((*rgb_opt)->tex[0], 0, 0, 0, 0, width, height, 1, GL_BGRA, GL_UNSIGNED_BYTE, img_out->height * img_out->row_pitch, img_out->data);
++      }
++
+       gl::ctx.BindTexture(GL_TEXTURE_2D, 0);
+
+       img_out->frame_timestamp = current_frame->frame_timestamp;

@@ -9,6 +9,11 @@ if [[ $# -lt 1 ]]; then
     exit 1
 fi
 
+if [[ "${VK_ICD_FILENAMES:-}" == *"freedreno_icd.gamescope.json"* ]]; then
+    echo "Steam gamescope child: dropping gamescope-only Vulkan ICD before Steam child launch." >> "${log}"
+    unset VK_ICD_FILENAMES
+fi
+
 if [[ "${BATOCERA_STEAM_UPDATE_TERMINAL:-1}" != "0" && -x /usr/bin/batocera-steam-update-terminal ]]; then
     bootstrap_log="${BATOCERA_STEAM_ROOT:-/userdata/system/.local/share/Steam}/logs/bootstrap_log.txt"
     baseline=0

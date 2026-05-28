@@ -1148,6 +1148,21 @@ start_uimode_watch || true
 start_thor_backlight_mirror || true
 
 if command -v gamescope >/dev/null 2>&1 && [[ "${BATOCERA_STEAM_USE_GAMESCOPE:-1}" != "0" ]]; then
+    gamescope_icd="${BATOCERA_STEAM_GS_VK_ICD:-/usr/share/vulkan/icd.d/freedreno_icd.gamescope.json}"
+    use_gamescope_icd=0
+    gs_env=()
+    gamescope_cmd=()
+
+    if [[ "${BATOCERA_STEAM_GS_USE_COMPAT_ICD:-1}" != "0" && -f "${gamescope_icd}" ]]; then
+        if [[ -x /usr/bin/batocera-steam-gamescope-child ]]; then
+            use_gamescope_icd=1
+            gs_env=("VK_ICD_FILENAMES=${gamescope_icd}")
+            echo "Steam gamescope: using compositor-only Vulkan ICD ${gamescope_icd}" >> "${log}"
+        else
+            echo "Steam gamescope: gamescope-only Vulkan ICD exists but child wrapper is missing; using default Vulkan ICD." >> "${log}"
+        fi
+    fi
+
     read -r out_w out_h <<< "$(detect_output_resolution)"
     read -r nest_w nest_h <<< "$(detect_nested_resolution "${out_w}" "${out_h}")"
     refresh_rate="$(detect_refresh_rate)"
@@ -1260,16 +1275,20 @@ if command -v gamescope >/dev/null 2>&1 && [[ "${BATOCERA_STEAM_USE_GAMESCOPE:-1
     start_nightmode_watch
     prepare_gamescope_child_lsfg_env
     child_cmd=("$@")
-    if steam_update_terminal_enabled; then
+    if steam_update_terminal_enabled || [[ "${use_gamescope_icd}" == "1" ]]; then
         child_cmd=(/usr/bin/batocera-steam-gamescope-child "$@")
     fi
+    gamescope_cmd=(gamescope "${gs_args[@]}")
+    if [[ "${#gs_env[@]}" -gt 0 ]]; then
+        gamescope_cmd=(env "${gs_env[@]}" "${gamescope_cmd[@]}")
+    fi
     if [[ "${#STEAM_CHILD_LSFG_ENV[@]}" -gt 0 ]]; then
-        if gamescope "${gs_args[@]}" -- env "${STEAM_CHILD_LSFG_ENV[@]}" "${child_cmd[@]}"; then
+        if "${gamescope_cmd[@]}" -- env "${STEAM_CHILD_LSFG_ENV[@]}" "${child_cmd[@]}"; then
             exit 0
         fi
         exit $?
     fi
-    if gamescope "${gs_args[@]}" -- "${child_cmd[@]}"; then
+    if "${gamescope_cmd[@]}" -- "${child_cmd[@]}"; then
         exit 0
     fi
     exit $?

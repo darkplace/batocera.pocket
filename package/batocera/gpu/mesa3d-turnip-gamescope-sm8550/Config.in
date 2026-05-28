@@ -1,0 +1,10 @@
+config BR2_PACKAGE_MESA3D_TURNIP_GAMESCOPE_SM8550
+	bool "mesa3d-turnip-gamescope-sm8550"
+	depends on BR2_PACKAGE_BATOCERA_TARGET_SM8550
+	depends on BR2_PACKAGE_MESA3D
+	depends on BR2_PACKAGE_MESA3D_VULKAN_DRIVER_FREEDRENO
+	help
+	  Build a second Freedreno Turnip Vulkan ICD for sm8550 Steam
+	  gamescope sessions. This driver carries a queue-submit workaround
+	  that fixes gamescope on some sm8550 devices, while the normal Mesa
+	  ICD remains the default for emulators and games.
