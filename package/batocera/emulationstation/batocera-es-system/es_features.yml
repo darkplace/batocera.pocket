@@ -11618,6 +11618,13 @@ rpcs3:
                 "75% (Default)": 75
                 "90%":           90
                 "100%":          100
+        rpcs3_achievement_sound:
+            submenu: AUDIO
+            prompt: TROPHY SOUND
+            description: Play the Batocera achievement sound when an RPCS3 trophy notification is shown.
+            choices:
+                "Off": False
+                "On (Default)": True
         rpcs3_gui:
             group: ADVANCED OPTIONS
             prompt: GRAPHICAL USER INTERFACE

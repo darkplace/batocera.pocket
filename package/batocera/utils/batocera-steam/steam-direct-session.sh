@@ -504,7 +504,7 @@ detect_gamescope_orientation() {
     fi
 
     case "${model}" in
-        AYN_Thor|AYN_Odin_2_Mini|AYN_Odin_2_Portal)
+        AYN_Thor|AYN_Odin_2_Mini|AYN_Odin_2_Portal|AYN_Odin_3)
             printf 'right\n'
             return 0
             ;;

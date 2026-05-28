@@ -20,6 +20,7 @@ from evdev import ecodes
 
 GAMEPAD_NAMES = {
     "AYN Odin2 Gamepad",
+    "AYN Odin3 Gamepad",
     "Steam Deck",
     "ASUS ROG Ally Config",
     "Asus WMI hotkeys",
@@ -28,6 +29,7 @@ GAMEPAD_PRIORITY = {
     "ASUS ROG Ally Config": 0,
     "Steam Deck": 1,
     "AYN Odin2 Gamepad": 2,
+    "AYN Odin3 Gamepad": 2,
     "Asus WMI hotkeys": 3,
 }
 HOTKEY_CODES = {

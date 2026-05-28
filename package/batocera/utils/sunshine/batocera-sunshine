@@ -1,0 +1,54 @@
+#!/bin/sh
+set -eu
+
+home="${BATOCERA_SUNSHINE_HOME:-/userdata/system}"
+
+export HOME="${home}"
+export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
+export XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
+export XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
+export SUNSHINE_CONFIG_DIR="${SUNSHINE_CONFIG_DIR:-$XDG_CONFIG_HOME/sunshine}"
+
+find_wayland_socket() {
+	for runtime in /run /var/run "/run/user/$(id -u)"; do
+		[ -d "$runtime" ] || continue
+		for socket in "$runtime"/wayland-*; do
+			[ -S "$socket" ] || continue
+			printf '%s\n' "$socket"
+			return 0
+		done
+	done
+	return 1
+}
+
+if [ -z "${WAYLAND_DISPLAY:-}" ]; then
+	if socket="$(find_wayland_socket)"; then
+		export XDG_RUNTIME_DIR="$(dirname "$socket")"
+		export WAYLAND_DISPLAY="$(basename "$socket")"
+	fi
+fi
+
+if [ -z "${SWAYSOCK:-}" ] && [ -n "${XDG_RUNTIME_DIR:-}" ]; then
+	for socket in "$XDG_RUNTIME_DIR"/sway-ipc.*.sock "$XDG_RUNTIME_DIR"/sway-ipc.sock; do
+		[ -S "$socket" ] || continue
+		export SWAYSOCK="$socket"
+		break
+	done
+fi
+
+mkdir -p "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_CACHE_HOME" "$SUNSHINE_CONFIG_DIR" "$home" 2>/dev/null || true
+
+config="$SUNSHINE_CONFIG_DIR/sunshine.conf"
+if [ ! -s "$config" ]; then
+	output_name=""
+	if command -v swaymsg >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
+		output_name="$(swaymsg -t get_outputs 2>/dev/null | jq -r '[.[] | select(.active) | {name, area:(.rect.width * .rect.height)}] | max_by(.area).name // empty' 2>/dev/null || true)"
+	fi
+	{
+		echo "capture = wlr"
+		[ -z "$output_name" ] || echo "output_name = $output_name"
+		echo "origin_web_ui_allowed = lan"
+	} > "$config"
+fi
+
+exec /usr/bin/sunshine "$@"

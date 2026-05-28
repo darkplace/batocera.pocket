@@ -3,7 +3,8 @@ from __future__ import annotations
 import logging
 import re
 import shutil
-from typing import TYPE_CHECKING, Any, cast
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Final, cast
 
 from ruamel.yaml import YAML
 
@@ -17,11 +18,12 @@ from . import rpcs3Controllers
 from .rpcs3Paths import RPCS3_BIN, RPCS3_CONFIG, RPCS3_CONFIG_DIR, RPCS3_CURRENT_CONFIG
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     from ...types import HotkeysContext, Resolution
 
 _logger = logging.getLogger(__name__)
+
+_ACHIEVEMENT_SOUND_ROOT: Final = Path("/usr/share/libretro/assets/sounds")
+_DEFAULT_RPCS3_TROPHY_SOUND: Final = "ps3-trophy"
 
 def _cfg_get(system: Emulator, key: str, default: Any, *aliases: str) -> Any:
     missing = system.config.MISSING
@@ -51,6 +53,25 @@ def _cfg_get_int(system: Emulator, key: str, default: int, *aliases: str) -> int
         if system.config.get(alias, missing) is not missing:
             return system.config.get_int(alias, default)
     return default
+
+def _retroachievements_sound_disabled(sound: str) -> bool:
+    return sound.lower() in ("", "0", "false", "none")
+
+def _retroachievements_sound_path(system: Emulator) -> str:
+    sound = str(system.config.get("retroachievements.sound", _DEFAULT_RPCS3_TROPHY_SOUND))
+    if _retroachievements_sound_disabled(sound):
+        return ""
+
+    if "/" in sound:
+        path = Path(sound)
+        return str(path) if path.is_file() else ""
+
+    for suffix in (".ogg", ".wav"):
+        path = _ACHIEVEMENT_SOUND_ROOT / f"{sound}{suffix}"
+        if path.is_file():
+            return str(path)
+
+    return ""
 
 class Rpcs3Generator(Generator):
 
@@ -406,12 +427,17 @@ class Rpcs3Generator(Generator):
         if Rpcs3Generator.getFirmwareVersion() is None and (BIOS / "PS3UPDAT.PUP").exists():
             commandArray = [RPCS3_BIN, "--installfw", BIOS / "PS3UPDAT.PUP"]
 
+        env = {
+            "XDG_CONFIG_HOME": CONFIGS,
+            "XDG_CACHE_HOME": CACHE
+        }
+        if _cfg_get_bool(system, "rpcs3_achievement_sound", True):
+            if sound_path := _retroachievements_sound_path(system):
+                env["BATOCERA_RPCS3_TROPHY_SOUND"] = sound_path
+
         return Command.Command(
             array=commandArray,
-            env={
-                "XDG_CONFIG_HOME": CONFIGS,
-                "XDG_CACHE_HOME": CACHE
-            }
+            env=env
         )
 
     @staticmethod

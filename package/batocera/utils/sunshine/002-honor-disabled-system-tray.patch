@@ -1,0 +1,14 @@
+diff --git a/cmake/compile_definitions/common.cmake b/cmake/compile_definitions/common.cmake
+index 3ecddf2c..33cb47cf 100644
+--- a/cmake/compile_definitions/common.cmake
++++ b/cmake/compile_definitions/common.cmake
+@@ -125,6 +125,9 @@ if(NOT SUNSHINE_ASSETS_DIR_DEF)
+ endif()
+ list(APPEND SUNSHINE_DEFINITIONS SUNSHINE_ASSETS_DIR="${SUNSHINE_ASSETS_DIR_DEF}")
+ 
++if(NOT SUNSHINE_ENABLE_TRAY)
++    set(SUNSHINE_TRAY 0)
++endif()
+ list(APPEND SUNSHINE_DEFINITIONS SUNSHINE_TRAY=${SUNSHINE_TRAY})
+ 
+ # Publisher metadata

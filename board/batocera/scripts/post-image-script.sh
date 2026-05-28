@@ -12,15 +12,32 @@ BATOCERA_BINARIES_DIR="${BINARIES_DIR}/batocera"
 GENIMAGE_TMP="${BUILD_DIR}/genimage.tmp"
 ################################
 
-##### find images to build #####
-BATOCERA_TARGET=$(grep -E "^BR2_PACKAGE_BATOCERA_TARGET_[A-Z_0-9]*=y$" "${BR2_CONFIG}" | grep -vE "_ANY=" | grep -vE "_GLES[0-9]*=" | sed -e s+'^BR2_PACKAGE_BATOCERA_TARGET_\([A-Z_0-9]*\)=y$'+'\1'+)
-BATOCERA_LOWER_TARGET=$(echo "${BATOCERA_TARGET}" | tr '[:upper:]' '[:lower:]')
 BATOCERA_IMAGES_TARGETS=$(grep -E "^BR2_TARGET_BATOCERA_IMAGES[ ]*=[ ]*\".*\"[ ]*$" "${BR2_CONFIG}" | sed -e s+"^BR2_TARGET_BATOCERA_IMAGES[ ]*=[ ]*\"\(.*\)\"[ ]*$"+"\1"+)
 if test -z "${BATOCERA_IMAGES_TARGETS}"
 then
     echo "no BR2_TARGET_BATOCERA_IMAGES defined." >&2
     exit 1
 fi
+
+BATOCERA_IMAGE_SUBTARGETS=$(for path in ${BATOCERA_IMAGES_TARGETS}; do basename "${path}"; done)
+BATOCERA_TARGETS=$(grep -E "^BR2_PACKAGE_BATOCERA_TARGET_[A-Z_0-9]*=y$" "${BR2_CONFIG}" | grep -vE "_ANY=" | grep -vE "_GLES[0-9]*=" | sed -e s+'^BR2_PACKAGE_BATOCERA_TARGET_\([A-Z_0-9]*\)=y$'+'\1'+)
+BATOCERA_TARGET=""
+for CANDIDATE_TARGET in ${BATOCERA_TARGETS}
+do
+    CANDIDATE_LOWER_TARGET=$(echo "${CANDIDATE_TARGET}" | tr '[:upper:]' '[:lower:]')
+    for BATOCERA_IMAGE_SUBTARGET in ${BATOCERA_IMAGE_SUBTARGETS}
+    do
+        if [ "${CANDIDATE_LOWER_TARGET}" = "${BATOCERA_IMAGE_SUBTARGET}" ]; then
+            BATOCERA_TARGET="${CANDIDATE_TARGET}"
+            break 2
+        fi
+    done
+done
+if test -z "${BATOCERA_TARGET}"
+then
+    BATOCERA_TARGET=$(echo "${BATOCERA_TARGETS}" | head -n 1)
+fi
+BATOCERA_LOWER_TARGET=$(echo "${BATOCERA_TARGET}" | tr '[:upper:]' '[:lower:]')
 ################################
 
 #### common parent dir to al images #

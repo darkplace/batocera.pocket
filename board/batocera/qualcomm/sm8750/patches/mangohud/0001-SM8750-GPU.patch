@@ -11,10 +11,10 @@ diff --git a/src/gpu_fdinfo.cpp b/src/gpu_fdinfo.cpp
 index c4d63f5..054161b 100644
 --- a/src/gpu_fdinfo.cpp
 +++ b/src/gpu_fdinfo.cpp
-@@ -192,7 +192,7 @@ void GPU_fdinfo::find_hwmon_sensors()
+@@ -178,7 +178,7 @@ void GPU_fdinfo::find_hwmon_sensors()
      std::string hwmon;
  
-     if (module == "msm_drm" || module == "msm_dpu" )
+     if (module == "msm")
 -        hwmon = find_hwmon_sensor_dir("gpu");
 +        hwmon = find_hwmon_sensor_dir("gpuss0_thermal");
      else if (module == "panfrost" || module == "panthor")
@@ -31,4 +31,3 @@ index c4d63f5..054161b 100644
          if (!fs::exists(sys_path)) {
 -- 
 2.47.3
-

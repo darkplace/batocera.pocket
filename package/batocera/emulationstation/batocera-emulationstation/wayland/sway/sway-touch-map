@@ -112,7 +112,7 @@ apply_sway_touch_mapping() {
     fi
 
     case "$model" in
-        AYN_Odin_2|AYN_Odin_2_Mini|AYN_Odin_2_Portal)
+        AYN_Odin_2|AYN_Odin_2_Mini|AYN_Odin_2_Portal|AYN_Odin_3)
             first_touch=$(echo "$touch_ids" | sed -n '1p')
             map_touch_to_output "$first_touch" "DSI-1" primary 0
             return 0

@@ -1,0 +1,17 @@
+diff --git a/cmake/compile_definitions/linux.cmake b/cmake/compile_definitions/linux.cmake
+index 8b21dfb4..cc14ca9a 100644
+--- a/cmake/compile_definitions/linux.cmake
++++ b/cmake/compile_definitions/linux.cmake
+@@ -144,10 +144,8 @@ if(${SUNSHINE_ENABLE_VULKAN})
+     endif()
+ 
+     # prefer glslc, fall back to glslangValidator
+-    find_program(GLSLC_EXECUTABLE glslc)
+-    if(NOT GLSLC_EXECUTABLE)
+-        find_program(GLSLANG_EXECUTABLE glslangValidator)
+-    endif()
++    set(GLSLC_EXECUTABLE "")
++    find_program(GLSLANG_EXECUTABLE glslangValidator REQUIRED NO_CMAKE_FIND_ROOT_PATH)
+     if(NOT GLSLC_EXECUTABLE AND NOT GLSLANG_EXECUTABLE)
+         message(FATAL_ERROR "Vulkan shader compiler not found (need glslc or glslangValidator)")
+     endif()

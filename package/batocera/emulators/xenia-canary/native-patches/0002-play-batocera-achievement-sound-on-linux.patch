@@ -1,0 +1,101 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Wed, 27 May 2026 00:00:00 +0000
+Subject: [PATCH] ui: play configured notification sound on Linux
+
+Batocera writes the selected RetroAchievements sound into
+notification_sound_path for native Xenia Canary. The existing code only
+called the Windows PlaySound API and required WAV, so Linux builds showed
+the notification silently. Use PipeWire/PulseAudio command-line players
+on Linux so the shared Batocera OGG/WAV sound assets work.
+---
+ src/xenia/ui/imgui_guest_notification.cc | 48 +++++++++++++++++++++++-
+ 1 file changed, 46 insertions(+), 2 deletions(-)
+
+--- a/src/xenia/ui/imgui_guest_notification.cc
++++ b/src/xenia/ui/imgui_guest_notification.cc
+@@ -8,6 +8,11 @@
+  */
+ 
+ #include <cmath>
++#include <cstdlib>
++#include <filesystem>
++#include <string>
++#include <string_view>
++#include <thread>
+ 
+ #include "xenia/base/logging.h"
+ #include "xenia/base/platform.h"
+@@ -20,9 +25,46 @@
+ 
+ DEFINE_string(notification_sound_path, "",
+               "Path (including filename) to selected notification sound. Sound "
+-              "MUST be in wav format!",
++              "supports OGG/WAV on Linux and WAV on Windows.",
+               "General");
+ 
++#if XE_PLATFORM_LINUX
++namespace {
++
++std::string ShellQuote(std::string_view value) {
++  std::string quoted = "'";
++  for (const char c : value) {
++    if (c == '\'') {
++      quoted += "'\\''";
++    } else {
++      quoted += c;
++    }
++  }
++  quoted += "'";
++  return quoted;
++}
++
++void PlayNotificationSound(const std::string& path) {
++  if (path.empty() || !std::filesystem::exists(path)) {
++    return;
++  }
++
++  std::thread([path] {
++    const std::string quoted_path = ShellQuote(path);
++    const std::string pw_play_command =
++        "/usr/bin/pw-play " + quoted_path + " >/dev/null 2>&1";
++    const std::string paplay_command =
++        "/usr/bin/paplay " + quoted_path + " >/dev/null 2>&1";
++
++    if (std::system(pw_play_command.c_str()) != 0) {
++      std::system(paplay_command.c_str());
++    }
++  }).detach();
++}
++
++}  // namespace
++#endif
++
+ namespace xe {
+ namespace ui {
+ 
+@@ -46,9 +88,9 @@
+       // TODO(Gliniak): Implement delayed notifications.
+       current_stage_ = NotificationStage::FazeIn;
+       notification_draw_progress_ = 0.2f;
+-#if XE_PLATFORM_WIN32
+       if (!cvars::notification_sound_path.empty()) {
+         auto notification_sound_path = cvars::notification_sound_path;
++#if XE_PLATFORM_WIN32
+         if (std::filesystem::exists(notification_sound_path)) {
+           PlaySound(std::wstring(notification_sound_path.begin(),
+                                  notification_sound_path.end())
+@@ -56,8 +98,10 @@
+                     NULL,
+                     SND_FILENAME | SND_NODEFAULT | SND_NOSTOP | SND_ASYNC);
+         }
+-      }
++#elif XE_PLATFORM_LINUX
++        PlayNotificationSound(notification_sound_path);
+ #endif
++      }
+ 
+       break;
+     case NotificationStage::FazeIn: {
+-- 
+2.50.1

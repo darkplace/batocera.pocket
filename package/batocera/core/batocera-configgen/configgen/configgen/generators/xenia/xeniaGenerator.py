@@ -7,6 +7,7 @@ import platform
 import re
 import shutil
 import stat
+import subprocess
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -28,7 +29,7 @@ _logger = logging.getLogger(__name__)
 UCLAMP_MIN = 819
 UCLAMP_MAX = 1024
 _BATOCERA_ACHIEVEMENT_SOUND_ROOT = Path('/usr/share/libretro/assets/sounds')
-_XBOX360_ACHIEVEMENT_SOUND = _BATOCERA_ACHIEVEMENT_SOUND_ROOT / 'xbox360-achievement.ogg'
+_BATOCERA_DEFAULT_XENIA_ACHIEVEMENT_SOUND = 'xbox360-achievement'
 
 def _cfg_get(system: Any, key: str, default: Any, *aliases: str) -> Any:
     missing = system.config.MISSING
@@ -62,10 +63,58 @@ def _cfg_get_int(system: Any, key: str, default: int, *aliases: str) -> int:
 def _wine_path_from_unix(path: Path) -> str:
     return 'Z:\\' + str(path).lstrip('/').replace('/', '\\')
 
-def _xenia_achievement_sound_path(core: str, native_linux: bool = False) -> str:
-    if native_linux or core == 'xenia-edge':
-        return str(_XBOX360_ACHIEVEMENT_SOUND)
-    return _wine_path_from_unix(_XBOX360_ACHIEVEMENT_SOUND)
+def _retroachievements_sound_disabled(sound: str) -> bool:
+    return sound.lower() in ('', '0', 'false', 'none')
+
+def _retroachievements_sound_path(sound: str) -> Path | None:
+    if _retroachievements_sound_disabled(sound):
+        return None
+
+    if '/' in sound:
+        path = Path(sound)
+        return path if path.is_file() else None
+
+    for suffix in ('.ogg', '.wav'):
+        path = _BATOCERA_ACHIEVEMENT_SOUND_ROOT / f'{sound}{suffix}'
+        if path.is_file():
+            return path
+
+    return None
+
+def _prepare_wine_achievement_sound(source: Path, config_root: Path) -> Path | None:
+    if source.suffix.lower() == '.wav':
+        return source
+
+    target = config_root / 'batocera-achievement.wav'
+    mkdir_if_not_exists(target.parent)
+
+    try:
+        if not target.exists() or target.stat().st_mtime < source.stat().st_mtime:
+            ffmpeg = shutil.which('ffmpeg')
+            if ffmpeg is None:
+                _logger.warning('ffmpeg is missing; cannot convert %s for Wine Xenia achievement sound', source)
+                return None
+            subprocess.run(
+                [ffmpeg, '-y', '-loglevel', 'error', '-i', str(source), str(target)],
+                check=True,
+            )
+    except (OSError, subprocess.CalledProcessError) as exc:
+        _logger.warning('Failed to prepare Wine Xenia achievement sound from %s: %s', source, exc)
+        return None
+
+    return target if target.is_file() else None
+
+def _xenia_achievement_sound_path(system: Any, native_linux: bool, config_root: Path) -> str:
+    sound = system.config.get('retroachievements.sound', _BATOCERA_DEFAULT_XENIA_ACHIEVEMENT_SOUND)
+    path = _retroachievements_sound_path(str(sound))
+    if path is None:
+        return ''
+
+    if native_linux:
+        return str(path)
+
+    wine_path = _prepare_wine_achievement_sound(path, config_root)
+    return _wine_path_from_unix(wine_path) if wine_path else ''
 
 def _batocera_arch() -> str:
     try:
@@ -370,10 +419,17 @@ exit $EXIT_CODE
                 config: dict[str, dict[str, Any]] = toml.load(f)
 
         # [ Now adjust the config file defaults & options we want ]
+        if core == 'xenia-edge':
+            sound_config_root = xeniaEdgeConfig
+        elif native_canary:
+            sound_config_root = xeniaCanaryConfig
+        else:
+            sound_config_root = xeniaConfig
+
         xenia_achievement_sound = _cfg_get_bool(system, 'xenia_achievement_sound', True)
         xenia_achievement_sound_path = ''
         if xenia_achievement_sound and _cfg_get_bool(system, 'xenia_achievement', False):
-            xenia_achievement_sound_path = _xenia_achievement_sound_path(core, native_linux)
+            xenia_achievement_sound_path = _xenia_achievement_sound_path(system, native_linux, sound_config_root)
 
         cpu_cfg = config.setdefault('CPU', {})
         cpu_cfg['break_on_unimplemented_instructions'] = _cfg_get_bool(system, 'break_on_unimplemented_instructions', False)

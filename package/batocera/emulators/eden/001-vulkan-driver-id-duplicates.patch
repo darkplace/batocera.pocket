@@ -1,0 +1,13 @@
+diff --git a/src/video_core/vulkan_common/vulkan_wrapper.cpp b/src/video_core/vulkan_common/vulkan_wrapper.cpp
+index 9f09a9b..0aa5747 100644
+--- a/src/video_core/vulkan_common/vulkan_wrapper.cpp
++++ b/src/video_core/vulkan_common/vulkan_wrapper.cpp
+@@ -1059,8 +1059,6 @@ std::string_view DriverName(const VkPhysicalDeviceDriverProperties& driver) {
+         return "PVR";
+     case VK_DRIVER_ID_MESA_HONEYKRISP:
+         return "HoneyKrisp";
+-    case VK_DRIVER_ID_MESA_KOSMICKRISP:
+-        return "KosmicKrisp";
+     case VK_DRIVER_ID_GGP_PROPRIETARY:
+     case VK_DRIVER_ID_COREAVI_PROPRIETARY:
+     case VK_DRIVER_ID_JUICE_PROPRIETARY:

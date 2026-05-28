@@ -1,0 +1,15 @@
+diff --git a/vite.config.js b/vite.config.js
+index 599f6a8..d875c21 100644
+--- a/vite.config.js
++++ b/vite.config.js
+@@ -54,9 +54,10 @@ export default defineConfig({
+         // The Codecov vite plugin should be after all other plugins
+         codecovVitePlugin({
+             enableBundleAnalysis: true,
++            telemetry: false,
+             bundleName: "sunshine",
+             uploadToken: process.env.CODECOV_TOKEN,
+             gitService: "github",
+         }),
+     ],
+     root: resolve(assetsSrcPath),

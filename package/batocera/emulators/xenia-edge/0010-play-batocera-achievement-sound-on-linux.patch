@@ -1,0 +1,95 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Wed, 27 May 2026 00:00:00 +0000
+Subject: [PATCH] ui: prefer Batocera audio players for achievement sounds
+
+Batocera stores RetroAchievements sounds as shared OGG assets. Prefer
+PipeWire/PulseAudio playback on Linux before falling back to Xenia Edge's
+miniaudio path so the configured Batocera achievement sound works
+consistently on handheld builds.
+---
+ src/xenia/ui/audio_helper.cc | 48 ++++++++++++++++++++++++++++++++++++
+ 1 file changed, 48 insertions(+)
+
+--- a/src/xenia/ui/audio_helper.cc
++++ b/src/xenia/ui/audio_helper.cc
+@@ -9,10 +9,15 @@
+ 
+ #include "xenia/ui/audio_helper.h"
+ 
++#include <cstdlib>
+ #include <filesystem>
++#include <string>
++#include <string_view>
++#include <thread>
+ 
+ #include "xenia/base/cvar.h"
+ #include "xenia/base/logging.h"
++#include "xenia/base/platform.h"
+ #include "xenia/base/string.h"
+ 
+ #define MINIAUDIO_IMPLEMENTATION
+@@ -20,6 +25,46 @@
+ 
+ DECLARE_path(achievement_sound_path);
+ 
++#if XE_PLATFORM_LINUX
++namespace {
++
++std::string ShellQuote(std::string_view value) {
++  std::string quoted = "'";
++  for (const char c : value) {
++    if (c == '\'') {
++      quoted += "'\\''";
++    } else {
++      quoted += c;
++    }
++  }
++  quoted += "'";
++  return quoted;
++}
++
++bool PlayWithBatoceraAudioPlayer(const std::filesystem::path& sound_path) {
++  if (!std::filesystem::exists(sound_path)) {
++    return false;
++  }
++
++  const std::string path = xe::path_to_utf8(sound_path);
++  std::thread([path] {
++    const std::string quoted_path = ShellQuote(path);
++    const std::string pw_play_command =
++        "/usr/bin/pw-play " + quoted_path + " >/dev/null 2>&1";
++    const std::string paplay_command =
++        "/usr/bin/paplay " + quoted_path + " >/dev/null 2>&1";
++
++    if (std::system(pw_play_command.c_str()) != 0) {
++      std::system(paplay_command.c_str());
++    }
++  }).detach();
++
++  return true;
++}
++
++}  // namespace
++#endif
++
+ namespace xe {
+ namespace ui {
+ 
+@@ -92,6 +137,14 @@
+ }
+ 
+ void AudioHelper::PlayAchievementSound() {
++#if XE_PLATFORM_LINUX
++  if (!cvars::achievement_sound_path.empty()) {
++    if (PlayWithBatoceraAudioPlayer(cvars::achievement_sound_path)) {
++      return;
++    }
++  }
++#endif
++
+   // Lazy initialization - only create engine when first needed
+   if (!initialized_) {
+     Initialize();
+-- 
+2.50.1
