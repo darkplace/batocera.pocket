@@ -78,7 +78,7 @@ class Rpcs3Generator(Generator):
     def getHotkeysContext(self) -> HotkeysContext:
         return {
             "name": "rpcs3",
-            "keys": { "exit": ["KEY_LEFTALT", "KEY_F4"] }
+            "keys": { "exit": "/usr/bin/rpcs3-exit", "menu": ["KEY_LEFTSHIFT", "KEY_F10"] }
         }
 
     def generate(self, system, rom, playersControllers, metadata, guns, wheels, gameResolution):
@@ -347,6 +347,9 @@ class Rpcs3Generator(Generator):
         
         # Keyboard handler
         rpcs3ymlconfig["Input/Output"]["Keyboard"] = _cfg_get(system, "rpcs3_keyboard", "Null", "keyboard")
+
+        # Let RPCS3 import Batocera's generated SDL mapping database.
+        rpcs3ymlconfig["Input/Output"]["Load SDL GameController Mappings"] = True
         
         # Mouse handler
         rpcs3ymlconfig["Input/Output"]["Mouse"] = _cfg_get(system, "rpcs3_mouse", "Null", "mouse")

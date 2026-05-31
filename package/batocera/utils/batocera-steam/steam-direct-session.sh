@@ -12,6 +12,8 @@ DIRECT_SESSION_LOCK_ACQUIRED=0
 ES_PROCESS_PATTERN='(^|/)emulationstation([[:space:]]|$)'
 ES_STANDALONE_PATTERN='(^|/)emulationstation-standalone([[:space:]]|$)'
 DECKY_STACK_PATTERN='/userdata/system/homebrew/services/PluginLoader|Decky Loader|/userdata/system/homebrew/plugins/'
+STEAM_HELPER_PATTERN='steamrtarm64/steam|steamwebhelper|steamwebhelper\.sh|steam-runtime-supervisor|steam-runtime-launcher-service|steamerrorreporter|pressure-vessel|srt-logger|steam-runtime-system-info|SteamLinuxRuntime|SteamLaunch AppId=|pw-audio-namespace|/proton waitforexitandrun|steam\.exe|wineserver|winedevice\.exe|services\.exe'
+FEX_STACK_PATTERN='(^|[[:space:]/])(FEX|FEXServer|FEXLoader|FEXInterpreter)([[:space:]]|$)|/usr/share/fex-emu|/userdata/system/steam/rootfs|\.FEXMount|squashfuse'
 STEAM_GPU_PROFILE_STATE=""
 
 mkdir -p "$(dirname "${LOG}")"
@@ -762,38 +764,38 @@ steam_stack_alive() {
     pgrep -x gamescopereaper >/dev/null 2>&1 || \
     pgrep -x gamescopestream >/dev/null 2>&1 || \
     pgrep -x gamescopectl >/dev/null 2>&1 || \
+    pgrep -x mangoapp >/dev/null 2>&1 || \
     pgrep -x wineserver >/dev/null 2>&1 || \
+    pgrep -f "${STEAM_HELPER_PATTERN}" >/dev/null 2>&1 || \
+    pgrep -f "${FEX_STACK_PATTERN}" >/dev/null 2>&1 || \
     pgrep -f "${DECKY_STACK_PATTERN}" >/dev/null 2>&1 || \
-    pgrep -f 'SteamLaunch AppId=|pw-audio-namespace|/proton waitforexitandrun|steam\.exe' >/dev/null 2>&1
+    pgrep -f '/userdata/system/steam/steam.sh|/usr/share/steam/bin_steam.sh|emulatorlauncher.*-system steam|Steam GamepadUI\.steam|Steam Desktop\.steam' >/dev/null 2>&1
+}
+
+cleanup_fex_mounts() {
+    local mount
+
+    for mount in "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/.FEXMount* /run/user/*/.FEXMount*; do
+        [[ -e "${mount}" ]] || continue
+        fusermount3 -uz "${mount}" >/dev/null 2>&1 || \
+            fusermount -uz "${mount}" >/dev/null 2>&1 || \
+            umount -l "${mount}" >/dev/null 2>&1 || true
+    done
 }
 
 terminate_steam_stack() {
     local i
 
     log "cleaning residual Steam/gamescope process stack after Steam exit"
-    pkill -TERM -f '(^|[[:space:]/])batocera-steam([[:space:]]|$)' >/dev/null 2>&1 || true
-    pkill -TERM -f '(^|[[:space:]/])batocera-steam-session([[:space:]]|$)' >/dev/null 2>&1 || true
-    pkill -TERM -f '(^|[[:space:]/])batocera-steam-uimode-watch([[:space:]]|$)' >/dev/null 2>&1 || true
-    pkill -TERM -f '(^|[[:space:]/])batocera-steam-nightmode-watch([[:space:]]|$)' >/dev/null 2>&1 || true
-    pkill -TERM -f '(^|[[:space:]/])batocera-steam-update-terminal([[:space:]]|$)' >/dev/null 2>&1 || true
-    pkill -TERM -x steam >/dev/null 2>&1 || true
-    pkill -TERM -x steamwebhelper >/dev/null 2>&1 || true
-    pkill -TERM -x steam-runtime-supervisor >/dev/null 2>&1 || true
-    pkill -TERM -x FEX >/dev/null 2>&1 || true
-    pkill -TERM -f '(^|[[:space:]/])gamescope([[:space:]]|$)' >/dev/null 2>&1 || true
-    pkill -TERM -x gamescope >/dev/null 2>&1 || true
-    pkill -TERM -x gamescopereaper >/dev/null 2>&1 || true
-    pkill -TERM -x gamescopestream >/dev/null 2>&1 || true
-    pkill -TERM -x gamescopectl >/dev/null 2>&1 || true
-    pkill -TERM -x wineserver >/dev/null 2>&1 || true
-    pkill -TERM -f "${DECKY_STACK_PATTERN}" >/dev/null 2>&1 || true
-    pkill -TERM -f 'SteamLaunch AppId=|pw-audio-namespace|/proton waitforexitandrun|steam\.exe' >/dev/null 2>&1 || true
-
-    for i in $(seq 1 20); do
-        steam_stack_alive || return 0
-        sleep 0.2
-    done
-
+    if command -v killall >/dev/null 2>&1; then
+        killall -q -9 batocera-steam steam steamwebhelper steam-runtime-supervisor \
+            steam-runtime-launcher-service steamerrorreporter pressure-vessel \
+            FEX FEXServer FEXLoader FEXInterpreter squashfuse squashfuse_ll \
+            gamescope gamescopereaper gamescopestream gamescopectl mangoapp \
+            wineserver winedevice.exe services.exe PluginLoader >/dev/null 2>&1 || true
+    fi
+    pkill -KILL -f "${STEAM_HELPER_PATTERN}" >/dev/null 2>&1 || true
+    pkill -KILL -f "${FEX_STACK_PATTERN}" >/dev/null 2>&1 || true
     pkill -KILL -f '(^|[[:space:]/])batocera-steam([[:space:]]|$)' >/dev/null 2>&1 || true
     pkill -KILL -f '(^|[[:space:]/])batocera-steam-session([[:space:]]|$)' >/dev/null 2>&1 || true
     pkill -KILL -f '(^|[[:space:]/])batocera-steam-uimode-watch([[:space:]]|$)' >/dev/null 2>&1 || true
@@ -803,14 +805,29 @@ terminate_steam_stack() {
     pkill -KILL -x steamwebhelper >/dev/null 2>&1 || true
     pkill -KILL -x steam-runtime-supervisor >/dev/null 2>&1 || true
     pkill -KILL -x FEX >/dev/null 2>&1 || true
+    pkill -KILL -x FEXServer >/dev/null 2>&1 || true
+    pkill -KILL -x FEXLoader >/dev/null 2>&1 || true
+    pkill -KILL -x FEXInterpreter >/dev/null 2>&1 || true
+    pkill -KILL -x squashfuse >/dev/null 2>&1 || true
+    pkill -KILL -x squashfuse_ll >/dev/null 2>&1 || true
     pkill -KILL -f '(^|[[:space:]/])gamescope([[:space:]]|$)' >/dev/null 2>&1 || true
     pkill -KILL -x gamescope >/dev/null 2>&1 || true
     pkill -KILL -x gamescopereaper >/dev/null 2>&1 || true
     pkill -KILL -x gamescopestream >/dev/null 2>&1 || true
     pkill -KILL -x gamescopectl >/dev/null 2>&1 || true
+    pkill -KILL -x mangoapp >/dev/null 2>&1 || true
     pkill -KILL -x wineserver >/dev/null 2>&1 || true
     pkill -KILL -f "${DECKY_STACK_PATTERN}" >/dev/null 2>&1 || true
-    pkill -KILL -f 'SteamLaunch AppId=|pw-audio-namespace|/proton waitforexitandrun|steam\.exe' >/dev/null 2>&1 || true
+    pkill -KILL -f '/userdata/system/steam/steam.sh|/usr/share/steam/bin_steam.sh|emulatorlauncher.*-system steam|Steam GamepadUI\.steam|Steam Desktop\.steam' >/dev/null 2>&1 || true
+    cleanup_fex_mounts
+
+    for i in $(seq 1 8); do
+        steam_stack_alive || return 0
+        pkill -KILL -f "${STEAM_HELPER_PATTERN}" >/dev/null 2>&1 || true
+        pkill -KILL -f "${FEX_STACK_PATTERN}" >/dev/null 2>&1 || true
+        cleanup_fex_mounts
+        sleep 0.2
+    done
 }
 
 restore_frontend() {
@@ -830,7 +847,7 @@ restore_frontend() {
             log "waiting for existing EmulationStation standalone wrapper after Steam exit"
         fi
 
-        if wait_for_emulationstation_ready 160; then
+        if wait_for_emulationstation_ready "${BATOCERA_STEAM_ES_RESTORE_WAIT_TRIES:-32}"; then
             log "EmulationStation display became ready after Steam exit"
             return 0
         fi
@@ -838,7 +855,7 @@ restore_frontend() {
         log "EmulationStation standalone did not become ready after Steam exit"
         stop_stale_emulationstation_standalone
         start_emulationstation_standalone || true
-        if wait_for_emulationstation_ready 160; then
+        if wait_for_emulationstation_ready "${BATOCERA_STEAM_ES_RESTORE_WAIT_TRIES:-32}"; then
             log "EmulationStation display became ready after standalone retry"
             return 0
         fi
@@ -862,7 +879,46 @@ restore_frontend() {
         run_frontend_service_cmd "${ES_SERVICE}" start || run_frontend_service_cmd "${ES_SERVICE}" restart || true
     fi
 
-    wait_for_emulationstation_ready 160 || true
+    if wait_for_emulationstation_ready "${BATOCERA_STEAM_ES_RESTORE_WAIT_TRIES:-32}"; then
+        log "EmulationStation display became ready after service start"
+        return 0
+    fi
+
+    log "EmulationStation service start did not restore display; retrying service start"
+    pkill -KILL -x mangoapp >/dev/null 2>&1 || true
+    if [[ -x "${ES_SERVICE}" ]]; then
+        run_frontend_service_cmd "${ES_SERVICE}" start || true
+    fi
+    if wait_for_emulationstation_ready "${BATOCERA_STEAM_ES_RESTORE_RETRY_WAIT_TRIES:-32}"; then
+        log "EmulationStation display became ready after service start retry"
+        return 0
+    fi
+
+    log "EmulationStation display restore failed after service start retry"
+    return 1
+}
+
+start_frontend_recover_monitor() {
+    command -v batocera-steam-frontend-recover >/dev/null 2>&1 || return 0
+
+    log "starting Steam frontend recovery monitor: ${1:-steam-direct-session}"
+    if command -v setsid >/dev/null 2>&1; then
+        setsid batocera-steam-frontend-recover \
+            --wait-steam-exit \
+            --reason "${1:-steam-direct-session}" >/dev/null 2>&1 &
+    else
+        batocera-steam-frontend-recover \
+            --wait-steam-exit \
+            --reason "${1:-steam-direct-session}" >/dev/null 2>&1 &
+    fi
+    disown "$!" 2>/dev/null || true
+}
+
+start_session_supervisor() {
+    command -v batocera-steam-session-supervisor >/dev/null 2>&1 || return 0
+
+    log "starting Steam session supervisor: ${1:-steam-direct-session}"
+    batocera-steam-session-supervisor start "${1:-steam-direct-session}" >/dev/null 2>&1 || true
 }
 
 cleanup() {
@@ -892,6 +948,7 @@ cleanup() {
     fi
     terminate_steam_stack
     restore_frontend || true
+    start_frontend_recover_monitor "steam-direct-session-cleanup"
     restore_backglass_widget
     restore_sm8550_gpu_profile
     release_direct_session_lock
@@ -934,6 +991,8 @@ if [[ "${direct_app_session}" == "1" ]]; then
 else
     printf '%s\n' "$$" > "${GAMESCOPE_ES_SESSION_FLAG}" || true
 fi
+
+start_session_supervisor "steam-direct-session"
 
 if [[ "${BATOCERA_STEAM_VISIBLE_UPDATE_PREFLIGHT:-0}" != "0" && -x /usr/bin/batocera-steam-update-preflight ]]; then
     if emulationstation_running; then
@@ -1025,7 +1084,7 @@ if [[ "${BATOCERA_STEAM_GS_BACKEND}" == "drm" && -n "${detected_drm_connector}" 
 fi
 export BATOCERA_STEAM_GS_NESTED_RES="${BATOCERA_STEAM_GS_NESTED_RES:-${BATOCERA_STEAM_GS_DEFAULT_RES}}"
 export BATOCERA_STEAM_GS_NESTED_REFRESH="${BATOCERA_STEAM_GS_NESTED_REFRESH:-${detected_refresh}}"
-if [[ "${BATOCERA_STEAM_FORCE_DISABLE_MANGOAPP:-0}" != "1" ]]; then
+if [[ "${BATOCERA_STEAM_GS_BACKEND}" != "drm" && "${BATOCERA_STEAM_FORCE_DISABLE_MANGOAPP:-0}" != "1" ]]; then
     export BATOCERA_STEAM_GS_MANGOAPP="1"
 fi
 if [[ "${BATOCERA_STEAM_GS_BACKEND}" == "drm" ]]; then

@@ -1,0 +1,21 @@
+{
+  "actions_player1": [
+    {
+      "trigger": "joystick1",
+      "type": "mouse",
+      "description": "Move Pointer"
+    },
+    {
+      "trigger": "b",
+      "type": "key",
+      "target": "BTN_LEFT",
+      "description": "Left Click"
+    },
+    {
+      "trigger": "a",
+      "type": "key",
+      "target": "BTN_RIGHT",
+      "description": "Right Click"
+    }
+  ]
+}

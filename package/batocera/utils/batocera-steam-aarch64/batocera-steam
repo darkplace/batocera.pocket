@@ -51,6 +51,57 @@ restore_sm8550_gpu_profile() {
     log_msg "sm8x50 GPU profile restored after Steam launcher"
 }
 
+steam_session_leftover_pids() {
+    local proc
+    local pid
+    local ppid
+    local cmd
+    local comm
+
+    for proc in /proc/[0-9]*; do
+        pid="${proc##*/}"
+        [[ "${pid}" != "$$" && "${pid}" != "${BASHPID:-$$}" ]] || continue
+
+        ppid="$(awk '/^PPid:/ { print $2 }' "${proc}/status" 2>/dev/null || true)"
+        [[ "${ppid}" == "1" ]] || continue
+
+        cmd="$(tr '\0' ' ' 2>/dev/null < "${proc}/cmdline" || true)"
+        comm="$(cat "${proc}/comm" 2>/dev/null || true)"
+        case "${cmd} ${comm}" in
+            *"/userdata/system/homebrew/plugin"*|*"Decky Terminal"*|*"Animation Changer"*|*"Game Theme Music"*|*"ProtonDB Badges"*|*"FEXServer"*|*"squashfuse "*".FEXMount"*)
+                printf '%s\n' "${pid}"
+                ;;
+        esac
+    done
+}
+
+kill_steam_session_leftovers() {
+    local signal="$1"
+    local pid
+
+    while IFS= read -r pid; do
+        [[ -n "${pid}" ]] || continue
+        kill "-${signal}" "${pid}" >/dev/null 2>&1 || true
+    done < <(steam_session_leftover_pids | sort -u)
+}
+
+cleanup_steam_session_leftovers() {
+    local mount
+
+    [[ "${BATOCERA_STEAM_CLEAN_SESSION_LEFTOVERS:-1}" != "0" ]] || return 0
+
+    kill_steam_session_leftovers TERM
+    sleep 0.2
+    kill_steam_session_leftovers KILL
+
+    for mount in "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/.FEXMount* /run/user/*/.FEXMount*; do
+        [[ -e "${mount}" ]] || continue
+        fusermount3 -uz "${mount}" >/dev/null 2>&1 || \
+            fusermount -uz "${mount}" >/dev/null 2>&1 || \
+            umount -l "${mount}" >/dev/null 2>&1 || true
+    done
+}
+
 flash_msg() {
     local seconds="$1"
     local message="$2"
@@ -499,6 +550,195 @@ ensure_steam_links() {
     if [[ -d "${STEAM_ROOT}/linuxarm64" ]]; then
         ln -sfn "${STEAM_ROOT}/linuxarm64" "${HOME}/.steam/sdkarm64"
     fi
+}
+
+sync_steam_library_folders() {
+    local -a candidates=()
+    local mount_point
+    local source
+    local boot_source
+    local userdata_source
+    local size_kb
+    local library_path
+
+    candidates+=("/userdata/roms/steam")
+    boot_source="$(findmnt -n -o SOURCE /boot 2>/dev/null || true)"
+    userdata_source="$(findmnt -n -o SOURCE /userdata 2>/dev/null || true)"
+
+    while IFS= read -r mount_point; do
+        [[ -d "${mount_point}" ]] || continue
+        source="$(findmnt -n -o SOURCE --target "${mount_point}" 2>/dev/null || true)"
+        [[ -n "${source}" ]] || continue
+        [[ -n "${boot_source}" && "${source}" == "${boot_source}" ]] && continue
+        [[ -n "${userdata_source}" && "${source}" == "${userdata_source}" ]] && continue
+
+        size_kb="$(df -Pk "${mount_point}" 2>/dev/null | awk 'NR == 2 { print $2 }')"
+        [[ "${size_kb}" =~ ^[0-9]+$ ]] || size_kb=0
+        [[ "${size_kb}" -ge "${BATOCERA_STEAM_EXTERNAL_LIBRARY_MIN_KB:-8388608}" ]] || continue
+
+        library_path="${mount_point%/}/SteamLibrary"
+        mkdir -p "${library_path}/steamapps" 2>/dev/null || continue
+        [[ -w "${library_path}/steamapps" ]] || continue
+        candidates+=("${library_path}")
+    done < <(awk '$2 ~ /^\/media\/[^/]+$/ { print $2 }' /proc/mounts | sort -u)
+
+    mkdir -p "${STEAM_ROOT}/config" "${STEAM_ROOT}/steamapps" "/userdata/roms/steam/steamapps"
+
+    command -v python3 >/dev/null 2>&1 || return 0
+    python3 - "${STEAM_ROOT}/config/libraryfolders.vdf" "${STEAM_ROOT}/steamapps/libraryfolders.vdf" "${candidates[@]}" <<'PY' >> "${log}" 2>&1 || true
+from __future__ import annotations
+
+import hashlib
+import sys
+from pathlib import Path
+
+
+def q(value: object) -> str:
+    return '"' + str(value).replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def tokenize(text: str) -> list[str]:
+    tokens: list[str] = []
+    index = 0
+    while index < len(text):
+        char = text[index]
+        if char.isspace():
+            index += 1
+            continue
+        if char == "/" and index + 1 < len(text) and text[index + 1] == "/":
+            while index < len(text) and text[index] != "\n":
+                index += 1
+            continue
+        if char in "{}":
+            tokens.append(char)
+            index += 1
+            continue
+        if char == '"':
+            index += 1
+            buf: list[str] = []
+            while index < len(text):
+                current = text[index]
+                if current == "\\" and index + 1 < len(text):
+                    buf.append(text[index + 1])
+                    index += 2
+                    continue
+                if current == '"':
+                    index += 1
+                    break
+                buf.append(current)
+                index += 1
+            tokens.append("".join(buf))
+            continue
+
+        start = index
+        while index < len(text) and not text[index].isspace() and text[index] not in "{}":
+            index += 1
+        tokens.append(text[start:index])
+    return tokens
+
+
+def parse_object(tokens: list[str], index: int = 0) -> tuple[dict[str, object], int]:
+    data: dict[str, object] = {}
+    while index < len(tokens):
+        token = tokens[index]
+        if token == "}":
+            return data, index + 1
+        key = token
+        index += 1
+        if index >= len(tokens):
+            data[key] = ""
+            break
+        token = tokens[index]
+        if token == "{":
+            value, index = parse_object(tokens, index + 1)
+            data[key] = value
+        else:
+            data[key] = token
+            index += 1
+    return data, index
+
+
+def load_vdf(path: Path) -> dict[str, object]:
+    if not path.exists():
+        return {}
+    try:
+        data, _ = parse_object(tokenize(path.read_text(encoding="utf-8", errors="ignore")))
+        return data
+    except Exception:
+        return {}
+
+
+def dump_object(node: dict[str, object], indent: str = "") -> list[str]:
+    lines: list[str] = []
+    for key, value in node.items():
+        if isinstance(value, dict):
+            lines.append(f"{indent}{q(key)}")
+            lines.append(f"{indent}" + "{")
+            lines.extend(dump_object(value, indent + "\t"))
+            lines.append(f"{indent}" + "}")
+        else:
+            lines.append(f"{indent}{q(key)}\t\t{q(value)}")
+    return lines
+
+
+def content_id(path: str) -> str:
+    return str(int(hashlib.sha1(path.encode("utf-8")).hexdigest()[:15], 16))
+
+
+def make_entry(path: str, label: str) -> dict[str, object]:
+    return {
+        "path": path,
+        "label": label,
+        "contentid": content_id(path),
+        "totalsize": "0",
+        "update_clean_bytes_tally": "0",
+        "time_last_update_verified": "0",
+        "apps": {},
+    }
+
+
+config_path = Path(sys.argv[1])
+legacy_path = Path(sys.argv[2])
+candidates = []
+for raw in sys.argv[3:]:
+    path = str(Path(raw))
+    if path not in candidates and Path(path, "steamapps").is_dir():
+        candidates.append(path)
+
+data = load_vdf(config_path)
+libraryfolders = data.get("libraryfolders")
+if not isinstance(libraryfolders, dict):
+    libraryfolders = {}
+    data = {"libraryfolders": libraryfolders}
+
+existing_paths: set[str] = set()
+max_index = -1
+for key, value in libraryfolders.items():
+    if key.isdigit():
+        max_index = max(max_index, int(key))
+    if isinstance(value, dict) and isinstance(value.get("path"), str):
+        existing_paths.add(str(Path(value["path"])))
+
+if candidates and candidates[0] not in existing_paths and "0" not in libraryfolders:
+    libraryfolders["0"] = make_entry(candidates[0], "")
+    existing_paths.add(candidates[0])
+    max_index = max(max_index, 0)
+
+for candidate in candidates:
+    if candidate in existing_paths:
+        continue
+    max_index += 1
+    label = "Batocera External" if candidate.startswith("/media/") else ""
+    libraryfolders[str(max_index)] = make_entry(candidate, label)
+    existing_paths.add(candidate)
+
+text = "\n".join(dump_object(data)) + "\n"
+for path in (config_path, legacy_path):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+
+print("Synced Steam libraries: " + ", ".join(candidates))
+PY
 }
 
 install_steam_registry_defaults() {
@@ -1093,6 +1333,7 @@ cleanup() {
         PROTON11_TOOLMANIFEST_WATCHER_PID=""
     fi
     restore_host_binfmt
+    cleanup_steam_session_leftovers
     restore_sm8550_gpu_profile
 }
 
@@ -1193,6 +1434,7 @@ ensure_runtime_dir
 start_compat_shims
 ensure_steam_links
 install_steam_registry_defaults
+sync_steam_library_folders
 ensure_network_for_steam_setup
 ensure_native_steam_client
 prepare_arm64_steam_layout

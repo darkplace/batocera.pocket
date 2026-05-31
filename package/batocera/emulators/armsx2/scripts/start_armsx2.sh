@@ -62,10 +62,25 @@ Videos = ../../../saves/ps2/pcsx2/videos
 EOF
 fi
 
-if [ -f /usr/share/evmapy/gamecontrollerdb.txt ]; then
-	ln -sf /usr/share/evmapy/gamecontrollerdb.txt "${DATA_ROOT}/game_controller_db.txt"
-elif [ -f /usr/share/SDL-GameControllerDB/gamecontrollerdb.txt ]; then
-	ln -sf /usr/share/SDL-GameControllerDB/gamecontrollerdb.txt "${DATA_ROOT}/game_controller_db.txt"
+if [ ! -f "${DATA_ROOT}/game_controller_db.txt" ]; then
+	if [ -f /usr/share/evmapy/gamecontrollerdb.txt ]; then
+		cp -f /usr/share/evmapy/gamecontrollerdb.txt "${DATA_ROOT}/game_controller_db.txt"
+	elif [ -f /usr/share/SDL-GameControllerDB/gamecontrollerdb.txt ]; then
+		cp -f /usr/share/SDL-GameControllerDB/gamecontrollerdb.txt "${DATA_ROOT}/game_controller_db.txt"
+	elif [ -f /usr/armsx2/bin/resources/game_controller_db.txt ]; then
+		cp -f /usr/armsx2/bin/resources/game_controller_db.txt "${DATA_ROOT}/game_controller_db.txt"
+	else
+		: > "${DATA_ROOT}/game_controller_db.txt"
+	fi
+fi
+
+ODIN2_GUID="03000000202000000130000001000000"
+ODIN2_MAPPING="${ODIN2_GUID},AYN Odin2 Gamepad,a:b1,b:b2,x:b4,y:b3,back:b7,guide:b9,start:b8,leftstick:b10,rightstick:b11,leftshoulder:b5,rightshoulder:b6,dpup:b12,dpdown:b13,dpleft:b14,dpright:b15,leftx:a0,lefty:a1,rightx:a3,righty:a4,lefttrigger:a2,righttrigger:a5,platform:Linux,"
+if ! grep -qxF "${ODIN2_MAPPING}" "${DATA_ROOT}/game_controller_db.txt"; then
+	tmp_db="${DATA_ROOT}/game_controller_db.txt.tmp"
+	grep -v "^${ODIN2_GUID}," "${DATA_ROOT}/game_controller_db.txt" > "${tmp_db}" || true
+	printf '%s\n' "${ODIN2_MAPPING}" >> "${tmp_db}"
+	mv -f "${tmp_db}" "${DATA_ROOT}/game_controller_db.txt"
 fi
 
 export XDG_CONFIG_HOME="${CONFIG_HOME}"

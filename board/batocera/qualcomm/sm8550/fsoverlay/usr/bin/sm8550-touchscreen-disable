@@ -1,0 +1,113 @@
+#!/bin/sh
+
+LOG="/userdata/system/logs/sm8550-touchscreen-disable.log"
+CHILD_PIDFILE="/var/run/disable_touchscreen.evsieve.pid"
+RESCAN_DELAY="2"
+CHILD_PID=""
+ALL_TOUCHSCREENS="$(batocera-settings-get system.disable_touchscreen.all 2>/dev/null || true)"
+
+mkdir -p "$(dirname "${LOG}")"
+
+log_msg() {
+    echo "[$(date '+%F %T')] $*" >> "${LOG}"
+}
+
+cleanup() {
+    if [ -n "${CHILD_PID}" ]; then
+        kill "${CHILD_PID}" >/dev/null 2>&1 || true
+        wait "${CHILD_PID}" >/dev/null 2>&1 || true
+    fi
+    rm -f "${CHILD_PIDFILE}"
+    exit 0
+}
+
+trap cleanup INT TERM
+
+event_name() {
+    event="${1##*/}"
+    cat "/sys/class/input/${event}/device/name" 2>/dev/null || true
+}
+
+event_props() {
+    udevadm info --query=property --name "${1}" 2>/dev/null || true
+}
+
+is_internal_touchscreen() {
+    event="${1}"
+    props="$(event_props "${event}")"
+
+    echo "${props}" | grep -qx 'ID_INPUT_TOUCHSCREEN=1' || return 1
+
+    if [ "${ALL_TOUCHSCREENS}" = "1" ]; then
+        return 0
+    fi
+
+    echo "${props}" | grep -q '^ID_PATH=platform-' && return 0
+    readlink -f "/sys/class/input/${event##*/}/device" 2>/dev/null | grep -q '^/sys/devices/platform/' && return 0
+
+    return 1
+}
+
+list_touchscreens() {
+    found=0
+
+    for event in /dev/input/event*; do
+        [ -e "${event}" ] || continue
+        if is_internal_touchscreen "${event}"; then
+            found=1
+            printf '%s\t%s\n' "${event}" "$(event_name "${event}")"
+        fi
+    done
+
+    [ "${found}" = "1" ]
+}
+
+run_grabber() {
+    if ! command -v evsieve >/dev/null 2>&1; then
+        log_msg "evsieve is not installed; cannot disable touchscreen"
+        sleep "${RESCAN_DELAY}"
+        return
+    fi
+
+    set --
+    found=0
+    for event in /dev/input/event*; do
+        [ -e "${event}" ] || continue
+        if is_internal_touchscreen "${event}"; then
+            found=1
+            log_msg "grabbing ${event} ($(event_name "${event}"))"
+            set -- "$@" --input "${event}" grab=force persist=exit
+        fi
+    done
+
+    if [ "${found}" = "0" ]; then
+        log_msg "no internal touchscreen event devices found; rescanning"
+        sleep "${RESCAN_DELAY}"
+        return
+    fi
+
+    evsieve "$@" --block >> "${LOG}" 2>&1 &
+    CHILD_PID="$!"
+    echo "${CHILD_PID}" > "${CHILD_PIDFILE}"
+    wait "${CHILD_PID}" >/dev/null 2>&1 || true
+    CHILD_PID=""
+    rm -f "${CHILD_PIDFILE}"
+    log_msg "grabber exited; rescanning"
+    sleep "${RESCAN_DELAY}"
+}
+
+case "${1:-start}" in
+    list)
+        list_touchscreens
+        ;;
+    start)
+        log_msg "touchscreen disable helper started"
+        while true; do
+            run_grabber
+        done
+        ;;
+    *)
+        echo "Usage: $0 {start|list}" >&2
+        exit 1
+        ;;
+esac

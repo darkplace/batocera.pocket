@@ -3,4 +3,4 @@ config BR2_PACKAGE_ES_THEME_CARBON
 	help
 	  EmulationStation theme Carbon (Batocera version).
 
-	  https://github.com/fabricecaruso/es-theme-carbon
+	  https://github.com/suckbluefrog/es-theme-carbon

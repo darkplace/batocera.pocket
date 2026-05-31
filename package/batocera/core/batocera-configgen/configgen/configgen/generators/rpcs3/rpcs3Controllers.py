@@ -5,6 +5,7 @@ import logging
 from typing import TYPE_CHECKING, Final, TypedDict
 
 from ...batoceraPaths import mkdir_if_not_exists
+from ...controller import write_sdl_controller_db
 from .rpcs3Paths import RPCS3_CONFIG_DIR
 
 if TYPE_CHECKING:
@@ -15,15 +16,55 @@ if TYPE_CHECKING:
 
 _logger = logging.getLogger(__name__)
 
-_RPCS3_INPUT_DIR: Final = RPCS3_CONFIG_DIR / "input_configs" / "global"
+_RPCS3_INPUT_ROOT: Final = RPCS3_CONFIG_DIR / "input_configs"
+_RPCS3_INPUT_DIR: Final = _RPCS3_INPUT_ROOT / "global"
+_RPCS3_ACTIVE_INPUT_CONFIG: Final = _RPCS3_INPUT_ROOT / "active_input_configurations.yml"
+_RPCS3_SDL_DB: Final = _RPCS3_INPUT_ROOT / "gamecontrollerdb.txt"
 
 
 class _InputMapping(TypedDict):
     config_name: str
     event_variations: list[tuple[str, str]]
 
+
+def _write_sdl_controller_database(controllers: Controllers) -> None:
+    mkdir_if_not_exists(_RPCS3_INPUT_ROOT)
+    write_sdl_controller_db(controllers, _RPCS3_SDL_DB)
+
+
+def _write_active_input_config() -> None:
+    mkdir_if_not_exists(_RPCS3_INPUT_ROOT)
+
+    active_config: dict[str, str] = {}
+    if _RPCS3_ACTIVE_INPUT_CONFIG.is_file():
+        try:
+            in_active_config = False
+            for line in _RPCS3_ACTIVE_INPUT_CONFIG.read_text().splitlines():
+                stripped_line = line.strip()
+                if not stripped_line or stripped_line.startswith("#"):
+                    continue
+                if not line.startswith(" "):
+                    in_active_config = stripped_line == "Active Configurations:"
+                    continue
+                if in_active_config and ":" in stripped_line:
+                    key, value = stripped_line.split(":", 1)
+                    active_config[key.strip()] = value.strip().strip("'\"")
+        except Exception as exc:
+            _logger.warning("Could not read RPCS3 active input config: %s", exc)
+
+    active_config["global"] = "Default"
+
+    with _RPCS3_ACTIVE_INPUT_CONFIG.open("w") as stream:
+        stream.write("Active Configurations:\n")
+        stream.write("  global: Default\n")
+        for key in sorted(k for k in active_config if k != "global"):
+            stream.write(f"  {key}: {active_config[key]}\n")
+
+
 def generateControllerConfig(system: Emulator, controllers: Controllers, rom: Path):
 
+    _write_sdl_controller_database(controllers)
+    _write_active_input_config()
     mkdir_if_not_exists(_RPCS3_INPUT_DIR)
 
     valid_sony_guids = [

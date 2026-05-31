@@ -6,7 +6,7 @@ LOG="/userdata/system/logs/steam.log"
 HOTKEY_DIR="/userdata/system/configs/hotkeygen"
 ACTIVE_MAP="${HOTKEY_DIR}/ASUS_ROG_Ally_Config-b05-1abe.mapping"
 ES_MAP="${HOTKEY_DIR}/ASUS_ROG_Ally_Config-b05-1abe.mapping.es"
-SYSTEM_DIR="/usr/share/batocera/services/allyhotkeys.d"
+SYSTEM_DIR="/usr/share/hotkeygen/allyhotkeys.d"
 DATAINIT_DIR="/usr/share/batocera/datainit/system/configs/hotkeygen"
 
 hotkeygen_permanent_running() {

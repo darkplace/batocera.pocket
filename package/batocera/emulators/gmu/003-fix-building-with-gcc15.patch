@@ -1,0 +1,16 @@
+diff --git a/src/core.c b/src/core.c
+index b14a1fd..aeefaa0 100644
+--- a/src/core.c
++++ b/src/core.c
+@@ -663,10 +663,10 @@ EventQueue *gmu_core_get_event_queue(void)
+ 	return &event_queue;
+ }
+ 
+-static void set_gmu_running(int bool)
++static void set_gmu_running(int state)
+ {
+ 	pthread_mutex_lock(&gmu_running_mutex);
+-	gmu_running = bool;
++	gmu_running = state;
+ 	pthread_mutex_unlock(&gmu_running_mutex);
+ }

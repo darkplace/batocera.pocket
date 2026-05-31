@@ -16,8 +16,6 @@ define HOTKEYGEN_INSTALL_TARGET_CMDS
 	mkdir -p $(TARGET_DIR)/etc/init.d
 	mkdir -p $(TARGET_DIR)/etc/hotkeygen
 	mkdir -p $(TARGET_DIR)/usr/share/hotkeygen
-	mkdir -p $(TARGET_DIR)/usr/share/batocera/services/allyhotkeys.d
-	mkdir -p $(TARGET_DIR)/usr/share/batocera/services
 	install -m 0755 $(HOTKEYGEN_PATH)/hotkeygen.py $(TARGET_DIR)/usr/bin/hotkeygen
 	install -m 0755 $(HOTKEYGEN_PATH)/hotkeygen.service $(TARGET_DIR)/etc/init.d/S90hotkeygen
 	install -m 0644 $(HOTKEYGEN_PATH)/conf/default_context.conf $(TARGET_DIR)/etc/hotkeygen/default_context.conf
@@ -29,15 +27,24 @@ define HOTKEYGEN_INSTALL_TARGET_CMDS
 			*) install -m 0644 "$$file" $(TARGET_DIR)/usr/share/hotkeygen/ ;; \
 		esac; \
 	done
-	install -m 0644 $(HOTKEYGEN_PATH)/conf/common_context.ally.conf $(TARGET_DIR)/usr/share/batocera/services/allyhotkeys.d/common_context.ally.conf
-	install -m 0644 $(HOTKEYGEN_PATH)/conf/specific/ASUS_ROG_Ally_*.mapping* $(TARGET_DIR)/usr/share/batocera/services/allyhotkeys.d/
-	install -m 0755 $(HOTKEYGEN_PATH)/allyhotkeys $(TARGET_DIR)/usr/share/batocera/services/allyhotkeys
 	install -m 0755 $(HOTKEYGEN_PATH)/batocera-hotkeys.py $(TARGET_DIR)/usr/bin/batocera-hotkeys
+endef
+
+define HOTKEYGEN_INSTALL_ALLY_HOTKEYS
+	mkdir -p $(TARGET_DIR)/usr/share/hotkeygen/allyhotkeys.d
+	mkdir -p $(TARGET_DIR)/usr/share/batocera/services
+	install -m 0644 $(HOTKEYGEN_PATH)/conf/common_context.ally.conf $(TARGET_DIR)/usr/share/hotkeygen/allyhotkeys.d/common_context.ally.conf
+	install -m 0644 $(HOTKEYGEN_PATH)/conf/specific/ASUS_ROG_Ally_*.mapping* $(TARGET_DIR)/usr/share/hotkeygen/allyhotkeys.d/
+	install -m 0755 $(HOTKEYGEN_PATH)/allyhotkeys $(TARGET_DIR)/usr/share/batocera/services/allyhotkeys
 endef
 
 define HOTKEYGEN_INSTALL_SM8250_CONFIG
 	install -m 0644 $(HOTKEYGEN_PATH)/conf/default_mapping-sm8250.conf $(TARGET_DIR)/etc/hotkeygen/default_mapping.conf
 endef
+
+ifeq ($(BR2_PACKAGE_BATOCERA_TARGET_X86_64_ANY),y)
+	HOTKEYGEN_POST_INSTALL_TARGET_HOOKS += HOTKEYGEN_INSTALL_ALLY_HOTKEYS
+endif
 
 ifeq ($(BR2_PACKAGE_BATOCERA_TARGET_SM8250),y)
 	HOTKEYGEN_POST_INSTALL_TARGET_HOOKS += HOTKEYGEN_INSTALL_SM8250_CONFIG

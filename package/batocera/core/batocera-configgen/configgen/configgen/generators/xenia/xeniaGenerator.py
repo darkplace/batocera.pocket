@@ -128,7 +128,7 @@ class XeniaGenerator(Generator):
     def getHotkeysContext(self) -> HotkeysContext:
         return {
             "name": "xenia",
-            "keys": { "exit": ["KEY_LEFTALT", "KEY_F4"] }
+            "keys": { "exit": ["KEY_LEFTALT", "KEY_F4"], "menu": ["KEY_LEFTSHIFT", "KEY_F10"] }
         }
 
     @staticmethod
@@ -524,7 +524,7 @@ exit $EXIT_CODE
         general_cfg = config.setdefault('General', {})
         general_cfg['discord'] = _cfg_get_bool(system, 'discord', False)
         general_cfg['apply_patches'] = _cfg_get_bool(system, 'xenia_patches', False)
-        general_cfg['controller_hotkeys'] = _cfg_get_bool(system, 'xenia_controller_hotkeys', False)
+        general_cfg['controller_hotkeys'] = False
 
         hid_cfg = config.setdefault('HID', {})
         hid_cfg['hid'] = str(_cfg_get(system, 'xenia_hid', 'sdl'))

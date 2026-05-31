@@ -1,0 +1,13 @@
+diff --git a/Makefile b/Makefile
+index 2fcd31e..6c6d5ef 100644
+--- a/Makefile
++++ b/Makefile
+@@ -202,7 +202,7 @@ clean:
+ 
+ gmuc: gmuc.o window.o listwidget.o websocket.o base64.o debug.o ringbuffer.o net.o json.o dir.o wejconfig.o ui.o charset.o nethelper.o util.o
+ 	@echo "Linking \033[1mgmuc\033[0m"
+-	$(Q)$(CC) $(CFLAGS) $(LFLAGS) -o gmuc gmuc.o wejconfig.o websocket.o base64.o debug.o ringbuffer.o net.o json.o window.o listwidget.o dir.o ui.o charset.o nethelper.o util.o -lncursesw
++	$(Q)$(CC) $(CFLAGS) $(LFLAGS) -o gmuc gmuc.o wejconfig.o websocket.o base64.o debug.o ringbuffer.o net.o json.o window.o listwidget.o dir.o ui.o charset.o nethelper.o util.o -lncursesw -ltinfo
+ 
+ %.o: src/tools/%.c
+ 	@echo "Compiling \033[1m$<\033[0m"

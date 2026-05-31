@@ -1,0 +1,202 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import json
+import re
+import sys
+import urllib.parse
+import xml.etree.ElementTree as ET
+from pathlib import Path
+
+
+ROM_ROOT = Path("/userdata/roms")
+CONFIG_GAMELISTS = Path("/userdata/system/configs/emulationstation/gamelists")
+INTERNET_DIR = ROM_ROOT / "internet"
+MANIFEST = INTERNET_DIR / ".pcgamingwiki-generated.json"
+GAMELIST = INTERNET_DIR / "gamelist.xml"
+PCGW_URL_KEYS = ("pcgwurl", "pcgamingwikiUrl", "PCGamingWikiUrl")
+PCGW_PAGE_KEYS = ("pcgwpage", "pcgamingwikiPage", "PCGamingWikiPage")
+
+
+def text_of(node: ET.Element, name: str) -> str:
+    child = node.find(name)
+    return (child.text or "").strip() if child is not None and child.text else ""
+
+
+def clean(value: str | None) -> str:
+    if value is None:
+        return ""
+    value = str(value).strip()
+    if value.lower() in {"", "0", "none", "null"}:
+        return ""
+    return value
+
+
+def first_text(node: ET.Element, keys: tuple[str, ...]) -> str:
+    for key in keys:
+        value = clean(text_of(node, key))
+        if value:
+            return value
+    return ""
+
+
+def pcgw_url_from_page(page: str) -> str:
+    page = page.strip().replace(" ", "_")
+    if not page:
+        return ""
+    return "https://www.pcgamingwiki.com/wiki/" + urllib.parse.quote(page, safe="_():'-")
+
+
+def pcgw_url(node: ET.Element) -> str:
+    url = first_text(node, PCGW_URL_KEYS)
+    if url.startswith("http://") or url.startswith("https://"):
+        return url
+    return pcgw_url_from_page(first_text(node, PCGW_PAGE_KEYS))
+
+
+def gamelist_paths() -> list[Path]:
+    paths: list[Path] = []
+    if ROM_ROOT.is_dir():
+        paths.extend(path for path in ROM_ROOT.glob("*/gamelist.xml") if path.parent.name != "internet")
+    if CONFIG_GAMELISTS.is_dir():
+        paths.extend(path for path in CONFIG_GAMELISTS.glob("*/gamelist.xml") if path.parent.name != "internet")
+    return sorted(set(paths))
+
+
+def xml_escape(value: str) -> str:
+    return (
+        value.replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+    )
+
+
+def safe_stem(value: str) -> str:
+    value = re.sub(r"[\\/:*?\"<>|]+", " ", value)
+    value = re.sub(r"\s+", " ", value).strip(" .")
+    if not value:
+        value = "PCGamingWiki"
+    return value[:96]
+
+
+def read_manifest() -> list[str]:
+    try:
+        data = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+    if not isinstance(data, list):
+        return []
+    return [str(item) for item in data]
+
+
+def remove_old_generated_files() -> None:
+    for rel in read_manifest():
+        path = INTERNET_DIR / rel
+        try:
+            if path.is_file():
+                path.unlink()
+        except OSError:
+            pass
+
+
+def normalized_rel(path: str) -> str:
+    path = path.strip()
+    if path.startswith("./"):
+        path = path[2:]
+    return path
+
+
+def preserved_gamelist_entries(old_generated: set[str]) -> list[str]:
+    if not GAMELIST.is_file():
+        return []
+
+    try:
+        root = ET.parse(GAMELIST).getroot()
+    except Exception:
+        return []
+
+    entries: list[str] = []
+    for game in root.findall("game"):
+        path = normalized_rel(text_of(game, "path"))
+        if not path or path in old_generated:
+            continue
+        entries.append("  " + ET.tostring(game, encoding="unicode").strip())
+    return entries
+
+
+def scan_entries() -> list[dict[str, str]]:
+    entries: dict[str, dict[str, str]] = {}
+
+    for gamelist in gamelist_paths():
+        system = gamelist.parent.name
+        try:
+            root = ET.parse(gamelist).getroot()
+        except Exception:
+            continue
+
+        for game in root.findall("game"):
+            url = pcgw_url(game)
+            if not url:
+                continue
+            name = text_of(game, "name") or Path(text_of(game, "path")).stem or "PCGamingWiki"
+            key = url.lower()
+            entries.setdefault(key, {
+                "name": name,
+                "system": system,
+                "url": url,
+            })
+
+    return sorted(entries.values(), key=lambda item: (item["name"].lower(), item["system"].lower()))
+
+
+def write_entries(entries: list[dict[str, str]]) -> None:
+    INTERNET_DIR.mkdir(parents=True, exist_ok=True)
+    old_generated = set(read_manifest())
+    preserved = preserved_gamelist_entries(old_generated)
+    remove_old_generated_files()
+
+    used: set[str] = set()
+    generated: list[str] = []
+    games_xml: list[str] = ['<?xml version="1.0" encoding="UTF-8"?>', "<gameList>"]
+    games_xml.extend(preserved)
+
+    for entry in entries:
+        base = safe_stem(f"PCGamingWiki - {entry['name']}")
+        stem = base
+        suffix = 2
+        while f"{stem}.url" in used:
+            stem = f"{base} {suffix}"
+            suffix += 1
+        rel = f"{stem}.url"
+        used.add(rel)
+
+        path = INTERNET_DIR / rel
+        path.write_text(f"[InternetShortcut]\nURL={entry['url']}\n", encoding="utf-8")
+        generated.append(rel)
+
+        display_name = f"{entry['name']} - PCGamingWiki"
+        games_xml.extend([
+            "  <game>",
+            f"    <path>./{xml_escape(rel)}</path>",
+            f"    <name>{xml_escape(display_name)}</name>",
+            "    <genre>PCGamingWiki</genre>",
+            f"    <developer>{xml_escape(entry['system'])}</developer>",
+            f"    <desc>{xml_escape(entry['url'])}</desc>",
+            "  </game>",
+        ])
+
+    games_xml.append("</gameList>")
+    GAMELIST.write_text("\n".join(games_xml) + "\n", encoding="utf-8")
+    MANIFEST.write_text(json.dumps(generated, indent=2) + "\n", encoding="utf-8")
+
+
+def main() -> int:
+    entries = scan_entries()
+    write_entries(entries)
+    print(f"Generated {len(entries)} PCGamingWiki internet entries in {INTERNET_DIR}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

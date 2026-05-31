@@ -493,7 +493,7 @@ install_free_windows_games_menu() {
     selected="${games[$((choice - 1))]}"
     IFS='|' read -r name desc installer <<<"${selected}"
 
-    yes_no "Install ${name} now?\n\nThe installer will download the game and add it under ${ROOT_ROMS_WINDOWS}." || return 1
+    yes_no "Install ${name} now?\n\nThe installer will download the game and add it under ${ROOT_ROMS_WINDOWS}.\n\nSome games may need Wine-Proton or DXVK enabled. Games packaged as .wsquashfs may also show a black screen for a while on first launch before the usual Wine setup screen appears." || return 1
 
     url="${FREE_WINDOWS_GAMES_BASE_URL}/${installer}"
     tmp_script="$(mktemp)"

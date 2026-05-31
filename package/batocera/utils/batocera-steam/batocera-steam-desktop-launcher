@@ -5,11 +5,13 @@ log="/userdata/system/logs/steam-desktop-switch.log"
 mkdir -p "$(dirname "${log}")"
 steam_session_pattern='(^|/)batocera-steam-session([[:space:]]|$)'
 decky_stack_pattern='/userdata/system/homebrew/services/PluginLoader|Decky Loader|/userdata/system/homebrew/plugins/'
+steam_helper_pattern='steamrtarm64/steam|steamwebhelper|steamwebhelper\.sh|steam-runtime-supervisor|steam-runtime-launcher-service|steamerrorreporter|pressure-vessel|srt-logger|steam-runtime-system-info|SteamLinuxRuntime|SteamLaunch AppId=|pw-audio-namespace|/proton waitforexitandrun|steam\.exe|wineserver|winedevice\.exe|services\.exe'
+fex_stack_pattern='(^|[[:space:]/])(FEX|FEXServer|FEXLoader|FEXInterpreter)([[:space:]]|$)|/usr/share/fex-emu|/userdata/system/steam/rootfs|\.FEXMount|squashfuse'
 es_service="/etc/init.d/S31emulationstation"
 ALLY_HOTKEY_DIR="/userdata/system/configs/hotkeygen"
 ALLY_ACTIVE_MAP="${ALLY_HOTKEY_DIR}/ASUS_ROG_Ally_Config-b05-1abe.mapping"
 ALLY_COMMON_CONTEXT="${ALLY_HOTKEY_DIR}/common_context.ally.conf"
-ALLY_SYSTEM_DIR="/usr/share/batocera/services/allyhotkeys.d"
+ALLY_SYSTEM_DIR="/usr/share/hotkeygen/allyhotkeys.d"
 ALLY_ES_MAP="${ALLY_SYSTEM_DIR}/ASUS_ROG_Ally_Config-b05-1abe.mapping.es"
 ALLY_DEFAULT_MAP="${ALLY_SYSTEM_DIR}/ASUS_ROG_Ally_Config-b05-1abe.mapping"
 
@@ -30,6 +32,9 @@ steam_stack_alive() {
     pgrep -x gamescopereaper >/dev/null 2>&1 || \
     pgrep -x gamescopestream >/dev/null 2>&1 || \
     pgrep -x gamescopectl >/dev/null 2>&1 || \
+    pgrep -x mangoapp >/dev/null 2>&1 || \
+    pgrep -f "${steam_helper_pattern}" >/dev/null 2>&1 || \
+    pgrep -f "${fex_stack_pattern}" >/dev/null 2>&1 || \
     pgrep -f "${decky_stack_pattern}" >/dev/null 2>&1 || \
     pgrep -f '/userdata/system/steam/steam.sh|/usr/share/steam/bin_steam.sh|emulatorlauncher.*-system steam|Steam GamepadUI\.steam|Steam Desktop\.steam' >/dev/null 2>&1
 }

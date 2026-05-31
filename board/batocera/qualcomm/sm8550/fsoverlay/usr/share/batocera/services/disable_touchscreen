@@ -1,0 +1,60 @@
+#!/bin/sh
+
+NAME="disable_touchscreen"
+DAEMON="/usr/bin/sm8550-touchscreen-disable"
+PIDFILE="/var/run/${NAME}.pid"
+CHILD_PIDFILE="/var/run/${NAME}.evsieve.pid"
+LOG="/userdata/system/logs/sm8550-touchscreen-disable.log"
+
+start() {
+    if [ -s "${PIDFILE}" ] && kill -0 "$(cat "${PIDFILE}")" >/dev/null 2>&1; then
+        echo "${NAME}: already running"
+        return 0
+    fi
+
+    mkdir -p "$(dirname "${LOG}")"
+    printf "Starting %s: " "${NAME}"
+    start-stop-daemon --start --quiet --make-pidfile --pidfile "${PIDFILE}" --background --exec "${DAEMON}" -- start \
+        && echo "OK" || echo "FAIL"
+}
+
+stop() {
+    printf "Stopping %s: " "${NAME}"
+    start-stop-daemon --stop --quiet --pidfile "${PIDFILE}"
+    if [ -s "${CHILD_PIDFILE}" ]; then
+        kill "$(cat "${CHILD_PIDFILE}")" >/dev/null 2>&1 || true
+        rm -f "${CHILD_PIDFILE}"
+    fi
+    rm -f "${PIDFILE}"
+    echo "OK"
+}
+
+status() {
+    if [ -s "${PIDFILE}" ] && kill -0 "$(cat "${PIDFILE}")" >/dev/null 2>&1; then
+        echo "${NAME}: running"
+        return 0
+    fi
+
+    echo "${NAME}: stopped"
+    return 1
+}
+
+case "${1:-}" in
+    start)
+        start
+        ;;
+    stop)
+        stop
+        ;;
+    restart|reload)
+        stop
+        start
+        ;;
+    status)
+        status
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|restart|status}" >&2
+        exit 1
+        ;;
+esac

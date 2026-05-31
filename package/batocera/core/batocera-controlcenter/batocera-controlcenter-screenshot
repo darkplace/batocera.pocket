@@ -1,0 +1,30 @@
+#!/bin/sh
+
+PIDFILE="/var/run/batocera-controlcenter.pid"
+DELAY="${BCC_SCREENSHOT_DELAY:-0.8}"
+
+case "${DELAY}" in
+    ''|*[!0-9.]*)
+        DELAY="0.8"
+        ;;
+esac
+
+hide_controlcenter() {
+    PID="$(cat "${PIDFILE}" 2>/dev/null)"
+    if test -n "${PID}" && test -e "/proc/${PID}"; then
+        kill -10 "${PID}" 2>/dev/null || true
+        return
+    fi
+
+    pgrep -f '/usr/bin/batocera-controlcenter-app' 2>/dev/null | while read -r PID; do
+        test -n "${PID}" && kill -10 "${PID}" 2>/dev/null || true
+    done
+}
+
+(
+    hide_controlcenter
+    sleep "${DELAY}"
+    batocera-screenshot "$@"
+) >/dev/null 2>&1 &
+
+exit 0

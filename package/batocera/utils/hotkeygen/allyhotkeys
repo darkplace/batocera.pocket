@@ -3,7 +3,7 @@ set -eu
 
 USER_DIR="/userdata/system/configs/hotkeygen"
 USER_FILE="${USER_DIR}/common_context.ally.conf"
-SERVICE_DIR="/usr/share/batocera/services/allyhotkeys.d"
+SERVICE_DIR="/usr/share/hotkeygen/allyhotkeys.d"
 SYSTEM_FILE="${SERVICE_DIR}/common_context.ally.conf"
 ACTIVE_MAP="${USER_DIR}/ASUS_ROG_Ally_Config-b05-1abe.mapping"
 ALLY_X_MAP="${USER_DIR}/ASUS_ROG_Ally_X_Gamepad-b05-1b4c.mapping"

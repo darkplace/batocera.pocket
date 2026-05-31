@@ -64,6 +64,26 @@ def _retroachievements_sound_disabled(sound: str) -> bool:
     return sound.lower() in ("", "0", "false", "none")
 
 
+def _normalize_controller_bindings(ini: CaseSensitiveConfigParser) -> None:
+    face_bindings = {
+        "Triangle": "FaceNorth",
+        "Circle": "FaceEast",
+        "Cross": "FaceSouth",
+        "Square": "FaceWest",
+    }
+
+    for nplayer in range(1, 9):
+        section = f"Pad{nplayer}"
+        if not ini.has_section(section):
+            continue
+
+        for button, face_name in face_bindings.items():
+            value = ini.get(section, button, fallback="")
+            if value.startswith("SDL-") and "/" in value:
+                device = value.split("/", 1)[0]
+                ini.set(section, button, f"{device}/{face_name}")
+
+
 def _prepare_armsx2_settings(system) -> None:
     ini = CaseSensitiveConfigParser(interpolation=None)
     if _ARMSX2_INI.exists():
@@ -154,6 +174,8 @@ def _prepare_armsx2_settings(system) -> None:
 
     ini.set("Logging", "EnableSystemConsole", "false")
     ini.set("Logging", "EnableFileLogging", "false")
+
+    _normalize_controller_bindings(ini)
 
     with ensure_parents_and_open(_ARMSX2_INI, "w") as f:
         ini.write(f)

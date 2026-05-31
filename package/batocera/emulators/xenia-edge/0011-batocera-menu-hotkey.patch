@@ -1,0 +1,56 @@
+From: Batocera Linux Team <batocera@batocera.linux>
+Date: Sun, 31 May 2026 00:00:00 +0000
+Subject: [PATCH] input: reserve guide button for Batocera hotkeys
+
+---
+ src/xenia/app/emulator_window.cc | 25 ++++++-------------------
+ 1 file changed, 6 insertions(+), 19 deletions(-)
+
+diff --git a/src/xenia/app/emulator_window.cc b/src/xenia/app/emulator_window.cc
+--- a/src/xenia/app/emulator_window.cc
++++ b/src/xenia/app/emulator_window.cc
+@@ -1118,6 +1118,12 @@ void EmulatorWindow::OnKeyDown(ui::KeyEvent& e) {
+     case ui::VirtualKey::kF7: {
+       TogglePerformanceTuningDialog();
+     } break;
++    case ui::VirtualKey::kF10: {
++      if (!e.is_shift_pressed()) {
++        return;
++      }
++      ToggleContextMenu(false);
++    } break;
+     case ui::VirtualKey::kF11: {
+       ToggleFullscreen();
+     } break;
+@@ -2118,11 +2124,7 @@ EmulatorWindow::ControllerHotKey EmulatorWindow::ProcessControllerHotkey(
+   // Default return value
+   EmulatorWindow::ControllerHotKey Unknown_hotkey = {};
+ 
+-  // Track guide button state for edge detection (must be before early return)
+-  static bool prev_guide_pressed = false;
+-
+   if (buttons == 0) {
+-    prev_guide_pressed = false;
+     return Unknown_hotkey;
+   }
+ 
+@@ -2143,18 +2145,7 @@ EmulatorWindow::ControllerHotKey EmulatorWindow::ProcessControllerHotkey(
+     }
+   }
+ 
+-  // When controller_hotkeys is disabled, use guide button alone to toggle
+-  // context menu (with edge detection to prevent repeated toggling)
+-  if (!cvars::controller_hotkeys) {
+-    bool guide_pressed = (buttons == X_INPUT_GAMEPAD_GUIDE);
+-
+-    if (guide_pressed && !prev_guide_pressed) {
+-      app_context().CallInUIThread([this]() { ToggleContextMenu(false); });
+-      prev_guide_pressed = true;
+-      return Unknown_hotkey;
+-    }
+-    prev_guide_pressed = guide_pressed;
+-  }
++  // Batocera maps the emulator menu to Shift+F10 via hotkeygen.
+ 
+   auto it = controller_hotkey_map.find(buttons);
+   if (it == controller_hotkey_map.end()) {

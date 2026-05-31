@@ -70,6 +70,12 @@ define BATOCERA_STEAM_INSTALL_TARGET_CMDS
 	    $(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/utils/batocera-steam/batocera-steam-uimode-watch \
 	    $(TARGET_DIR)/usr/bin/
 	install -m 0755 \
+	    $(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/utils/batocera-steam/batocera-steam-frontend-recover \
+	    $(TARGET_DIR)/usr/bin/
+	install -m 0755 \
+	    $(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/utils/batocera-steam/batocera-steam-session-supervisor \
+	    $(TARGET_DIR)/usr/bin/
+	install -m 0755 \
 	    $(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/utils/batocera-steam/steamos-session-select \
 	    $(TARGET_DIR)/usr/bin/
 	install -m 0755 \

@@ -1,0 +1,330 @@
+From 2f1d8fa0e93028abf1f6d02dccca61fe409cbac2 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Fri, 29 May 2026 00:00:00 +0000
+Subject: [PATCH] compact console layout and stable hotkey overlay
+
+--- a/ui_core.py
++++ b/ui_core.py
+@@ -240,6 +240,10 @@
+             self._startup_ignore_duration = float(os.environ.get("BCC_STARTUP_IGNORE_SECONDS", "0.3"))
+         except ValueError:
+             self._startup_ignore_duration = 0.3
++        try:
++            self._focus_grace_duration = float(os.environ.get("BCC_FOCUS_GRACE_SECONDS", "1.2"))
++        except ValueError:
++            self._focus_grace_duration = 1.2
+         self.window: Gtk.Window | None = None
+         self.focus_rows: list[Gtk.EventBox] = []
+         self.focus_index: int = 0
+@@ -411,13 +415,13 @@
+                         width = int(sw * 0.90)
+                         scale_class = "full"
+                     if sw >= 1920:
+-                        width = int(sw * 0.70)
++                        width = int(sw * 0.62)
+                         scale_class = "full"
+                     if sh >= 720:
+                         height = int(sh * 0.95)
+                         scale_class = "full"
+                     if sh >= 1080:
+-                        height = int(sh * 0.80)
++                        height = int(sh * 0.72)
+                         scale_class = "full"
+ 
+                 debug_print(f"[DPI] Wayland BCC win:{width}x{height} screen:{sw}x{sh}")
+@@ -463,13 +467,13 @@
+                     width = int(sw * 0.90)
+                     scale_class = "full"
+                 if sw >= 1920:
+-                    width = int(sw * 0.70)
++                    width = int(sw * 0.62)
+                     scale_class = "full"
+                 if sh >= 720:
+                     max_height = int(sh * 0.95)
+                     scale_class = "full"
+                 if sh >= 1080:
+-                    max_height = int(sh * 0.80)
++                    max_height = int(sh * 0.72)
+                     scale_class = "full"
+ 
+         # style
+@@ -662,6 +666,10 @@
+         def on_focus_out(_w, ev):
+             if self._backglass_mode:
+                 return False
++            if os.environ.get("BCC_CLOSE_ON_FOCUS_OUT", "0") != "1":
++                return False
++            if time.time() - self._startup_time < self._focus_grace_duration:
++                return False
+             # If we're about to show a dialog or have one open, ignore this focus-out
+             if self._about_to_show_dialog or self._dialog_open:
+                 return False
+@@ -924,12 +932,21 @@
+ 
+         GLib.timeout_add(18, animate)
+ 
++    def _ignore_startup_input(self) -> bool:
++        if not hasattr(self, "_startup_time"):
++            return False
++        return time.time() - self._startup_time < self._startup_ignore_duration
++
+     # ---- Keyboard / Focus ----
+     def _on_key_press(self, _w, ev: Gdk.EventKey):
+         key = Gdk.keyval_name(ev.keyval) or ""
++        if self._ignore_startup_input():
++            return True
+         if key.lower() == "escape":
+-            self.play_nav_sound("back")
+-            self.quit()
++            if os.environ.get("BCC_MAIN_BACK_CLOSE", "1") == "1":
++                self.play_nav_sound("back")
++                self.quit()
++            return True
+         elif key in ("Up", "KP_Up"):
+             self.play_nav_sound("move")
+             self.move_focus(-1)
+@@ -1549,6 +1566,8 @@
+         self.stop_refresh()
+ 
+     def show(self, *_a):
++        self._startup_time = time.time()
++        self._handle_gamepad_action = self._handle_gamepad_action_main
+         self.start_gamepad()
+         self._recompute_conditionals()
+         self.window.present()
+@@ -1649,6 +1668,8 @@
+                 pass
+ 
+     def _handle_gamepad_action_call(self, action: str):
++        if self._ignore_startup_input():
++            return False
+         self._handle_gamepad_action(action)
+ 
+     def start_gamepad(self):
+@@ -1680,13 +1701,6 @@
+     def _handle_gamepad_action_main(self, action: str):
+         """Handle gamepad actions - works for both main window and dialogs"""
+         
+-        # Ignore gamepad input for a short period after startup to avoid issues
+-        # with buttons that were used to launch the application
+-        if hasattr(self, '_startup_time'):
+-            elapsed = time.time() - self._startup_time
+-            if elapsed < self._startup_ignore_duration:
+-                return
+-        
+         # Reset inactivity timer on any gamepad action
+         try:
+             self.reset_inactivity_timer()
+@@ -1706,8 +1720,9 @@
+                         return False
+             self.activate_current()
+         elif action == "back":
+-            self.play_nav_sound("back")
+-            self.quit()
++            if os.environ.get("BCC_MAIN_BACK_CLOSE", "1") == "1":
++                self.play_nav_sound("back")
++                self.quit()
+         elif action == "axis_up":
+             self.play_nav_sound("move")
+             self.move_focus(-1)
+@@ -3256,8 +3271,8 @@
+     core.apply_css()
+ 
+     # Main container with header and scrollable content
+-    outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+-    outer.set_border_width(10)
++    outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
++    outer.set_border_width(6)
+     core._outer_box = outer
+     win.add(outer)
+ 
+@@ -3291,7 +3306,7 @@
+     # Store scrolled window reference for auto-scrolling
+     core._scrolled_window = scrolled
+ 
+-    content_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
++    content_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=3)
+     scrolled.add(content_box)
+ 
+     # First pass: find tab rows and collect hgroup IDs
+@@ -3411,7 +3426,7 @@
+                     horiz_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+                     horiz_box.set_homogeneous(True)  # Make vgroups equal width for grid alignment
+                     horiz_box.set_halign(Gtk.Align.CENTER)
+-                    horiz_box.set_size_request(int(core._window_width * 0.95), -1)
++                    horiz_box.set_size_request(int(core._window_width * 0.86), -1)
+                     target.pack_start(horiz_box, False, False, 0)
+ 
+                     for sub in child.children:
+@@ -3671,12 +3686,12 @@
+     frame.set_shadow_type(Gtk.ShadowType.IN)
+     frame.set_halign(Gtk.Align.CENTER)  # Center the frame
+     # Set a consistent width for all groups (90% of window width)
+-    frame.set_size_request(int(core._window_width * 0.95), -1)
++    frame.set_size_request(int(core._window_width * 0.86), -1)
+     label = Gtk.Label(label=_(title))
+     label.get_style_context().add_class("group-title")
+     frame.set_label_widget(label)
+     inner = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+-    inner.set_border_width(6)
++    inner.set_border_width(5)
+     frame.add(inner)
+     parent_box.pack_start(frame, False, False, 0)
+     return inner
+@@ -3685,10 +3700,10 @@
+ def _build_vgroup_row(core: UICore, vg, is_header: bool) -> Gtk.EventBox:
+     row = Gtk.EventBox()
+     row._is_header_row = bool(is_header)
+-    row_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=24)
++    row_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+     row_box.set_halign(Gtk.Align.CENTER)  # Center the row contents
+     # Set consistent width for all rows (90% of window width)
+-    row_box.set_size_request(int(core._window_width * 0.95), -1)
++    row_box.set_size_request(int(core._window_width * 0.86), -1)
+     row.add(row_box)
+     row.set_above_child(False)
+     row.get_style_context().add_class("vgroup-row")
+@@ -3747,7 +3762,7 @@
+ 
+             # Text-only cells have no controls, so they're not interactive
+             cells.append((cell_event, []))
+-            row_box.pack_start(cell_event, True, True, 12)
++            row_box.pack_start(cell_event, True, True, 4)
+ 
+             i = j  # Skip the text children we just processed
+             continue
+@@ -3831,7 +3846,7 @@
+                 cell_event._control_index = 0
+ 
+             cells.append((cell_event, cell_controls))
+-            row_box.pack_start(cell_event, True, True, 12)
++            row_box.pack_start(cell_event, True, True, 4)
+             continue
+ 
+         # Handle direct <img> and <qrcode> children in vgroup
+@@ -3852,7 +3867,7 @@
+ 
+             # Img/qrcode-only cells have no controls, so they're not interactive
+             cells.append((cell_event, []))
+-            row_box.pack_start(cell_event, True, True, 12)
++            row_box.pack_start(cell_event, True, True, 4)
+             continue
+ 
+         # Handle nested <vgroup> children in vgroup - treat as a cell
+@@ -3912,7 +3927,7 @@
+                             core.build_doc(nested_child, sub, cell_box, pack_end=False)
+ 
+             cells.append((cell_event, []))
+-            row_box.pack_start(cell_event, True, True, 12)
++            row_box.pack_start(cell_event, True, True, 4)
+             continue
+ 
+         # Handle nested <hgroup> children in vgroup
+@@ -4018,7 +4033,7 @@
+                 cell_event.connect("button-press-event", on_cell_click)
+ 
+             cells.append((cell_event, cell_controls))
+-            row_box.pack_start(cell_event, True, True, 12)
++            row_box.pack_start(cell_event, True, True, 4)
+             continue
+ 
+         if child.kind != "feature":
+@@ -4185,7 +4200,7 @@
+ 
+         # Always add cell to row (even if no controls) for display
+         cells.append((cell_event, cell_controls))
+-        row_box.pack_start(cell_event, True, True, 12)
++        row_box.pack_start(cell_event, True, True, 4)
+ 
+     # Check if row has any interactive controls
+     has_controls = any(controls for _, controls in cells)
+@@ -4308,7 +4323,7 @@
+     row_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+     row_box.set_halign(Gtk.Align.CENTER)  # Center the row contents
+     # Set consistent width for all rows (90% of window width)
+-    row_box.set_size_request(int(core._window_width * 0.90), -1)
++    row_box.set_size_request(int(core._window_width * 0.84), -1)
+     row.add(row_box)
+     row.set_above_child(False)
+ 
+@@ -4322,7 +4337,7 @@
+         name_lbl = Gtk.Label(label=_(display_label))
+         name_lbl.set_xalign(0.0)
+         name_lbl.get_style_context().add_class("item-text")
+-        name_lbl.set_width_chars(15)  # Fixed width for label
++        name_lbl.set_width_chars(12)  # Fixed width for label
+         row_box.pack_start(name_lbl, False, False, 0)
+ 
+         # Add spacer only for tabs to push them to the right
+@@ -4350,7 +4365,7 @@
+         choice_btn.set_size_request(70, -1)  # Fixed width like other buttons
+         choice_btn.set_hexpand(False)  # Prevent horizontal expansion
+         choice_btn.set_halign(Gtk.Align.START)  # Align normally, not to the end
+-        row_box.pack_start(choice_btn, False, False, 8)
++        row_box.pack_start(choice_btn, False, False, 4)
+         choice_btn.connect("clicked", lambda *_: open_choice())
+ 
+         row._items.append(choice_btn)
+@@ -4371,7 +4386,7 @@
+             btn.get_style_context().add_class("cc-button")
+             btn.set_can_focus(True)
+             btn.set_size_request(70, -1)  # Fixed width for buttons
+-            row_box.pack_start(btn, False, False, 8)
++            row_box.pack_start(btn, False, False, 4)
+             btn.connect("clicked", core.make_action_cb(action, key=f"btn:{text}:{action}", afterclick=afterclick))
+             row._items.append(btn)
+             
+@@ -4387,7 +4402,7 @@
+             btn.get_style_context().add_class("cc-button-confirm")
+             btn.set_can_focus(True)
+             btn.set_size_request(70, -1)
+-            row_box.pack_start(btn, False, False, 8)
++            row_box.pack_start(btn, False, False, 4)
+ 
+             def on_confirm_click(_w):
+                 core._about_to_show_dialog = True; _show_confirm_dialog(core, text, action, afterclick); core._about_to_show_dialog = False
+@@ -4415,7 +4430,7 @@
+             # For features with choices, don't set fixed width - let text size naturally
+             if not any(c.kind == "choice" for c in feat.children):
+                 lbl.set_width_chars(40)   # Fixed width for value to prevent shifting (non-choice features only)
+-            row_box.pack_start(lbl, False, False, 8)
++            row_box.pack_start(lbl, False, False, 4)
+             disp = (sub.attrs.get("display", "") or "").strip()
+             refresh = float(sub.attrs.get("refresh", feat.attrs.get("refresh", DEFAULT_REFRESH_SEC)))
+ 
+@@ -4502,7 +4517,7 @@
+         elif kind == "hgroup":
+             # Nested hgroup in feature - create horizontal layout
+             nested_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=3)
+-            row_box.pack_start(nested_box, False, False, 8)
++            row_box.pack_start(nested_box, False, False, 4)
+             for hg_child in sub.children:
+                 if hg_child.kind == "text":
+                     core.build_text(feat, hg_child, nested_box, align_end=False)
+@@ -4903,6 +4918,8 @@
+     original_handler = core._handle_gamepad_action_main
+ 
+     def dialog_gamepad_handler(action_key: str):
++        if core._ignore_startup_input():
++            return False
+         core.reset_inactivity_timer()  # Reset timer on dialog interaction
+         if action_key == "activate":
+             core.play_nav_sound("accept")
+@@ -4926,6 +4943,8 @@
+     def on_key_press(_w, ev: Gdk.EventKey):
+         core.reset_inactivity_timer()  # Reset timer on keyboard interaction
+         key = Gdk.keyval_name(ev.keyval) or ""
++        if core._ignore_startup_input():
++            return True
+         if key.lower() == "escape":
+             core.play_nav_sound("back")
+             dialog.destroy()
+@@ -5108,6 +5127,8 @@
+     original_handler = core._handle_gamepad_action
+ 
+     def dialog_gamepad_handler(action: str):
++        if core._ignore_startup_input():
++            return False
+         core.reset_inactivity_timer()  # Reset timer on dialog interaction
+         if action == "activate":
+             core.play_nav_sound("accept")

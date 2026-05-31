@@ -7,136 +7,170 @@
 		<feature display="Batocera">
 			<text display="${batocera-version | cut -d' ' -f1}" />
 		</feature>
-		<feature display="Touch keyboard" if='${[ -n "$(getLocalWaylandDisplay)" ] &amp;&amp; [ -n "$(touchscreen-detect)" ] &amp;&amp;  echo 1}' refresh="10">
-			<button display="Toggle" action="onscreen-keyboard-toggle" afterclick="bcc_close"/>
+		<feature display="Touch keyboard" if='${[ -n "$(getLocalWaylandDisplay)" ] &amp;&amp; [ -n "$(touchscreen-detect)" ] &amp;&amp; echo 1}' refresh="10">
+			<button display="Toggle" action="onscreen-keyboard-toggle" afterclick="bcc_close" />
 		</feature>
 	</vgroup>
 
-	<feature name="shortcuts_tabs" display="Quick Access">
-		<tab display="Game" target="Game" align="right" if="${curl http://127.0.0.1:1234/runningGame | jq -r '.systemName' | sed 's/^null$//'}" />
-		<tab display="Gun" target="Gun" if="${curl -s http://127.0.0.1:1234/runningGame | jq -r '.name' | grep -qE '^null$' || ls /var/run/batocera-overlays/gun_help.png}" />
+	<feature name="shortcuts_tabs" display="Control Deck">
+		<tab display="Quick" target="Quick" align="right" />
+		<tab display="Game" target="Game" align="right" if="${curl -s http://127.0.0.1:1234/runningGame | jq -r '.systemName' | sed 's/^null$//'}" />
 		<tab display="System" target="System" align="right" />
 		<tab display="Record" target="Record" />
+		<tab display="Power" target="Power" />
+		<tab display="Gun" target="Gun" if="${curl -s http://127.0.0.1:1234/runningGame | jq -r '.name' | grep -qE '^null$' || ls /var/run/batocera-overlays/gun_help.png}" />
 	</feature>
 
-	<!-- RECORDING TAB -->
-	<hgroup name="Record" display="Record">
-		<!-- Main Controls Row -->
-		<feature display="Recording in progress">
-			<switch value='${batocera-record is_running | grep true}'
-				action_on="batocera-record start" action_off="batocera-record stop"
-				afterclick="bcc_close" refresh="2" />
+	<hgroup name="Quick" display="Quick Access">
+		<feature display="Switch">
+			<button display="SteamOS" action="batocera-controlcenter-steamos-quick" />
 		</feature>
-
-		<!-- Quality Row: Clicking 'Select' will open the choice popup -->
-		<feature display="Quality">
-			<text display='${batocera-record get-quality}' refresh="1" />
-			<choice display="Ultra (60fps)" action="batocera-record set-quality ultra" afterclick="bcc_refresh" />
-			<choice display="High (60fps)"  action="batocera-record set-quality high" afterclick="bcc_refresh" />
-			<choice display="Mid (30fps)"   action="batocera-record set-quality mid" afterclick="bcc_refresh" />
-			<choice display="Low (30fps)"   action="batocera-record set-quality low" afterclick="bcc_refresh" />
+		<feature display="Game">
+			<button_confirm display="Kill game" action="batocera-es-swissknife --emukill 0.5" align="left" afterclick="bcc_close" />
+			<button display="Screenshot" action="batocera-controlcenter-screenshot" />
 		</feature>
-
-		<!-- Audio Row -->
-		<feature display="Audio Source">
-			<text display='${batocera-record get-audio}' refresh="1" />
-			<choice display="System (Default)" action="batocera-record set-audio auto" afterclick="bcc_refresh" />
-			<choice display="Microphone"       action="batocera-record set-audio mic" afterclick="bcc_refresh" />
-			<choice display="No Audio"         action="batocera-record set-audio none" afterclick="bcc_refresh" />
+		<feature display="Session">
+			<button_confirm display="Restart ES" action="batocera-es-swissknife --restart" align="left" afterclick="bcc_close" />
 		</feature>
-
-		<!-- Multi-Screen Row -->
-		<feature display="Record All Screens">
-			<switch value='${[ "$(batocera-record get-all)" = "true" ] &amp;&amp; echo "true"}'
-					action_on="batocera-record set-all true"
-					action_off="batocera-record set-all false"
-					afterclick="bcc_refresh" refresh="1" />
+		<feature display="Disable Touch" if='${[ -x /usr/share/batocera/services/disable_touchscreen ] &amp;&amp; echo 1}' refresh="2">
+			<switch value='${batocera-services status disable_touchscreen 2&gt;/dev/null | grep -q running &amp;&amp; echo true}' action_on="batocera-services enable disable_touchscreen; batocera-services start disable_touchscreen" action_off="batocera-services stop disable_touchscreen; batocera-services disable disable_touchscreen" afterclick="bcc_refresh" refresh="2" />
+		</feature>
+		<feature display="Recent 1" if="${batocera-controlcenter-recent-games has 1 &amp;&amp; echo 1}" refresh="5">
+			<text display="${batocera-controlcenter-recent-games label 1}" align="left" refresh="5" />
+			<button display="Play" action="batocera-controlcenter-recent-games launch 1" afterclick="bcc_close" />
+		</feature>
+		<feature display="Recent 2" if="${batocera-controlcenter-recent-games has 2 &amp;&amp; echo 1}" refresh="5">
+			<text display="${batocera-controlcenter-recent-games label 2}" align="left" refresh="5" />
+			<button display="Play" action="batocera-controlcenter-recent-games launch 2" afterclick="bcc_close" />
+		</feature>
+		<feature display="Recent 3" if="${batocera-controlcenter-recent-games has 3 &amp;&amp; echo 1}" refresh="5">
+			<text display="${batocera-controlcenter-recent-games label 3}" align="left" refresh="5" />
+			<button display="Play" action="batocera-controlcenter-recent-games launch 3" afterclick="bcc_close" />
+		</feature>
+		<feature display="Volume">
+			<button display="Vol -" action="batocera-audio setSystemVolume -5" />
+			<progressbar display="${batocera-audio getSystemVolume}" min="0" max="100" refresh="1" />
+			<button display="Vol +" action="batocera-audio setSystemVolume +5" />
+		</feature>
+		<feature display="Mute">
+			<switch value="${batocera-audio getSystemMute}" refresh="2" action_on="batocera-audio setSystemVolume mute" action_off="batocera-audio setSystemVolume unmute" />
+		</feature>
+		<feature display="Brightness" if='${printf "%s" $(batocera-brightness 2&gt;/dev/null)}'>
+			<button display="Bright -" action="batocera-brightness - 10" />
+			<progressbar display="${batocera-brightness}" min="0" max="100" refresh="1" />
+			<button display="Bright +" action="batocera-brightness + 10" />
+		</feature>
+		<feature display="Fan" if='${qcom-fan available &amp;&amp; echo 1}' refresh="2">
+			<button display="Fan -" action="qcom-fan set -10" afterclick="bcc_refresh" />
+			<progressbar display="${qcom-fan percent}" min="0" max="100" refresh="1" />
+			<button display="Fan +" action="qcom-fan set +10" afterclick="bcc_refresh" />
+		</feature>
+		<feature display="Fan Mode" if='${qcom-fan available &amp;&amp; echo 1}' refresh="2">
+			<text display="${qcom-fan label}" refresh="1" />
+			<choice display="Auto" action="qcom-fan auto" afterclick="bcc_refresh" />
 		</feature>
 	</hgroup>
 
-	<hgroup name="Game" display="Game">
+	<hgroup name="Game" display="Now Playing">
 		<hgroup>
 			<feature>
-				<img display='${IMG=$(curl http://127.0.0.1:1234/runningGame | jq -r ".marquee"); [ -n "$IMG" ] &amp;&amp; [ "$IMG" != "null" ] &amp;&amp; echo http://127.0.0.1:1234$IMG }' height="10%" refresh="3" align="left" id="gamemarquee" />
-				<text display="${curl http://127.0.0.1:1234/runningGame | jq -r '.name' | sed 's/null//'}" align="left" refresh="3" if="!id(gamemarquee)" />
-				<text display="${curl http://127.0.0.1:1234/runningGame | jq -r '.systemName' | sed 's/\(.*\)/[\1]/'}" align="left" refresh="3" />
+				<img display='${IMG=$(curl -s http://127.0.0.1:1234/runningGame | jq -r ".marquee"); [ -n "$IMG" ] &amp;&amp; [ "$IMG" != "null" ] &amp;&amp; echo http://127.0.0.1:1234$IMG }' height="10%" refresh="3" align="left" id="gamemarquee" />
+				<text display="${curl -s http://127.0.0.1:1234/runningGame | jq -r '.name' | sed 's/null//'}" align="left" refresh="3" if="!id(gamemarquee)" />
+				<text display="${curl -s http://127.0.0.1:1234/runningGame | jq -r '.systemName' | sed 's/\(.*\)/[\1]/'}" align="left" refresh="3" />
 			</feature>
 			<feature>
-				<text display='${P=$(ps -o etime= -C emulatorlauncher 2>/dev/null | head -1 | tr -d [[:blank:]]) &amp;&amp; [ -n "$P" ] &amp;&amp; echo "Playing for $P"}' align="left" refresh="1" id="playtime" />
+				<text display='${P=$(ps -o etime= -C emulatorlauncher 2&gt;/dev/null | head -1 | tr -d [[:blank:]]) &amp;&amp; [ -n "$P" ] &amp;&amp; echo "Playing for $P"}' align="left" refresh="1" id="playtime" />
 			</feature>
 		</hgroup>
 		<vgroup>
 			<feature>
 				<button_confirm display="Quit game" action="hotkeygen --send exit || true" afterclick="bcc_close" />
-				<doc display="Manual" content='${IMG=$(curl http://127.0.0.1:1234/runningGame | jq -r .manual | sed "s/null//"); [ -n "$IMG" ] &amp;&amp; [ "$IMG" != "null" ] &amp;&amp; echo http://127.0.0.1:1234$IMG}' id="manual" refresh="3"/>
-				<doc display="Map" content='${IMG=$(curl http://127.0.0.1:1234/runningGame | jq -r .map | sed "s/null//"); [ -n "$IMG" ] &amp;&amp; [ "$IMG" != "null" ] &amp;&amp; echo http://127.0.0.1:1234$IMG}' id="map" refresh="3"/>
+				<doc display="Manual" content='${IMG=$(curl -s http://127.0.0.1:1234/runningGame | jq -r .manual | sed "s/null//"); [ -n "$IMG" ] &amp;&amp; [ "$IMG" != "null" ] &amp;&amp; echo http://127.0.0.1:1234$IMG}' id="manual" refresh="3" />
+				<doc display="Map" content='${IMG=$(curl -s http://127.0.0.1:1234/runningGame | jq -r .map | sed "s/null//"); [ -n "$IMG" ] &amp;&amp; [ "$IMG" != "null" ] &amp;&amp; echo http://127.0.0.1:1234$IMG}' id="map" refresh="3" />
+			</feature>
+			<feature display="HLTB" if="${batocera-controlcenter-game-info has-hltb &amp;&amp; echo 1}" refresh="5">
+				<text display="${batocera-controlcenter-game-info hltb-label}" align="left" refresh="5" />
 			</feature>
 		</vgroup>
 		<vgroup>
-                        <img display='${IMG=$(curl http://127.0.0.1:1234/runningGame | jq -r ".thumbnail"); [ -n "$IMG" ] &amp;&amp; [ "$IMG" != "null" ] &amp;&amp; echo http://127.0.0.1:1234$IMG || echo "/usr/share/emulationstation/resources/services/logo-tri.png"}' height="30%" refresh="3" />
-			<qrcode display='${IMG=$(curl http://127.0.0.1:1234/runningGame | jq -r ".cheevosId"); [ -n "$IMG" ] &amp;&amp; [ "$IMG" != "null" ] &amp;&amp; echo https://retroachievements.org/game/$IMG}' height="30%" refresh="2" id="cheevos" bg="#141821" style="card" logo="/usr/share/batocera/controlcenter/resources/ra-icon.png" font="/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf" />
-			<img display="${curl http://127.0.0.1:1234/runningGame | jq -r '.systemName' | sed 's:\(.*\):/usr/share/batocera/controller-overlays/\1.png:'}" height="30%" refresh="5" align="center" />
+			<img display='${IMG=$(curl -s http://127.0.0.1:1234/runningGame | jq -r ".thumbnail"); [ -n "$IMG" ] &amp;&amp; [ "$IMG" != "null" ] &amp;&amp; echo http://127.0.0.1:1234$IMG || echo "/usr/share/emulationstation/resources/services/logo-tri.png"}' height="30%" refresh="3" />
+			<qrcode display='${IMG=$(curl -s http://127.0.0.1:1234/runningGame | jq -r ".cheevosId"); [ -n "$IMG" ] &amp;&amp; [ "$IMG" != "null" ] &amp;&amp; echo https://retroachievements.org/game/$IMG}' height="30%" refresh="2" id="cheevos" bg="#141821" style="card" logo="/usr/share/batocera/controlcenter/resources/ra-icon.png" font="/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf" />
+			<img display="${curl -s http://127.0.0.1:1234/runningGame | jq -r '.systemName' | sed 's:\(.*\):/usr/share/batocera/controller-overlays/\1.png:'}" height="30%" refresh="5" align="center" />
 		</vgroup>
 		<hgroup>
 		</hgroup>
 	</hgroup>
-        <hgroup name="Gun" display="Gun">
-          <img display='${echo /var/run/batocera-overlays/gun_help.png}' height="80%" refresh="5" align="center" />
-        </hgroup>
+
 	<hgroup name="System" display="System">
-		<feature>
-				<button display="Vol -" action="batocera-audio setSystemVolume -5" />
-				<progressbar display="${batocera-audio getSystemVolume}" min="0" max="100" refresh="1" />
-				<button display="Vol +" action="batocera-audio setSystemVolume +5" />
+		<feature display="Audio">
+			<button display="Vol -" action="batocera-audio setSystemVolume -5" />
+			<progressbar display="${batocera-audio getSystemVolume}" min="0" max="100" refresh="1" />
+			<button display="Vol +" action="batocera-audio setSystemVolume +5" />
+			<switch display="Mute" value="${batocera-audio getSystemMute}" refresh="2" action_on="batocera-audio setSystemVolume mute" action_off="batocera-audio setSystemVolume unmute" />
 		</feature>
-		<feature if='${printf "%s" $(batocera-brightness 2&gt;/dev/null)}'>
-				<button display="Bright -" action="batocera-brightness - 10" />
-				<progressbar display="${batocera-brightness}" min="0" max="100" refresh="1" />
-				<button display="Bright +" action="batocera-brightness + 10" />
+		<feature display="Display" if='${printf "%s" $(batocera-brightness 2&gt;/dev/null)}'>
+			<button display="Bright -" action="batocera-brightness - 10" />
+			<progressbar display="${batocera-brightness}" min="0" max="100" refresh="1" />
+			<button display="Bright +" action="batocera-brightness + 10" />
+			<switch display="Plane" value="${batocera-planemode status}" action_on="batocera-planemode enable" action_off="batocera-planemode disable" refresh="2" align="left" />
 		</feature>
-		<feature display="Fan" if='${qcom-fan available &amp;&amp; echo 1}' refresh="2">
-				<button display="Fan -" action="qcom-fan set -10" afterclick="bcc_refresh" />
-				<progressbar display="${qcom-fan percent}" min="0" max="100" refresh="1" />
-				<button display="Fan +" action="qcom-fan set +10" afterclick="bcc_refresh" />
-				<text display="${qcom-fan label}" refresh="1" />
-				<choice display="Auto" action="qcom-fan auto" afterclick="bcc_refresh" />
-		</feature>
-		<feature display="Mute Sound" group="Audio/Video">
-			<switch value="${batocera-audio getSystemMute}" refresh="2"
-				action_on="batocera-audio setSystemVolume mute" action_off="batocera-audio setSystemVolume unmute" />
-		</feature>
-		<feature display="Network IP address:">
-			<text display='${printf "%s " "$(ip -4 addr show | grep -oP "(?&lt;=inet\s)\d+(\.\d+){3}" | grep -v "127.0.0.1" | head -n1)" ; for d in /sys/class/net/*; do n=$(basename "$d"); if [ "$n" != lo ]; then printf "%s: %s, " "$n" "$(cat "$d/operstate")"; fi; done | sed "s/, $//"}' refresh="5" align="left" />
-		</feature>
-		<feature display="Free data storage:">
-			<text display="${df -h $(batocera-part share) | awk '/\/userdata$/ {print $4}'}" refresh="10" align="left" />
-		</feature>
-		<feature display="Plane Mode" group="Audio/Video">
-			<switch value="${batocera-planemode status}"
-			action_on="batocera-planemode enable" action_off="batocera-planemode disable" refresh="2" align="left"/>
-		</feature>
-		<feature display="Stuck emulator?">
-			<button_confirm display="Kill it!" action="curl -fsS http://127.0.0.1:1234/emukill || true" align="left" afterclick="bcc_close" />
-		</feature>
-		<feature name="PowerMode" display="Power Mode">
-			<choice display="Default"      action="batocera-power-mode default" />
-			<choice display="AC"           action="batocera-power-mode ac" />
-			<choice display="Battery"      action="batocera-power-mode battery" />
-			<choice display="High Perf"    action="batocera-power-mode highperformance" />
-			<choice display="Balanced"     action="batocera-power-mode balanced" />
-			<choice display="Saver"        action="batocera-power-mode Powersaver" />
+		<feature name="PowerMode" display="Performance">
+			<choice display="Default" action="batocera-power-mode default" />
+			<choice display="High Perf" action="batocera-power-mode highperformance" />
+			<choice display="Balanced" action="batocera-power-mode balanced" />
+			<choice display="Saver" action="batocera-power-mode Powersaver" />
 			<text display="${cat /sys/devices/system/cpu/cpufreq/policy0/scaling_governor}" refresh="1" />
+			<text display="${df -h $(batocera-part share) | awk '/\/userdata$/ {print $4}'} free" refresh="10" align="left" />
 		</feature>
 	</hgroup>
 
+	<hgroup name="Record" display="Recording">
+		<feature display="Recording in progress">
+			<switch value='${batocera-record is_running | grep true}' action_on="batocera-record start" action_off="batocera-record stop" afterclick="bcc_close" refresh="2" />
+		</feature>
+		<feature display="Quality">
+			<text display='${batocera-record get-quality}' refresh="1" />
+			<choice display="Ultra (60fps)" action="batocera-record set-quality ultra" afterclick="bcc_refresh" />
+			<choice display="High (60fps)" action="batocera-record set-quality high" afterclick="bcc_refresh" />
+			<choice display="Mid (30fps)" action="batocera-record set-quality mid" afterclick="bcc_refresh" />
+			<choice display="Low (30fps)" action="batocera-record set-quality low" afterclick="bcc_refresh" />
+		</feature>
+		<feature display="Audio Source">
+			<text display='${batocera-record get-audio}' refresh="1" />
+			<choice display="System (Default)" action="batocera-record set-audio auto" afterclick="bcc_refresh" />
+			<choice display="Microphone" action="batocera-record set-audio mic" afterclick="bcc_refresh" />
+			<choice display="No Audio" action="batocera-record set-audio none" afterclick="bcc_refresh" />
+		</feature>
+		<feature display="Record All Screens">
+			<switch value='${[ "$(batocera-record get-all)" = "true" ] &amp;&amp; echo "true"}' action_on="batocera-record set-all true" action_off="batocera-record set-all false" afterclick="bcc_refresh" refresh="1" />
+		</feature>
+	</hgroup>
+
+	<hgroup name="Power" display="Power">
+		<vgroup>
+			<feature display="Session">
+				<button_confirm display="Restart ES" action="batocera-es-swissknife --restart" afterclick="bcc_close" />
+				<button_confirm display="Kill game" action="batocera-es-swissknife --emukill 0.5" afterclick="bcc_close" />
+			</feature>
+			<feature display="System">
+				<button_confirm display="Reboot" action="batocera-es-swissknife --reboot 0.5" afterclick="bcc_close" />
+				<button_confirm display="Shutdown" action="batocera-es-swissknife --shutdown 0.5" afterclick="bcc_close" />
+			</feature>
+		</vgroup>
+	</hgroup>
+
+	<hgroup name="Gun" display="Gun">
+		<img display='${echo /var/run/batocera-overlays/gun_help.png}' height="80%" refresh="5" align="center" />
+	</hgroup>
+
 	<vgroup name="Bottom bar" role="footer">
-		<feature display="CPU:">
+		<feature display="CPU">
 			<progressbar display="${ { head -n1 /proc/stat; sleep 0.2; head -n1 /proc/stat; } | awk '/^cpu /{u=$2-u; s=$4-s; i=$5-i; w=$6-w} END {print int(0.5+100*(u+s+w)/(u+s+i+w))}'}" min="0" max="100" refresh="1" />
 		</feature>
-		<feature display="Temp:">
-			<text display='${ TEMPE=$(cat /sys/devices/virtual/thermal/thermal_zone*/temp /sys/class/hwmon/hwmon*/temp*_input 2>/dev/null | sort -rn | head -1 | sed -e s+"[0-9][0-9][0-9]$"++); [ -n "$TEMPE" ] &amp;&amp; echo "$TEMPE"C || echo "N/A" }' refresh="3" />
+		<feature display="Temp">
+			<text display='${ TEMPE=$(cat /sys/devices/virtual/thermal/thermal_zone*/temp /sys/class/hwmon/hwmon*/temp*_input 2&gt;/dev/null | sort -rn | head -1 | sed -e s+"[0-9][0-9][0-9]$"++); [ -n "$TEMPE" ] &amp;&amp; echo "$TEMPE"C || echo "N/A" }' refresh="3" />
 		</feature>
-		<feature display="Resolution:">
+		<feature display="Resolution">
 			<text display="${batocera-resolution currentResolution}" />
 		</feature>
 	</vgroup>

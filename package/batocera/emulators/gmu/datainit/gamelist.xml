@@ -1,0 +1,8 @@
+<?xml version="1.0"?>
+<gameList>
+  <game>
+    <path>./Start Music Player.sh</path>
+    <name>Start Music Player</name>
+    <desc>Open GMU Music Player.</desc>
+  </game>
+</gameList>

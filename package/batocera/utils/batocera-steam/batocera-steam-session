@@ -37,7 +37,7 @@ ALLY_HOTKEY_DIR="/userdata/system/configs/hotkeygen"
 ALLY_ACTIVE_MAP="${ALLY_HOTKEY_DIR}/ASUS_ROG_Ally_Config-b05-1abe.mapping"
 ALLY_ES_MAP="${ALLY_HOTKEY_DIR}/ASUS_ROG_Ally_Config-b05-1abe.mapping.es"
 ALLY_STEAM_MAP="${ALLY_HOTKEY_DIR}/ASUS_ROG_Ally_Config-b05-1abe.mapping.steam"
-ALLY_SYSTEM_DIR="/usr/share/batocera/services/allyhotkeys.d"
+ALLY_SYSTEM_DIR="/usr/share/hotkeygen/allyhotkeys.d"
 ALLY_SYSTEM_DEFAULT_MAP="${ALLY_SYSTEM_DIR}/ASUS_ROG_Ally_Config-b05-1abe.mapping"
 ALLY_SYSTEM_ES_MAP="${ALLY_SYSTEM_DIR}/ASUS_ROG_Ally_Config-b05-1abe.mapping.es"
 ALLY_SYSTEM_STEAM_MAP="${ALLY_SYSTEM_DIR}/ASUS_ROG_Ally_Config-b05-1abe.mapping.steam"
@@ -74,6 +74,11 @@ ensure_hotkeygen_started() {
             /etc/init.d/S90hotkeygen start >/dev/null 2>&1 || true
         fi
     fi
+}
+
+start_session_supervisor() {
+    command -v batocera-steam-session-supervisor >/dev/null 2>&1 || return 0
+    batocera-steam-session-supervisor start "batocera-steam-session" >/dev/null 2>&1 || true
 }
 
 apply_ally_hotkey_map() {
@@ -321,6 +326,21 @@ cleanup_steam_portal_session() {
     fi
 }
 
+cleanup_fex_session_leftovers() {
+    local mount
+
+    pkill -TERM -f '(^|/)FEXServer([[:space:]]|$)' >/dev/null 2>&1 || true
+    sleep 0.2
+    pkill -KILL -f '(^|/)FEXServer([[:space:]]|$)' >/dev/null 2>&1 || true
+
+    for mount in "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/.FEXMount* /run/user/*/.FEXMount*; do
+        [[ -e "${mount}" ]] || continue
+        fusermount3 -uz "${mount}" >/dev/null 2>&1 || \
+            fusermount -uz "${mount}" >/dev/null 2>&1 || \
+            umount -l "${mount}" >/dev/null 2>&1 || true
+    done
+}
+
 cleanup_hotkeys_on_exit() {
     # "Switch to Desktop" kills the original session outside configgen's normal cleanup path.
     # Restore an explicit default context and ES profile when that happens.
@@ -330,6 +350,7 @@ cleanup_hotkeys_on_exit() {
     stop_steam_install_callouts
     stop_thor_backlight_mirror
     cleanup_steam_portal_session
+    cleanup_fex_session_leftovers
     run_ally_hotkey_hook gameStop || true
     if command -v hotkeygen >/dev/null 2>&1; then
         if ! hotkeygen_permanent_running && [ -x /etc/init.d/S90hotkeygen ]; then
@@ -345,6 +366,7 @@ cleanup_hotkeys_and_forward() {
 }
 
 trap cleanup_hotkeys_and_forward EXIT TERM INT
+start_session_supervisor
 
 if [[ "${BATOCERA_STEAM_SETUP_PENDING:-0}" == "1" ]] || [[ "${BATOCERA_STEAM_FIRST_RUN:-0}" == "1" ]] || [[ -f "${STEAM_FIRST_RUN_WIFI_STAMP}" ]]; then
     STEAM_FIRST_RUN_PENDING=1
@@ -456,7 +478,7 @@ decky_process_pids() {
         cmd="$(tr '\0' ' ' 2>/dev/null < "${proc}/cmdline" || true)"
         [[ -n "${cmd}" ]] || continue
         case "${cmd}" in
-            *"/userdata/system/homebrew/services/PluginLoader"*|*"Decky Loader"*|*"/userdata/system/homebrew/plugins/"*)
+            *"/userdata/system/homebrew/services/PluginLoader"*|*"Decky Loader"*|*"/userdata/system/homebrew/plugin"*|*"Decky Terminal"*|*"Animation Changer"*|*"Game Theme Music"*|*"ProtonDB Badges"*)
                 printf '%s\n' "${pid}"
                 ;;
         esac

@@ -2807,6 +2807,24 @@ library:
   platform:   imageviewer
   force:      True
 
+music:
+  name: Music Player
+  manufacturer: System
+  release: 2026
+  hardware: system
+  extensions: [m3u, pls, mp3, ogg, opus, flac, wav, sh]
+  platform: music
+  path: music
+  theme: music
+  emulators:
+    gmu:
+      gmu: { requireAnyOf: [BR2_PACKAGE_GMU] }
+  force: True
+  comment_en: |
+          Place music files or playlists here.
+  comment_br: |
+          Coloque arquivos de musica ou playlists aqui.
+
 model3:
   name: Model 3
   manufacturer: Sega
@@ -3062,6 +3080,25 @@ apps:
           Launch bundled desktop applications.
   comment_br: |
           Execute aplicativos de desktop incluídos.
+
+internet:
+  name: Internet
+  manufacturer: Linux
+  release: 2026
+  hardware: port
+  extensions: [url, webloc]
+  platform: pc
+  path: internet
+  theme: internet
+  emulators:
+    firefox:
+      firefox: { requireAnyOf: [BR2_PACKAGE_BATOCERA_APPS, BR2_PACKAGE_BATOCERA_APPS_AARCH64] }
+  comment_en: |
+          Launch saved web links.
+          Run batocera-pcgamingwiki-update to generate PCGamingWiki entries from game metadata.
+  comment_br: |
+          Inicie links da web salvos.
+          Execute batocera-pcgamingwiki-update para gerar entradas PCGamingWiki a partir dos metadados dos jogos.
 
 emulators:
   name: Tools

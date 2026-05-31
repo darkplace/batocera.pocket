@@ -25,7 +25,8 @@ define BATOCERA_CONTROLCENTER_INSTALL_TARGET_CMDS
 	mkdir -p $(TARGET_DIR)/usr/share/batocera/controlcenter
 	mkdir -p $(TARGET_DIR)/usr/share/batocera/controlcenter/resources
 	install -m 0755 $(@D)/controlcenter.py  $(TARGET_DIR)/usr/share/batocera/controlcenter
-	install -m 0755 $(@D)/style.css         $(TARGET_DIR)/usr/share/batocera/controlcenter
+	install -m 0755 $(BATOCERA_CONTROLCENTER_PATH)/style.css \
+	    $(TARGET_DIR)/usr/share/batocera/controlcenter
 	install -m 0755 $(@D)/ui_core.py        $(TARGET_DIR)/usr/share/batocera/controlcenter
 	install -m 0755 $(@D)/xml_utils.py      $(TARGET_DIR)/usr/share/batocera/controlcenter
 	install -m 0755 $(@D)/shell.py          $(TARGET_DIR)/usr/share/batocera/controlcenter
@@ -37,6 +38,14 @@ define BATOCERA_CONTROLCENTER_INSTALL_TARGET_CMDS
 	    $(TARGET_DIR)/usr/share/batocera/controlcenter
 	install -m 0755 $(BATOCERA_CONTROLCENTER_PATH)/batocera-controlcenter-toogle.sh \
 	    $(TARGET_DIR)/usr/bin/batocera-controlcenter
+	install -m 0755 $(BATOCERA_CONTROLCENTER_PATH)/batocera-controlcenter-recent-games \
+	    $(TARGET_DIR)/usr/bin/batocera-controlcenter-recent-games
+	install -m 0755 $(BATOCERA_CONTROLCENTER_PATH)/batocera-controlcenter-game-info \
+	    $(TARGET_DIR)/usr/bin/batocera-controlcenter-game-info
+	install -m 0755 $(BATOCERA_CONTROLCENTER_PATH)/batocera-controlcenter-steamos-quick \
+	    $(TARGET_DIR)/usr/bin/batocera-controlcenter-steamos-quick
+	install -m 0755 $(BATOCERA_CONTROLCENTER_PATH)/batocera-controlcenter-screenshot \
+	    $(TARGET_DIR)/usr/bin/batocera-controlcenter-screenshot
 	install -m 0755 $(BATOCERA_CONTROLCENTER_PATH)/controlcenter.xml \
 	    $(TARGET_DIR)/usr/share/batocera/controlcenter
 	install -m 0644 $(BATOCERA_CONTROLCENTER_PATH)/ra-icon.png \

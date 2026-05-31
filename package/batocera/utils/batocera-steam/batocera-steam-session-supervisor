@@ -1,0 +1,210 @@
+#!/bin/bash
+set -u
+
+LOG="/userdata/system/logs/steam-session-supervisor.log"
+PIDFILE="/var/run/batocera-steam-session-supervisor.pid"
+ACTIVE="/var/run/batocera-steam-session-supervisor.active"
+ES_SERVICE="/etc/init.d/S31emulationstation"
+REASON="${2:-manual}"
+
+mkdir -p "$(dirname "${LOG}")"
+
+log_msg() {
+    printf '[%s] steam-session-supervisor: %s\n' "$(date '+%F %T')" "$*" >> "${LOG}"
+}
+
+running_pid() {
+    local pid
+
+    pid="$(cat "${PIDFILE}" 2>/dev/null || true)"
+    if [[ -n "${pid}" && -e "/proc/${pid}" ]]; then
+        printf '%s\n' "${pid}"
+        return 0
+    fi
+
+    return 1
+}
+
+steam_stack_alive() {
+    pgrep -x batocera-steam >/dev/null 2>&1 || \
+    pgrep -f '(^|[[:space:]/])batocera-steam-session([[:space:]]|$)' >/dev/null 2>&1 || \
+    pgrep -x steam >/dev/null 2>&1 || \
+    pgrep -x steamwebhelper >/dev/null 2>&1 || \
+    pgrep -x steam-runtime-supervisor >/dev/null 2>&1 || \
+    pgrep -x steam-runtime-launcher-service >/dev/null 2>&1 || \
+    pgrep -x FEX >/dev/null 2>&1 || \
+    pgrep -x FEXServer >/dev/null 2>&1 || \
+    pgrep -x FEXLoader >/dev/null 2>&1 || \
+    pgrep -x FEXInterpreter >/dev/null 2>&1 || \
+    pgrep -x gamescope >/dev/null 2>&1 || \
+    pgrep -x gamescopereaper >/dev/null 2>&1 || \
+    pgrep -x gamescopestream >/dev/null 2>&1 || \
+    pgrep -x gamescopectl >/dev/null 2>&1 || \
+    pgrep -f 'steamrtarm64/steam|steamwebhelper\.sh|pressure-vessel|SteamLaunch AppId=|pw-audio-namespace|/proton waitforexitandrun|steam\.exe|/usr/share/fex-emu|/userdata/system/steam/rootfs|\.FEXMount|squashfuse|/userdata/system/steam/steam\.sh|/usr/share/steam/bin_steam\.sh|emulatorlauncher.*-system steam|Steam GamepadUI\.steam|Steam Desktop\.steam' >/dev/null 2>&1
+}
+
+frontend_ready() {
+    pgrep -x sway >/dev/null 2>&1 || return 1
+    pgrep -f '(^|/)emulationstation([[:space:]]|$)' >/dev/null 2>&1 || return 1
+}
+
+wait_frontend_ready() {
+    local tries="${1:-40}"
+    local i
+
+    for i in $(seq 1 "${tries}"); do
+        frontend_ready && return 0
+        sleep 0.5
+    done
+
+    return 1
+}
+
+cleanup_leftovers() {
+    pkill -KILL -x mangoapp >/dev/null 2>&1 || true
+    pkill -KILL -x gamescopereaper >/dev/null 2>&1 || true
+    pkill -KILL -x gamescopestream >/dev/null 2>&1 || true
+    pkill -KILL -x gamescopectl >/dev/null 2>&1 || true
+    pkill -KILL -f '(^|[[:space:]/])batocera-steam-uimode-watch([[:space:]]|$)' >/dev/null 2>&1 || true
+    pkill -KILL -f '(^|[[:space:]/])batocera-steam-nightmode-watch([[:space:]]|$)' >/dev/null 2>&1 || true
+    pkill -KILL -f '(^|[[:space:]/])batocera-steam-update-terminal([[:space:]]|$)' >/dev/null 2>&1 || true
+}
+
+recover_frontend() {
+    local reason="${1:-supervisor}"
+    local attempt
+
+    cleanup_leftovers
+
+    if command -v batocera-steam-frontend-recover >/dev/null 2>&1; then
+        batocera-steam-frontend-recover --reason "${reason}" >> "${LOG}" 2>&1 || true
+    fi
+
+    if frontend_ready; then
+        log_msg "frontend ready after frontend-recover helper"
+        return 0
+    fi
+
+    for attempt in 1 2 3 4 5; do
+        log_msg "forcing EmulationStation restart attempt ${attempt}"
+        if [[ -x "${ES_SERVICE}" ]]; then
+            "${ES_SERVICE}" restart >> "${LOG}" 2>&1 || "${ES_SERVICE}" start >> "${LOG}" 2>&1 || true
+        fi
+        if wait_frontend_ready 32; then
+            log_msg "frontend ready after forced restart attempt ${attempt}"
+            return 0
+        fi
+        sleep 2
+    done
+
+    log_msg "frontend recovery failed"
+    return 1
+}
+
+cleanup_watch() {
+    rm -f "${ACTIVE}"
+    if [[ "$(cat "${PIDFILE}" 2>/dev/null || true)" == "$$" ]]; then
+        rm -f "${PIDFILE}"
+    fi
+}
+
+watch_loop() {
+    local seen_steam=0
+    local empty_count=0
+    local waiting_count=0
+    local initial_grace="${BATOCERA_STEAM_SUPERVISOR_INITIAL_GRACE:-60}"
+    local exit_confirm="${BATOCERA_STEAM_SUPERVISOR_EXIT_CONFIRM:-2}"
+    local interval="${BATOCERA_STEAM_SUPERVISOR_INTERVAL:-1}"
+
+    echo "$$" > "${PIDFILE}"
+    : > "${ACTIVE}"
+    trap cleanup_watch EXIT INT TERM
+    log_msg "watch started reason=${REASON}"
+
+    while [[ -e "${ACTIVE}" ]]; do
+        if steam_stack_alive; then
+            seen_steam=1
+            empty_count=0
+            waiting_count=0
+        elif [[ "${seen_steam}" == "1" ]]; then
+            empty_count=$((empty_count + 1))
+            if [[ "${empty_count}" -ge "${exit_confirm}" ]]; then
+                log_msg "Steam stack exited; restoring frontend"
+                recover_frontend "supervisor-${REASON}"
+                return 0
+            fi
+        else
+            waiting_count=$((waiting_count + 1))
+            if [[ "${waiting_count}" -ge "${initial_grace}" ]]; then
+                log_msg "Steam stack was not observed during grace window"
+                if ! frontend_ready; then
+                    recover_frontend "supervisor-no-steam-${REASON}"
+                fi
+                return 0
+            fi
+        fi
+
+        sleep "${interval}"
+    done
+
+    log_msg "watch stopped"
+}
+
+start_watch() {
+    local pid
+
+    : > "${ACTIVE}"
+    if pid="$(running_pid)"; then
+        log_msg "watch already running pid=${pid} reason=${REASON}"
+        return 0
+    fi
+
+    if command -v setsid >/dev/null 2>&1; then
+        setsid "$0" watch "${REASON}" >/dev/null 2>&1 &
+    else
+        "$0" watch "${REASON}" >/dev/null 2>&1 &
+    fi
+    log_msg "watch requested reason=${REASON}"
+}
+
+stop_watch() {
+    local pid
+
+    rm -f "${ACTIVE}"
+    if pid="$(running_pid)"; then
+        kill "${pid}" >/dev/null 2>&1 || true
+    fi
+    rm -f "${PIDFILE}"
+    log_msg "watch stop requested"
+}
+
+case "${1:-start}" in
+    start)
+        start_watch
+        ;;
+    stop)
+        stop_watch
+        ;;
+    restart)
+        stop_watch
+        start_watch
+        ;;
+    recover)
+        recover_frontend "manual-${REASON}"
+        ;;
+    watch)
+        watch_loop
+        ;;
+    status)
+        if running_pid >/dev/null; then
+            echo "running"
+            exit 0
+        fi
+        echo "stopped"
+        exit 1
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|restart|recover|watch|status} [reason]" >&2
+        exit 1
+        ;;
+esac

@@ -57,6 +57,16 @@ apps:
   options:
     hud_support: false
     apps_no_sandbox: 0
+internet:
+  emulator: firefox
+  core:     firefox
+  options:
+    hud_support: false
+music:
+  emulator: gmu
+  core:     gmu
+  options:
+    hud_support: false
 android:
   emulator: waydroid
   core:     waydroid

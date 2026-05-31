@@ -21,40 +21,181 @@ find_wayland_socket() {
 	return 1
 }
 
-if [ -z "${WAYLAND_DISPLAY:-}" ]; then
-	if socket="$(find_wayland_socket)"; then
-		export XDG_RUNTIME_DIR="$(dirname "$socket")"
-		export WAYLAND_DISPLAY="$(basename "$socket")"
+configure_wayland_env() {
+	if [ -z "${WAYLAND_DISPLAY:-}" ]; then
+		if socket="$(find_wayland_socket)"; then
+			export XDG_RUNTIME_DIR="$(dirname "$socket")"
+			export WAYLAND_DISPLAY="$(basename "$socket")"
+		fi
 	fi
-fi
 
-if [ -z "${SWAYSOCK:-}" ] && [ -n "${XDG_RUNTIME_DIR:-}" ]; then
-	for socket in "$XDG_RUNTIME_DIR"/sway-ipc.*.sock "$XDG_RUNTIME_DIR"/sway-ipc.sock; do
-		[ -S "$socket" ] || continue
-		export SWAYSOCK="$socket"
-		break
+	if [ -z "${SWAYSOCK:-}" ] && [ -n "${XDG_RUNTIME_DIR:-}" ]; then
+		for socket in "$XDG_RUNTIME_DIR"/sway-ipc.*.sock "$XDG_RUNTIME_DIR"/sway-ipc.sock; do
+			[ -S "$socket" ] || continue
+			export SWAYSOCK="$socket"
+			break
+		done
+	fi
+}
+
+wait_for_wayland_session() {
+	remaining="${BATOCERA_SUNSHINE_WAYLAND_WAIT_SECONDS:-60}"
+	while [ "$remaining" -ge 0 ]; do
+		configure_wayland_env
+		[ -n "${XDG_RUNTIME_DIR:-}" ] && [ -n "${WAYLAND_DISPLAY:-}" ] && return 0
+		remaining=$((remaining - 1))
+		[ "$remaining" -ge 0 ] || break
+		sleep 1
 	done
-fi
+	return 1
+}
+
+choose_output_name() {
+	command -v swaymsg >/dev/null 2>&1 || return 0
+	command -v jq >/dev/null 2>&1 || return 0
+
+	swaymsg -t get_outputs 2>/dev/null | jq -r '
+		[.[] | select(.active) | {name, area:(.rect.width * .rect.height)}] as $outputs |
+		if ($outputs | length) == 0 then
+			empty
+		elif ($outputs | length) == 1 then
+			$outputs[0].name
+		else
+			([$outputs[] | select(.name == "DSI-2") | .name][0] //
+			[$outputs[] | select(.name == "DSI-1") | .name][0] //
+			[$outputs[] | select(.name | test("^DSI-[0-9]+$")) | .name][0] //
+			[$outputs[] | select(.name | test("^eDP-[0-9]+$")) | .name][0] //
+			($outputs | max_by(.area).name) //
+			empty)
+		end
+	' 2>/dev/null || true
+}
+
+active_output_exists() {
+	[ -n "$1" ] || return 1
+	command -v swaymsg >/dev/null 2>&1 || return 1
+	command -v jq >/dev/null 2>&1 || return 1
+
+	swaymsg -t get_outputs 2>/dev/null | jq -e --arg name "$1" '[.[] | select(.active and .name == $name)] | length > 0' >/dev/null 2>&1
+}
+
+set_config_key() {
+	key="$1"
+	value="$2"
+	tmp="${config}.tmp.$$"
+	sed "/^[[:space:]]*$key[[:space:]]*=/d" "$config" > "$tmp"
+	printf '%s\n' "$key = $value" >> "$tmp"
+	mv "$tmp" "$config"
+}
+
+append_unique_origin() {
+	origin="$1"
+	[ -n "$origin" ] || return 0
+	case ",$csrf_origins," in
+		*,"$origin",*) ;;
+		*) csrf_origins="${csrf_origins:+$csrf_origins,}$origin" ;;
+	esac
+}
+
+build_csrf_allowed_origins() {
+	csrf_origins=""
+
+	for name in "$(hostname 2>/dev/null || true)" "$(hostname -s 2>/dev/null || true)" batocera BATOCERA; do
+		[ -n "$name" ] || continue
+		append_unique_origin "https://$name"
+		append_unique_origin "https://$name.local"
+		lower_name="$(printf '%s' "$name" | tr '[:upper:]' '[:lower:]')"
+		append_unique_origin "https://$lower_name"
+		append_unique_origin "https://$lower_name.local"
+	done
+
+	if command -v ip >/dev/null 2>&1; then
+		addresses="$(ip -o -4 addr show scope global up 2>/dev/null | awk '$2 !~ /^(lo|docker|br-|veth|virbr)/ { split($4, a, "/"); print a[1] }' || true)"
+		old_ifs="$IFS"
+		IFS='
+'
+		for address in $addresses; do
+			[ -n "$address" ] || continue
+			case "$address" in
+				127.*|169.254.*) continue ;;
+			esac
+			append_unique_origin "https://$address"
+		done
+		IFS="$old_ifs"
+	fi
+
+	printf '%s\n' "$csrf_origins"
+}
+
+ensure_output_name_default() {
+	[ -s "$config" ] || return 0
+
+	preferred_output_name="$(choose_output_name)"
+	[ -n "$preferred_output_name" ] || return 0
+
+	current_output_name="$(sed -n 's/^[[:space:]]*output_name[[:space:]]*=[[:space:]]*//p' "$config" | tail -n 1)"
+	if [ -z "$current_output_name" ]; then
+		set_config_key output_name "$preferred_output_name"
+		return 0
+	fi
+
+	if ! active_output_exists "$current_output_name"; then
+		set_config_key output_name "$preferred_output_name"
+		return 0
+	fi
+
+	if [ "$current_output_name" = "DSI-1" ] && [ "$preferred_output_name" = "DSI-2" ]; then
+		set_config_key output_name "$preferred_output_name"
+	fi
+}
+
+ensure_web_config_defaults() {
+	[ -s "$config" ] || return 0
+
+	if ! grep -q '^[[:space:]]*origin_web_ui_allowed[[:space:]]*=' "$config"; then
+		printf '%s\n' 'origin_web_ui_allowed = lan' >> "$config"
+	fi
+
+	new_origins="$(build_csrf_allowed_origins)"
+	[ -n "$new_origins" ] || return 0
+
+	existing_origins="$(sed -n 's/^[[:space:]]*csrf_allowed_origins[[:space:]]*=[[:space:]]*//p' "$config" | tail -n 1)"
+	combined_origins="$new_origins"
+	old_ifs="$IFS"
+	IFS=,
+	for origin in $existing_origins; do
+		origin="$(printf '%s' "$origin" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+		[ -n "$origin" ] || continue
+		case ",$combined_origins," in
+			*,"$origin",*) ;;
+			*) combined_origins="$combined_origins,$origin" ;;
+		esac
+	done
+	IFS="$old_ifs"
+
+	tmp="${config}.tmp.$$"
+	sed '/^[[:space:]]*csrf_allowed_origins[[:space:]]*=/d' "$config" > "$tmp"
+	printf '%s\n' "csrf_allowed_origins = $combined_origins" >> "$tmp"
+	mv "$tmp" "$config"
+}
+
+wait_for_wayland_session || true
 
 mkdir -p "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_CACHE_HOME" "$SUNSHINE_CONFIG_DIR" "$home" 2>/dev/null || true
 
 config="$SUNSHINE_CONFIG_DIR/sunshine.conf"
 if [ ! -s "$config" ]; then
-	output_name=""
-	if command -v swaymsg >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
-		output_name="$(swaymsg -t get_outputs 2>/dev/null | jq -r '
-			[.[] | select(.active) | {name, area:(.rect.width * .rect.height)}] as $outputs |
-			($outputs[] | select(.name == "DSI-2").name) //
-			($outputs[] | select(.name == "DSI-1").name) //
-			($outputs | max_by(.area).name) //
-			empty
-		' 2>/dev/null || true)"
-	fi
+	output_name="$(choose_output_name)"
 	{
 		echo "capture = wlr"
 		[ -z "$output_name" ] || echo "output_name = $output_name"
 		echo "origin_web_ui_allowed = lan"
+		csrf_origins="$(build_csrf_allowed_origins)"
+		[ -z "$csrf_origins" ] || echo "csrf_allowed_origins = $csrf_origins"
 	} > "$config"
 fi
+
+ensure_output_name_default
+ensure_web_config_defaults
 
 exec /usr/bin/sunshine "$@"

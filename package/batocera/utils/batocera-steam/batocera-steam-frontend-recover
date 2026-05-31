@@ -1,0 +1,188 @@
+#!/bin/bash
+# SPDX-FileCopyrightText: Added/modified by suckbluefrog
+
+set -u
+
+LOG="/userdata/system/logs/steam-frontend-recover.log"
+ES_SERVICE="/etc/init.d/S31emulationstation"
+REASON="unspecified"
+WAIT_STEAM_EXIT=0
+FRONTEND_WAIT_TRIES="${BATOCERA_STEAM_RECOVER_WAIT_TRIES:-20}"
+FRONTEND_ATTEMPTS="${BATOCERA_STEAM_RECOVER_ATTEMPTS:-3}"
+
+mkdir -p "$(dirname "${LOG}")"
+
+log_msg() {
+    printf '[%s] frontend-recover: %s\n' "$(date '+%F %T')" "$*" >> "${LOG}"
+}
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --wait-steam-exit)
+            WAIT_STEAM_EXIT=1
+            ;;
+        --reason)
+            shift
+            REASON="${1:-unspecified}"
+            ;;
+    esac
+    shift || true
+done
+
+steam_runtime_alive() {
+    pgrep -x steam >/dev/null 2>&1 || \
+    pgrep -x steamwebhelper >/dev/null 2>&1 || \
+    pgrep -x steam-runtime-supervisor >/dev/null 2>&1 || \
+    pgrep -x FEX >/dev/null 2>&1 || \
+    pgrep -x FEXServer >/dev/null 2>&1 || \
+    pgrep -x FEXLoader >/dev/null 2>&1 || \
+    pgrep -x FEXInterpreter >/dev/null 2>&1 || \
+    pgrep -x gamescope >/dev/null 2>&1 || \
+    pgrep -x gamescopereaper >/dev/null 2>&1 || \
+    pgrep -x gamescopestream >/dev/null 2>&1 || \
+    pgrep -x gamescopectl >/dev/null 2>&1 || \
+    pgrep -f 'steamrtarm64/steam|steamwebhelper\.sh|pressure-vessel|SteamLaunch AppId=|pw-audio-namespace|steam\.exe|/usr/share/fex-emu|/userdata/system/steam/rootfs|\.FEXMount|squashfuse' >/dev/null 2>&1
+}
+
+emulationstation_running() {
+    pgrep -f '(^|/)emulationstation([[:space:]]|$)' >/dev/null 2>&1
+}
+
+emulationstation_standalone_running() {
+    pgrep -f '(^|/)emulationstation-standalone([[:space:]]|$)' >/dev/null 2>&1
+}
+
+compositor_running() {
+    pgrep -x sway >/dev/null 2>&1 || \
+    pgrep -x labwc >/dev/null 2>&1 || \
+    pgrep -x openbox >/dev/null 2>&1
+}
+
+sway_tree_has_es() {
+    command -v swaymsg >/dev/null 2>&1 || return 0
+    pgrep -x sway >/dev/null 2>&1 || return 1
+
+    env \
+        XDG_RUNTIME_DIR=/var/run \
+        SWAYSOCK="${SWAYSOCK:-/var/run/sway-ipc.0.sock}" \
+        WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-wayland-1}" \
+        swaymsg -t get_tree 2>/dev/null | grep -Eq '"app_id": "emulationstation"|"name": "EmulationStation"|ES-DE'
+}
+
+frontend_ready() {
+    emulationstation_running || return 1
+    sway_tree_has_es || return 1
+}
+
+wait_frontend_ready() {
+    local tries="${1:-48}"
+    local i
+
+    for i in $(seq 1 "${tries}"); do
+        frontend_ready && return 0
+        sleep 0.25
+    done
+
+    return 1
+}
+
+cleanup_frontend_blockers() {
+    pkill -KILL -x mangoapp >/dev/null 2>&1 || true
+    pkill -KILL -x gamescopereaper >/dev/null 2>&1 || true
+    pkill -KILL -x gamescopestream >/dev/null 2>&1 || true
+    pkill -KILL -x gamescopectl >/dev/null 2>&1 || true
+}
+
+run_frontend_env() {
+    env \
+        -u GAMESCOPE_DISPLAY \
+        -u GAMESCOPE_WAYLAND_DISPLAY \
+        -u GAMESCOPE_SESSION \
+        -u STEAM_GAME_DISPLAY_0 \
+        -u STEAM_MULTIPLE_XWAYLANDS \
+        -u DESKTOP_STARTUP_ID \
+        XDG_CURRENT_DESKTOP=sway \
+        XDG_SESSION_TYPE=wayland \
+        XDG_RUNTIME_DIR=/var/run \
+        WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-wayland-1}" \
+        SWAYSOCK="${SWAYSOCK:-/var/run/sway-ipc.0.sock}" \
+        I3SOCK="${I3SOCK:-/var/run/sway-ipc.0.sock}" \
+        WLR_XWAYLAND_NO_AUTH=1 \
+        "$@"
+}
+
+stop_stale_frontend_fast() {
+    emulationstation-standalone --stop-rebooting >/dev/null 2>&1 || true
+    pkill -TERM -f '(^|/)emulationstation([[:space:]]|$)' >/dev/null 2>&1 || true
+    pkill -TERM -f '(^|/)emulationstation-standalone([[:space:]]|$)' >/dev/null 2>&1 || true
+    sleep 0.5
+    pkill -KILL -f '(^|/)emulationstation([[:space:]]|$)' >/dev/null 2>&1 || true
+    pkill -KILL -f '(^|/)emulationstation-standalone([[:space:]]|$)' >/dev/null 2>&1 || true
+    rm -f /tmp/es-resume.fifo /tmp/suspend.please
+}
+
+start_frontend_clean() {
+    cleanup_frontend_blockers
+
+    if compositor_running && command -v emulationstation-standalone >/dev/null 2>&1; then
+        log_msg "starting EmulationStation standalone inside existing compositor"
+        run_frontend_env nohup /usr/bin/emulationstation-standalone </dev/null >> "${LOG}" 2>&1 &
+        return 0
+    fi
+
+    if [[ -x "${ES_SERVICE}" ]]; then
+        log_msg "starting EmulationStation service"
+        run_frontend_env "${ES_SERVICE}" start >/dev/null 2>&1 || true
+        return 0
+    fi
+
+    if command -v emulationstation-standalone >/dev/null 2>&1; then
+        log_msg "starting raw EmulationStation standalone"
+        run_frontend_env nohup /usr/bin/emulationstation-standalone </dev/null >> "${LOG}" 2>&1 &
+        return 0
+    fi
+
+    return 1
+}
+
+wait_for_steam_exit() {
+    local tries="${1:-120}"
+    local i
+
+    for i in $(seq 1 "${tries}"); do
+        steam_runtime_alive || return 0
+        sleep 0.5
+    done
+
+    log_msg "Steam runtime still alive after wait; continuing recovery anyway"
+    return 1
+}
+
+log_msg "started reason=${REASON} wait_steam_exit=${WAIT_STEAM_EXIT}"
+
+if [[ "${WAIT_STEAM_EXIT}" == "1" ]]; then
+    wait_for_steam_exit 120 || true
+fi
+
+if frontend_ready; then
+    log_msg "frontend already ready"
+    exit 0
+fi
+
+attempt=1
+while [[ "${attempt}" -le "${FRONTEND_ATTEMPTS}" ]]; do
+    log_msg "frontend not ready; recovery attempt ${attempt}"
+    if [[ "${attempt}" -gt 1 ]]; then
+        stop_stale_frontend_fast
+    fi
+    start_frontend_clean
+    if wait_frontend_ready "${FRONTEND_WAIT_TRIES}"; then
+        log_msg "frontend ready after attempt ${attempt}"
+        exit 0
+    fi
+    attempt=$((attempt + 1))
+    sleep 0.5
+done
+
+log_msg "frontend recovery failed"
+exit 1

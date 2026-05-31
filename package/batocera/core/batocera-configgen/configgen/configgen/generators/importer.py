@@ -82,6 +82,8 @@ _GENERATOR_MAP: Final[dict[str, tuple[str, str]]] = {
     'heroic': ('sh.shGenerator', 'ShGenerator'),
     'lutris': ('sh.shGenerator', 'ShGenerator'),
     'n64recomp': ('sh.shGenerator', 'ShGenerator'),
+    'firefox': ('internet.internetGenerator', 'InternetGenerator'),
+    'gmu': ('gmu.gmuGenerator', 'GmuGenerator'),
 }
 
 def get_generator(emulator: str) -> Generator:

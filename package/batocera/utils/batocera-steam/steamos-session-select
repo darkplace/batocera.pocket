@@ -10,11 +10,13 @@ lock="/var/run/steamos-session-select.lock"
 gamescope_es_session_flag="/var/run/batocera-steam-es-gamescope-session"
 steam_session_pattern='(^|/)batocera-steam-session([[:space:]]|$)'
 decky_stack_pattern='/userdata/system/homebrew/services/PluginLoader|Decky Loader|/userdata/system/homebrew/plugins/'
+steam_helper_pattern='steamrtarm64/steam|steamwebhelper|steamwebhelper\.sh|steam-runtime-supervisor|steam-runtime-launcher-service|steamerrorreporter|pressure-vessel|srt-logger|steam-runtime-system-info|SteamLinuxRuntime|SteamLaunch AppId=|pw-audio-namespace|/proton waitforexitandrun|steam\.exe|wineserver|winedevice\.exe|services\.exe'
+fex_stack_pattern='(^|[[:space:]/])(FEX|FEXServer|FEXLoader|FEXInterpreter)([[:space:]]|$)|/usr/share/fex-emu|/userdata/system/steam/rootfs|\.FEXMount|squashfuse'
 ASYNC="${STEAMOS_SESSION_SELECT_ASYNC:-0}"
 ALLY_HOTKEY_DIR="/userdata/system/configs/hotkeygen"
 ALLY_ACTIVE_MAP="${ALLY_HOTKEY_DIR}/ASUS_ROG_Ally_Config-b05-1abe.mapping"
 ALLY_ES_MAP="${ALLY_HOTKEY_DIR}/ASUS_ROG_Ally_Config-b05-1abe.mapping.es"
-ALLY_SYSTEM_DIR="/usr/share/batocera/services/allyhotkeys.d"
+ALLY_SYSTEM_DIR="/usr/share/hotkeygen/allyhotkeys.d"
 ALLY_SYSTEM_DEFAULT_MAP="${ALLY_SYSTEM_DIR}/ASUS_ROG_Ally_Config-b05-1abe.mapping"
 ALLY_SYSTEM_ES_MAP="${ALLY_SYSTEM_DIR}/ASUS_ROG_Ally_Config-b05-1abe.mapping.es"
 ALLY_DATAINIT_DIR="/usr/share/batocera/datainit/system/configs/hotkeygen"
@@ -88,8 +90,9 @@ emulationstation_standalone_running() {
 
 wait_for_emulationstation() {
     local i
+    local tries="${1:-${STEAMOS_SESSION_ES_WAIT_TRIES:-24}}"
 
-    for i in $(seq 1 "${1:-80}"); do
+    for i in $(seq 1 "${tries}"); do
         if emulationstation_running; then
             return 0
         fi
@@ -130,8 +133,8 @@ resume_es() {
         fi
     fi
 
-    if wait_for_emulationstation 80; then
-        return
+    if wait_for_emulationstation; then
+        return 0
     fi
 
     if [[ -x /etc/init.d/S31emulationstation ]]; then
@@ -144,12 +147,13 @@ resume_es() {
             run_es_cmd /etc/init.d/S31emulationstation start || true
     fi
 
-    if wait_for_emulationstation 80; then
-        return
+    if wait_for_emulationstation "${STEAMOS_SESSION_ES_RESTART_WAIT_TRIES:-32}"; then
+        return 0
     fi
 
     start_frontend_clean
-    wait_for_emulationstation 80 || true
+    wait_for_emulationstation "${STEAMOS_SESSION_ES_CLEAN_WAIT_TRIES:-32}" && return 0
+    return 1
 }
 
 steam_stack_alive() {
@@ -165,10 +169,23 @@ steam_stack_alive() {
     pgrep -x gamescopereaper >/dev/null 2>&1 || \
     pgrep -x gamescopestream >/dev/null 2>&1 || \
     pgrep -x gamescopectl >/dev/null 2>&1 || \
+    pgrep -x mangoapp >/dev/null 2>&1 || \
     pgrep -x wineserver >/dev/null 2>&1 || \
-    pgrep -f 'SteamLaunch AppId=|pw-audio-namespace|/proton waitforexitandrun|steam\.exe' >/dev/null 2>&1 || \
+    pgrep -f "${steam_helper_pattern}" >/dev/null 2>&1 || \
+    pgrep -f "${fex_stack_pattern}" >/dev/null 2>&1 || \
     pgrep -f "${decky_stack_pattern}" >/dev/null 2>&1 || \
     pgrep -f '/userdata/system/steam/steam.sh|/usr/share/steam/bin_steam.sh|emulatorlauncher.*-system steam|Steam GamepadUI\.steam|Steam Desktop\.steam' >/dev/null 2>&1
+}
+
+cleanup_fex_mounts() {
+    local mount
+
+    for mount in "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/.FEXMount* /run/user/*/.FEXMount*; do
+        [[ -e "${mount}" ]] || continue
+        fusermount3 -uz "${mount}" >/dev/null 2>&1 || \
+            fusermount -uz "${mount}" >/dev/null 2>&1 || \
+            umount -l "${mount}" >/dev/null 2>&1 || true
+    done
 }
 
 terminate_steam_stack() {
@@ -177,32 +194,60 @@ terminate_steam_stack() {
     # Hard-kill first for reliability on this build.
     if command -v killall >/dev/null 2>&1; then
         killall -q -9 steam steamwebhelper steam-runtime-supervisor \
-            FEX gamescope gamescope-wl gamescopereaper gamescopestream gamescopectl wineserver PluginLoader \
+            steam-runtime-launcher-service steamerrorreporter pressure-vessel \
+            FEX FEXServer FEXLoader FEXInterpreter squashfuse squashfuse_ll \
+            gamescope gamescope-wl gamescopereaper gamescopestream gamescopectl mangoapp \
+            wineserver winedevice.exe services.exe PluginLoader \
             >/dev/null 2>&1 || true
     fi
+    pkill -KILL -f "${steam_helper_pattern}" >/dev/null 2>&1 || true
+    pkill -KILL -f "${fex_stack_pattern}" >/dev/null 2>&1 || true
     pkill -KILL -x FEX >/dev/null 2>&1 || true
+    pkill -KILL -x FEXServer >/dev/null 2>&1 || true
+    pkill -KILL -x FEXLoader >/dev/null 2>&1 || true
+    pkill -KILL -x FEXInterpreter >/dev/null 2>&1 || true
+    pkill -KILL -x squashfuse >/dev/null 2>&1 || true
+    pkill -KILL -x squashfuse_ll >/dev/null 2>&1 || true
     pkill -KILL -f '(^|[[:space:]/])gamescope([[:space:]]|$)' >/dev/null 2>&1 || true
     pkill -KILL -x batocera-steam >/dev/null 2>&1 || true
     pkill -KILL -f "${steam_session_pattern}" >/dev/null 2>&1 || true
     pkill -KILL -f '(^|[[:space:]/])batocera-steam-update-terminal([[:space:]]|$)' >/dev/null 2>&1 || true
     pkill -KILL -f '(^|[[:space:]/])batocera-steam-uimode-watch([[:space:]]|$)' >/dev/null 2>&1 || true
     pkill -KILL -f '(^|[[:space:]/])batocera-steam-nightmode-watch([[:space:]]|$)' >/dev/null 2>&1 || true
+    pkill -KILL -x mangoapp >/dev/null 2>&1 || true
     pkill -KILL -x wineserver >/dev/null 2>&1 || true
-    pkill -KILL -f 'SteamLaunch AppId=|pw-audio-namespace|/proton waitforexitandrun|steam\.exe' >/dev/null 2>&1 || true
     pkill -KILL -f "${decky_stack_pattern}" >/dev/null 2>&1 || true
-    pkill -KILL -f 'pressure-vessel' >/dev/null 2>&1 || true
     pkill -KILL -f '/userdata/system/steam/steam.sh|/usr/share/steam/bin_steam.sh|emulatorlauncher.*-system steam|Steam GamepadUI\.steam|Steam Desktop\.steam' >/dev/null 2>&1 || true
+    cleanup_fex_mounts
 
-    for _ in $(seq 1 20); do
+    for _ in $(seq 1 8); do
         if ! steam_stack_alive; then
             return
         fi
+        pkill -KILL -f "${steam_helper_pattern}" >/dev/null 2>&1 || true
+        pkill -KILL -f "${fex_stack_pattern}" >/dev/null 2>&1 || true
+        cleanup_fex_mounts
         sleep 0.2
     done
 
     if steam_stack_alive; then
         echo "Steam stack still alive after hard kill:" >> "${log}"
-        pgrep -af 'steam|steamwebhelper|gamescope|gamescope-wl|batocera-steam|update-terminal|uimode-watch|nightmode-watch|wineserver|SteamLaunch|pw-audio-namespace|proton waitforexitandrun' >> "${log}" || true
+        pgrep -af 'steam|steamwebhelper|gamescope|gamescope-wl|batocera-steam|update-terminal|uimode-watch|nightmode-watch|wineserver|SteamLaunch|pw-audio-namespace|proton waitforexitandrun|FEX|squashfuse|FEXMount|pressure-vessel' >> "${log}" || true
+    fi
+}
+
+start_frontend_recover_monitor() {
+    command -v batocera-steam-frontend-recover >/dev/null 2>&1 || return 0
+
+    echo "Starting Steam frontend recovery monitor: ${1:-steamos-session-select}" >> "${log}"
+    if command -v setsid >/dev/null 2>&1; then
+        setsid batocera-steam-frontend-recover \
+            --wait-steam-exit \
+            --reason "${1:-steamos-session-select}" >/dev/null 2>&1 &
+    else
+        batocera-steam-frontend-recover \
+            --wait-steam-exit \
+            --reason "${1:-steamos-session-select}" >/dev/null 2>&1 &
     fi
 }
 
@@ -254,6 +299,9 @@ case "${request}" in
             echo "SteamOS session switch returning to ES-launched gamescope session: ${request}" >> "${log}"
             restore_ally_hotkeys_es
             terminate_steam_stack
+            if ! resume_es; then
+                start_frontend_recover_monitor "steamos-session-select-${request}"
+            fi
             restore_ally_hotkeys_es
             exit 0
         fi

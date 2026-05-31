@@ -66,6 +66,12 @@ define BATOCERA_STEAM_AARCH64_INSTALL_TARGET_CMDS
 		$(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/utils/batocera-steam/batocera-steam-uimode-watch \
 		$(TARGET_DIR)/usr/bin/batocera-steam-uimode-watch
 	install -D -m 0755 \
+		$(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/utils/batocera-steam/batocera-steam-frontend-recover \
+		$(TARGET_DIR)/usr/bin/batocera-steam-frontend-recover
+	install -D -m 0755 \
+		$(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/utils/batocera-steam/batocera-steam-session-supervisor \
+		$(TARGET_DIR)/usr/bin/batocera-steam-session-supervisor
+	install -D -m 0755 \
 		$(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/utils/batocera-steam/batocera-steam-nightmode-watch \
 		$(TARGET_DIR)/usr/bin/batocera-steam-nightmode-watch
 	install -D -m 0755 \

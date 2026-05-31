@@ -1,0 +1,433 @@
+#!/usr/bin/env python3
+import json
+import os
+import signal
+import subprocess
+import sys
+import time
+import urllib.request
+import xml.etree.ElementTree as ET
+from pathlib import Path
+
+
+ROM_ROOT = Path("/userdata/roms")
+CONFIG_GAMELISTS = Path("/userdata/system/configs/emulationstation/gamelists")
+CACHE = Path("/tmp/batocera-controlcenter-recent-games.json")
+CACHE_TTL_SECONDS = 2.0
+ES_BASE_URL = "http://127.0.0.1:1234"
+EMULATOR_LAUNCHER_PATTERN = r"(^|/)emulatorlauncher([[:space:]]|$)"
+EMULATOR_PATTERNS = (
+    EMULATOR_LAUNCHER_PATTERN,
+    r"(^|/)(retroarch|duckstation-qt|pcsx2-qt|rpcs3|xenia|xenia_canary|xenia-canary|xenia-edge|dolphin-emu|azahar|eden|citron|scummvm)([[:space:]]|$)",
+    r"(^|/)(wineserver|winedevice\.exe|services\.exe|wine-preloader)([[:space:]]|$)",
+)
+
+
+def text_of(node, name):
+    child = node.find(name)
+    return (child.text or "").strip() if child is not None and child.text else ""
+
+
+def gamelist_paths():
+    paths = []
+    if ROM_ROOT.is_dir():
+        paths.extend(ROM_ROOT.glob("*/gamelist.xml"))
+    if CONFIG_GAMELISTS.is_dir():
+        paths.extend(CONFIG_GAMELISTS.glob("*/gamelist.xml"))
+    yield from sorted(paths)
+
+
+def gamelist_system(gamelist):
+    return gamelist.parent.name
+
+
+def gamelist_base_dir(gamelist):
+    try:
+        gamelist.relative_to(CONFIG_GAMELISTS)
+    except ValueError:
+        return gamelist.parent
+    return ROM_ROOT / gamelist_system(gamelist)
+
+
+def source_signature(paths):
+    signature = []
+    for path in paths:
+        try:
+            stat = path.stat()
+        except OSError:
+            continue
+        signature.append([str(path), stat.st_mtime_ns, stat.st_size])
+    return signature
+
+
+def normalize_path(path):
+    path = Path(path)
+    try:
+        return str(path.resolve())
+    except OSError:
+        return str(path)
+
+
+def resolve_rom_path(gamelist, rom_path):
+    path = Path(rom_path)
+    if path.is_absolute():
+        return normalize_path(path)
+    return normalize_path(gamelist_base_dir(gamelist) / rom_path)
+
+
+def running_game_from_api():
+    try:
+        with urllib.request.urlopen(f"{ES_BASE_URL}/runningGame", timeout=0.25) as response:
+            data = json.loads(response.read().decode("utf-8"))
+    except Exception:
+        return None
+
+    if not isinstance(data, dict):
+        return None
+
+    name = str(data.get("name") or "").strip()
+    system = str(data.get("systemName") or data.get("system") or "").strip()
+    if not name or name == "null":
+        return None
+
+    rom_path = ""
+    for key in ("path", "rom", "romPath", "file", "gamePath"):
+        value = data.get(key)
+        if value and str(value) != "null":
+            rom_path = str(value)
+            break
+
+    return {
+        "lastplayed": time.strftime("%Y%m%dT%H%M%S"),
+        "name": name,
+        "path": normalize_path(rom_path) if rom_path else "",
+        "system": system,
+    }
+
+
+def running_game_from_emulatorlauncher():
+    for proc_dir in Path("/proc").iterdir():
+        if not proc_dir.name.isdigit():
+            continue
+
+        try:
+            cmdline = (proc_dir / "cmdline").read_bytes().decode("utf-8", "ignore").split("\0")
+        except Exception:
+            continue
+
+        cmdline = [arg for arg in cmdline if arg]
+        if not cmdline or "emulatorlauncher" not in Path(cmdline[0]).name:
+            continue
+
+        try:
+            rom_path = cmdline[cmdline.index("-rom") + 1]
+        except (ValueError, IndexError):
+            continue
+
+        try:
+            system = cmdline[cmdline.index("-system") + 1]
+        except (ValueError, IndexError):
+            system = Path(rom_path).parent.name
+
+        return {
+            "lastplayed": time.strftime("%Y%m%dT%H%M%S"),
+            "name": Path(rom_path).stem,
+            "path": normalize_path(rom_path),
+            "system": system,
+        }
+
+    return None
+
+
+def running_game():
+    api_game = running_game_from_api()
+    launcher_game = running_game_from_emulatorlauncher()
+
+    if api_game and launcher_game:
+        if not api_game["path"]:
+            api_game["path"] = launcher_game["path"]
+        if not api_game["system"]:
+            api_game["system"] = launcher_game["system"]
+        return api_game
+
+    return api_game or launcher_game
+
+
+def promote_game(games, game):
+    if not game or not game.get("path"):
+        return games
+
+    current_path = normalize_path(game["path"])
+    promoted = dict(game)
+    promoted["path"] = current_path
+
+    return [promoted] + [item for item in games if normalize_path(item["path"]) != current_path]
+
+
+def scan_recent_games(limit=16):
+    games = {}
+
+    for gamelist in list(gamelist_paths()):
+        system = gamelist_system(gamelist)
+        try:
+            root = ET.parse(gamelist).getroot()
+        except Exception:
+            continue
+
+        for game in root.findall("game"):
+            lastplayed = text_of(game, "lastplayed")
+            rom_path = text_of(game, "path")
+            if not lastplayed or not rom_path:
+                continue
+
+            full_path = resolve_rom_path(gamelist, rom_path)
+            existing_game = games.get(full_path)
+            if existing_game and existing_game["lastplayed"] >= lastplayed:
+                continue
+
+            name = text_of(game, "name") or Path(full_path).stem
+            games[full_path] = {
+                "lastplayed": lastplayed,
+                "name": name,
+                "path": full_path,
+                "system": system,
+            }
+
+    sorted_games = sorted(games.values(), key=lambda item: item["lastplayed"], reverse=True)
+    return sorted_games[:limit]
+
+
+def read_cached_games(signature):
+    try:
+        cached = json.loads(CACHE.read_text())
+        if cached.get("signature") != signature:
+            return None
+        if time.time() - float(cached.get("timestamp", 0)) > CACHE_TTL_SECONDS:
+            return None
+        games = cached.get("games", [])
+        return games if isinstance(games, list) else None
+    except Exception:
+        return None
+
+
+def write_cached_games(signature, games):
+    try:
+        CACHE.write_text(json.dumps({
+            "signature": signature,
+            "timestamp": time.time(),
+            "games": games,
+        }))
+    except Exception:
+        pass
+
+
+def recent_games(limit=3):
+    paths = list(gamelist_paths())
+    signature = source_signature(paths)
+
+    games = read_cached_games(signature)
+    if games is None:
+        games = scan_recent_games(16)
+        write_cached_games(signature, games)
+
+    games = promote_game(games, running_game())
+    return games[:limit]
+
+
+def game_at(index):
+    games = recent_games(max(3, index))
+    if index < 1 or index > len(games):
+        return None
+    return games[index - 1]
+
+
+def label(index):
+    game = game_at(index)
+    if not game:
+        return ""
+
+    name = game["name"]
+    max_name = 42
+    if len(name) > max_name:
+        name = name[:max_name - 1].rstrip() + "."
+    return f"{name} [{game['system']}]"
+
+
+def http_get(path, timeout=1.0):
+    try:
+        with urllib.request.urlopen(f"{ES_BASE_URL}{path}", timeout=timeout):
+            return True
+    except Exception:
+        return False
+
+
+def run_no_fail(args, timeout=2.0):
+    try:
+        subprocess.run(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=timeout, check=False)
+    except Exception:
+        pass
+
+
+def pattern_running(pattern):
+    try:
+        return subprocess.run(["pgrep", "-f", pattern], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False).returncode == 0
+    except Exception:
+        return False
+
+
+def pids_for_pattern(pattern):
+    try:
+        proc = subprocess.run(["pgrep", "-f", pattern], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, check=False)
+    except Exception:
+        return set()
+
+    own_pid = os.getpid()
+    pids = set()
+    for line in proc.stdout.splitlines():
+        try:
+            pid = int(line.strip())
+        except ValueError:
+            continue
+        if pid != own_pid:
+            pids.add(pid)
+    return pids
+
+
+def child_pids(pid):
+    try:
+        proc = subprocess.run(["pgrep", "-P", str(pid)], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, check=False)
+    except Exception:
+        return set()
+
+    children = set()
+    for line in proc.stdout.splitlines():
+        try:
+            children.add(int(line.strip()))
+        except ValueError:
+            continue
+    return children
+
+
+def descendant_pids(roots):
+    seen = set()
+    queue = list(roots)
+    while queue:
+        pid = queue.pop(0)
+        if pid in seen:
+            continue
+        seen.add(pid)
+        queue.extend(sorted(child_pids(pid) - seen))
+    return seen
+
+
+def pid_alive(pid):
+    return Path(f"/proc/{pid}").exists()
+
+
+def wait_for_pids(pids, timeout=4.0):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if not any(pid_alive(pid) for pid in pids):
+            return True
+        time.sleep(0.2)
+    return not any(pid_alive(pid) for pid in pids)
+
+
+def signal_pids(pids, sig):
+    for pid in sorted(pids, reverse=True):
+        try:
+            os.kill(pid, sig)
+        except ProcessLookupError:
+            pass
+        except PermissionError:
+            pass
+
+
+def any_emulator_running():
+    return any(pattern_running(pattern) for pattern in EMULATOR_PATTERNS)
+
+
+def wait_for_emulators(timeout=8.0):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if not any_emulator_running():
+            return True
+        time.sleep(0.2)
+    return not any_emulator_running()
+
+
+def force_kill_emulators():
+    for signal_name in ("-TERM", "-KILL"):
+        for pattern in EMULATOR_PATTERNS:
+            run_no_fail(["pkill", signal_name, "-f", pattern], timeout=1.0)
+        if wait_for_emulators(1.5):
+            return True
+    return not any_emulator_running()
+
+
+def stop_current_game():
+    tracked_pids = descendant_pids(pids_for_pattern(EMULATOR_LAUNCHER_PATTERN))
+    http_get("/emukill", timeout=1.0)
+    run_no_fail(["batocera-es-swissknife", "--emukill", "1.5"], timeout=4.0)
+    if wait_for_emulators(5.0) and wait_for_pids(tracked_pids, 0.5):
+        return True
+
+    signal_pids(tracked_pids, signal.SIGTERM)
+    if wait_for_emulators(1.5) and wait_for_pids(tracked_pids, 1.5):
+        return True
+
+    signal_pids(tracked_pids, signal.SIGKILL)
+    return force_kill_emulators() and wait_for_pids(tracked_pids, 1.5)
+
+
+def launch(index):
+    game = game_at(index)
+    if not game:
+        return 1
+
+    if not stop_current_game():
+        sys.stderr.write("Failed to stop the current emulator before launching a recent game.\n")
+        return 1
+
+    request = urllib.request.Request(
+        f"{ES_BASE_URL}/launch",
+        data=game["path"].encode("utf-8"),
+        headers={"Content-Type": "text/plain"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=2.0):
+            write_cached_games(source_signature(list(gamelist_paths())), promote_game(recent_games(16), game))
+            return 0
+    except Exception as exc:
+        sys.stderr.write(f"Failed to launch {game['path']}: {exc}\n")
+        return 1
+
+
+def main(argv):
+    command = argv[1] if len(argv) > 1 else "list"
+    try:
+        index = int(argv[2]) if len(argv) > 2 else 1
+    except ValueError:
+        index = 1
+
+    if command == "label":
+        print(label(index))
+        return 0
+    if command == "has-any":
+        return 0 if recent_games(1) else 1
+    if command == "has":
+        return 0 if game_at(index) else 1
+    if command == "launch":
+        return launch(index)
+    if command == "list":
+        for pos, game in enumerate(recent_games(3), start=1):
+            print(f"{pos}\t{label(pos)}\t{game['path']}")
+        return 0
+
+    sys.stderr.write("usage: batocera-controlcenter-recent-games [list|label N|launch N|has-any|has N]\n")
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

@@ -1,0 +1,22 @@
+From e0d3735c10a079375a51f5f7569c746f55b8cb68 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Fri, 29 May 2026 00:00:00 +0000
+Subject: [PATCH] render compact switch display labels
+
+--- a/ui_core.py
++++ b/ui_core.py
+@@ -2055,6 +2055,14 @@
+         if elem_id:
+             switch.set_name(elem_id)
+         
++        if switch_display:
++            label = Gtk.Label(label=_(switch_display))
++            label.get_style_context().add_class("value")
++            label.set_xalign(0.0)
++            label.set_halign(Gtk.Align.START)
++            (row_box.pack_end if pack_end else row_box.pack_start)(label, False, False, 3)
++            register_element_id(sub, self.rendered_ids)
++
+         # Add to row box
+         if pack_end:
+             row_box.pack_end(switch, False, False, 6)

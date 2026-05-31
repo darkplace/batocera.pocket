@@ -1,0 +1,167 @@
+#!/bin/sh
+
+LOG="/userdata/system/logs/controlcenter.log"
+
+log_msg() {
+    mkdir -p "$(dirname "${LOG}")" 2>/dev/null || true
+    printf '%s\n' "controlcenter-steamos-quick: $*" >>"${LOG}" 2>/dev/null || true
+}
+
+kill_running_emulator() {
+    if command -v batocera-es-swissknife >/dev/null 2>&1; then
+        batocera-es-swissknife --emukill 0.5 >/dev/null 2>&1 || true
+    fi
+
+    if command -v curl >/dev/null 2>&1; then
+        curl -fsS http://127.0.0.1:1234/emukill >/dev/null 2>&1 || true
+    fi
+
+    for _ in 1 2 3 4 5 6 7 8 9 10; do
+        pgrep -f '(^|[[:space:]/])emulatorlauncher([[:space:]]|$)' >/dev/null 2>&1 || return 0
+        sleep 0.1
+    done
+
+    pkill -KILL -f '(^|[[:space:]/])emulatorlauncher([[:space:]]|$)' >/dev/null 2>&1 || true
+}
+
+quick_launch_delay() {
+    DELAY="${BCC_QUICK_LAUNCH_DELAY:-1.0}"
+    case "${DELAY}" in
+        ""|*[!0-9.]*)
+            DELAY="1.0"
+            ;;
+    esac
+    sleep "${DELAY}"
+}
+
+wait_input_quiet() {
+    if ! command -v python3 >/dev/null 2>&1; then
+        sleep 1
+        return 0
+    fi
+
+    python3 - "${BCC_QUICK_INPUT_QUIET_MS:-900}" "${BCC_QUICK_INPUT_MAX_WAIT_MS:-6000}" <<'PY' || sleep 1
+import glob
+import os
+import select
+import struct
+import sys
+import time
+
+try:
+    quiet = max(0.1, int(sys.argv[1]) / 1000.0)
+    max_wait = max(quiet, int(sys.argv[2]) / 1000.0)
+except Exception:
+    quiet = 0.9
+    max_wait = 6.0
+
+fmt = "llHHi"
+event_size = struct.calcsize(fmt)
+fds = []
+for path in glob.glob("/dev/input/event*"):
+    try:
+        fds.append(os.open(path, os.O_RDONLY | os.O_NONBLOCK))
+    except OSError:
+        pass
+
+if not fds:
+    time.sleep(quiet)
+    raise SystemExit(0)
+
+for fd in fds:
+    while True:
+        try:
+            if not os.read(fd, event_size * 64):
+                break
+        except BlockingIOError:
+            break
+        except OSError:
+            break
+
+quiet_until = time.monotonic() + quiet
+deadline = time.monotonic() + max_wait
+while time.monotonic() < quiet_until and time.monotonic() < deadline:
+    timeout = max(0.0, min(quiet_until, deadline) - time.monotonic())
+    readable, _, _ = select.select(fds, [], [], timeout)
+    if not readable:
+        break
+    saw_key = False
+    for fd in readable:
+        try:
+            data = os.read(fd, event_size * 64)
+        except (BlockingIOError, OSError):
+            data = b""
+        for offset in range(0, len(data) - event_size + 1, event_size):
+            _sec, _usec, ev_type, _code, _value = struct.unpack_from(fmt, data, offset)
+            if ev_type == 1:
+                saw_key = True
+    if saw_key:
+        quiet_until = time.monotonic() + quiet
+
+for fd in fds:
+    try:
+        os.close(fd)
+    except OSError:
+        pass
+PY
+}
+
+terminate_controlcenter() {
+    PIDS="$(pgrep -f '(^|[[:space:]/])batocera-controlcenter-app([[:space:]]|$)' 2>/dev/null | sort -u || true)"
+
+    for PID in ${PIDS}; do
+        [ "${PID}" = "$$" ] && continue
+        kill "${PID}" 2>/dev/null || true
+    done
+
+    sleep 0.25
+
+    for PID in ${PIDS}; do
+        [ "${PID}" = "$$" ] && continue
+        [ -e "/proc/${PID}" ] && kill -KILL "${PID}" 2>/dev/null || true
+    done
+
+    rm -f /var/run/batocera-controlcenter.pid /var/run/batocera-controlcenter.started
+}
+
+launch_steamos() {
+    quick_launch_delay
+    wait_input_quiet
+
+    if [ -x /usr/bin/steam-direct-session.sh ]; then
+        log_msg "launching SteamOS direct gamescope session"
+        env \
+            BATOCERA_STEAM_MODE=steamos \
+            BATOCERA_STEAM_GAMEPADUI=1 \
+            BATOCERA_STEAM_USE_GAMESCOPE=1 \
+            BATOCERA_STEAM_VISIBLE_UPDATE_PREFLIGHT=0 \
+            BATOCERA_STEAM_UPDATE_TERMINAL=0 \
+            /usr/bin/steam-direct-session.sh
+        return
+    fi
+
+    log_msg "steam-direct-session.sh missing, falling back to batocera-steam"
+    env \
+        BATOCERA_STEAM_MODE=steamos \
+        BATOCERA_STEAM_GAMEPADUI=1 \
+        BATOCERA_STEAM_USE_GAMESCOPE=1 \
+        BATOCERA_STEAM_UPDATE_TERMINAL=0 \
+        /usr/bin/batocera-steam
+}
+
+if [ "${1:-}" = "--run-steamos" ]; then
+    launch_steamos
+    exit $?
+fi
+
+log_msg "requested from Control Center"
+kill_running_emulator
+
+if command -v setsid >/dev/null 2>&1; then
+    setsid "$0" --run-steamos >/dev/null 2>&1 &
+else
+    "$0" --run-steamos >/dev/null 2>&1 &
+fi
+
+terminate_controlcenter
+exit 0

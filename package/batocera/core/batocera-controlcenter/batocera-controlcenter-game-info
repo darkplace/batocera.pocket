@@ -1,0 +1,289 @@
+#!/usr/bin/env python3
+import json
+import os
+import subprocess
+import sys
+import urllib.parse
+import urllib.request
+import xml.etree.ElementTree as ET
+from pathlib import Path
+
+
+ROM_ROOT = Path(os.environ.get("BCC_ROM_ROOT", "/userdata/roms"))
+CONFIG_GAMELISTS = Path(os.environ.get(
+    "BCC_CONFIG_GAMELISTS",
+    "/userdata/system/configs/emulationstation/gamelists",
+))
+RUNNING_GAME_URL = os.environ.get(
+    "BCC_RUNNING_GAME_URL",
+    "http://127.0.0.1:1234/runningGame",
+)
+
+HLTB_KEYS = {
+    "main": ("hltbmain", "hltbMain"),
+    "extra": ("hltbextra", "hltbExtra"),
+    "completionist": ("hltbcompletionist", "hltbCompletionist"),
+    "all_styles": ("hltballstyles", "hltbAllStyles"),
+    "summary": ("hltbSummary", "hltbsummary"),
+    "url": ("hltburl", "hltbUrl"),
+}
+PCGW_PAGE_KEYS = ("pcgwpage", "pcgamingwikiPage", "PCGamingWikiPage")
+PCGW_URL_KEYS = ("pcgwurl", "pcgamingwikiUrl", "PCGamingWikiUrl")
+
+
+def clean(value):
+    if value is None:
+        return ""
+    value = str(value).strip()
+    if value.lower() in {"", "0", "none", "null"}:
+        return ""
+    return value
+
+
+def first_value(data, keys):
+    for key in keys:
+        value = clean(data.get(key))
+        if value:
+            return value
+    return ""
+
+
+def read_running_game():
+    raw = os.environ.get("BCC_RUNNING_GAME_JSON")
+    if not raw:
+        try:
+            with urllib.request.urlopen(RUNNING_GAME_URL, timeout=0.8) as response:
+                raw = response.read().decode("utf-8", errors="replace")
+        except Exception:
+            return {}
+
+    try:
+        data = json.loads(raw)
+    except Exception:
+        return {}
+
+    if clean(data.get("msg")).upper() == "NO GAME RUNNING":
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def text_of(node, name):
+    child = node.find(name)
+    return (child.text or "").strip() if child is not None and child.text else ""
+
+
+def gamelist_candidates(running_game):
+    paths = []
+    system = clean(running_game.get("systemName"))
+    if system:
+        paths.extend([
+            ROM_ROOT / system / "gamelist.xml",
+            CONFIG_GAMELISTS / system / "gamelist.xml",
+        ])
+
+    if ROM_ROOT.is_dir():
+        paths.extend(sorted(ROM_ROOT.glob("*/gamelist.xml")))
+    if CONFIG_GAMELISTS.is_dir():
+        paths.extend(sorted(CONFIG_GAMELISTS.glob("*/gamelist.xml")))
+
+    seen = set()
+    for path in paths:
+        if path in seen:
+            continue
+        seen.add(path)
+        if path.is_file():
+            yield path
+
+
+def resolve_rom_path(gamelist, rom_path):
+    path = Path(rom_path)
+    if path.is_absolute():
+        return str(path)
+    return str((gamelist.parent / rom_path).resolve())
+
+
+def matching_game_node(running_game):
+    running_path = clean(running_game.get("path"))
+    running_name = clean(running_game.get("name"))
+    running_basename = Path(running_path).name if running_path else ""
+
+    for gamelist in gamelist_candidates(running_game):
+        try:
+            root = ET.parse(gamelist).getroot()
+        except Exception:
+            continue
+
+        fallback = None
+        for game in root.findall("game"):
+            rom_path = text_of(game, "path")
+            if not rom_path:
+                continue
+
+            full_path = resolve_rom_path(gamelist, rom_path)
+            name = text_of(game, "name")
+            basename = Path(full_path).name
+
+            if running_path and (running_path == full_path or Path(running_path).resolve() == Path(full_path)):
+                return game
+            if running_basename and running_basename == basename:
+                fallback = game
+            elif running_name and running_name == name:
+                fallback = game
+
+        if fallback is not None:
+            return fallback
+
+    return None
+
+
+def metadata_from_node(node):
+    if node is None:
+        return {}
+    return {child.tag: (child.text or "").strip() for child in list(node)}
+
+
+def game_metadata():
+    running_game = read_running_game()
+    if not running_game:
+        return {}
+
+    data = dict(running_game)
+    missing_hltb = not any(first_value(data, keys) for keys in HLTB_KEYS.values())
+    missing_pcgw = not first_value(data, PCGW_PAGE_KEYS + PCGW_URL_KEYS)
+
+    if missing_hltb or missing_pcgw:
+        node_data = metadata_from_node(matching_game_node(running_game))
+        for key, value in node_data.items():
+            data.setdefault(key, value)
+
+    return data
+
+
+def format_hltb_time(value):
+    value = clean(value)
+    if not value:
+        return ""
+
+    if any(ch.isalpha() for ch in value):
+        return value
+
+    try:
+        seconds = int(float(value))
+    except ValueError:
+        return value
+
+    if seconds <= 0:
+        return ""
+
+    minutes = round(seconds / 60)
+    hours = minutes // 60
+    remainder = minutes % 60
+    if hours and remainder:
+        return f"{hours}h {remainder}m"
+    if hours:
+        return f"{hours}h"
+    return f"{minutes}m"
+
+
+def hltb_values(data):
+    summary = first_value(data, HLTB_KEYS["summary"])
+    if summary:
+        return [summary]
+
+    rows = []
+    for label, key_name in (
+        ("Main", "main"),
+        ("Extra", "extra"),
+        ("100%", "completionist"),
+        ("All", "all_styles"),
+    ):
+        value = format_hltb_time(first_value(data, HLTB_KEYS[key_name]))
+        if value:
+            rows.append(f"{label} {value}")
+    return rows
+
+
+def hltb_label(data):
+    rows = hltb_values(data)
+    return " | ".join(rows[:4])
+
+
+def pcgw_url(data):
+    return first_value(data, PCGW_URL_KEYS)
+
+
+def pcgw_page(data):
+    page = first_value(data, PCGW_PAGE_KEYS)
+    if page:
+        return page
+
+    url = pcgw_url(data)
+    if not url:
+        return ""
+    path = urllib.parse.urlparse(url).path.rsplit("/", 1)[-1]
+    return urllib.parse.unquote(path).replace("_", " ") or "PCGamingWiki"
+
+
+def open_url(url):
+    for browser in ("batocera-app-firefox", "firefox", "xdg-open"):
+        if not shutil_which(browser):
+            continue
+        try:
+            subprocess.Popen(
+                [browser, url],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+            return 0
+        except Exception:
+            continue
+    return 1
+
+
+def shutil_which(command):
+    for directory in os.environ.get("PATH", "").split(os.pathsep):
+        candidate = Path(directory) / command
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            return str(candidate)
+    return ""
+
+
+def main(argv):
+    command = argv[1] if len(argv) > 1 else "summary"
+    data = game_metadata()
+
+    if command == "has-hltb":
+        return 0 if hltb_values(data) else 1
+    if command == "hltb-label":
+        print(hltb_label(data))
+        return 0
+    if command == "has-pcgw":
+        return 0 if pcgw_url(data) else 1
+    if command == "pcgw-label":
+        print(pcgw_page(data) or "PCGamingWiki")
+        return 0
+    if command == "pcgw-url":
+        print(pcgw_url(data))
+        return 0 if pcgw_url(data) else 1
+    if command == "open-pcgw":
+        url = pcgw_url(data)
+        return open_url(url) if url else 1
+    if command == "summary":
+        hltb = hltb_label(data)
+        pcgw = pcgw_page(data)
+        if hltb:
+            print(f"HLTB: {hltb}")
+        if pcgw:
+            print(f"PCGamingWiki: {pcgw}")
+        return 0
+
+    sys.stderr.write(
+        "usage: batocera-controlcenter-game-info "
+        "[summary|has-hltb|hltb-label|has-pcgw|pcgw-label|pcgw-url|open-pcgw]\n"
+    )
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

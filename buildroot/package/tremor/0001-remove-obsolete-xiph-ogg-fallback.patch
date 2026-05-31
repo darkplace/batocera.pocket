@@ -1,0 +1,26 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Batocera <noreply@batocera.org>
+Date: Sun, 31 May 2026 12:00:00 +0000
+Subject: [PATCH] configure: remove obsolete XIPH_PATH_OGG fallback
+
+Modern autoreconf does not expand the old XIPH_PATH_OGG macro here, leaving
+invalid shell in the generated configure script. The pkg-config check above it
+already handles the normal libogg detection path used by Buildroot.
+---
+ configure.in | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/configure.in b/configure.in
+index 6a5a5f7..7b5757d 100644
+--- a/configure.in
++++ b/configure.in
+@@ -119,7 +119,6 @@ fi
+ if test "x$HAVE_OGG" = "xno"
+ then
+   dnl fall back to the old school test
+-  XIPH_PATH_OGG(, AC_MSG_ERROR(must have Ogg installed!))
+   libs_save=$LIBS
+   LIBS="$OGG_LIBS"
+   AC_CHECK_FUNC(oggpack_writealign, , AC_MSG_ERROR(Ogg >= 1.0 required !))
+-- 
+2.45.2

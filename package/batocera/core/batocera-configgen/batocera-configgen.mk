@@ -122,8 +122,9 @@ define BATOCERA_CONFIGGEN_CONFIGS
 	cp $(CONFIGGEN_DIR)/scripts/call_achievements_hooks.sh \
 	    $(TARGET_DIR)/usr/share/batocera/configgen/
 	# evmapy default hotkeys file
-        mkdir -p $(TARGET_DIR)/usr/share/evmapy
+	mkdir -p $(TARGET_DIR)/usr/share/evmapy
 	cp $(CONFIGGEN_DIR)/hotkeys.keys $(TARGET_DIR)/usr/share/evmapy/hotkeys.keys
+	cp $(CONFIGGEN_DIR)/internet.firefox.keys $(TARGET_DIR)/usr/share/evmapy/internet.firefox.keys
 endef
 
 define BATOCERA_CONFIGGEN_ES_HOOKS

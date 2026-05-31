@@ -9,12 +9,14 @@ direct_app_session_flag="/var/run/batocera-steam-direct-app-session"
 preflight_session_flag="/var/run/batocera-steam-update-preflight"
 steam_session_pattern='(^|/)batocera-steam-session([[:space:]]|$)'
 decky_stack_pattern='/userdata/system/homebrew/services/PluginLoader|Decky Loader|/userdata/system/homebrew/plugins/'
+steam_helper_pattern='steamrtarm64/steam|steamwebhelper|steamwebhelper\.sh|steam-runtime-supervisor|steam-runtime-launcher-service|steamerrorreporter|pressure-vessel|srt-logger|steam-runtime-system-info|SteamLinuxRuntime|SteamLaunch AppId=|pw-audio-namespace|/proton waitforexitandrun|steam\.exe|wineserver|winedevice\.exe|services\.exe'
+fex_stack_pattern='(^|[[:space:]/])(FEX|FEXServer|FEXLoader|FEXInterpreter)([[:space:]]|$)|/usr/share/fex-emu|/userdata/system/steam/rootfs|\.FEXMount|squashfuse'
 desktop_launcher="/usr/bin/batocera-steam-desktop-launcher"
 desktop_launcher_pattern='(^|/)batocera-steam-desktop-launcher([[:space:]]|$)'
 ALLY_HOTKEY_DIR="/userdata/system/configs/hotkeygen"
 ALLY_ACTIVE_MAP="${ALLY_HOTKEY_DIR}/ASUS_ROG_Ally_Config-b05-1abe.mapping"
 ALLY_COMMON_CONTEXT="${ALLY_HOTKEY_DIR}/common_context.ally.conf"
-ALLY_SYSTEM_DIR="/usr/share/batocera/services/allyhotkeys.d"
+ALLY_SYSTEM_DIR="/usr/share/hotkeygen/allyhotkeys.d"
 ALLY_ES_MAP="${ALLY_SYSTEM_DIR}/ASUS_ROG_Ally_Config-b05-1abe.mapping.es"
 ALLY_DEFAULT_MAP="${ALLY_SYSTEM_DIR}/ASUS_ROG_Ally_Config-b05-1abe.mapping"
 HARD_KILL_ON_SWITCH="${BATOCERA_STEAM_DESKTOP_SWITCH_HARD_KILL:-1}"
@@ -48,8 +50,22 @@ steam_stack_alive() {
     pgrep -x gamescopereaper >/dev/null 2>&1 || \
     pgrep -x gamescopestream >/dev/null 2>&1 || \
     pgrep -x gamescopectl >/dev/null 2>&1 || \
+    pgrep -x mangoapp >/dev/null 2>&1 || \
+    pgrep -f "${steam_helper_pattern}" >/dev/null 2>&1 || \
+    pgrep -f "${fex_stack_pattern}" >/dev/null 2>&1 || \
     pgrep -f "${decky_stack_pattern}" >/dev/null 2>&1 || \
     pgrep -f '/userdata/system/steam/steam.sh|/usr/share/steam/bin_steam.sh|emulatorlauncher.*-system steam|Steam GamepadUI\.steam|Steam Desktop\.steam' >/dev/null 2>&1
+}
+
+cleanup_fex_mounts() {
+    local mount
+
+    for mount in "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/.FEXMount* /run/user/*/.FEXMount*; do
+        [[ -e "${mount}" ]] || continue
+        fusermount3 -uz "${mount}" >/dev/null 2>&1 || \
+            fusermount -uz "${mount}" >/dev/null 2>&1 || \
+            umount -l "${mount}" >/dev/null 2>&1 || true
+    done
 }
 
 hotkeys_restored=0
@@ -143,64 +159,104 @@ start_desktop_launcher() {
 terminate_steam_stack() {
     if [[ "${HARD_KILL_ON_SWITCH}" != "0" ]]; then
         echo "[$(date +%F\ %T)] switch-to-desktop: using immediate hard-kill teardown" >> "${log}"
+        pkill -KILL -f "${steam_helper_pattern}" >/dev/null 2>&1 || true
+        pkill -KILL -f "${fex_stack_pattern}" >/dev/null 2>&1 || true
         pkill -KILL -x batocera-steam >/dev/null 2>&1 || true
         pkill -KILL -f "${steam_session_pattern}" >/dev/null 2>&1 || true
         pkill -KILL -x steam >/dev/null 2>&1 || true
         pkill -KILL -x steamwebhelper >/dev/null 2>&1 || true
         pkill -KILL -x steam-runtime-supervisor >/dev/null 2>&1 || true
         pkill -KILL -x FEX >/dev/null 2>&1 || true
+        pkill -KILL -x FEXServer >/dev/null 2>&1 || true
+        pkill -KILL -x FEXLoader >/dev/null 2>&1 || true
+        pkill -KILL -x FEXInterpreter >/dev/null 2>&1 || true
+        pkill -KILL -x squashfuse >/dev/null 2>&1 || true
+        pkill -KILL -x squashfuse_ll >/dev/null 2>&1 || true
         pkill -KILL -x gamescope >/dev/null 2>&1 || true
         pkill -KILL -x gamescopereaper >/dev/null 2>&1 || true
         pkill -KILL -x gamescopestream >/dev/null 2>&1 || true
         pkill -KILL -x gamescopectl >/dev/null 2>&1 || true
+        pkill -KILL -x mangoapp >/dev/null 2>&1 || true
         pkill -KILL -f "${decky_stack_pattern}" >/dev/null 2>&1 || true
-        pkill -KILL -f 'pressure-vessel' >/dev/null 2>&1 || true
         pkill -KILL -f '/userdata/system/steam/steam.sh|/usr/share/steam/bin_steam.sh|emulatorlauncher.*-system steam|Steam GamepadUI\.steam|Steam Desktop\.steam' >/dev/null 2>&1 || true
 
         if command -v killall >/dev/null 2>&1; then
-            killall -q -9 batocera-steam steam steamwebhelper steam-runtime-supervisor FEX gamescope gamescopereaper gamescopestream gamescopectl >/dev/null 2>&1 || true
+            killall -q -9 batocera-steam steam steamwebhelper steam-runtime-supervisor \
+                steam-runtime-launcher-service steamerrorreporter pressure-vessel \
+                FEX FEXServer FEXLoader FEXInterpreter squashfuse squashfuse_ll \
+                gamescope gamescopereaper gamescopestream gamescopectl mangoapp \
+                wineserver winedevice.exe services.exe PluginLoader >/dev/null 2>&1 || true
         fi
 
-        wait_for_stack_exit 15 || true
+        cleanup_fex_mounts
+        for _ in $(seq 1 8); do
+            if ! steam_stack_alive; then
+                return
+            fi
+            pkill -KILL -f "${steam_helper_pattern}" >/dev/null 2>&1 || true
+            pkill -KILL -f "${fex_stack_pattern}" >/dev/null 2>&1 || true
+            cleanup_fex_mounts
+            sleep 0.2
+        done
         return
     fi
 
+    pkill -TERM -f "${steam_helper_pattern}" >/dev/null 2>&1 || true
+    pkill -TERM -f "${fex_stack_pattern}" >/dev/null 2>&1 || true
     pkill -TERM -x batocera-steam >/dev/null 2>&1 || true
     pkill -TERM -f "${steam_session_pattern}" >/dev/null 2>&1 || true
     pkill -TERM -x steam >/dev/null 2>&1 || true
     pkill -TERM -x steamwebhelper >/dev/null 2>&1 || true
     pkill -TERM -x steam-runtime-supervisor >/dev/null 2>&1 || true
     pkill -TERM -x FEX >/dev/null 2>&1 || true
+    pkill -TERM -x FEXServer >/dev/null 2>&1 || true
+    pkill -TERM -x FEXLoader >/dev/null 2>&1 || true
+    pkill -TERM -x FEXInterpreter >/dev/null 2>&1 || true
+    pkill -TERM -x squashfuse >/dev/null 2>&1 || true
+    pkill -TERM -x squashfuse_ll >/dev/null 2>&1 || true
     pkill -TERM -x gamescope >/dev/null 2>&1 || true
     pkill -TERM -x gamescopereaper >/dev/null 2>&1 || true
     pkill -TERM -x gamescopestream >/dev/null 2>&1 || true
     pkill -TERM -x gamescopectl >/dev/null 2>&1 || true
+    pkill -TERM -x mangoapp >/dev/null 2>&1 || true
     pkill -TERM -f "${decky_stack_pattern}" >/dev/null 2>&1 || true
-    pkill -TERM -f 'pressure-vessel' >/dev/null 2>&1 || true
     pkill -TERM -f '/userdata/system/steam/steam.sh|/usr/share/steam/bin_steam.sh|emulatorlauncher.*-system steam|Steam GamepadUI\.steam|Steam Desktop\.steam' >/dev/null 2>&1 || true
+    cleanup_fex_mounts
 
     if wait_for_stack_exit 40; then
         return
     fi
 
+    pkill -KILL -f "${steam_helper_pattern}" >/dev/null 2>&1 || true
+    pkill -KILL -f "${fex_stack_pattern}" >/dev/null 2>&1 || true
     pkill -KILL -x batocera-steam >/dev/null 2>&1 || true
     pkill -KILL -f "${steam_session_pattern}" >/dev/null 2>&1 || true
     pkill -KILL -x steam >/dev/null 2>&1 || true
     pkill -KILL -x steamwebhelper >/dev/null 2>&1 || true
     pkill -KILL -x steam-runtime-supervisor >/dev/null 2>&1 || true
     pkill -KILL -x FEX >/dev/null 2>&1 || true
+    pkill -KILL -x FEXServer >/dev/null 2>&1 || true
+    pkill -KILL -x FEXLoader >/dev/null 2>&1 || true
+    pkill -KILL -x FEXInterpreter >/dev/null 2>&1 || true
+    pkill -KILL -x squashfuse >/dev/null 2>&1 || true
+    pkill -KILL -x squashfuse_ll >/dev/null 2>&1 || true
     pkill -KILL -x gamescope >/dev/null 2>&1 || true
     pkill -KILL -x gamescopereaper >/dev/null 2>&1 || true
     pkill -KILL -x gamescopestream >/dev/null 2>&1 || true
     pkill -KILL -x gamescopectl >/dev/null 2>&1 || true
+    pkill -KILL -x mangoapp >/dev/null 2>&1 || true
     pkill -KILL -f "${decky_stack_pattern}" >/dev/null 2>&1 || true
-    pkill -KILL -f 'pressure-vessel' >/dev/null 2>&1 || true
     pkill -KILL -f '/userdata/system/steam/steam.sh|/usr/share/steam/bin_steam.sh|emulatorlauncher.*-system steam|Steam GamepadUI\.steam|Steam Desktop\.steam' >/dev/null 2>&1 || true
 
     if command -v killall >/dev/null 2>&1; then
-        killall -q -9 steam steamwebhelper steam-runtime-supervisor FEX gamescope gamescopereaper gamescopestream gamescopectl >/dev/null 2>&1 || true
+        killall -q -9 steam steamwebhelper steam-runtime-supervisor \
+            steam-runtime-launcher-service steamerrorreporter pressure-vessel \
+            FEX FEXServer FEXLoader FEXInterpreter squashfuse squashfuse_ll \
+            gamescope gamescopereaper gamescopestream gamescopectl mangoapp \
+            wineserver winedevice.exe services.exe PluginLoader >/dev/null 2>&1 || true
     fi
 
+    cleanup_fex_mounts
     wait_for_stack_exit 30 || true
 }
 
