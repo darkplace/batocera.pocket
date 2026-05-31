@@ -4,7 +4,7 @@
 #
 ################################################################################
 # Version: Commits on May 31, 2026
-ES_THEME_CARBON_VERSION = b921e1734d88d6bc7b9e8cb97dd8f8b91ba2058a
+ES_THEME_CARBON_VERSION = 27e58be2f872866e680d48bedfd008c44ffb001a
 ES_THEME_CARBON_SITE = $(call github,suckbluefrog,es-theme-carbon,$(ES_THEME_CARBON_VERSION))
 
 define ES_THEME_CARBON_INSTALL_TARGET_CMDS

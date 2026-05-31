@@ -13,6 +13,10 @@ if [ ! -f "${GMUCONFIG}" ]; then
 fi
 
 cp /usr/share/gmu/batocera/gmuinput.conf "${GMUINPUT}"
+sed -i \
+    -e "s~^SDL.InputConfigFile=.*~SDL.InputConfigFile=${GMUINPUT}~" \
+    -e "s~^SDL.KeyMap=.*~SDL.KeyMap=batocera.keymap~" \
+    "${GMUCONFIG}"
 
 resolution="$(batocera-resolution currentResolution 2>/dev/null || true)"
 case "${resolution}" in

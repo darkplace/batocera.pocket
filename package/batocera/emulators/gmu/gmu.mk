@@ -38,7 +38,8 @@ define GMU_INSTALL_TARGET_CMDS
 	$(INSTALL) -D -m 0755 $(GMU_PKGDIR)/scripts/start_gmu.sh $(TARGET_DIR)/usr/bin/start_gmu.sh
 	$(INSTALL) -D -m 0644 $(GMU_PKGDIR)/config/gmu.conf $(TARGET_DIR)/usr/share/gmu/batocera/gmu.conf
 	$(INSTALL) -D -m 0644 $(GMU_PKGDIR)/config/gmuinput.conf $(TARGET_DIR)/usr/share/gmu/batocera/gmuinput.conf
-	$(INSTALL) -D -m 0644 $(GMU_PKGDIR)/music.gmu.keys $(TARGET_DIR)/usr/share/evmapy/music.gmu.keys
+	$(INSTALL) -D -m 0644 $(GMU_PKGDIR)/config/batocera.keymap $(TARGET_DIR)/usr/etc/gmu/batocera.keymap
+	rm -f $(TARGET_DIR)/usr/share/evmapy/music.gmu.keys
 	$(INSTALL) -D -m 0755 $(GMU_PKGDIR)/datainit/Start\ Music\ Player.sh \
 	    $(TARGET_DIR)/usr/share/batocera/datainit/roms/music/Start\ Music\ Player.sh
 	$(INSTALL) -D -m 0644 $(GMU_PKGDIR)/datainit/gamelist.xml \
