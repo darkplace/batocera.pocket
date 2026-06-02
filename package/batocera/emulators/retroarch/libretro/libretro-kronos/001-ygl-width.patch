@@ -1,0 +1,11 @@
+--- a/yabause/src/core/video/opengl/compute_shader/src/yglcs.c
++++ b/yabause/src/core/video/opengl/compute_shader/src/yglcs.c
+@@ -268,7 +268,7 @@
+     scale = MAX(w/_Ygl->rwidth, h/_Ygl->rheight);
+ #else
+   //Libretro is taking care to the resize
+-  w = width;
++  w = _Ygl->width;
+   h = _Ygl->height;
+   x = y = 0;
+ #endif

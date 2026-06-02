@@ -135,6 +135,10 @@ ifeq ($(BR2_PACKAGE_HAS_LIBGL),y)
   endif
 endif
 
+ifeq ($(BR2_PACKAGE_BATOCERA_TARGET_SM8X50),y)
+    RETROARCH_DEPENDENCIES += libgl
+endif
+
 ifeq ($(BR2_PACKAGE_XSERVER_XORG_SERVER),)
 	ifeq ($(BR2_PACKAGE_MESA3D_OPENGL_EGL),y)
         RETROARCH_TARGET_CFLAGS += -DEGL_NO_X11
@@ -181,7 +185,32 @@ define RETROARCH_BUILD_CMDS
         LD="$(TARGET_LD)" -C $(@D)/gfx/video_filters
 	$(TARGET_CONFIGURE_OPTS) $(MAKE) CXX="$(TARGET_CXX)" CC="$(TARGET_CC)" \
         LD="$(TARGET_LD)" -C $(@D)/libretro-common/audio/dsp_filters
+	$(RETROARCH_BUILD_GLCORE_CMDS)
 endef
+
+ifeq ($(BR2_PACKAGE_BATOCERA_TARGET_SM8X50),y)
+define RETROARCH_BUILD_GLCORE_CMDS
+	rm -rf $(@D)-glcore
+	cp -a $(@D) $(@D)-glcore
+	$(MAKE) -C $(@D)-glcore clean
+	(cd $(@D)-glcore; rm -rf config.cache; \
+		$(TARGET_CONFIGURE_ARGS) \
+		$(TARGET_CONFIGURE_OPTS) \
+		CFLAGS="$(TARGET_CFLAGS) $(RETROARCH_TARGET_CFLAGS)" \
+		LDFLAGS="$(TARGET_LDFLAGS) $(RETROARCH_TARGET_LDFLAGS) -lc" \
+		CROSS_COMPILE="$(HOST_DIR)/usr/bin/" \
+		./configure \
+		--prefix=/usr \
+		$(RETROARCH_CONF_OPTS) \
+		--enable-opengl --disable-opengles --disable-opengles3 \
+		--disable-opengles3_1 --disable-opengles3_2 \
+	)
+	$(TARGET_CONFIGURE_OPTS) $(MAKE) CXX="$(TARGET_CXX)" CC="$(TARGET_CC)" \
+        LD="$(TARGET_LD)" -C $(@D)-glcore/
+endef
+else
+RETROARCH_BUILD_GLCORE_CMDS =
+endif
 
 define RETROARCH_INSTALL_TARGET_CMDS
 	$(MAKE) CXX="$(TARGET_CXX)" -C $(@D) DESTDIR=$(TARGET_DIR) install
@@ -195,7 +224,16 @@ define RETROARCH_INSTALL_TARGET_CMDS
         $(TARGET_DIR)/usr/share/audio_filters
 	cp $(@D)/libretro-common/audio/dsp_filters/*.dsp \
         $(TARGET_DIR)/usr/share/audio_filters
+	$(RETROARCH_INSTALL_GLCORE_CMDS)
 endef
+
+ifeq ($(BR2_PACKAGE_BATOCERA_TARGET_SM8X50),y)
+define RETROARCH_INSTALL_GLCORE_CMDS
+	$(INSTALL) -D -m 0755 $(@D)-glcore/retroarch $(TARGET_DIR)/usr/bin/retroarch-glcore
+endef
+else
+RETROARCH_INSTALL_GLCORE_CMDS =
+endif
 
 define RETROARCH_INSTALL_STAGING_CMDS
 	$(MAKE) CXX="$(TARGET_CXX)" -C $(@D) DESTDIR=$(STAGING_DIR) install

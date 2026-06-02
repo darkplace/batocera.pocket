@@ -3,9 +3,9 @@
 # libretro-kronos
 #
 ################################################################################
-# don't bump
-LIBRETRO_KRONOS_VERSION = 146f4295eb7f5f76a2e6e6c84518c9bdf6a8398f
-LIBRETRO_KRONOS_SITE = https://github.com/libretro/yabause
+# Matches ROCKNIX's arm64 Kronos source path.
+LIBRETRO_KRONOS_VERSION = 46e687cb07f4bf8cb1717b0a7b4b48d208d20bb6
+LIBRETRO_KRONOS_SITE = https://github.com/FCare/Kronos
 LIBRETRO_KRONOS_SITE_METHOD = git
 LIBRETRO_KRONOS_GIT_SUBMODULES = YES
 LIBRETRO_KRONOS_LICENSE = BSD-3-Clause
@@ -31,11 +31,12 @@ LIBRETRO_KRONOS_EXTRA_ARGS += FORCE_GLES=1
 endif
 
 ifeq ($(BR2_aarch64),y)
-LIBRETRO_KRONOS_EXTRA_ARGS += HAVE_SSE=0
+LIBRETRO_KRONOS_PLATFORM = arm64
+LIBRETRO_KRONOS_EXTRA_ARGS += HAVE_SSE=0 HAVE_CDROM=1 FORCE_GLES=0
 endif
 
 define LIBRETRO_KRONOS_BUILD_CMDS
-	$(MAKE) -C $(@D)/yabause/src/libretro -f Makefile generate-files && \
+	$(MAKE) -C $(@D)/yabause/src/libretro -f Makefile generate-files CC="$(HOSTCC)" && \
 	$(TARGET_CONFIGURE_OPTS) $(MAKE) CXX="$(TARGET_CXX)" CC="$(TARGET_CC)" -C \
 	    $(@D)/yabause/src/libretro -f Makefile \
 		platform="$(LIBRETRO_KRONOS_PLATFORM)" $(LIBRETRO_KRONOS_EXTRA_ARGS)

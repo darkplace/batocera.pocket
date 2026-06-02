@@ -21,7 +21,7 @@ from ...batoceraPaths import (
 )
 from ...exceptions import BatoceraException, MissingCore
 from ...settings.unixSettings import UnixSettings
-from ...utils import videoMode as videoMode
+from ...utils import currentPlatform, videoMode as videoMode
 from ..Generator import Generator
 from . import libretroConfig, libretroControllers, libretroRetroarchCustom
 from .libretroPaths import (
@@ -138,11 +138,14 @@ class LibretroGenerator(Generator):
         if not infoFile.exists():
             raise MissingCore
 
+        retroarchGlcoreBin = Path("/usr/bin/retroarch-glcore")
+        retroarchBin = retroarchGlcoreBin if system.config.core == 'kronos' and retroarchGlcoreBin.exists() else RETROARCH_BIN
+
         # The command to run
         dontAppendROM = False
         # For the NeoGeo CD (lr-fbneo) it is necessary to add the parameter: --subsystem neocd
         if system.name == 'neogeocd' and system.config.core == "fbneo":
-            commandArray = [RETROARCH_BIN, "-L", retroarchCore, "--subsystem", "neocd", "--config", system.config['configfile']]
+            commandArray = [retroarchBin, "-L", retroarchCore, "--subsystem", "neocd", "--config", system.config['configfile']]
         # Set up GB/GBC Link games to use 2 different ROMs if needed
         if system.name == 'gb2players' or system.name == 'gbc2players':
             GBMultiROM: list[Path] = []
@@ -173,10 +176,10 @@ class LibretroGenerator(Generator):
                     GBMultiSys.append("gbc")
             # If there are at least 2 games in the list, use the alternate command line
             if len(GBMultiROM) >= 2:
-                commandArray = [RETROARCH_BIN, "-L", retroarchCore, GBMultiROM[0], "--subsystem", "gb_link_2p", GBMultiROM[1], "--config", system.config['configfile']]
+                commandArray = [retroarchBin, "-L", retroarchCore, GBMultiROM[0], "--subsystem", "gb_link_2p", GBMultiROM[1], "--config", system.config['configfile']]
                 dontAppendROM = True
             else:
-                commandArray = [RETROARCH_BIN, "-L", retroarchCore, "--config", system.config['configfile']]
+                commandArray = [retroarchBin, "-L", retroarchCore, "--config", system.config['configfile']]
             # Handling for the save copy
             if system.config.get('sync_saves') == '1':
                 if len(GBMultiROM) >= 2:
@@ -232,17 +235,17 @@ class LibretroGenerator(Generator):
                     exe = rom / "dosbox.bat"
                 else:
                     exe = rom
-                commandArray = [RETROARCH_BIN, "-L", retroarchCore, "--config", system.config['configfile'], exe]
+                commandArray = [retroarchBin, "-L", retroarchCore, "--config", system.config['configfile'], exe]
                 dontAppendROM = True
             else:
-                commandArray = [RETROARCH_BIN, "-L", retroarchCore, "--config", system.config['configfile']]
+                commandArray = [retroarchBin, "-L", retroarchCore, "--config", system.config['configfile']]
         # Pico-8 multi-carts (might work only with official Lexaloffe engine right now)
         elif system.name == 'pico8':
             if rom.suffix.lower() == ".m3u":
                 with rom.open("r") as fpin:
                     lines = fpin.readlines()
                 rom = rom.absolute().parent / lines[0].strip()
-            commandArray = [RETROARCH_BIN, "-L", retroarchCore, "--config", system.config['configfile']]
+            commandArray = [retroarchBin, "-L", retroarchCore, "--config", system.config['configfile']]
         # tyrquake - set directory
         elif system.name == 'quake':
             if "scourge" in rom.name.lower():
@@ -251,7 +254,7 @@ class LibretroGenerator(Generator):
                 rom = Path('/userdata/roms/quake/rogue/pak0.pak')
             else:
                 rom = Path('/userdata/roms/quake/id1/pak0.pak')
-            commandArray = [RETROARCH_BIN, "-L", retroarchCore, "--config", system.config['configfile']]
+            commandArray = [retroarchBin, "-L", retroarchCore, "--config", system.config['configfile']]
         # vitaquake2 - choose core based on directory
         elif system.name == 'quake2':
             if "reckoning" in rom.name.lower():
@@ -267,7 +270,7 @@ class LibretroGenerator(Generator):
                 rom = Path('/userdata/roms/quake2/baseq2/pak0.pak')
             # set the updated core name
             retroarchCore = RETROARCH_CORES / f"{system.config.core}_libretro.so"
-            commandArray = [RETROARCH_BIN, "-L", retroarchCore, "--config", system.config['configfile']]
+            commandArray = [retroarchBin, "-L", retroarchCore, "--config", system.config['configfile']]
         # doom3
         elif system.name == 'doom3':
             with rom.open('r') as file:
@@ -280,7 +283,7 @@ class LibretroGenerator(Generator):
             if "d3xp" in directory_parts:
                 system.config['core'] = "boom3_xp"
             retroarchCore = RETROARCH_CORES / f"{system.config.core}_libretro.so"
-            commandArray = [RETROARCH_BIN, "-L", retroarchCore, "--config", system.config['configfile']]
+            commandArray = [retroarchBin, "-L", retroarchCore, "--config", system.config['configfile']]
         # super mario wars - verify assets from Content Downloader
         elif system.name == 'superbroswar':
             romdir = rom.absolute().parent
@@ -306,9 +309,9 @@ class LibretroGenerator(Generator):
                 _logger.error("ERROR: Game assets not installed. You can get them from the Batocera Content Downloader.")
                 raise BatoceraException("Game assets not installed. You can get them from the Batocera Content Downloader.") from e
 
-            commandArray = [RETROARCH_BIN, "-L", retroarchCore, "--config", system.config['configfile']]
+            commandArray = [retroarchBin, "-L", retroarchCore, "--config", system.config['configfile']]
         else:
-            commandArray = [RETROARCH_BIN, "-L", retroarchCore, "--config", system.config['configfile']]
+            commandArray = [retroarchBin, "-L", retroarchCore, "--config", system.config['configfile']]
 
         configToAppend: list[Path] = []
 
@@ -424,7 +427,10 @@ def getGFXBackend(system: Emulator) -> str:
         if not setManually:
             # If set to glcore or gl, override setting for certain cores that require one or the other
             core = system.config.core
-            if backend == "gl" and core in [ 'kronos', 'mupen64plus-next', 'melonds', 'beetle-psx-hw' ]:
+            glcore_cores = [ 'mupen64plus-next', 'melonds', 'beetle-psx-hw' ]
+            if currentPlatform.isPC() or Path("/usr/bin/retroarch-glcore").exists():
+                glcore_cores.append('kronos')
+            if backend == "gl" and core in glcore_cores:
                 backend = "glcore"
             if backend == "glcore" and core in [ 'parallel_n64', 'yabasanshiro', 'boom3' ]:
                 backend = "gl"

@@ -447,11 +447,17 @@ class DuckstationGenerator(Generator):
         dbfile = "/usr/share/duckstation/resources/gamecontrollerdb.txt"
         write_sdl_controller_db(playersControllers, dbfile)
 
-        # check if we're running wayland
-        if environ.get("WAYLAND_DISPLAY"):
+        # DuckStation's Qt frontend is more reliable through XWayland on sway
+        # handheld targets. Prefer xcb whenever XWayland is available.
+        if environ.get("DISPLAY"):
+            qt_qpa_platform = "xcb"
+            xdg_session_type = "x11"
+        elif environ.get("WAYLAND_DISPLAY"):
             qt_qpa_platform = "wayland"
+            xdg_session_type = "wayland"
         else:
             qt_qpa_platform = "xcb"
+            xdg_session_type = "x11"
 
         # use their modified shaderc library
         return Command.Command(
@@ -460,6 +466,7 @@ class DuckstationGenerator(Generator):
                 "LD_LIBRARY_PATH": "/usr/stenzek-shaderc/lib:/usr/lib",
                 "XDG_CONFIG_HOME": CONFIGS,
                 "QT_QPA_PLATFORM": qt_qpa_platform,
+                "XDG_SESSION_TYPE": xdg_session_type,
                 "SDL_GAMECONTROLLERCONFIG": generate_sdl_game_controller_config(playersControllers),
                 "SDL_JOYSTICK_HIDAPI": "0"
             }

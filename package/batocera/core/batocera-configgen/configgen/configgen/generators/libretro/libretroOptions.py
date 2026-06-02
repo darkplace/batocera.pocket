@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Any
 from ... import controllersConfig
 from ...batoceraPaths import BIOS, ROMS, ensure_parents_and_open
 from ...gun import Guns, guns_need_crosses
-from ...utils import videoMode
+from ...utils import currentPlatform, videoMode
 from ...utils.configparser import CaseSensitiveConfigParser
 
 if TYPE_CHECKING:
@@ -1859,8 +1859,9 @@ def _yabasanshiro_options(
 def _kronos_options(
     coreSettings: UnixSettings, system: Emulator, rom: Path, guns: Guns, wheels: DeviceInfoMapping, /,
 ) -> None:
-    # Set best OpenGL renderer
-    _set(coreSettings, 'kronos_videocoretype', 'opengl_cs')
+    # This option is only exposed by Kronos OpenGL builds.
+    if currentPlatform.isPC():
+        _set(coreSettings, 'kronos_videocoretype', 'opengl_cs')
 
     # Video Resolution
     _set_from_system(coreSettings, 'kronos_resolution_mode', system, 'kronos_resolution', default='original')
