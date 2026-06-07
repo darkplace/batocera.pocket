@@ -1,0 +1,5 @@
+#!/bin/bash
+
+batocera-mouse show
+yuzu
+batocera-mouse hide

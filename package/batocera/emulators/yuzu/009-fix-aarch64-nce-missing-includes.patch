@@ -1,0 +1,56 @@
+diff --git a/src/core/arm/nce/interpreter_visitor.cpp b/src/core/arm/nce/interpreter_visitor.cpp
+--- a/src/core/arm/nce/interpreter_visitor.cpp
++++ b/src/core/arm/nce/interpreter_visitor.cpp
+@@ -2,8 +2,11 @@
+ // SPDX-FileCopyrightText: Copyright 2023 merryhime <https://mary.rs>
+ // SPDX-License-Identifier: GPL-2.0-or-later
+ 
++#include <atomic>
++
+ #include "common/bit_cast.h"
+ #include "core/arm/nce/interpreter_visitor.h"
++#include "core/memory.h"
+ 
+ namespace Core {
+ 
+diff --git a/src/core/arm/nce/interpreter_visitor.h b/src/core/arm/nce/interpreter_visitor.h
+--- a/src/core/arm/nce/interpreter_visitor.h
++++ b/src/core/arm/nce/interpreter_visitor.h
+@@ -4,9 +4,13 @@
+ 
+ #pragma once
+ 
++#include <cstddef>
++#include <optional>
+ #include <signal.h>
++#include <span>
+ #include <unistd.h>
+ 
++#include "common/common_types.h"
+ #include "core/arm/nce/visitor_base.h"
+ 
+ namespace Core {
+diff --git a/src/core/arm/nce/patcher.cpp b/src/core/arm/nce/patcher.cpp
+--- a/src/core/arm/nce/patcher.cpp
++++ b/src/core/arm/nce/patcher.cpp
+@@ -1,6 +1,10 @@
+ // SPDX-FileCopyrightText: Copyright 2023 yuzu Emulator Project
+ // SPDX-License-Identifier: GPL-2.0-or-later
+ 
++#include <array>
++#include <cstring>
++#include <type_traits>
++
+ #include "common/arm64/native_clock.h"
+ #include "common/bit_cast.h"
+ #include "common/literals.h"
+@@ -10,7 +14,9 @@
+ #include "core/arm/nce/patcher.h"
+ #include "core/core.h"
+ #include "core/core_timing.h"
++#include "core/hle/kernel/k_thread.h"
+ #include "core/hle/kernel/svc.h"
++#include "core/memory.h"
+ 
+ namespace Core::NCE {
+ 

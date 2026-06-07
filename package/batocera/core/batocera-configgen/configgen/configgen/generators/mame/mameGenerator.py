@@ -7,6 +7,7 @@ import os
 import shutil
 import subprocess
 import xml.etree.ElementTree as ET
+from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING
 from xml.dom import minidom
@@ -38,6 +39,62 @@ if TYPE_CHECKING:
     from .mameTypes import MameControlScheme
 
 _logger = logging.getLogger(__name__)
+
+MAME_BIN = "/usr/bin/mame/mame"
+
+
+@lru_cache(maxsize=1)
+def _mame_showusage() -> str:
+    try:
+        result = subprocess.run(
+            [MAME_BIN, "-showusage"],
+            capture_output=True,
+            check=False,
+            text=True,
+            timeout=5,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+
+    return result.stdout + result.stderr
+
+
+def _mame_supports_option(option: str) -> bool:
+    flag = f"-{option.lstrip('-')}"
+    return any(line.split(maxsplit=1)[0] == flag for line in _mame_showusage().splitlines() if line.startswith("-"))
+
+
+def _append_supported_mame_options(command_array: list[str | Path], *options: str) -> None:
+    command_array.extend(option for option in options if _mame_supports_option(option))
+
+
+def _mame_supported_sound_methods() -> set[str]:
+    for line in _mame_showusage().splitlines():
+        if line.startswith("-sound") and ":" in line:
+            methods = line.rsplit(":", maxsplit=1)[1]
+            return {
+                method.strip(" .,")
+                for method in methods.replace(" or ", ",").split(",")
+                if method.strip(" .,")
+            }
+
+    return set()
+
+
+def _mame_sound_method(system: Emulator) -> str:
+    configured_sound = system.config.get("sound", "pipewire")
+    if configured_sound == "auto":
+        configured_sound = "pipewire"
+
+    supported_methods = _mame_supported_sound_methods()
+    if not supported_methods or configured_sound in supported_methods:
+        return configured_sound
+
+    for fallback in ("pipewire", "sdl", "none"):
+        if fallback in supported_methods:
+            return fallback
+
+    return configured_sound
 
 
 class MameGenerator(Generator):
@@ -116,13 +173,18 @@ class MameGenerator(Generator):
         if system.name == 'fmtowns' and softList == '' and (ROMS / "fmtowns" / f"{romDirname.name}.zip").exists():
             softList = 'fmtowns_cd'
 
-        commandArray: list[str | Path] =  [ "/usr/bin/mame/mame" ]
+        commandArray: list[str | Path] =  [ MAME_BIN ]
         
         # MAME options used here are explained as it's not always straightforward
         # A lot more options can be configured, just run mame -showusage and have a look
         
-        # set audio to pipewire to fix audio from 0.278
-        commandArray += [ "-sound", "pipewire" ]
+        # set audio to pipewire by default to fix audio from 0.278
+        soundMethod = _mame_sound_method(system)
+        commandArray += [ "-sound", soundMethod ]
+        if soundMethod == "sdl" and (audioDriver := system.config.get("audiodriver")):
+            _append_supported_mame_options(commandArray, "-audiodriver")
+            if "-audiodriver" in commandArray:
+                commandArray += [ audioDriver ]
         # skip game info at start
         commandArray += [ "-skip_gameinfo" ]
 
@@ -146,9 +208,9 @@ class MameGenerator(Generator):
         commandArray += [ "-cheat" ]
         commandArray += [ "-cheatpath",    MAME_CHEATS ]       # Should this point to path containing the cheat.7z file
 
-        # Logs and Swithres ini read by default (including its own verbose)
+        # Logs and SwitchRes ini read by default when supported.
         commandArray += [ "-verbose" ]
-        commandArray += [ "-switchres_ini" ]
+        _append_supported_mame_options(commandArray, "-switchres_ini")
 
         # MAME saves a lot of stuff, we need to map this on /userdata/saves/mame/<subfolder> for each one
         commandArray += [ "-nvram_directory" ,    MAME_SAVES / "nvram" ]
@@ -214,10 +276,14 @@ class MameGenerator(Generator):
 
         # CRT / SwitchRes support
         if system.config.get_bool("switchres"):
-            commandArray += [ "-modeline_generation" ]
-            commandArray += [ "-changeres" ]
-            commandArray += [ "-modesetting" ]
-            commandArray += [ "-readconfig" ]
+            _append_supported_mame_options(
+                commandArray,
+                "-switchres",
+                "-modeline_generation",
+                "-changeres",
+                "-modesetting",
+                "-readconfig",
+            )
         else:
             commandArray += [ "-resolution", f"{gameResolution['width']}x{gameResolution['height']}" ]
 

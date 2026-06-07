@@ -1,0 +1,119 @@
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Sun, 7 Jun 2026 00:00:00 +0000
+Subject: [PATCH] tolerate installed firmware with incomplete keys
+
+On Batocera, firmware may already be installed in the shared Switch BIOS
+folder, but an older prod.keys file can be missing the key needed to decrypt
+the installed firmware's system-version NCA. Do not let firmware version
+probing abort launch, and treat registered system-version content as installed
+firmware even when its version string cannot be read.
+
+---
+ src/Ryujinx.HLE/FileSystem/ContentManager.cs      | 40 +++++++++++++++++++++--
+ src/Ryujinx/Utilities/SetupValidator.cs           |  2 +-
+ src/Ryujinx/UI/ViewModels/MainWindowViewModel.cs  |  9 ++++-
+ 3 files changed, 46 insertions(+), 5 deletions(-)
+
+diff --git a/src/Ryujinx.HLE/FileSystem/ContentManager.cs b/src/Ryujinx.HLE/FileSystem/ContentManager.cs
+--- a/src/Ryujinx.HLE/FileSystem/ContentManager.cs
++++ b/src/Ryujinx.HLE/FileSystem/ContentManager.cs
+@@ -956,7 +956,10 @@ namespace Ryujinx.HLE.FileSystem
+ 
+             lock (_lock)
+             {
+-                LinkedList<LocationEntry> locationEnties = _locationEntries[StorageId.BuiltInSystem];
++                if (!_locationEntries.TryGetValue(StorageId.BuiltInSystem, out LinkedList<LocationEntry> locationEnties))
++                {
++                    return null;
++                }
+ 
+                 foreach (LocationEntry entry in locationEnties)
+                 {
+@@ -969,13 +972,22 @@ namespace Ryujinx.HLE.FileSystem
+ 
+                         if (nca.Header.TitleId == SystemVersionTitleId && nca.Header.ContentType == NcaContentType.Data)
+                         {
+-                            IFileSystem romfs = nca.OpenFileSystem(NcaSectionType.Data, IntegrityCheckLevel.ErrorOnInvalid);
++                            try
++                            {
++                                IFileSystem romfs = nca.OpenFileSystem(NcaSectionType.Data, IntegrityCheckLevel.ErrorOnInvalid);
+ 
+-                            using UniqueRef<IFile> systemVersionFile = new();
++                                using UniqueRef<IFile> systemVersionFile = new();
+ 
+-                            if (romfs.OpenFile(ref systemVersionFile.Ref, "/file".ToU8Span(), OpenMode.Read).IsSuccess())
++                                if (romfs.OpenFile(ref systemVersionFile.Ref, "/file".ToU8Span(), OpenMode.Read).IsSuccess())
++                                {
++                                    return new SystemVersion(systemVersionFile.Get.AsStream());
++                                }
++                            }
++                            catch (MissingKeyException exception)
+                             {
+-                                return new SystemVersion(systemVersionFile.Get.AsStream());
++                                Logger.Warning?.Print(LogClass.Application, $"Unable to read installed firmware version because keys are incomplete: {exception.Message}");
++
++                                return null;
+                             }
+                         }
+                     }
+@@ -986,6 +1000,24 @@ namespace Ryujinx.HLE.FileSystem
+ 
+             return null;
+         }
++
++        public bool HasInstalledFirmware()
++        {
++            try
++            {
++                LoadEntries();
++            }
++            catch (MissingKeyException exception)
++            {
++                Logger.Warning?.Print(LogClass.Application, $"Unable to fully scan installed firmware because keys are incomplete: {exception.Message}");
++            }
++
++            lock (_lock)
++            {
++                return _locationEntries.TryGetValue(StorageId.BuiltInSystem, out LinkedList<LocationEntry> locationEntries) &&
++                       locationEntries.Any(entry => entry.TitleId == SystemVersionTitleId);
++            }
++        }
+ 
+         public static void VerifyKeysFile(string filePath)
+         {
+diff --git a/src/Ryujinx/Utilities/SetupValidator.cs b/src/Ryujinx/Utilities/SetupValidator.cs
+--- a/src/Ryujinx/Utilities/SetupValidator.cs
++++ b/src/Ryujinx/Utilities/SetupValidator.cs
+@@ -13,7 +13,7 @@ namespace Ryujinx.Ava.Utilities
+     {
+         public static bool IsFirmwareValid(ContentManager contentManager, out UserError error)
+         {
+-            error = contentManager.GetCurrentFirmwareVersion() != null
++            error = contentManager.GetCurrentFirmwareVersion() != null || contentManager.HasInstalledFirmware()
+                 ? UserError.Success
+                 : UserError.NoFirmware;
+ 
+diff --git a/src/Ryujinx/UI/ViewModels/MainWindowViewModel.cs b/src/Ryujinx/UI/ViewModels/MainWindowViewModel.cs
+--- a/src/Ryujinx/UI/ViewModels/MainWindowViewModel.cs
++++ b/src/Ryujinx/UI/ViewModels/MainWindowViewModel.cs
+@@ -1693,6 +1693,7 @@ namespace Ryujinx.Ava.UI.ViewModels
+                 // ignored
+             }
+ 
++            bool hasInstalledFirmware = ContentManager.HasInstalledFirmware();
+             bool hasApplet = false;
+ 
+             if (version != null)
+@@ -1703,7 +1704,11 @@ namespace Ryujinx.Ava.UI.ViewModels
+             }
+             else
+             {
+-                LocaleManager.Instance.UpdateAndGetDynamicValue(LocaleKeys.StatusBarSystemVersion, "NaN");
++                LocaleManager.Instance.UpdateAndGetDynamicValue(
++                    LocaleKeys.StatusBarSystemVersion,
++                    hasInstalledFirmware ? "Installed (keys update required)" : "NaN");
++
++                hasApplet = hasInstalledFirmware;
+             }
+ 
+             IsAppletMenuActive = hasApplet;

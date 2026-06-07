@@ -1,0 +1,130 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Sun, 7 Jun 2026 00:00:00 +0000
+Subject: [PATCH] yuzu: make fmt format methods const for fmt 12
+
+fmt 12 calls formatter::format through a const formatter object. Match the
+newer formatter API by marking yuzu's stateless custom format methods const.
+---
+diff --git a/src/common/logging/formatter.h b/src/common/logging/formatter.h
+--- a/src/common/logging/formatter.h
++++ b/src/common/logging/formatter.h
+@@ -17 +17 @@
+-    auto format(const T& value, FormatContext& ctx) -> decltype(ctx.out()) {
++    auto format(const T& value, FormatContext& ctx) const -> decltype(ctx.out()) {
+diff --git a/src/common/typed_address.h b/src/common/typed_address.h
+--- a/src/common/typed_address.h
++++ b/src/common/typed_address.h
+@@ -265 +265 @@
+-    auto format(const Common::PhysicalAddress& addr, FormatContext& ctx) {
++    auto format(const Common::PhysicalAddress& addr, FormatContext& ctx) const {
+@@ -276 +276 @@
+-    auto format(const Common::ProcessAddress& addr, FormatContext& ctx) {
++    auto format(const Common::ProcessAddress& addr, FormatContext& ctx) const {
+@@ -287 +287 @@
+-    auto format(const Common::VirtualAddress& addr, FormatContext& ctx) {
++    auto format(const Common::VirtualAddress& addr, FormatContext& ctx) const {
+diff --git a/src/core/arm/dynarmic/dynarmic_cp15.cpp b/src/core/arm/dynarmic/dynarmic_cp15.cpp
+--- a/src/core/arm/dynarmic/dynarmic_cp15.cpp
++++ b/src/core/arm/dynarmic/dynarmic_cp15.cpp
+@@ -25 +25 @@
+-    auto format(const Dynarmic::A32::CoprocReg& reg, FormatContext& ctx) {
++    auto format(const Dynarmic::A32::CoprocReg& reg, FormatContext& ctx) const {
+diff --git a/src/core/hle/service/psc/time/common.h b/src/core/hle/service/psc/time/common.h
+--- a/src/core/hle/service/psc/time/common.h
++++ b/src/core/hle/service/psc/time/common.h
+@@ -170 +170 @@
+-    auto format(Service::PSC::Time::TimeType type, FormatContext& ctx) {
++    auto format(Service::PSC::Time::TimeType type, FormatContext& ctx) const {
+diff --git a/src/shader_recompiler/backend/glasm/reg_alloc.h b/src/shader_recompiler/backend/glasm/reg_alloc.h
+--- a/src/shader_recompiler/backend/glasm/reg_alloc.h
++++ b/src/shader_recompiler/backend/glasm/reg_alloc.h
+@@ -187 +187 @@
+-    auto format(Shader::Backend::GLASM::Id id, FormatContext& ctx) {
++    auto format(Shader::Backend::GLASM::Id id, FormatContext& ctx) const {
+@@ -198 +198 @@
+-    auto format(const Shader::Backend::GLASM::Register& value, FormatContext& ctx) {
++    auto format(const Shader::Backend::GLASM::Register& value, FormatContext& ctx) const {
+@@ -212 +212 @@
+-    auto format(const Shader::Backend::GLASM::ScalarRegister& value, FormatContext& ctx) {
++    auto format(const Shader::Backend::GLASM::ScalarRegister& value, FormatContext& ctx) const {
+@@ -226 +226 @@
+-    auto format(const Shader::Backend::GLASM::ScalarU32& value, FormatContext& ctx) {
++    auto format(const Shader::Backend::GLASM::ScalarU32& value, FormatContext& ctx) const {
+@@ -247 +247 @@
+-    auto format(const Shader::Backend::GLASM::ScalarS32& value, FormatContext& ctx) {
++    auto format(const Shader::Backend::GLASM::ScalarS32& value, FormatContext& ctx) const {
+@@ -268 +268 @@
+-    auto format(const Shader::Backend::GLASM::ScalarF32& value, FormatContext& ctx) {
++    auto format(const Shader::Backend::GLASM::ScalarF32& value, FormatContext& ctx) const {
+@@ -289 +289 @@
+-    auto format(const Shader::Backend::GLASM::ScalarF64& value, FormatContext& ctx) {
++    auto format(const Shader::Backend::GLASM::ScalarF64& value, FormatContext& ctx) const {
+diff --git a/src/shader_recompiler/frontend/ir/attribute.h b/src/shader_recompiler/frontend/ir/attribute.h
+--- a/src/shader_recompiler/frontend/ir/attribute.h
++++ b/src/shader_recompiler/frontend/ir/attribute.h
+@@ -253 +253 @@
+-    auto format(const Shader::IR::Attribute& attribute, FormatContext& ctx) {
++    auto format(const Shader::IR::Attribute& attribute, FormatContext& ctx) const {
+diff --git a/src/shader_recompiler/frontend/ir/condition.h b/src/shader_recompiler/frontend/ir/condition.h
+--- a/src/shader_recompiler/frontend/ir/condition.h
++++ b/src/shader_recompiler/frontend/ir/condition.h
+@@ -55 +55 @@
+-    auto format(const Shader::IR::Condition& cond, FormatContext& ctx) {
++    auto format(const Shader::IR::Condition& cond, FormatContext& ctx) const {
+diff --git a/src/shader_recompiler/frontend/ir/flow_test.h b/src/shader_recompiler/frontend/ir/flow_test.h
+--- a/src/shader_recompiler/frontend/ir/flow_test.h
++++ b/src/shader_recompiler/frontend/ir/flow_test.h
+@@ -58 +58 @@
+-    auto format(const Shader::IR::FlowTest& flow_test, FormatContext& ctx) {
++    auto format(const Shader::IR::FlowTest& flow_test, FormatContext& ctx) const {
+diff --git a/src/shader_recompiler/frontend/ir/opcodes.h b/src/shader_recompiler/frontend/ir/opcodes.h
+--- a/src/shader_recompiler/frontend/ir/opcodes.h
++++ b/src/shader_recompiler/frontend/ir/opcodes.h
+@@ -106 +106 @@
+-    auto format(const Shader::IR::Opcode& op, FormatContext& ctx) {
++    auto format(const Shader::IR::Opcode& op, FormatContext& ctx) const {
+diff --git a/src/shader_recompiler/frontend/ir/pred.h b/src/shader_recompiler/frontend/ir/pred.h
+--- a/src/shader_recompiler/frontend/ir/pred.h
++++ b/src/shader_recompiler/frontend/ir/pred.h
+@@ -36 +36 @@
+-    auto format(const Shader::IR::Pred& pred, FormatContext& ctx) {
++    auto format(const Shader::IR::Pred& pred, FormatContext& ctx) const {
+diff --git a/src/shader_recompiler/frontend/ir/reg.h b/src/shader_recompiler/frontend/ir/reg.h
+--- a/src/shader_recompiler/frontend/ir/reg.h
++++ b/src/shader_recompiler/frontend/ir/reg.h
+@@ -322 +322 @@
+-    auto format(const Shader::IR::Reg& reg, FormatContext& ctx) {
++    auto format(const Shader::IR::Reg& reg, FormatContext& ctx) const {
+diff --git a/src/shader_recompiler/frontend/ir/type.h b/src/shader_recompiler/frontend/ir/type.h
+--- a/src/shader_recompiler/frontend/ir/type.h
++++ b/src/shader_recompiler/frontend/ir/type.h
+@@ -57 +57 @@
+-    auto format(const Shader::IR::Type& type, FormatContext& ctx) {
++    auto format(const Shader::IR::Type& type, FormatContext& ctx) const {
+diff --git a/src/shader_recompiler/frontend/maxwell/location.h b/src/shader_recompiler/frontend/maxwell/location.h
+--- a/src/shader_recompiler/frontend/maxwell/location.h
++++ b/src/shader_recompiler/frontend/maxwell/location.h
+@@ -105 +105 @@
+-    auto format(const Shader::Maxwell::Location& location, FormatContext& ctx) {
++    auto format(const Shader::Maxwell::Location& location, FormatContext& ctx) const {
+diff --git a/src/shader_recompiler/frontend/maxwell/opcodes.h b/src/shader_recompiler/frontend/maxwell/opcodes.h
+--- a/src/shader_recompiler/frontend/maxwell/opcodes.h
++++ b/src/shader_recompiler/frontend/maxwell/opcodes.h
+@@ -26 +26 @@
+-    auto format(const Shader::Maxwell::Opcode& opcode, FormatContext& ctx) {
++    auto format(const Shader::Maxwell::Opcode& opcode, FormatContext& ctx) const {
+diff --git a/src/video_core/texture_cache/formatter.h b/src/video_core/texture_cache/formatter.h
+--- a/src/video_core/texture_cache/formatter.h
++++ b/src/video_core/texture_cache/formatter.h
+@@ -16 +16 @@
+-    auto format(VideoCore::Surface::PixelFormat format, FormatContext& ctx) {
++    auto format(VideoCore::Surface::PixelFormat format, FormatContext& ctx) const {
+@@ -237 +237 @@
+-    auto format(VideoCommon::ImageType type, FormatContext& ctx) {
++    auto format(VideoCommon::ImageType type, FormatContext& ctx) const {
+@@ -265 +265 @@
+-    auto format(const VideoCommon::Extent3D& extent, FormatContext& ctx) {
++    auto format(const VideoCommon::Extent3D& extent, FormatContext& ctx) const {
+-- 
+2.45.0

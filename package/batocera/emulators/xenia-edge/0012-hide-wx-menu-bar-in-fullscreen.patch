@@ -1,0 +1,61 @@
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Sun, 7 Jun 2026 00:00:00 +0000
+Subject: [PATCH] ui: hide wx menu bar while fullscreen
+
+wxGTK can keep the frame menu bar visible after ShowFullScreen(true), even
+when Xenia is launched with --fullscreen=true from EmulationStation. Detach
+the menu bar when entering fullscreen and restore it when returning to
+windowed mode.
+
+---
+ src/xenia/ui/window_wx.cc | 23 +++++++++++++++++------
+ 1 file changed, 17 insertions(+), 6 deletions(-)
+
+diff --git a/src/xenia/ui/window_wx.cc b/src/xenia/ui/window_wx.cc
+--- a/src/xenia/ui/window_wx.cc
++++ b/src/xenia/ui/window_wx.cc
+@@ -289,9 +289,11 @@ bool WxWindow::OpenImpl() {
+       wxAuiPaneInfo().Name("render").CenterPane().PaneBorder(false));
+   aui_manager_.Update();
+ 
+-  auto* main_menu = static_cast<WxMenuItem*>(GetMainMenu());
+-  if (main_menu && main_menu->GetMenuBar()) {
+-    frame_->SetMenuBar(main_menu->GetMenuBar());
++  if (!IsFullscreen()) {
++    auto* main_menu = static_cast<WxMenuItem*>(GetMainMenu());
++    if (main_menu && main_menu->GetMenuBar()) {
++      frame_->SetMenuBar(main_menu->GetMenuBar());
++    }
+   }
+ 
+   frame_->SetClientSize(wxSize(physical_width, physical_height));
+@@ -376,6 +378,7 @@ bool WxWindow::OpenImpl() {
+   RestoreGeometryFromConfig();
+ 
+   if (IsFullscreen()) {
++    frame_->SetMenuBar(nullptr);
+     frame_->ShowFullScreen(true);
+   }
+ 
+@@ -415,8 +418,21 @@ void WxWindow::ApplyNewFullscreen() {
+   if (fullscreen && !frame_->IsFullScreen()) {
+     SaveGeometryToConfig();
+   }
++
++  if (fullscreen) {
++    frame_->SetMenuBar(nullptr);
++  }
++
+   frame_->ShowFullScreen(fullscreen);
++
++  if (!fullscreen) {
++    auto* main_menu = static_cast<WxMenuItem*>(GetMainMenu());
++    frame_->SetMenuBar(main_menu && main_menu->GetMenuBar()
++                           ? main_menu->GetMenuBar()
++                           : nullptr);
++  }
++
+   if (content_visibility_callback_) {
+     content_visibility_callback_();
+   }
+ }

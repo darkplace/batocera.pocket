@@ -1,0 +1,39 @@
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Fri, 2 May 2026 00:00:00 +0000
+Subject: [PATCH 5/5] fix: avoid anonymous aggregate with endian_store members
+
+GCC 13 rejects the anonymous struct inside KernelVersion's anonymous union
+because xe::be<T> is a wrapper type with constructors. The raw 64-bit union
+member is not used, and the four big-endian 16-bit fields are the serialized
+kernel version layout copied to guest memory, so keep that layout directly.
+
+Signed-off-by: suckbluefrog <suckbluefrog@proton.me>
+---
+ src/xenia/kernel/kernel_state.h | 13 ++++---------
+ 1 file changed, 4 insertions(+), 9 deletions(-)
+
+diff --git a/src/xenia/kernel/kernel_state.h b/src/xenia/kernel/kernel_state.h
+--- a/src/xenia/kernel/kernel_state.h
++++ b/src/xenia/kernel/kernel_state.h
+@@ -150,16 +150,11 @@ struct DPCImpersonationScope {
+ };
+ 
+ struct KernelVersion {
+-  union {
+-    xe::be<uint64_t> value;
+-
+-    struct {
+-      xe::be<uint16_t> major;
+-      xe::be<uint16_t> minor;
+-      xe::be<uint16_t> build;
+-      xe::be<uint16_t> qfe;
+-    };
+-  };
++  xe::be<uint16_t> major;
++  xe::be<uint16_t> minor;
++  xe::be<uint16_t> build;
++  xe::be<uint16_t> qfe;
++  static_assert(sizeof(xe::be<uint16_t>) * 4 == sizeof(uint64_t));
+ 
+   KernelVersion(uint16_t build_ver = kBaseKernelBuildVersion) {
+     major = 2;

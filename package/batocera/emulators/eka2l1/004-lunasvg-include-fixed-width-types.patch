@@ -1,0 +1,33 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Mon, 1 Jun 2026 06:05:00 +0000
+Subject: [PATCH] lunasvg: include fixed-width integer types in public header
+
+lunasvg.h declares APIs using std::uint8_t, std::uint32_t, and
+std::size_t, but this vendored revision relies on those types arriving
+through unrelated transitive includes. GCC 13 does not provide that here,
+which leaves the Bitmap API undeclared and causes a cascade of errors in
+lunasvg.cpp.
+
+Include the standard headers that define the public API types directly.
+
+Signed-off-by: suckbluefrog <suckbluefrog@proton.me>
+---
+ src/external/lunasvg/include/lunasvg.h | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/src/external/lunasvg/include/lunasvg.h b/src/external/lunasvg/include/lunasvg.h
+index b48467e2..423a24ec 100644
+--- a/src/external/lunasvg/include/lunasvg.h
++++ b/src/external/lunasvg/include/lunasvg.h
+@@ -22,6 +22,8 @@
+ #ifndef LUNASVG_H
+ #define LUNASVG_H
+ 
++#include <cstddef>
++#include <cstdint>
+ #include <memory>
+ #include <string>
+ 
+-- 
+2.43.0

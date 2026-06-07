@@ -6,12 +6,13 @@
 # Dirty version and repo while:
 # -fixing gcc13
 # - upstreaming needed changes (wayland, ffmpeg, gles)
-EKA2L1_VERSION = 8bf21e354c7aa3ea8f287a5f47825d1370b1c14f
+EKA2L1_VERSION = 22fe6c97cead08cb8ea630c47789adec9f2b4246
 EKA2L1_SITE = https://github.com/rtissera/EKA2L1.git
 EKA2L1_SITE_METHOD=git
 EKA2L1_GIT_SUBMODULES=YES
+EKA2L1_DL_ENV += GIT_TERMINAL_PROMPT=0
 EKA2L1_LICENSE = GPLv2
-EKA2L1_DEPENDENCIES = qt6base qt6multimedia qt6svg
+EKA2L1_DEPENDENCIES = boost qt6base qt6multimedia qt6svg
 
 EKA2L1_SUPPORTS_IN_SOURCE_BUILD = NO
 
@@ -23,6 +24,15 @@ EKA2L1_CONF_OPTS += -DEKA2L1_BUILD_TOOLS=OFF
 EKA2L1_CONF_OPTS += -DEKA2L1_BUILD_TESTS=OFF
 EKA2L1_CONF_OPTS += -DEKA2L1_USE_SYSTEM_FFMPEG=ON
 EKA2L1_CONF_OPTS += -DENABLE_PROGRAMS=OFF # for mbedtls
+
+define EKA2L1_SKIP_DEAD_SUBMODULES
+	mkdir -p $(EKA2L1_DL_DIR)/git
+	cd $(EKA2L1_DL_DIR)/git && \
+		git init . && \
+		git config submodule.ext-boost.update none && \
+		git config submodule.dynarmic-android.update none
+endef
+EKA2L1_PRE_DOWNLOAD_HOOKS += EKA2L1_SKIP_DEAD_SUBMODULES
 
 ifneq ($(BR2_x86_64),y)
 EKA2L1_CONF_OPTS += -DEKA2L1_UNIX_USE_X11=OFF

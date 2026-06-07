@@ -1,0 +1,28 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Sun, 7 Jun 2026 00:00:00 +0000
+Subject: [PATCH] yuzu: include memory for unique_ptr/shared_ptr headers
+
+---
+diff --git a/src/core/frontend/applets/cabinet.h b/src/core/frontend/applets/cabinet.h
+--- a/src/core/frontend/applets/cabinet.h
++++ b/src/core/frontend/applets/cabinet.h
+@@ -6,0 +7 @@
++#include <memory>
+diff --git a/src/common/common_types.h b/src/common/common_types.h
+--- a/src/common/common_types.h
++++ b/src/common/common_types.h
+@@ -29,0 +30 @@
++#include <memory>
+diff --git a/src/core/memory/dmnt_cheat_vm.h b/src/core/memory/dmnt_cheat_vm.h
+--- a/src/core/memory/dmnt_cheat_vm.h
++++ b/src/core/memory/dmnt_cheat_vm.h
+@@ -6,0 +7 @@
++#include <memory>
+diff --git a/src/hid_core/resources/applet_resource.h b/src/hid_core/resources/applet_resource.h
+--- a/src/hid_core/resources/applet_resource.h
++++ b/src/hid_core/resources/applet_resource.h
+@@ -6,0 +7 @@
++#include <memory>
+-- 
+2.45.0

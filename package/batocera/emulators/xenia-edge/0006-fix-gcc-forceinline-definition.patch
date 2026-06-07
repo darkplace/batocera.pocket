@@ -1,0 +1,14 @@
+diff --git a/src/xenia/base/platform.h b/src/xenia/base/platform.h
+index 6ef345e62..31fbbf9d0 100644
+--- a/src/xenia/base/platform.h
++++ b/src/xenia/base/platform.h
+@@ -122,7 +122,7 @@
+ #define XE_LIKELY(...) (!!(__VA_ARGS__))
+ #define XE_UNLIKELY(...) (!!(__VA_ARGS__))
+ #define XE_NOALIAS __declspec(noalias)
+ #elif XE_COMPILER_HAS_GNU_EXTENSIONS == 1
+-#define XE_FORCEINLINE __attribute__((always_inline))
++#define XE_FORCEINLINE inline __attribute__((always_inline))
+ #define XE_NOINLINE __attribute__((noinline))
+ #define XE_COLD __attribute__((cold))
+ #define XE_LIKELY(...) __builtin_expect(!!(__VA_ARGS__), true)

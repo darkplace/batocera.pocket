@@ -3,7 +3,7 @@
 # xenia-edge
 #
 ################################################################################
-XENIA_EDGE_VERSION = d2b24e8a98ea13c9e5bc524b1bb4d16efa136c0
+XENIA_EDGE_VERSION = 07021f019cf55105bc26c0474e0b0835808353e2
 XENIA_EDGE_SITE = https://github.com/has207/xenia-edge.git
 XENIA_EDGE_SITE_METHOD = git
 XENIA_EDGE_GIT_SUBMODULES = YES
@@ -12,16 +12,14 @@ XENIA_EDGE_LICENSE_FILE = LICENSE
 XENIA_EDGE_EMULATOR_INFO = xenia-edge.emulator.yml
 XENIA_EDGE_SUPPORTS_IN_SOURCE_BUILD = NO
 
-XENIA_EDGE_DEPENDENCIES = host-ninja sdl2 vulkan-headers vulkan-loader lz4 alsa-lib python-toml \
+XENIA_EDGE_DEPENDENCIES = host-wayland sdl2 vulkan-headers vulkan-loader lz4 alsa-lib python-toml \
     qt6base qt6declarative
-
-XENIA_EDGE_HOST_TOOLS_BUILDDIR = $(@D)/buildroot-host-tools
 
 XENIA_EDGE_CONF_OPTS += -DCMAKE_BUILD_TYPE=Release
 XENIA_EDGE_CONF_OPTS += -DXENIA_BUILD_TESTS=OFF
 XENIA_EDGE_CONF_OPTS += -DXENIA_BUILD_MISC=OFF
 XENIA_EDGE_CONF_OPTS += -DXENIA_ENABLE_LTO=OFF
-XENIA_EDGE_CONF_OPTS += -DXENIA_HOST_SHADER_CC=$(XENIA_EDGE_HOST_TOOLS_BUILDDIR)/host_tools/xenia-shader-cc
+XENIA_EDGE_CONF_OPTS += -DXENIA_USE_HOST_SHADER_CC=ON
 XENIA_EDGE_CONF_ENV += QT_DIR=$(STAGING_DIR)/usr
 
 define XENIA_EDGE_GEN_VERSION_H
@@ -38,36 +36,32 @@ define XENIA_EDGE_GEN_VERSION_H
 endef
 
 define XENIA_EDGE_BUILD_HOST_SHADER_CC
-	rm -rf $(XENIA_EDGE_HOST_TOOLS_BUILDDIR)
-	mkdir -p $(XENIA_EDGE_HOST_TOOLS_BUILDDIR)/tmp
-	cd $(XENIA_EDGE_HOST_TOOLS_BUILDDIR) && \
-	PATH="$(HOST_DIR)/bin:$(HOST_DIR)/sbin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
-	PKG_CONFIG="$(HOST_DIR)/bin/pkg-config" \
-	PKG_CONFIG_SYSROOT_DIR="/" \
-	PKG_CONFIG_LIBDIR="$(HOST_DIR)/lib/pkgconfig:$(HOST_DIR)/share/pkgconfig" \
-	PKG_CONFIG_ALLOW_SYSTEM_CFLAGS=1 \
-	PKG_CONFIG_ALLOW_SYSTEM_LIBS=1 \
-	TMPDIR="$(XENIA_EDGE_HOST_TOOLS_BUILDDIR)/tmp" \
-	CFLAGS= CXXFLAGS= CPPFLAGS= LDFLAGS= \
-	$(HOST_DIR)/bin/cmake $(@D) \
-		-G"Ninja" \
-		-DCMAKE_MAKE_PROGRAM="$(HOST_DIR)/bin/ninja" \
-		-DCMAKE_BUILD_TYPE=Release \
-		-DCMAKE_INSTALL_PREFIX="$(HOST_DIR)" \
-		-DCMAKE_C_COMPILER="$(HOSTCC_NOCCACHE)" \
-		-DCMAKE_CXX_COMPILER="$(HOSTCXX_NOCCACHE)" \
-		-DXENIA_BUILD_HOST_TOOLS_ONLY=ON \
-		-DXENIA_BUILD_TESTS=OFF \
-		-DXENIA_BUILD_MISC=OFF \
-		-DXENIA_ENABLE_LTO=OFF
-	PATH="$(HOST_DIR)/bin:$(HOST_DIR)/sbin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
-	TMPDIR="$(XENIA_EDGE_HOST_TOOLS_BUILDDIR)/tmp" \
-	CFLAGS= CXXFLAGS= CPPFLAGS= LDFLAGS= \
-	$(HOST_DIR)/bin/cmake --build $(XENIA_EDGE_HOST_TOOLS_BUILDDIR) \
-		--target xenia-shader-cc -j$(PARALLEL_JOBS)
+	rm -rf $(@D)/native-host-build
+	$(HOST_DIR)/bin/cmake -S $(@D) -B $(@D)/native-host-build \
+	    -DCMAKE_BUILD_TYPE=Release \
+	    -DXENIA_BUILD_HOST_SHADER_CC_ONLY=ON \
+	    -DCMAKE_C_COMPILER=/usr/bin/cc \
+	    -DCMAKE_CXX_COMPILER=/usr/bin/c++
+	$(MAKE) -C $(@D)/native-host-build xenia-shader-cc
+	mkdir -p $(@D)/build/host_tools/Release
+	cp -f $(@D)/native-host-build/host_tools/xenia-shader-cc \
+	    $(@D)/build/host_tools/Release/xenia-shader-cc.exe
 endef
 
-XENIA_EDGE_PRE_CONFIGURE_HOOKS += XENIA_EDGE_GEN_VERSION_H XENIA_EDGE_BUILD_HOST_SHADER_CC
+XENIA_EDGE_PRE_CONFIGURE_HOOKS += XENIA_EDGE_GEN_VERSION_H
+XENIA_EDGE_PRE_CONFIGURE_HOOKS += XENIA_EDGE_BUILD_HOST_SHADER_CC
+
+define XENIA_EDGE_GENERATE_WX_WAYLAND_PROTOCOLS
+	mkdir -p $(@D)/buildroot-build/third_party/wxWidgets/lib/wx/include/gtk3-unicode-static-3.3/wx/protocols
+	$(HOST_DIR)/bin/wayland-scanner client-header \
+		$(@D)/third_party/wxWidgets/src/unix/protocols/pointer-warp-v1.xml \
+		$(@D)/buildroot-build/third_party/wxWidgets/lib/wx/include/gtk3-unicode-static-3.3/wx/protocols/pointer-warp-v1-client-protocol.h
+	$(HOST_DIR)/bin/wayland-scanner private-code \
+		$(@D)/third_party/wxWidgets/src/unix/protocols/pointer-warp-v1.xml \
+		$(@D)/buildroot-build/third_party/wxWidgets/lib/wx/include/gtk3-unicode-static-3.3/wx/protocols/pointer-warp-v1-client-protocol.c
+endef
+
+XENIA_EDGE_POST_CONFIGURE_HOOKS += XENIA_EDGE_GENERATE_WX_WAYLAND_PROTOCOLS
 
 define XENIA_EDGE_INSTALL_TARGET_CMDS
 	find $(@D) -maxdepth 6 -name "xenia_edge" -type f -perm /111 \

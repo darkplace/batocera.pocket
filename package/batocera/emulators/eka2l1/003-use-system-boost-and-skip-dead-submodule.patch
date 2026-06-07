@@ -1,0 +1,36 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Mon, 1 Jun 2026 05:40:00 +0000
+Subject: [PATCH] external: use system Boost for non-Android builds
+
+The ext-boost submodule URL used by this EKA2L1 revision is no longer
+available anonymously. Linux builds do not need the Android-only
+interface target that points at that submodule, and Dynarmic can use the
+Buildroot-provided Boost package.
+
+Keep the existing ext-boost path only for Android builds and avoid
+poisoning Boost_INCLUDE_DIR for normal Linux builds.
+
+Signed-off-by: suckbluefrog <suckbluefrog@proton.me>
+---
+ src/external/CMakeLists.txt | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/src/external/CMakeLists.txt b/src/external/CMakeLists.txt
+index fb932f95..c4efa2b3 100644
+--- a/src/external/CMakeLists.txt
++++ b/src/external/CMakeLists.txt
+@@ -4,9 +4,9 @@ include(CheckSymbolExists)
+ add_library(miniz miniz/miniz.h miniz/miniz.c)
+ target_include_directories(miniz PUBLIC miniz)
+ 
+-# Force Boost directory for Dynarmic - we never use one
+-set (Boost_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/ext-boost/" CACHE PATH "Boost include directory")
+ if (ANDROID)
++    # Force Boost directory for Dynarmic - we never use one
++    set (Boost_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/ext-boost/" CACHE PATH "Boost include directory")
+     add_definitions(-DBOOST_ERROR_CODE_HEADER_ONLY
+             -DBOOST_SYSTEM_NO_LIB
+             -DBOOST_DATE_TIME_NO_LIB
+-- 
+2.43.0

@@ -15,4 +15,9 @@
     <name>Firefox</name>
     <image>./images/firefox.png</image>
   </game>
+  <game>
+    <path>./PeaZip.sh</path>
+    <name>PeaZip</name>
+    <image>./images/peazip.png</image>
+  </game>
 </gameList>

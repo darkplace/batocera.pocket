@@ -51,6 +51,9 @@ steam:
     steam_gamepadui: true
     steam_user: auto
     steam_extra_args: ""
+    steam_noshaders: false
+    steam_unset_mesa_loader_driver_override: false
+    steam_proton_log: false
 ps2:
   emulator: aethersx2
   core:     aethersx2

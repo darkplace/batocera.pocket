@@ -1,0 +1,58 @@
+--- a/src/emu/sound.cpp
++++ b/src/emu/sound.cpp
+@@ -2230,6 +2230,13 @@
+ 
+ 					for(u32 channel = 0; channel != dchannels; channel++) {
+ 						std::vector<u32> targets = find_channel_mapping(omap.m_dev->get_position(channel), node);
++						if(targets.empty() && node->m_sinks) {
++							if(dchannels == 1)
++								for(u32 tchannel = 0; tchannel != node->m_sinks; tchannel++)
++									targets.emplace_back(tchannel);
++							else if(channel < node->m_sinks)
++								targets.emplace_back(channel);
++						}
+ 						for(u32 tchannel : targets) {
+ 							// If the channel is output and in the to
+ 							// clear mask, use load, otherwise use add.
+@@ -2294,6 +2301,13 @@
+ 
+ 					for(u32 channel = 0; channel != dchannels; channel++) {
+ 						std::vector<u32> targets = find_channel_mapping(omap.m_dev->get_position(channel), node);
++						if(targets.empty() && node->m_sinks) {
++							if(dchannels == 1)
++								for(u32 tchannel = 0; tchannel != node->m_sinks; tchannel++)
++									targets.emplace_back(tchannel);
++							else if(channel < node->m_sinks)
++								targets.emplace_back(channel);
++						}
+ 						for(u32 tchannel : targets) {
+ 							// If the channel is output and in the to
+ 							// clear mask, use load, otherwise use add.
+@@ -2436,6 +2450,13 @@
+ 
+ 					for(u32 channel = 0; channel != channels; channel++) {
+ 						std::vector<u32> targets = find_channel_mapping(omap.m_dev->get_position(channel), node);
++						if(targets.empty() && node->m_sinks) {
++							if(channels == 1)
++								for(u32 tchannel = 0; tchannel != node->m_sinks; tchannel++)
++									targets.emplace_back(tchannel);
++							else if(channel < node->m_sinks)
++								targets.emplace_back(channel);
++						}
+ 						for(u32 tchannel : targets) {
+ 							// If the channel is in the to clear mask, use load, otherwise use add
+ 							// Apply the volume too
+@@ -2481,6 +2502,13 @@
+ 
+ 					for(u32 channel = 0; channel != channels; channel++) {
+ 						std::vector<u32> targets = find_channel_mapping(omap.m_dev->get_position(channel), node);
++						if(targets.empty() && node->m_sinks) {
++							if(channels == 1)
++								for(u32 tchannel = 0; tchannel != node->m_sinks; tchannel++)
++									targets.emplace_back(tchannel);
++							else if(channel < node->m_sinks)
++								targets.emplace_back(channel);
++						}
+ 						for(u32 tchannel : targets) {
+ 							// If the channel is in the to clear mask, use load, otherwise use add
+ 							// Apply the volume too

@@ -1,0 +1,48 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Sun, 7 Jun 2026 00:00:00 +0000
+Subject: [PATCH] yuzu: guard VIC SSE4.1 code by compiler target support
+
+The VIC code has scalar fallbacks and runtime SSE4.1 detection, but the SSE4.1
+intrinsic blocks were still compiled for every x86_64 target. Clang rejects
+that when the package is built without -msse4.1. Compile those blocks only when
+the compiler target exposes __SSE4_1__; otherwise use the existing fallback.
+---
+diff --git a/src/video_core/host1x/vic.cpp b/src/video_core/host1x/vic.cpp
+--- a/src/video_core/host1x/vic.cpp
++++ b/src/video_core/host1x/vic.cpp
+@@ -49,0 +50,8 @@
++#if defined(ARCHITECTURE_x86_64) &&                                                       \
++    (defined(_MSC_VER) || (defined(__GNUC__) && defined(__SSE4_1__)) ||                    \
++     (defined(__clang__) && defined(__SSE4_1__)))
++#define COMPILED_HAS_SSE41 1
++#else
++#define COMPILED_HAS_SSE41 0
++#endif
++
+@@ -244 +252 @@
+-    if (!has_sse41) {
++    if (!COMPILED_HAS_SSE41 || !has_sse41) {
+@@ -250 +258 @@
+-#if defined(ARCHITECTURE_x86_64) || defined(ARCHITECTURE_arm64)
++#if (defined(ARCHITECTURE_x86_64) && COMPILED_HAS_SSE41) || defined(ARCHITECTURE_arm64)
+@@ -644 +652 @@
+-        if (!has_sse41) {
++        if (!COMPILED_HAS_SSE41 || !has_sse41) {
+@@ -650 +658 @@
+-#if defined(ARCHITECTURE_x86_64) || defined(ARCHITECTURE_arm64)
++#if (defined(ARCHITECTURE_x86_64) && COMPILED_HAS_SSE41) || defined(ARCHITECTURE_arm64)
+@@ -840 +848 @@
+-        if (!has_sse41) {
++        if (!COMPILED_HAS_SSE41 || !has_sse41) {
+@@ -846 +854 @@
+-#if defined(ARCHITECTURE_x86_64) || defined(ARCHITECTURE_arm64)
++#if (defined(ARCHITECTURE_x86_64) && COMPILED_HAS_SSE41) || defined(ARCHITECTURE_arm64)
+@@ -1112 +1120 @@
+-        if (!has_sse41) {
++        if (!COMPILED_HAS_SSE41 || !has_sse41) {
+@@ -1118 +1126 @@
+-#if defined(ARCHITECTURE_x86_64) || defined(ARCHITECTURE_arm64)
++#if (defined(ARCHITECTURE_x86_64) && COMPILED_HAS_SSE41) || defined(ARCHITECTURE_arm64)
+-- 
+2.45.0

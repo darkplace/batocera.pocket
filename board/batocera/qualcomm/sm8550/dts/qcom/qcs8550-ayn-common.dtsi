@@ -1170,6 +1170,7 @@
 &pcie0 {
 	wake-gpios = <&tlmm 96 GPIO_ACTIVE_HIGH>;
 	perst-gpios = <&tlmm 94 GPIO_ACTIVE_LOW>;
+	qcom,suspend-deinit-active-link;
 
 	pinctrl-0 = <&pcie0_default_state>;
 	pinctrl-names = "default";

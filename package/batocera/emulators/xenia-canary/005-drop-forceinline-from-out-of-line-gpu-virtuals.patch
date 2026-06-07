@@ -1,0 +1,47 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Mon, 01 Jun 2026 07:02:07 +0000
+Subject: [PATCH] Drop forceinline from out-of-line GPU virtuals
+
+GCC rejects always_inline calls when the selected virtual method body is not
+available in the current translation unit. These GPU command processor methods
+are defined out of line, so do not force them inline from the header.
+
+Signed-off-by: suckbluefrog <suckbluefrog@proton.me>
+---
+ src/xenia/gpu/command_processor.h        | 2 --
+ src/xenia/gpu/vulkan/vulkan_command_processor.h | 2 --
+ 2 files changed, 4 deletions(-)
+
+diff --git a/src/xenia/gpu/command_processor.h b/src/xenia/gpu/command_processor.h
+--- a/src/xenia/gpu/command_processor.h
++++ b/src/xenia/gpu/command_processor.h
+@@ -230,12 +230,10 @@ class CommandProcessor {
+   virtual void WriteRegister(uint32_t index, uint32_t value);
+ 
+   // mem has big-endian register values
+-  XE_FORCEINLINE
+   virtual void WriteRegistersFromMem(uint32_t start_index, uint32_t* base,
+                                      uint32_t num_registers);
+ 
+-  XE_FORCEINLINE
+   virtual void WriteRegisterRangeFromRing(xe::RingBuffer* ring, uint32_t base,
+                                           uint32_t num_registers);
+ 
+   XE_NOINLINE
+diff --git a/src/xenia/gpu/vulkan/vulkan_command_processor.h b/src/xenia/gpu/vulkan/vulkan_command_processor.h
+--- a/src/xenia/gpu/vulkan/vulkan_command_processor.h
++++ b/src/xenia/gpu/vulkan/vulkan_command_processor.h
+@@ -266,10 +266,8 @@ class VulkanCommandProcessor final : public CommandProcessor {
+  protected:
+   bool SetupContext() override;
+   void ShutdownContext() override;
+-  XE_FORCEINLINE
+   void WriteRegister(uint32_t index, uint32_t value) override;
+-  XE_FORCEINLINE
+   virtual void WriteRegistersFromMem(uint32_t start_index, uint32_t* base,
+                                      uint32_t num_registers) override;
+ 
+   void OnGammaRamp256EntryTableValueWritten() override;
+-- 
+2.43.0

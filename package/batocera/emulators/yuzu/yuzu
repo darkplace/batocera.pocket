@@ -1,0 +1,107 @@
+#!/bin/sh
+
+append_colon_env() {
+    name="$1"
+    value="$2"
+    eval "current=\${$name:-}"
+    [ -z "$value" ] && return 0
+    old_ifs="$IFS"
+    IFS=:
+    for existing in $current; do
+        [ "$existing" = "$value" ] && { IFS="$old_ifs"; return 0; }
+    done
+    IFS="$old_ifs"
+    if [ -n "$current" ]; then
+        export "$name=$value:$current"
+    else
+        export "$name=$value"
+    fi
+}
+
+find_rom_arg() {
+    rom=""
+    for arg in "$@"; do
+        if [ -e "$arg" ]; then
+            rom="$arg"
+        fi
+    done
+    [ -n "$rom" ] && basename "$rom"
+}
+
+get_yuzu_setting() {
+    key="$1"
+    romname="$2"
+    if [ -n "$romname" ]; then
+        batocera-settings-get "yuzu[\"${romname}\"].${key}" "yuzu.${key}" "global.${key}" 2>/dev/null || true
+    else
+        batocera-settings-get "yuzu.$key" "global.$key" 2>/dev/null || true
+    fi
+}
+
+resolve_lossless_dll() {
+    configured="$1"
+    if [ -n "$configured" ]; then
+        case "$configured" in
+            ~/*) configured="/userdata/system/${configured#~/}" ;;
+        esac
+        [ -f "$configured" ] && { printf '%s
+' "$configured"; return 0; }
+    fi
+
+    for candidate in         "/userdata/system/wine/lossless-config/Lossless.dll"         "/userdata/system/wine/lossless-scaling/Lossless.dll"         "/userdata/system/wine/.local/share/Steam/steamapps/common/Lossless Scaling/Lossless.dll"         "/userdata/system/.local/share/Steam/steamapps/common/Lossless Scaling/Lossless.dll"         "/userdata/roms/windows/Lossless Scaling/Lossless.dll"
+    do
+        [ -f "$candidate" ] && { printf '%s
+' "$candidate"; return 0; }
+    done
+
+    return 1
+}
+
+enable_lsfg_vk() {
+    [ "$(uname -m)" = "x86_64" ] || return 0
+
+    romname="$(find_rom_arg "$@")"
+    enabled="$(get_yuzu_setting lsfg_vk "$romname")"
+    case "$enabled" in
+        1|true|on|enabled) ;;
+        *) return 0 ;;
+    esac
+
+    backend="$(get_yuzu_setting yuzu_backend "$romname")"
+    [ -n "$backend" ] && [ "$backend" != "1" ] && return 0
+
+    lsfg_root="/usr/wine/lsfg-vk/x64"
+    lsfg_layer_dir="$lsfg_root/share/vulkan/explicit_layer.d"
+    lsfg_library="$lsfg_root/lib/liblsfg-vk.so"
+    [ -f "$lsfg_library" ] && [ -d "$lsfg_layer_dir" ] || return 0
+
+    dll_path="$(resolve_lossless_dll "$(get_yuzu_setting lsfg_vk_dll "$romname")")" || return 0
+
+    multiplier="$(get_yuzu_setting lsfg_vk_multiplier "$romname")"
+    flow_scale="$(get_yuzu_setting lsfg_vk_flow_scale "$romname")"
+    performance="$(get_yuzu_setting lsfg_vk_performance "$romname")"
+    hdr="$(get_yuzu_setting lsfg_vk_hdr "$romname")"
+    present_mode="$(get_yuzu_setting lsfg_vk_present_mode "$romname")"
+
+    [ -n "$multiplier" ] || multiplier=2
+    [ -n "$flow_scale" ] || flow_scale=1.0
+
+    export ENABLE_LSFG=1
+    export LSFG_LEGACY=1
+    export LSFG_PROCESS=yuzu
+    export LSFG_DLL_PATH="$dll_path"
+    export LSFG_MULTIPLIER="$multiplier"
+    export LSFG_FLOW_SCALE="$flow_scale"
+    export LSFG_PERFORMANCE_MODE=0
+    export LSFG_HDR_MODE=0
+    case "$performance" in 1|true|on|enabled) export LSFG_PERFORMANCE_MODE=1 ;; esac
+    case "$hdr" in 1|true|on|enabled) export LSFG_HDR_MODE=1 ;; esac
+    case "$present_mode" in fifo|vsync|mailbox|immediate) export LSFG_EXPERIMENTAL_PRESENT_MODE="$present_mode" ;; esac
+
+    append_colon_env VK_LAYER_PATH "$lsfg_layer_dir"
+    append_colon_env LD_LIBRARY_PATH "$lsfg_root/lib"
+    append_colon_env VK_INSTANCE_LAYERS "VK_LAYER_LS_frame_generation"
+}
+
+enable_lsfg_vk "$@"
+exec /usr/libexec/yuzu/yuzu "$@"

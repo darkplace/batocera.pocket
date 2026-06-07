@@ -22,6 +22,21 @@ log() {
     echo "steam-direct-session: $*" >> "${LOG}"
 }
 
+apply_steam_launch_environment() {
+    case "${BATOCERA_STEAM_UNSET_MESA_LOADER_DRIVER_OVERRIDE:-0}" in
+        1|true|TRUE|True|yes|YES|Yes|on|ON|On)
+            unset MESA_LOADER_DRIVER_OVERRIDE
+            log "unset MESA_LOADER_DRIVER_OVERRIDE"
+            ;;
+    esac
+
+    if [[ "${PROTON_LOG:-0}" == "1" ]]; then
+        export PROTON_LOG_DIR="${PROTON_LOG_DIR:-/userdata/system/logs}"
+        mkdir -p "${PROTON_LOG_DIR}" 2>/dev/null || true
+        log "Proton logging enabled at ${PROTON_LOG_DIR}"
+    fi
+}
+
 acquire_direct_session_lock() {
     if command -v flock >/dev/null 2>&1; then
         exec 8>"${DIRECT_SESSION_LOCK}"
@@ -967,6 +982,7 @@ esac
 acquire_direct_session_lock
 trap cleanup EXIT INT TERM
 apply_sm8550_gpu_profile
+apply_steam_launch_environment
 
 export BATOCERA_STEAM_GS_BACKEND="${BATOCERA_STEAM_GS_BACKEND:-$(default_gamescope_backend)}"
 

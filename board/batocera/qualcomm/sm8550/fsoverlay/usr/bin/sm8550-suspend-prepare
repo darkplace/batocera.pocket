@@ -1,0 +1,238 @@
+#!/bin/sh
+
+LOG_DIR="/userdata/system/logs/suspend"
+LOG_FILE="${LOG_DIR}/sm8550-suspend-prepare.log"
+STATE_DIR="/var/run/sm8550-suspend"
+USB_CONTROLS_FILE="${STATE_DIR}/usb-power-controls"
+USB_GADGET_MODE_FILE="${STATE_DIR}/usbgadget-saved-mode"
+WIFI_ENABLED_FILE="${STATE_DIR}/wifi-enabled"
+USB_RUNTIME_PM_SETTLE_SECONDS="${USB_RUNTIME_PM_SETTLE_SECONDS:-8}"
+
+log_msg() {
+    mkdir -p "${LOG_DIR}" "${STATE_DIR}" 2>/dev/null || true
+    printf '%s %s\n' "$(date -Iseconds 2>/dev/null || date)" "$*" >> "${LOG_FILE}"
+}
+
+kmsg() {
+    printf '*** SM8550 suspend: %s ***\n' "$*" > /dev/kmsg 2>/dev/null || true
+}
+
+command_exists() {
+    command -v "$1" >/dev/null 2>&1
+}
+
+wifi_enabled() {
+    [ "$(batocera-settings-get wifi.enabled 2>/dev/null)" = "1" ]
+}
+
+wifi_ifaces() {
+    for netdev in /sys/class/net/wlan* /sys/class/net/wlp* /sys/class/net/wlx*; do
+        [ -e "${netdev}" ] || continue
+        printf '%s\n' "${netdev##*/}"
+    done
+}
+
+save_wifi_state() {
+    mkdir -p "${STATE_DIR}" 2>/dev/null || true
+
+    if wifi_enabled; then
+        printf '1\n' > "${WIFI_ENABLED_FILE}"
+    else
+        printf '0\n' > "${WIFI_ENABLED_FILE}"
+    fi
+}
+
+quiesce_wifi() {
+    save_wifi_state
+
+    if [ "$(cat "${WIFI_ENABLED_FILE}" 2>/dev/null)" != "1" ]; then
+        log_msg "pre: wifi already disabled"
+        return 0
+    fi
+
+    log_msg "pre: quiescing wifi"
+    kmsg "quiescing wifi"
+
+    if command_exists connmanctl; then
+        connmanctl disable wifi >/dev/null 2>&1 || true
+    fi
+
+    for iface in $(wifi_ifaces); do
+        ip link set "${iface}" down >/dev/null 2>&1 || true
+    done
+
+    if command_exists rfkill; then
+        rfkill block wifi >/dev/null 2>&1 || true
+    fi
+}
+
+restore_wifi() {
+    if [ -r "${WIFI_ENABLED_FILE}" ]; then
+        restore="$(cat "${WIFI_ENABLED_FILE}" 2>/dev/null)"
+    elif wifi_enabled; then
+        restore="1"
+    else
+        restore="0"
+    fi
+
+    if [ "${restore}" != "1" ]; then
+        log_msg "post: leaving wifi disabled"
+        return 0
+    fi
+
+    log_msg "post: restoring wifi"
+    kmsg "restoring wifi"
+
+    if command_exists rfkill; then
+        rfkill unblock wifi >/dev/null 2>&1 || true
+    fi
+
+    if command_exists batocera-wifi; then
+        batocera-wifi disable >/dev/null 2>&1 || true
+        batocera-wifi enable >/dev/null 2>&1 || true
+    elif command_exists connmanctl; then
+        connmanctl enable wifi >/dev/null 2>&1 || true
+    fi
+
+    if command_exists sm8550-wifi-resilience; then
+        sm8550-wifi-resilience >/dev/null 2>&1 || true
+    fi
+}
+
+save_usb_gadget_state() {
+    mkdir -p "${STATE_DIR}" 2>/dev/null || true
+
+    if command_exists usbgadget; then
+        usbgadget --saved > "${USB_GADGET_MODE_FILE}" 2>/dev/null || printf 'disabled\n' > "${USB_GADGET_MODE_FILE}"
+    else
+        printf 'disabled\n' > "${USB_GADGET_MODE_FILE}"
+    fi
+}
+
+quiesce_usb_gadget() {
+    save_usb_gadget_state
+
+    if ! command_exists usbgadget; then
+        return 0
+    fi
+
+    log_msg "pre: stopping usb gadget saved=$(cat "${USB_GADGET_MODE_FILE}" 2>/dev/null)"
+    kmsg "stopping usb gadget"
+    usbgadget stop >/dev/null 2>&1 || true
+}
+
+restore_usb_gadget() {
+    if [ -r "${USB_GADGET_MODE_FILE}" ]; then
+        mode="$(cat "${USB_GADGET_MODE_FILE}" 2>/dev/null || printf 'disabled')"
+    elif command_exists usbgadget; then
+        mode="$(usbgadget --saved 2>/dev/null || printf 'disabled')"
+    else
+        mode="disabled"
+    fi
+
+    if [ "${mode}" = "disabled" ] || ! command_exists usbgadget; then
+        log_msg "post: leaving usb gadget disabled"
+        return 0
+    fi
+
+    log_msg "post: restoring usb gadget mode=${mode}"
+    kmsg "restoring usb gadget ${mode}"
+    usbgadget --start >/dev/null 2>&1 || true
+}
+
+save_usb_power_control() {
+    control="$1"
+
+    [ -e "${control}" ] || return 0
+    [ -w "${control}" ] || return 0
+
+    old_value="$(cat "${control}" 2>/dev/null || printf 'unknown')"
+    printf '%s %s\n' "${control}" "${old_value}" >> "${USB_CONTROLS_FILE}"
+
+    if printf 'auto\n' > "${control}" 2>/dev/null; then
+        log_msg "pre: set ${control} ${old_value}->auto"
+    fi
+}
+
+set_usb_runtime_pm_auto() {
+    mkdir -p "${STATE_DIR}" 2>/dev/null || true
+    : > "${USB_CONTROLS_FILE}"
+
+    for control in \
+        /sys/devices/platform/soc@0/a600000.usb/power/control \
+        /sys/devices/platform/soc@0/a600000.usb/xhci-hcd.*.auto/power/control; do
+        save_usb_power_control "${control}"
+    done
+}
+
+all_usb_controls_suspended() {
+    [ -s "${USB_CONTROLS_FILE}" ] || return 0
+
+    while read -r control _old_value; do
+        status="${control%/control}/runtime_status"
+        [ -r "${status}" ] || continue
+        [ "$(cat "${status}" 2>/dev/null)" = "suspended" ] || return 1
+    done < "${USB_CONTROLS_FILE}"
+
+    return 0
+}
+
+wait_for_usb_runtime_pm() {
+    seconds=0
+
+    while [ "${seconds}" -lt "${USB_RUNTIME_PM_SETTLE_SECONDS}" ]; do
+        all_usb_controls_suspended && return 0
+        sleep 1
+        seconds=$((seconds + 1))
+    done
+
+    log_msg "pre: usb runtime PM did not fully suspend before timeout"
+    return 0
+}
+
+restore_usb_power_controls() {
+    [ -r "${USB_CONTROLS_FILE}" ] || return 0
+
+    while read -r control old_value; do
+        [ -w "${control}" ] || continue
+
+        case "${old_value}" in
+            auto|on)
+                printf '%s\n' "${old_value}" > "${control}" 2>/dev/null || true
+                log_msg "post: restored ${control} to ${old_value}"
+                ;;
+        esac
+    done < "${USB_CONTROLS_FILE}"
+}
+
+pre_suspend() {
+    log_msg "pre: begin"
+    quiesce_wifi
+    quiesce_usb_gadget
+    set_usb_runtime_pm_auto
+    wait_for_usb_runtime_pm
+    log_msg "pre: complete"
+}
+
+post_resume() {
+    log_msg "post: begin"
+    restore_usb_power_controls
+    restore_usb_gadget
+    restore_wifi
+    log_msg "post: complete"
+}
+
+case "$1" in
+    pre|suspend|hibernate)
+        pre_suspend
+        ;;
+    post|resume|thaw)
+        post_resume
+        ;;
+    *)
+        echo "usage: $0 {pre|post}" >&2
+        exit 1
+        ;;
+esac
+
+exit 0

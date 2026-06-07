@@ -1,17 +1,19 @@
 from __future__ import annotations
 
+import errno
 import logging
 import os
+import shutil
 import stat
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ... import Command
 from ...batoceraPaths import BIOS, mkdir_if_not_exists, ensure_parents_and_open
-from ...controller import generate_sdl_game_controller_config
-from ...utils import vulkan
+from ...utils import lsfg, vulkan
 from ...utils.configparser import CaseSensitiveRawConfigParser
 from ..Generator import Generator
+from ..eden.edenController import build_eden_sdl_game_controller_config
 from .yuzuController import set_yuzu_controllers
 
 if TYPE_CHECKING:
@@ -28,6 +30,7 @@ YUZU_CACHE = HOME / ".cache" / "yuzu"
 SWITCH_BIOS = BIOS / "switch"
 SWITCH_KEYS = SWITCH_BIOS / "keys"
 SWITCH_NAND = SWITCH_BIOS / "nand"
+SWITCH_FIRMWARE = SWITCH_BIOS / "firmware"
 
 # UCLAMP values (out of 1024)
 # 819 = ~80% utilization floor, forces scheduler to use big cores
@@ -50,14 +53,14 @@ def _link_dir_into_expected(source_dir: Path, expected_dir: Path) -> None:
         except FileNotFoundError:
             pass
         expected_dir.unlink(missing_ok=True)
-        expected_dir.symlink_to(source_dir, target_is_directory=True)
+        _symlink_or_copy_dir(source_dir, expected_dir)
         return
 
     if expected_dir.exists():
         return
 
     expected_dir.parent.mkdir(parents=True, exist_ok=True)
-    expected_dir.symlink_to(source_dir, target_is_directory=True)
+    _symlink_or_copy_dir(source_dir, expected_dir)
 
 
 def _link_file_into_expected(source_file: Path, expected_file: Path) -> None:
@@ -71,14 +74,49 @@ def _link_file_into_expected(source_file: Path, expected_file: Path) -> None:
         except FileNotFoundError:
             pass
         expected_file.unlink(missing_ok=True)
-        expected_file.symlink_to(source_file)
+        _symlink_or_copy_file(source_file, expected_file)
         return
 
-    if expected_file.exists():
+    if expected_file.is_dir():
+        shutil.rmtree(expected_file)
+    elif expected_file.exists():
         return
 
+    _unlink_dangling_symlink(expected_file.parent)
     expected_file.parent.mkdir(parents=True, exist_ok=True)
-    expected_file.symlink_to(source_file)
+    _symlink_or_copy_file(source_file, expected_file)
+
+
+def _unlink_dangling_symlink(path: Path) -> None:
+    if path.is_symlink() and not path.exists():
+        path.unlink(missing_ok=True)
+
+
+def _ensure_real_dir(path: Path) -> None:
+    if path.is_symlink():
+        path.unlink(missing_ok=True)
+    elif path.exists() and not path.is_dir():
+        path.unlink()
+
+    path.mkdir(parents=True, exist_ok=True)
+
+
+def _symlink_or_copy_dir(source_dir: Path, expected_dir: Path) -> None:
+    try:
+        expected_dir.symlink_to(source_dir, target_is_directory=True)
+    except OSError as exc:
+        if exc.errno not in (errno.ENOSYS, errno.EOPNOTSUPP, errno.EPERM):
+            raise
+        shutil.copytree(source_dir, expected_dir, dirs_exist_ok=True)
+
+
+def _symlink_or_copy_file(source_file: Path, expected_file: Path) -> None:
+    try:
+        expected_file.symlink_to(source_file)
+    except OSError as exc:
+        if exc.errno not in (errno.ENOSYS, errno.EOPNOTSUPP, errno.EPERM):
+            raise
+        shutil.copy2(source_file, expected_file)
 
 
 def _pick_existing_path(*candidates: Path) -> Path | None:
@@ -86,6 +124,48 @@ def _pick_existing_path(*candidates: Path) -> Path | None:
         if path.exists():
             return path
     return None
+
+
+def _resolve_firmware_dir() -> Path | None:
+    candidates = (
+        SWITCH_FIRMWARE / "registered",
+        SWITCH_FIRMWARE / "Contents" / "registered",
+        SWITCH_FIRMWARE / "system" / "Contents" / "registered",
+    )
+
+    for candidate in candidates:
+        if candidate.is_dir():
+            return candidate
+
+    if SWITCH_FIRMWARE.is_dir() and any(_is_registered_firmware_entry(child) for child in SWITCH_FIRMWARE.iterdir()):
+        return SWITCH_FIRMWARE
+
+    return None
+
+
+def _is_registered_firmware_entry(path: Path) -> bool:
+    if path.is_file():
+        return True
+
+    return path.is_dir() and path.name.endswith(".nca") and (path / "00").is_file()
+
+
+def _registered_firmware_entries(source_dir: Path):
+    for child in sorted(source_dir.iterdir()):
+        if child.is_file():
+            yield child, child.name
+        elif child.is_dir() and child.name.endswith(".nca") and (child / "00").is_file():
+            yield child / "00", child.name
+
+
+def _link_firmware_into_registered(target_registered_dir: Path) -> None:
+    source_dir = _resolve_firmware_dir()
+    if source_dir is None:
+        return
+
+    target_registered_dir.mkdir(parents=True, exist_ok=True)
+    for source, target_name in _registered_firmware_entries(source_dir):
+        _link_file_into_expected(source, target_registered_dir / target_name)
 
 
 def _is_aarch64() -> bool:
@@ -124,7 +204,6 @@ class YuzuGenerator(Generator):
 
         # ---- Create directory structure ----
         mkdir_if_not_exists(SWITCH_BIOS)
-        mkdir_if_not_exists(SWITCH_KEYS)
 
         mkdir_if_not_exists(YUZU_CONFIG)
         mkdir_if_not_exists(YUZU_DATA)
@@ -141,24 +220,29 @@ class YuzuGenerator(Generator):
             _link_dir_into_expected(SWITCH_NAND / "user", YUZU_DATA / "nand" / "user")
             mkdir_if_not_exists(YUZU_DATA / "nand" / "system")
             mkdir_if_not_exists(YUZU_DATA / "nand" / "user")
+        _link_firmware_into_registered(YUZU_DATA / "nand" / "system" / "Contents" / "registered")
 
-        _link_dir_into_expected(SWITCH_KEYS, YUZU_DATA / "keys")
-        if not (YUZU_DATA / "keys").exists():
+        prod_key_source = _pick_existing_path(
+            SWITCH_KEYS / "prod.keys",
+            SWITCH_BIOS / "prod.keys",
+        )
+        title_key_source = _pick_existing_path(
+            SWITCH_KEYS / "title.keys",
+            SWITCH_KEYS / "title.keys_autogenerated",
+            SWITCH_BIOS / "title.keys",
+            SWITCH_BIOS / "title.keys_autogenerated",
+        )
+        if prod_key_source is not None and prod_key_source.parent == SWITCH_KEYS:
+            _link_dir_into_expected(SWITCH_KEYS, YUZU_DATA / "keys")
+            _unlink_dangling_symlink(YUZU_DATA / "keys")
             mkdir_if_not_exists(YUZU_DATA / "keys")
-            prod_key_source = _pick_existing_path(
-                SWITCH_KEYS / "prod.keys",
-                SWITCH_BIOS / "prod.keys",
-            )
-            title_key_source = _pick_existing_path(
-                SWITCH_KEYS / "title.keys",
-                SWITCH_KEYS / "title.keys_autogenerated",
-                SWITCH_BIOS / "title.keys",
-                SWITCH_BIOS / "title.keys_autogenerated",
-            )
-            if prod_key_source is not None:
-                _link_file_into_expected(prod_key_source, YUZU_DATA / "keys" / "prod.keys")
-            if title_key_source is not None:
-                _link_file_into_expected(title_key_source, YUZU_DATA / "keys" / "title.keys")
+        else:
+            _ensure_real_dir(YUZU_DATA / "keys")
+
+        if prod_key_source is not None:
+            _link_file_into_expected(prod_key_source, YUZU_DATA / "keys" / "prod.keys")
+        if title_key_source is not None:
+            _link_file_into_expected(title_key_source, YUZU_DATA / "keys" / "title.keys")
 
         # ---- Write configuration ----
         YuzuGenerator.writeConfig(
@@ -184,7 +268,7 @@ class YuzuGenerator(Generator):
             "XDG_CACHE_HOME": f"{home}/.cache",
             "LANG": "en_US.UTF-8",
             "LC_ALL": "en_US.UTF-8",
-            "SDL_GAMECONTROLLERCONFIG": generate_sdl_game_controller_config(playersControllers),
+            "SDL_GAMECONTROLLERCONFIG": build_eden_sdl_game_controller_config(playersControllers),
             # Steam Deck can fall back to unusable lizard mode with SDL hidapi in some AppImage builds.
             "SDL_JOYSTICK_HIDAPI": "0",
         }
@@ -207,6 +291,8 @@ class YuzuGenerator(Generator):
                 command_array = ["/usr/bin/yuzu", "-qlaunch"]
             else:
                 command_array = ["/usr/bin/yuzu", "-f", "-g", str(rom)]
+
+        lsfg.apply_lsfg_vk(system, env, backend_key="yuzu_backend", process_name="yuzu")
 
         return Command.Command(
             array=command_array,
@@ -284,26 +370,28 @@ exit $EXIT_CODE
         if cfg.exists():
             c.read(cfg)
 
+        def set_override(section: str, option: str, value: str) -> None:
+            c.set(section, f"{option}\\default", "false")
+            c.set(section, option, value)
+
         # ---------- UI ----------
         if not c.has_section("UI"):
             c.add_section("UI")
 
-        c.set("UI", "fullscreen", "true")
-        c.set("UI", "singleWindowMode", system.config.get("yuzu_single_window", "true"))
-        c.set("UI", "enable_discord_presence", "false")
-        c.set("UI", "confirmClose", "false")
-        c.set("UI", "confirmClose\\default", "false")
-        c.set("UI", "confirmExit", "false")
-        c.set("UI", "confirmExit\\default", "false")
-        c.set("UI", "confirmStop", "0")
-        c.set("UI", "confirmStop\\default", "false")
-        c.set("UI", "check_for_updates_on_start", "false")
-        c.set("UI", "check_for_updates_on_start\\default", "false")
-        c.set("UI", "UIGameList\\cache_game_list", "false")
+        set_override("UI", "fullscreen", "true")
+        set_override("UI", "singleWindowMode", system.config.get("yuzu_single_window", "true"))
+        set_override("UI", "enable_discord_presence", "false")
+        set_override("UI", "firstStart", "false")
+        set_override("UI", "calloutFlags", "1")
+        set_override("UI", "confirmClose", "false")
+        set_override("UI", "confirmExit", "false")
+        set_override("UI", "confirmStop", "2")
+        set_override("UI", "check_for_updates_on_start", "false")
+        set_override("UI", "UIGameList\\cache_game_list", "false")
         _clear_controller_shortcut(c, "Exit%20Yuzu", "Exit%20yuzu")
 
-        c.set("UI", "Paths\\gamedirs\\1\\path", "/userdata/roms/switch")
-        c.set("UI", "Paths\\gamedirs\\size", "1")
+        set_override("UI", "Paths\\gamedirs\\1\\path", "/userdata/roms/switch")
+        set_override("UI", "Paths\\gamedirs\\size", "1")
 
         # ---------- Data Storage ----------
         if not c.has_section("Data%20Storage"):
@@ -512,10 +600,10 @@ exit $EXIT_CODE
         if not c.has_section("WebService"):
             c.add_section("WebService")
 
-        c.set("WebService", "enable_telemetry", "false")
-        c.set("WebService", "enable_telemetry\\default", "false")
-        c.set("WebService", "enable_auto_update_check", "false")
-        c.set("WebService", "enable_auto_update_check\\default", "false")
+        set_override("WebService", "enable_telemetry", "false")
+        set_override("WebService", "enable_auto_update_check", "false")
+        set_override("WebService", "yuzu_username", "")
+        set_override("WebService", "yuzu_token", "")
 
         with ensure_parents_and_open(cfg, "w") as f:
             c.write(f)

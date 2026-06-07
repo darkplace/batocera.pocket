@@ -1,12 +1,6 @@
 diff --git a/rpcs3/rpcs3qt/screenshot_manager_dialog.cpp b/rpcs3/rpcs3qt/screenshot_manager_dialog.cpp
 --- a/rpcs3/rpcs3qt/screenshot_manager_dialog.cpp
 +++ b/rpcs3/rpcs3qt/screenshot_manager_dialog.cpp
-@@ -110,6 +110,6 @@ void screenshot_manager_dialog::reload()
- 	const sort_filter s_filter = static_cast<sort_filter>(m_combo_sort_filter->currentData().toInt());
- 	const QString game_filter = m_combo_game_filter->currentData().toString();
- 
+@@ -113 +113 @@ void screenshot_manager_dialog::reload()
 -	const std::string screenshot_path_rpcs3 = fs::get_config_dir() + "screenshots/";
 +	const std::string screenshot_path_rpcs3 = "/userdata/screenshots/";
- 	const std::string screenshot_path_cell  = rpcs3::utils::get_hdd0_dir() + "/photo/";
- 
- 	std::vector<std::string> folders;

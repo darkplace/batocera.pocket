@@ -1,0 +1,45 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 921e946..9f798fd 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -36,6 +36,7 @@ message(STATUS "Target architecture: XE_TARGET_AARCH64=${XE_TARGET_AARCH64} XE_T
+ # Options
+ option(XENIA_BUILD_TESTS "Build test suites" OFF)
+ option(XENIA_BUILD_MISC "Build misc subprojects (trace viewers, shader compiler, vfs-dump, demos)" OFF)
++option(XENIA_ENABLE_LTO "Enable link-time optimization in release builds" ON)
+ 
+ # Toggle profiler
+ add_compile_definitions(XE_OPTION_PROFILING=0)
+@@ -290,18 +291,20 @@ else()
+     $<$<CONFIG:Release>:_NO_DEBUG_HEAP=1>
+   )
+   add_compile_options($<$<CONFIG:Release>:-O3>)
+-  # Link-time optimization (use lld and llvm-ar/ranlib to avoid system
+-  # linker/archiver LTO plugin version mismatch with clang's bitcode)
+-  add_compile_options($<$<CONFIG:Release>:-flto=thin>)
+-  add_link_options($<$<CONFIG:Release>:-flto=thin>)
+-  add_link_options($<$<CONFIG:Release>:-fuse-ld=lld>)
+-  find_program(LLVM_AR NAMES llvm-ar)
+-  find_program(LLVM_RANLIB NAMES llvm-ranlib)
+-  if(LLVM_AR)
+-    set(CMAKE_AR "${LLVM_AR}" CACHE FILEPATH "" FORCE)
+-  endif()
+-  if(LLVM_RANLIB)
+-    set(CMAKE_RANLIB "${LLVM_RANLIB}" CACHE FILEPATH "" FORCE)
++  if(XENIA_ENABLE_LTO)
++    # Link-time optimization (use lld and llvm-ar/ranlib to avoid system
++    # linker/archiver LTO plugin version mismatch with clang's bitcode)
++    add_compile_options($<$<CONFIG:Release>:-flto=thin>)
++    add_link_options($<$<CONFIG:Release>:-flto=thin>)
++    add_link_options($<$<CONFIG:Release>:-fuse-ld=lld>)
++    find_program(LLVM_AR NAMES llvm-ar)
++    find_program(LLVM_RANLIB NAMES llvm-ranlib)
++    if(LLVM_AR)
++      set(CMAKE_AR "${LLVM_AR}" CACHE FILEPATH "" FORCE)
++    endif()
++    if(LLVM_RANLIB)
++      set(CMAKE_RANLIB "${LLVM_RANLIB}" CACHE FILEPATH "" FORCE)
++    endif()
+   endif()
+   # No symbols in release on non-Windows
+   string(REPLACE "-g" "" CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE}")

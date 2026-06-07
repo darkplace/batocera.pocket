@@ -1,0 +1,50 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 8f54c6a0d..8acb10666 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -57,6 +57,8 @@ message(STATUS "Target architecture: XE_TARGET_AARCH64=${XE_TARGET_AARCH64} XE_T
+ 
+ option(XENIA_BUILD_TESTS "Build test suites" OFF)
+ option(XENIA_BUILD_MISC "Build misc subprojects (trace viewers, shader compiler, vfs-dump, demos)" OFF)
++option(XENIA_BUILD_HOST_SHADER_CC_ONLY "Only build the native shader compiler host tool" OFF)
++option(XENIA_USE_HOST_SHADER_CC "Use a prebuilt native xenia-shader-cc during cross builds" OFF)
+ option(XENIA_ENABLE_LTO "Enable link-time optimization in Release (slow link)" ON)
+ 
+ get_property(_is_multi_config GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
+@@ -128,6 +130,11 @@ add_compile_definitions(
+ # Prevent ASan error from ImGUI
+ add_compile_definitions($<$<NOT:$<CONFIG:Checked>>:IMGUI_USE_STB_SPRINTF>)
+ 
++if(XENIA_BUILD_HOST_SHADER_CC_ONLY)
++  add_subdirectory(third_party)
++  return()
++endif()
++
+ # ==============================================================================
+ # Qt6 (optional, gated on the QT_DIR env var)
+ # ==============================================================================
+diff --git a/third_party/CMakeLists.txt b/third_party/CMakeLists.txt
+index 1bbf1fb31..7b1f09c20 100644
+--- a/third_party/CMakeLists.txt
++++ b/third_party/CMakeLists.txt
+@@ -179,6 +179,8 @@ target_include_directories(glslang-spirv PUBLIC glslang)
+ # x86_64↔arm64 via Rosetta — both directions are unaffected).
+ set(_xe_use_host_shader_cc FALSE)
+-if(WIN32 AND CMAKE_CROSSCOMPILING AND XE_TARGET_AARCH64
++if(XENIA_USE_HOST_SHADER_CC)
++  set(_xe_use_host_shader_cc TRUE)
++elseif(WIN32 AND CMAKE_CROSSCOMPILING AND XE_TARGET_AARCH64
+     AND CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "AMD64|x86_64")
+   set(_xe_use_host_shader_cc TRUE)
+ endif()
+@@ -339,6 +341,10 @@ set_target_properties(xenia-shader-cc PROPERTIES
+ 
+ endif()
+ 
++if(XENIA_BUILD_HOST_SHADER_CC_ONLY)
++  return()
++endif()
++
+ # ==============================================================================
+ # imgui
+ # ==============================================================================

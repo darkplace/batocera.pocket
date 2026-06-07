@@ -1,7 +1,6 @@
-diff --git a/rpcs3/Input/sdl_camera_handler.cpp b/rpcs3/Input/sdl_camera_handler.cpp
 --- a/rpcs3/Input/sdl_camera_handler.cpp
 +++ b/rpcs3/Input/sdl_camera_handler.cpp
-@@ -9,6 +9,16 @@
+@@ -10,6 +10,16 @@
  
  LOG_CHANNEL(camera_log, "Camera");
  
@@ -18,7 +17,7 @@ diff --git a/rpcs3/Input/sdl_camera_handler.cpp b/rpcs3/Input/sdl_camera_handler
  template <>
  void fmt_class_string<SDL_CameraSpec>::format(std::string& out, u64 arg)
  {
-@@ -358,15 +368,15 @@ void sdl_camera_handler::start_camera()
+@@ -358,15 +368,15 @@
  	const auto camera_permission = SDL_GetCameraPermissionState(m_camera);
  	switch (camera_permission)
  	{

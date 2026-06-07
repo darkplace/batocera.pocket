@@ -1,0 +1,33 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Sun, 7 Jun 2026 12:25:00 +0300
+Subject: [PATCH] nx_tzdb: copy tz source without git metadata
+
+Buildroot archives git packages without preserving nested submodule .git
+metadata in a form that can be cloned again from inside CMake. The tz source
+tree is already present after extraction, and tzdb_to_nx only needs a writable
+copy because tz builds in-tree.
+
+Use CMake's copy_directory helper instead of cloning the local checkout.
+---
+ externals/nx_tzdb/tzdb_to_nx/externals/tz/CMakeLists.txt | 5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/externals/nx_tzdb/tzdb_to_nx/externals/tz/CMakeLists.txt b/externals/nx_tzdb/tzdb_to_nx/externals/tz/CMakeLists.txt
+index 7832b771b1..294efcf008 100644
+--- a/externals/nx_tzdb/tzdb_to_nx/externals/tz/CMakeLists.txt
++++ b/externals/nx_tzdb/tzdb_to_nx/externals/tz/CMakeLists.txt
+@@ -21,8 +21,9 @@ if (NOT EXISTS "${TZ_DIR}" OR NOT EXISTS "${TZIF_LIST_FILE}")
+     if (NOT TZDB2NX_ZONEINFO_DIR) # If a custom zoneinfo directory was specified
+         # tz's makefile can only build in-tree, so copy the whole source tree to a
+         # separate directory before building.
++        file(REMOVE_RECURSE "${TZ_TMP_SOURCE_DIR}")
+         execute_process(
+             COMMAND
+-                ${GIT_PROGRAM} clone --depth 1 "file://${TZ_SOURCE_DIR}" "${TZ_TMP_SOURCE_DIR}"
++                ${CMAKE_COMMAND} -E copy_directory "${TZ_SOURCE_DIR}" "${TZ_TMP_SOURCE_DIR}"
+             COMMAND_ERROR_IS_FATAL ANY
+         )
+ 
+-- 
+2.49.0

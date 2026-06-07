@@ -19,6 +19,8 @@ mkdir -p "${BATOCERA_BINARIES_DIR}/boot/boot" || exit 1
 echo "*** Copying the Batocera base system files ***"
 cp "${BINARIES_DIR}/rootfs.squashfs" "${BATOCERA_BINARIES_DIR}/boot/boot/batocera.update" || exit 1
 cp "${BINARIES_DIR}/rufomaculata"    "${BATOCERA_BINARIES_DIR}/boot/boot/rufomaculata.update" || exit 1
+cp "${BINARIES_DIR}/rootfs.squashfs" "${BATOCERA_BINARIES_DIR}/boot/SYSTEM" || exit 1
+(cd "${BATOCERA_BINARIES_DIR}/boot" && md5sum SYSTEM > SYSTEM.md5) || exit 1
 
 echo "*** Compressing the Kernel ***"
 gzip -9c "${BINARIES_DIR}/Image" > "${BINARIES_DIR}/kernel.gz" || exit 1
@@ -53,5 +55,9 @@ echo "*** Generating the Android boot image ***"
     --header_version 0 \
     --cmdline "${CMDLINE}" \
     -o "${BATOCERA_BINARIES_DIR}/boot/boot/Image" || exit 1
+
+echo "*** Adding Rocknix ABL-compatible kernel alias ***"
+cp "${BATOCERA_BINARIES_DIR}/boot/boot/Image" "${BATOCERA_BINARIES_DIR}/boot/KERNEL" || exit 1
+(cd "${BATOCERA_BINARIES_DIR}/boot" && md5sum KERNEL > KERNEL.md5) || exit 1
 
 exit 0

@@ -1,6 +1,18 @@
 config BR2_PACKAGE_BATOCERA_APPS_AARCH64
 	bool "batocera apps aarch64 (AppImage bundle)"
 	depends on BR2_aarch64
+	select BR2_PACKAGE_BROTLI
+	select BR2_PACKAGE_P7ZIP
+	select BR2_PACKAGE_QT6BASE
+	select BR2_PACKAGE_QT6BASE_FONTCONFIG
+	select BR2_PACKAGE_QT6BASE_GUI
+	select BR2_PACKAGE_QT6BASE_GIF
+	select BR2_PACKAGE_QT6BASE_JPEG
+	select BR2_PACKAGE_QT6BASE_PNG
+	select BR2_PACKAGE_QT6BASE_PRINTSUPPORT
+	select BR2_PACKAGE_QT6BASE_WIDGETS
+	select BR2_PACKAGE_QT6BASE_XCB if BR2_PACKAGE_XORG7
+	select BR2_PACKAGE_ZSTD
 	help
 	  Bundled aarch64 desktop applications exposed through an
 	  EmulationStation "apps" system.

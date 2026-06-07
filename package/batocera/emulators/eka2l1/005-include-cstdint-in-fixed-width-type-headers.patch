@@ -1,0 +1,43 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Mon, 1 Jun 2026 06:20:00 +0000
+Subject: [PATCH] include cstdint in fixed-width type headers
+
+GCC 13 no longer lets these headers rely on unrelated transitive
+includes for fixed-width integer types. Include cstdint directly where
+uint8_t, uint32_t, uint64_t, and std::uint64_t are part of the header
+surface.
+
+Signed-off-by: suckbluefrog <suckbluefrog@proton.me>
+---
+ src/emu/common/include/common/types.h   | 1 +
+ src/external/lunasvg/source/property.h  | 1 +
+ 2 files changed, 2 insertions(+)
+
+diff --git a/src/emu/common/include/common/types.h b/src/emu/common/include/common/types.h
+index 9b1d06e6..61f23cec 100644
+--- a/src/emu/common/include/common/types.h
++++ b/src/emu/common/include/common/types.h
+@@ -20,6 +20,7 @@
+  */
+ #pragma once
+ 
++#include <cstdint>
+ #include <functional>
+ #include <string>
+ 
+diff --git a/src/external/lunasvg/source/property.h b/src/external/lunasvg/source/property.h
+index ecb5417a..84957c09 100644
+--- a/src/external/lunasvg/source/property.h
++++ b/src/external/lunasvg/source/property.h
+@@ -3,6 +3,7 @@
+ 
+ #include <vector>
+ #include <string>
++#include <cstdint>
+ #include <array>
+ 
+ namespace lunasvg {
+-- 
+2.43.0
+

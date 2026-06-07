@@ -1,0 +1,34 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Mon, 1 Jun 2026 06:50:00 +0000
+Subject: [PATCH] cmake: force include cstdint for C++ sources
+
+The pinned EKA2L1 snapshot has several headers that expose std::uint*_t
+without including cstdint directly. GCC 13 exposes these transitive
+include assumptions in different targets as the build progresses.
+
+Force-include cstdint for C++ translation units so this package can build
+reliably without carrying a large header-by-header compatibility patch.
+
+Signed-off-by: suckbluefrog <suckbluefrog@proton.me>
+---
+ CMakeLists.txt | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 75103a19..c7d8b9b5 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -5,6 +5,9 @@ project (EKA2L1)
+ # Clang 14 is required to compile nicely with C++ 20
+ set (CMAKE_CXX_STANDARD 17)
+ 
++# Work around missing direct cstdint includes in the pinned source tree.
++add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-include> $<$<COMPILE_LANGUAGE:CXX>:cstdint>)
++
+ option(EKA2L1_BUILD_TOOLS "Build EKA2L1's tool" ON)
+ option(EKA2L1_BUILD_TESTS "Build EKA2L1's tests" ON)
+ option(EKA2L1_ENABLE_SCRIPTING_ABILITY "Enable to script with Python or Lua" ON)
+-- 
+2.43.0
+

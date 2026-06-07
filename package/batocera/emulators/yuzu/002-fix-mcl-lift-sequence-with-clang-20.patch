@@ -1,0 +1,41 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Sun, 7 Jun 2026 12:35:00 +0300
+Subject: [PATCH] mcl: specialize lift_sequence for std::integer_sequence
+
+Clang 20 does not match MCL's generic template-template specialization when
+Dynarmic passes std::make_index_sequence<N>, producing an undefined
+lift_sequence_impl<std::integer_sequence<...>> instantiation.
+
+Add the exact std::integer_sequence specialization used by the x64 and arm64
+Dynarmic backends.
+---
+ externals/dynarmic/externals/mcl/include/mcl/mp/typelist/lift_sequence.hpp | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/externals/dynarmic/externals/mcl/include/mcl/mp/typelist/lift_sequence.hpp b/externals/dynarmic/externals/mcl/include/mcl/mp/typelist/lift_sequence.hpp
+index 339e1285a8..a95de7a81a 100644
+--- a/externals/dynarmic/externals/mcl/include/mcl/mp/typelist/lift_sequence.hpp
++++ b/externals/dynarmic/externals/mcl/include/mcl/mp/typelist/lift_sequence.hpp
+@@ -5,6 +5,7 @@
+ #pragma once
+ 
+ #include <type_traits>
++#include <utility>
+ 
+ #include "mcl/mp/typelist/list.hpp"
+ 
+@@ -20,6 +21,11 @@ struct lift_sequence_impl<VLT<T, values...>> {
+     using type = list<std::integral_constant<T, values>...>;
+ };
+ 
++template<class T, T... values>
++struct lift_sequence_impl<std::integer_sequence<T, values...>> {
++    using type = list<std::integral_constant<T, values>...>;
++};
++
+ }  // namespace detail
+ 
+ /// Lifts values in value list VL to create a type list.
+-- 
+2.49.0

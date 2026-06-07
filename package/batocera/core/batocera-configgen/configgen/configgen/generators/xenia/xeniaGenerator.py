@@ -5,6 +5,7 @@ import logging
 import os
 import platform
 import re
+import shlex
 import shutil
 import stat
 import subprocess
@@ -61,7 +62,7 @@ def _cfg_get_int(system: Any, key: str, default: int, *aliases: str) -> int:
     return default
 
 def _wine_path_from_unix(path: Path) -> str:
-    return 'Z:\\' + str(path).lstrip('/').replace('/', '\\')
+    return 'Z:/' + str(path).lstrip('/')
 
 def _retroachievements_sound_disabled(sound: str) -> bool:
     return sound.lower() in ('', '0', 'false', 'none')
@@ -122,6 +123,40 @@ def _batocera_arch() -> str:
     except OSError:
         return ''
 
+def _normalize_xenia_profile_xuid(value: Any) -> str:
+    text = str(value or '').strip()
+    if text.lower() in ('', 'auto', 'prompt', 'ask', 'ask each time', 'none', 'disabled', '0', 'false'):
+        return ''
+
+    for candidate in (text.split(':', 1)[0], Path(text).stem, text):
+        match = re.search(r'(?i)(?:0x)?([0-9a-f]{16})', candidate)
+        if match:
+            return match.group(1).upper()
+
+    return ''
+
+def _apply_xenia_profiles(system: Any, config: dict[str, dict[str, Any]]) -> None:
+    profiles_cfg = config.setdefault('Profiles', {})
+    selected: dict[int, str] = {}
+
+    primary_profile = _normalize_xenia_profile_xuid(_cfg_get(system, 'xenia_profile', ''))
+    if primary_profile:
+        selected[0] = primary_profile
+
+    for slot in range(4):
+        profile_hint = system.config.get(f'xenia_profile{slot + 1}', system.config.MISSING)
+        if profile_hint is system.config.MISSING:
+            continue
+
+        profile = _normalize_xenia_profile_xuid(profile_hint)
+        if profile:
+            selected[slot] = profile
+        else:
+            selected.pop(slot, None)
+
+    for slot in range(4):
+        profiles_cfg[f'logged_profile_slot_{slot}_xuid'] = selected.get(slot, '')
+
 
 class XeniaGenerator(Generator):
 
@@ -156,6 +191,117 @@ class XeniaGenerator(Generator):
         script_content = f'''#!/bin/bash
 # Auto-generated box64 wrapper for Wine/Xenia on aarch64
 exec {box64_bin} {wine_bin} "$@"
+'''
+        with open(wrapper_path, 'w') as f:
+            f.write(script_content)
+        os.chmod(wrapper_path, stat.S_IRWXU | stat.S_IRGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH)
+
+    @staticmethod
+    def _write_wine_cleanup_wrapper(wrapper_path: Path, wine_bin: str, wine_server_bin: str) -> None:
+        script_content = f'''#!/bin/bash
+# Auto-generated Wine cleanup wrapper for Xenia.
+
+WINE_BIN={shlex.quote(wine_bin)}
+WINE_SERVER={shlex.quote(wine_server_bin)}
+EMU_PID=""
+
+debug_log() {{
+    [ "${{BATOCERA_XENIA_CLEANUP_DEBUG:-0}}" = "1" ] || return 0
+    printf '%s %s\\n' "$(date -Is 2>/dev/null || date)" "$*" >> /tmp/xenia-wine-cleanup.log
+}}
+
+cleanup() {{
+    local status=${{1:-$?}}
+    trap - EXIT HUP INT TERM
+    debug_log "cleanup status=$status self=$$ parent=$PPID emu=$EMU_PID"
+
+    kill_wineprefix_processes() {{
+        local signal=$1
+        local pids=""
+        local env_file pid comm
+
+        [ -n "${{WINEPREFIX:-}}" ] || return 0
+
+        for env_file in /proc/[0-9]*/environ; do
+            pid=${{env_file#/proc/}}
+            pid=${{pid%/environ}}
+            [ "$pid" = "$$" ] && continue
+
+            if tr '\\0' '\\n' < "$env_file" 2>/dev/null | grep -Fx "WINEPREFIX=$WINEPREFIX" >/dev/null; then
+                comm=$(cat "/proc/$pid/comm" 2>/dev/null || true)
+                case "$comm" in
+                    wineserver|services.exe|winedevice.exe|plugplay.exe|explorer.exe|wine*|*.exe|gamescope*|gamescopereaper)
+                        pids="$pids $pid"
+                        ;;
+                esac
+            fi
+        done
+
+        debug_log "kill_wineprefix_processes signal=$signal pids=$pids"
+        [ -n "$pids" ] && kill "-$signal" $pids 2>/dev/null || true
+    }}
+
+    stop_gamescope_parent() {{
+        local parent_pid=$PPID
+        local parent_comm
+        local gamescope_pid
+
+        parent_comm=$(cat "/proc/$parent_pid/comm" 2>/dev/null || true)
+        debug_log "stop_gamescope_parent parent=$parent_pid comm=$parent_comm"
+        [ "$parent_comm" = "gamescopereaper" ] || return 0
+
+        gamescope_pid=$(awk '/^PPid:/ {{ print $2 }}' "/proc/$parent_pid/status" 2>/dev/null || true)
+        debug_log "stop_gamescope_parent gamescope=$gamescope_pid"
+        kill -TERM "$parent_pid" "$gamescope_pid" 2>/dev/null || true
+        sleep 0.5
+        kill -KILL "$parent_pid" "$gamescope_pid" 2>/dev/null || true
+    }}
+
+    if [ "$status" -ge 128 ] 2>/dev/null; then
+        [ -n "$EMU_PID" ] && kill -KILL "$EMU_PID" 2>/dev/null || true
+        [ -n "${{WINEPREFIX:-}}" ] && [ -x "$WINE_SERVER" ] && "$WINE_SERVER" -k >/dev/null 2>&1 || true
+        kill_wineprefix_processes KILL
+        stop_gamescope_parent
+        exit "$status"
+    fi
+
+    if [ -n "$EMU_PID" ] && kill -0 "$EMU_PID" 2>/dev/null; then
+        kill -TERM "$EMU_PID" 2>/dev/null || true
+        sleep 0.5
+        kill -KILL "$EMU_PID" 2>/dev/null || true
+    fi
+
+    if [ -n "${{WINEPREFIX:-}}" ] && [ -x "$WINE_SERVER" ]; then
+        "$WINE_SERVER" -w >/dev/null 2>&1 &
+        local wait_pid=$!
+        for _ in 1 2 3 4 5; do
+            if ! kill -0 "$wait_pid" 2>/dev/null; then
+                break
+            fi
+            sleep 0.2
+        done
+        kill "$wait_pid" 2>/dev/null || true
+        "$WINE_SERVER" -k >/dev/null 2>&1 || true
+    fi
+
+    kill_wineprefix_processes TERM
+    sleep 0.5
+    kill_wineprefix_processes KILL
+    stop_gamescope_parent
+
+    exit "$status"
+}}
+
+trap 'cleanup $?' EXIT HUP INT TERM
+
+debug_log "start self=$$ parent=$PPID args=$*"
+"$WINE_BIN" "$@" &
+EMU_PID=$!
+debug_log "spawned emu=$EMU_PID"
+wait "$EMU_PID"
+EXIT_STATUS=$?
+debug_log "wait_done status=$EXIT_STATUS emu=$EMU_PID"
+cleanup "$EXIT_STATUS"
 '''
         with open(wrapper_path, 'w') as f:
             f.write(script_content)
@@ -253,19 +399,26 @@ exit $EXIT_CODE
             _logger.error("Native Xenia Canary is gated to sm8x50; current target is %s", batocera_arch or "unknown")
             sys.exit()
 
-        native_canary = core == 'xenia-canary' and Path('/usr/bin/xenia-canary').exists()
+        requested_gpu_backend = str(
+            _cfg_get(system, 'gpu', _cfg_get(system, 'xenia_api', 'Vulkan' if is_aarch64 else 'D3D12'), 'xenia_api')
+        ).lower()
+        canary_native_requested = (
+            core == 'xenia-canary'
+            and (is_aarch64 or requested_gpu_backend not in ('', 'any', 'd3d12', 'direct3d12'))
+        )
+        native_canary = canary_native_requested and Path('/usr/bin/xenia-canary').exists()
         native_linux = core == 'xenia-edge' or native_canary
-        if is_aarch64 and core == 'xenia-canary' and not native_canary:
-            _logger.error("Native Xenia Canary binary is missing on aarch64")
+        if core == 'xenia-canary' and canary_native_requested and not native_canary:
+            _logger.error("Native Xenia Canary binary is missing; refusing to create a Wine bottle for Vulkan mode")
             sys.exit()
         if core == 'xenia-edge' and not Path('/usr/bin/xenia-edge').exists():
             _logger.error("Native Xenia Edge binary is missing")
             sys.exit()
 
         allow_d3d12 = not native_linux and not is_aarch64
-        default_gpu_backend = 'Vulkan' if core == 'xenia-canary' or not allow_d3d12 else 'D3D12'
+        default_gpu_backend = 'D3D12' if allow_d3d12 else 'Vulkan'
         configured_gpu_backend = str(_cfg_get(system, 'gpu', _cfg_get(system, 'xenia_api', default_gpu_backend), 'xenia_api'))
-        if not allow_d3d12 and configured_gpu_backend.lower() in ('', 'any', 'd3d12'):
+        if not allow_d3d12 and configured_gpu_backend.lower() in ('', 'any', 'd3d12', 'direct3d12'):
             _logger.info("Forcing native Vulkan for this Xenia target")
             system.config['gpu'] = "Vulkan"
             system.config['xenia_api'] = "Vulkan"
@@ -415,8 +568,11 @@ exit $EXIT_CODE
         else:
             toml_file = emupath / 'xenia.config.toml'
         if toml_file.is_file():
-            with toml_file.open() as f:
-                config: dict[str, dict[str, Any]] = toml.load(f)
+            try:
+                with toml_file.open() as f:
+                    config: dict[str, dict[str, Any]] = toml.load(f)
+            except toml.TomlDecodeError as exc:
+                _logger.warning("Ignoring invalid Xenia config %s: %s", toml_file, exc)
 
         # [ Now adjust the config file defaults & options we want ]
         if core == 'xenia-edge':
@@ -428,7 +584,7 @@ exit $EXIT_CODE
 
         xenia_achievement_sound = _cfg_get_bool(system, 'xenia_achievement_sound', True)
         xenia_achievement_sound_path = ''
-        if xenia_achievement_sound and _cfg_get_bool(system, 'xenia_achievement', False):
+        if xenia_achievement_sound and _cfg_get_bool(system, 'xenia_achievement', True):
             xenia_achievement_sound_path = _xenia_achievement_sound_path(system, native_linux, sound_config_root)
 
         cpu_cfg = config.setdefault('CPU', {})
@@ -477,7 +633,7 @@ exit $EXIT_CODE
 
         gpu_cfg = config.setdefault('GPU', {})
         gpu_backend = str(_cfg_get(system, 'gpu', _cfg_get(system, 'xenia_api', default_gpu_backend), 'xenia_api')).lower()
-        if not allow_d3d12 and gpu_backend in ('', 'any', 'd3d12'):
+        if not allow_d3d12 and gpu_backend in ('', 'any', 'd3d12', 'direct3d12'):
             gpu_backend = 'vulkan'
         gpu_cfg['gpu'] = gpu_backend
         gpu_cfg['vsync'] = _cfg_get_bool(system, 'vsync', _cfg_get_bool(system, 'xenia_vsync', True), 'xenia_vsync')
@@ -555,7 +711,7 @@ exit $EXIT_CODE
 
         ui_cfg = config.setdefault('UI', {})
         ui_cfg['headless'] = _cfg_get_bool(system, 'xenia_headless', False)
-        ui_cfg['show_achievement_notification'] = _cfg_get_bool(system, 'xenia_achievement', False)
+        ui_cfg['show_achievement_notification'] = _cfg_get_bool(system, 'xenia_achievement', True)
         ui_cfg['notification_sound_path'] = xenia_achievement_sound_path
         ui_cfg['achievement_sound_path'] = xenia_achievement_sound_path
 
@@ -567,13 +723,7 @@ exit $EXIT_CODE
         except (TypeError, ValueError):
             xconfig_cfg['user_language'] = str(user_language)
 
-        profiles_cfg = config.setdefault('Profiles', {})
-        for i in range(1, 4):
-            profile_hint = system.config.get(f'xenia_profile{i}', system.config.MISSING)
-            if profile_hint is system.config.MISSING or not str(profile_hint):
-                continue
-            profile = Path(str(profile_hint)).stem
-            profiles_cfg[f'logged_profile_slot_{i - 1}_xuid'] = profile
+        _apply_xenia_profiles(system, config)
 
         # now write the updated toml
         with toml_file.open('w') as f:
@@ -674,10 +824,18 @@ exit $EXIT_CODE
                 commandArray = [str(wrapper_path), str(xenia_exe), f'z:{rom}']
         else:
             # Native x86_64 - use wine directly
+            wrapper_dir = xeniaConfig / "wine-wrappers"
+            mkdir_if_not_exists(wrapper_dir)
+            wrapper_path = wrapper_dir / "xenia-wine-cleanup.sh"
+            self._write_wine_cleanup_wrapper(
+                wrapper_path,
+                wine64_bin,
+                str(Path(wine64_bin).parent / "wineserver"),
+            )
             if configure_emulator(rom):
-                commandArray = [wine_runner.wine64, xenia_exe]
+                commandArray = [str(wrapper_path), xenia_exe]
             else:
-                commandArray = [wine_runner.wine64, xenia_exe, f'z:{rom}']
+                commandArray = [str(wrapper_path), xenia_exe, f'z:{rom}']
 
         # Build environment
         environment = wine_runner.get_environment()

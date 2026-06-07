@@ -1,0 +1,47 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Sun, 7 Jun 2026 00:00:00 +0000
+Subject: [PATCH] yuzu: fix Boost and fmt compatibility
+
+Boost 1.89 keeps the old async_pipe API under the v1 include path, and fmt::join
+is declared by fmt/ranges.h. Newer Boost.Asio also uses io_context instead of
+io_service.
+---
+diff --git a/src/core/debugger/debugger.cpp b/src/core/debugger/debugger.cpp
+--- a/src/core/debugger/debugger.cpp
++++ b/src/core/debugger/debugger.cpp
+@@ -9 +9 @@
+-#include <boost/process/async_pipe.hpp>
++#include <boost/process/v1/async_pipe.hpp>
+@@ -329 +329 @@
+-        boost::process::async_pipe signal_pipe;
++        boost::process::v1::async_pipe signal_pipe;
+diff --git a/src/core/debugger/gdbstub.cpp b/src/core/debugger/gdbstub.cpp
+--- a/src/core/debugger/gdbstub.cpp
++++ b/src/core/debugger/gdbstub.cpp
+@@ -9,0 +10,2 @@
++#include <fmt/ranges.h>
++
+diff --git a/src/core/hle/service/nfc/common/device.cpp b/src/core/hle/service/nfc/common/device.cpp
+--- a/src/core/hle/service/nfc/common/device.cpp
++++ b/src/core/hle/service/nfc/common/device.cpp
+@@ -17,0 +18 @@
++#include <fmt/ranges.h>
+diff --git a/src/input_common/drivers/udp_client.cpp b/src/input_common/drivers/udp_client.cpp
+--- a/src/input_common/drivers/udp_client.cpp
++++ b/src/input_common/drivers/udp_client.cpp
+@@ -116 +116 @@
+-    boost::asio::io_service io_service;
++    boost::asio::io_context io_service;
+diff --git a/src/video_core/renderer_vulkan/renderer_vulkan.cpp b/src/video_core/renderer_vulkan/renderer_vulkan.cpp
+--- a/src/video_core/renderer_vulkan/renderer_vulkan.cpp
++++ b/src/video_core/renderer_vulkan/renderer_vulkan.cpp
+@@ -12,0 +13 @@
++#include <fmt/ranges.h>
+diff --git a/src/yuzu/main.cpp b/src/yuzu/main.cpp
+--- a/src/yuzu/main.cpp
++++ b/src/yuzu/main.cpp
+@@ -94,0 +95 @@
++#include <fmt/ranges.h>
+-- 
+2.45.0

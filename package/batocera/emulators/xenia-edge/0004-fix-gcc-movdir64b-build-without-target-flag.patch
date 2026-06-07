@@ -1,0 +1,27 @@
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Fri, 2 May 2026 00:00:00 +0000
+Subject: [PATCH 4/4] fix: use inline asm movdir64b wrapper with GCC
+
+GCC exposes _movdir64b as an always_inline intrinsic that requires the
+translation unit to be compiled with -mmovdir64b. Xenia already gates use
+of the movdir64b implementation through runtime CPU feature detection, so
+avoid requiring the whole file to be built for that instruction by using
+the same inline assembly wrapper on GCC that is already used on Clang.
+
+Signed-off-by: suckbluefrog <suckbluefrog@proton.me>
+---
+ src/xenia/base/memory.cc | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/xenia/base/memory.cc b/src/xenia/base/memory.cc
+--- a/src/xenia/base/memory.cc
++++ b/src/xenia/base/memory.cc
+@@ -35,7 +35,7 @@ using xe::swcache::CacheLine;
+ #if XE_ARCH_AMD64
+ static constexpr unsigned NUM_CACHELINES_IN_PAGE = 4096 / sizeof(CacheLine);
+ 
+-#if defined(__clang__)
++#if defined(__clang__) || defined(__GNUC__)
+ XE_FORCEINLINE
+ static void mvdir64b(void* to, const void* from) {
+   __asm__("movdir64b %1, %0" : : "r"(to), "m"(*(char*)from) : "memory");

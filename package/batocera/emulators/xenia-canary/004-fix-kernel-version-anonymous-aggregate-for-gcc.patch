@@ -1,0 +1,50 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Mon, 01 Jun 2026 06:41:35 +0000
+Subject: [PATCH] Fix KernelVersion anonymous aggregate for GCC
+
+GCC rejects the anonymous KernelVersion sub-aggregate because its xe::be
+members have constructors. Name the sub-structure and keep the union
+overlay intact so the copied guest-facing layout stays 8 bytes.
+
+Signed-off-by: suckbluefrog <suckbluefrog@proton.me>
+---
+ src/xenia/kernel/kernel_state.h    | 10 +++++-----
+ src/xenia/kernel/xbdm/xbdm_misc.cc |  2 +-
+ 2 files changed, 6 insertions(+), 6 deletions(-)
+
+diff --git a/src/xenia/kernel/kernel_state.h b/src/xenia/kernel/kernel_state.h
+--- a/src/xenia/kernel/kernel_state.h
++++ b/src/xenia/kernel/kernel_state.h
+@@ -151,14 +151,14 @@
+       xe::be<uint16_t> minor;
+       xe::be<uint16_t> build;
+       xe::be<uint16_t> qfe;
+-    };
++    } parts;
+   };
+ 
+   KernelVersion(uint16_t build_ver = kBaseKernelBuildVersion) {
+-    major = 2;
+-    minor = 0;
+-    build = std::max(kBaseKernelBuildVersion, build_ver);
+-    qfe = 0;
++    parts.major = 2;
++    parts.minor = 0;
++    parts.build = std::max(kBaseKernelBuildVersion, build_ver);
++    parts.qfe = 0;
+   }
+ };
+ 
+diff --git a/src/xenia/kernel/xbdm/xbdm_misc.cc b/src/xenia/kernel/xbdm/xbdm_misc.cc
+--- a/src/xenia/kernel/xbdm/xbdm_misc.cc
++++ b/src/xenia/kernel/xbdm/xbdm_misc.cc
+@@ -220,7 +220,7 @@
+   info->base_kernel_version.qfe = info->kernel_version.qfe = 0;
+ 
+   info->base_kernel_version.build = kBaseKernelBuildVersion;
+-  info->kernel_version.build = kernel_state()->GetKernelVersion()->build;
++  info->kernel_version.build = kernel_state()->GetKernelVersion()->parts.build;
+ 
+   return XBDM_SUCCESSFUL;
+ }

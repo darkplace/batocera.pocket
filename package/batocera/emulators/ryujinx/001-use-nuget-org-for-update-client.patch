@@ -1,0 +1,39 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Wed, 3 Jun 2026 15:15:00 +0300
+Subject: [PATCH] use nuget.org for update client packages
+
+The Ryujinx.UpdateClient GitLab NuGet feed referenced by the 1.3.3
+stable tag no longer serves a package index, while the exact package
+versions used by this tag are available on nuget.org.
+
+Signed-off-by: suckbluefrog <suckbluefrog@proton.me>
+---
+ nuget.config | 5 -----
+ 1 file changed, 5 deletions(-)
+
+diff --git a/nuget.config b/nuget.config
+index 7b8b7d0..a5c7446 100644
+--- a/nuget.config
++++ b/nuget.config
+@@ -6,7 +6,6 @@
+         <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
+         <!-- Only needed when using pre-release versions of Ryujinx.LibHac. -->
+         <add key="LibHacAlpha" value="https://git.ryujinx.app/api/v4/projects/17/packages/nuget/index.json" />
+-        <add key="Ryujinx.UpdateClient" value="https://git.ryujinx.app/api/v4/projects/71/packages/nuget/index.json" />
+     </packageSources>
+     <packageSourceMapping>
+         <!-- key value for <packageSource> should match key values from <packageSources> element -->
+@@ -14,10 +13,6 @@
+         <packageSource key="nuget.org">
+             <package pattern="*" />
+         </packageSource>
+-        <packageSource key="Ryujinx.UpdateClient">
+-            <package pattern="Ryujinx.UpdateClient" />
+-            <package pattern="Ryujinx.Systems.Update.Common" />
+-        </packageSource>
+         <packageSource key="LibHacAlpha">
+             <package pattern="Ryujinx.LibHac" />
+         </packageSource>
+-- 
+2.43.0

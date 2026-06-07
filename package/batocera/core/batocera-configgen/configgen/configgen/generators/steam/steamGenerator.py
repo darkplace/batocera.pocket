@@ -105,6 +105,22 @@ def _normalize_steam_user(value: str | None) -> str:
     return normalized
 
 
+def _append_unique_arg(value: str, arg: str) -> str:
+    current = value.strip()
+    if not current:
+        return arg
+
+    try:
+        args = shlex.split(current)
+    except ValueError:
+        args = current.split()
+
+    if arg in args:
+        return current
+
+    return f"{current} {arg}"
+
+
 class SteamGenerator(Generator):
 
     def generate(self, system, rom, playersControllers, metadata, guns, wheels, gameResolution):
@@ -219,6 +235,10 @@ class SteamGenerator(Generator):
                 commandArray.append(gameId)
 
         default_visible_update_preflight = is_aarch64 and mode == "steamos" and use_gamescope
+        steam_extra_args = extra_args_override if extra_args_override else system.config.get_str("steam_extra_args", "")
+        if system.config.get_bool("steam_noshaders", False):
+            steam_extra_args = _append_unique_arg(steam_extra_args, "-noshaders")
+
         env = {
             "SDL_JOYSTICK_HIDAPI_XBOX": "0",
             "BATOCERA_STEAM_MODE": mode,
@@ -242,14 +262,16 @@ class SteamGenerator(Generator):
             "BATOCERA_STEAM_GS_DISABLE_XRES": system.config.get_bool("gamescope_disable_xres", False, return_values=("1", "0")),
             "BATOCERA_STEAM_GS_STATS_PATH": system.config.get_str("gamescope_stats_path", "").strip(),
             "BATOCERA_STEAM_GAMEPADUI": steam_gamepadui,
-            "BATOCERA_STEAM_EXTRA_ARGS": system.config.get_str("steam_extra_args", ""),
+            "BATOCERA_STEAM_EXTRA_ARGS": steam_extra_args,
+            "BATOCERA_STEAM_UNSET_MESA_LOADER_DRIVER_OVERRIDE": system.config.get_bool("steam_unset_mesa_loader_driver_override", False, return_values=("1", "0")),
             "BATOCERA_STEAM_VISIBLE_UPDATE_PREFLIGHT": system.config.get_bool("steam_visible_update_preflight", default_visible_update_preflight, return_values=("1", "0")),
         }
         steam_user = _normalize_steam_user(steam_user_override) if steam_user_override is not None else steam_user
         if steam_user != "auto":
             env["BATOCERA_STEAM_USER"] = steam_user
-        if extra_args_override:
-            env["BATOCERA_STEAM_EXTRA_ARGS"] = extra_args_override
+        if system.config.get_bool("steam_proton_log", False):
+            env["PROTON_LOG"] = "1"
+            env["PROTON_LOG_DIR"] = "/userdata/system/logs"
         normalized_update_preflight = _normalize_bool_override(visible_update_preflight_override)
         if normalized_update_preflight is not None:
             env["BATOCERA_STEAM_VISIBLE_UPDATE_PREFLIGHT"] = normalized_update_preflight

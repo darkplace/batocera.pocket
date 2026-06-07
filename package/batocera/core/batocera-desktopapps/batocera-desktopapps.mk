@@ -173,8 +173,10 @@ ifeq ($(BR2_PACKAGE_BATOCERA_APPS_AARCH64),y)
   BATOCERA_DESKTOPAPPS_APPS    += vacuumtube.desktop
   BATOCERA_DESKTOPAPPS_APPS    += brave.desktop
   BATOCERA_DESKTOPAPPS_APPS    += firefox.desktop
+  BATOCERA_DESKTOPAPPS_APPS    += peazip.desktop
   BATOCERA_DESKTOPAPPS_ICONS   += vacuumtube.png
   BATOCERA_DESKTOPAPPS_ICONS   += firefox.png
+  BATOCERA_DESKTOPAPPS_ICONS   += peazip.png
   BATOCERA_DESKTOPAPPS_STALE_APPS  += geforcenow.desktop
   BATOCERA_DESKTOPAPPS_STALE_ICONS += geforcenow.png
 endif
@@ -184,6 +186,13 @@ ifeq ($(BR2_PACKAGE_WAYDROID),y)
   BATOCERA_DESKTOPAPPS_SCRIPTS += Waydroid.sh
   BATOCERA_DESKTOPAPPS_APPS    += waydroid.desktop
   BATOCERA_DESKTOPAPPS_ICONS   += waydroid.png
+endif
+
+# yuzu
+ifeq ($(BR2_PACKAGE_YUZU),y)
+  BATOCERA_DESKTOPAPPS_SCRIPTS += batocera-config-yuzu
+  BATOCERA_DESKTOPAPPS_APPS    += yuzu-config.desktop
+  BATOCERA_DESKTOPAPPS_ICONS   += yuzu.png
 endif
 
 # citron
@@ -198,6 +207,13 @@ ifeq ($(BR2_PACKAGE_EDEN),y)
   BATOCERA_DESKTOPAPPS_SCRIPTS += batocera-config-eden
   BATOCERA_DESKTOPAPPS_APPS    += eden-config.desktop
   BATOCERA_DESKTOPAPPS_ICONS   += eden.png
+endif
+
+# ryujinx
+ifeq ($(BR2_PACKAGE_RYUJINX),y)
+  BATOCERA_DESKTOPAPPS_SCRIPTS += batocera-config-ryujinx
+  BATOCERA_DESKTOPAPPS_APPS    += ryujinx-config.desktop
+  BATOCERA_DESKTOPAPPS_ICONS   += ryujinx.png
 endif
 
 # touchHLE

@@ -1,0 +1,21 @@
+--- a/src/Ryujinx.HLE/HOS/HorizonFsClient.cs
++++ b/src/Ryujinx.HLE/HOS/HorizonFsClient.cs
+@@ -1,4 +1,5 @@
+ using LibHac.Common;
++using LibHac.Common.Keys;
+ using LibHac.Fs.Fsa;
+ using LibHac.FsSystem;
+ using LibHac.Ncm;
+@@ -60,6 +61,12 @@ namespace Ryujinx.HLE.HOS
+ 
+                         return ex.ResultValue.ToHorizonResult();
+                     }
++                    catch (MissingKeyException)
++                    {
++                        ncaStorage?.Dispose();
++
++                        return LibHac.Fs.ResultFs.TargetNotFound.Handle().ToHorizonResult();
++                    }
+                 }
+             }
+ 

@@ -1,0 +1,41 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Mon, 1 Jun 2026 07:10:00 +0000
+Subject: [PATCH] qt: link Qt6 GuiPrivate for QPA headers
+
+displaywidget.cpp includes qpa/qplatformnativeinterface.h. With Qt 6,
+that header is exported by the GuiPrivate CMake package rather than the
+public Gui include path.
+
+Require and link Qt6::GuiPrivate so the private QPA include directory is
+available when building the Qt frontend.
+
+Signed-off-by: suckbluefrog <suckbluefrog@proton.me>
+---
+ src/emu/qt/CMakeLists.txt | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/src/emu/qt/CMakeLists.txt b/src/emu/qt/CMakeLists.txt
+index fa289e89..4c6e84ef 100644
+--- a/src/emu/qt/CMakeLists.txt
++++ b/src/emu/qt/CMakeLists.txt
+@@ -16,7 +16,7 @@ endif()
+ find_package(QT NAMES Qt6 COMPONENTS Widgets LinguistTools Gui REQUIRED)
+ 
+ if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
+-    set(EXCLUSIVE_QT_COMPONENTS OpenGLWidgets)
++    set(EXCLUSIVE_QT_COMPONENTS OpenGLWidgets GuiPrivate)
+ else()
+     set(EXCLUSIVE_QT_COMPONENTS OpenGL)
+ endif()
+@@ -177,6 +177,7 @@ endif()
+ if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
+     set(EXCLUSIVE_QT_LIBRARIES
+         Qt${QT_VERSION_MAJOR}::OpenGLWidgets)
++    list(APPEND EXCLUSIVE_QT_LIBRARIES Qt${QT_VERSION_MAJOR}::GuiPrivate)
+ else()
+     set(EXCLUSIVE_QT_LIBRARIES
+         Qt${QT_VERSION_MAJOR}::OpenGL)
+-- 
+2.43.0
+

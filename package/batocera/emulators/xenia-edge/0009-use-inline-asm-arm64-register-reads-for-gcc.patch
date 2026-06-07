@@ -1,0 +1,62 @@
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Sun, 7 Jun 2026 00:00:00 +0000
+Subject: [PATCH] fix: use inline asm arm64 register reads with GCC
+
+GCC's arm_acle.h does not provide the Clang/MSVC-style generic __arm_rsr64
+helper used by Xenia. Read the required arm64 system registers with inline
+mrs asm when compiling with GCC.
+
+Signed-off-by: suckbluefrog <suckbluefrog@proton.me>
+---
+ src/xenia/base/clock_arm64.cc              | 15 ++++++++++++++-
+ src/xenia/cpu/backend/a64/a64_seq_util.h  | 12 +++++++++++-
+ 2 files changed, 25 insertions(+), 2 deletions(-)
+
+diff --git a/src/xenia/base/clock_arm64.cc b/src/xenia/base/clock_arm64.cc
+--- a/src/xenia/base/clock_arm64.cc
++++ b/src/xenia/base/clock_arm64.cc
+@@ -19,9 +19,21 @@
+ constexpr uint32_t CNTFRQ_EL0 = ARM64_SYSREG(3, 3, 14, 0, 0);
+ constexpr uint32_t CNTVCT_EL0 = ARM64_SYSREG(3, 3, 14, 0, 2);
+ #define xe_cpu_mrs(reg) _ReadStatusReg(reg)
+-#elif XE_COMPILER_CLANG || XE_COMPILER_GNUC
++#elif XE_COMPILER_CLANG
+ #include <arm_acle.h>
+ #define xe_cpu_mrs(reg) __arm_rsr64(#reg)
++#elif XE_COMPILER_GNUC
++static inline uint64_t xe_cpu_mrs_CNTFRQ_EL0() {
++  uint64_t value;
++  __asm__ volatile("mrs %0, cntfrq_el0" : "=r"(value));
++  return value;
++}
++static inline uint64_t xe_cpu_mrs_CNTVCT_EL0() {
++  uint64_t value;
++  __asm__ volatile("mrs %0, cntvct_el0" : "=r"(value));
++  return value;
++}
++#define xe_cpu_mrs(reg) xe_cpu_mrs_##reg()
+ #else
+ #error "No cpu instruction wrappers for current compiler implemented."
+ #endif
+ 
+diff --git a/src/xenia/cpu/backend/a64/a64_seq_util.h b/src/xenia/cpu/backend/a64/a64_seq_util.h
+--- a/src/xenia/cpu/backend/a64/a64_seq_util.h
++++ b/src/xenia/cpu/backend/a64/a64_seq_util.h
+@@ -25,7 +25,16 @@
+ #define xe_cpu_mrs(reg) _ReadStatusReg(reg)
+ #elif XE_COMPILER_CLANG || XE_COMPILER_GNUC
+ #include <arm_acle.h>
++#if XE_COMPILER_CLANG
+ #define xe_cpu_mrs(reg) __arm_rsr64(#reg)
++#else  // XE_COMPILER_GNUC
++static inline uint64_t xe_cpu_mrs_DCZID_EL0() {
++  uint64_t value;
++  __asm__ volatile("mrs %0, dczid_el0" : "=r"(value));
++  return value;
++}
++#define xe_cpu_mrs(reg) xe_cpu_mrs_##reg()
++#endif
+ #else
+ #error "No MRS wrapper available for current compiler implemented."
+ #endif
+ 

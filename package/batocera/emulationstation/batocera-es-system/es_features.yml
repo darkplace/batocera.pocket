@@ -15113,6 +15113,24 @@ steam:
       prompt: EXTRA STEAM ARGUMENTS
       description: Extra arguments passed to steam.sh.
       preset: input
+    steam_noshaders:
+      prompt: DISABLE STEAM SHADERS
+      description: Adds -noshaders to the Steam client launch arguments.
+      choices:
+        'Off': 0
+        'On': 1
+    steam_unset_mesa_loader_driver_override:
+      prompt: UNSET MESA DRIVER OVERRIDE
+      description: Clears MESA_LOADER_DRIVER_OVERRIDE before launching Steam and Proton.
+      choices:
+        'Off': 0
+        'On': 1
+    steam_proton_log:
+      prompt: PROTON LOGGING
+      description: Enables PROTON_LOG=1 and writes Proton logs under /userdata/system/logs.
+      choices:
+        'Off': 0
+        'On': 1
     lsfg_vk:
       archs_include:
       - x86_64

@@ -5,7 +5,11 @@
 ################################################################################
 
 BIGPEMU_VERSION = v121
+ifeq ($(BR2_aarch64),y)
+BIGPEMU_SOURCE = BigPEmu_LinuxARM64_$(BIGPEMU_VERSION).tar.gz
+else
 BIGPEMU_SOURCE = BigPEmu_Linux64_$(BIGPEMU_VERSION).tar.gz
+endif
 BIGPEMU_SITE = https://www.richwhitehouse.com/jaguar/builds
 
 define BIGPEMU_INSTALL_TARGET_CMDS

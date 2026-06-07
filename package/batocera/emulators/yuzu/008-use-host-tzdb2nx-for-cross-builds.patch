@@ -1,0 +1,53 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Sun, 7 Jun 2026 00:00:00 +0000
+Subject: [PATCH] nx_tzdb: allow external host tzdb2nx for cross builds
+
+tzdb2nx is a build-time generator. In a cross build the normal CMake target
+produces a target-architecture executable, which cannot run on the build host.
+Allow packages to pass TZDB2NX_PATH to a separately built host executable and
+avoid depending on the target executable in that mode.
+---
+ externals/nx_tzdb/tzdb_to_nx/src/CMakeLists.txt      | 4 +++-
+ externals/nx_tzdb/tzdb_to_nx/src/tzdb/CMakeLists.txt | 9 +++++++--
+ 2 files changed, 10 insertions(+), 3 deletions(-)
+
+diff --git a/externals/nx_tzdb/tzdb_to_nx/src/CMakeLists.txt b/externals/nx_tzdb/tzdb_to_nx/src/CMakeLists.txt
+--- a/externals/nx_tzdb/tzdb_to_nx/src/CMakeLists.txt
++++ b/externals/nx_tzdb/tzdb_to_nx/src/CMakeLists.txt
+@@ -8,5 +8,7 @@ add_compile_options(
+ 
+ include_directories(.)
+ 
+-add_subdirectory(tzdb2nx)
++if (NOT TZDB2NX_PATH)
++    add_subdirectory(tzdb2nx)
++endif()
+ add_subdirectory(tzdb)
+diff --git a/externals/nx_tzdb/tzdb_to_nx/src/tzdb/CMakeLists.txt b/externals/nx_tzdb/tzdb_to_nx/src/tzdb/CMakeLists.txt
+--- a/externals/nx_tzdb/tzdb_to_nx/src/tzdb/CMakeLists.txt
++++ b/externals/nx_tzdb/tzdb_to_nx/src/tzdb/CMakeLists.txt
+@@ -39,8 +39,13 @@ set(NX_VERSION_FILE ${NX_TZDB_DIR}/version.txt)
+ file(WRITE ${NX_VERSION_FILE} "${TZDB_VERSION}")
+ 
++set(TZDB2NX_DEPENDS)
++if (TARGET tzdb2nx)
++    list(APPEND TZDB2NX_DEPENDS tzdb2nx)
++endif()
++
+ add_custom_target(x80e
+     DEPENDS
+-        tzdb2nx
++        ${TZDB2NX_DEPENDS}
+         ${NX_VERSION_FILE})
+ 
+ set(BINARY_LIST_TXT ${NX_TZDB_DIR}/binaryList.txt)
+@@ -68,7 +73,7 @@ foreach(FILE ${TZ_FILES})
+         COMMAND
+             ${TZDB2NX_PATH} ${FILE} ${NX_ZONEINFO_DIR}/${TARG}
+         DEPENDS
+-            tzdb2nx)
++            ${TZDB2NX_DEPENDS})
+ 
+     list(APPEND TZ_DATA_LIST ${NX_TZ_TARGET})
+ endforeach()

@@ -192,6 +192,7 @@ es_add_game() {
 <game>
   <path>$(xml_escape "${game_path}")</path>
   <name>$(xml_escape "${game_name}")</name>
+  <hidden>$(es_game_hidden "${game_name}")</hidden>
   <desc></desc>
   <rating></rating>
   <releasedate></releasedate>
@@ -204,6 +205,19 @@ es_add_game() {
   <video></video>
 </game>
 EOF
+}
+
+es_game_hidden() {
+    local game_name="${1,,}"
+
+    case "${game_name}" in
+        *proton*|*runtime*)
+            printf 'true\n'
+            ;;
+        *)
+            printf 'false\n'
+            ;;
+    esac
 }
 
 read_acf_value() {

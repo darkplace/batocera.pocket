@@ -1,0 +1,34 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Neil Armstrong <neil.armstrong@linaro.org>
+Date: Fri, 24 Apr 2026 11:07:59 +0200
+Subject: [PATCH] arm64: dts: qcom: sm8550: Add missing CX power domain to GCC
+
+Unless CX is declared as the power-domain of GCC, votes (power and
+performance) on the GDSCs it provides will not propagate to the CX,
+which might result in under-voltage conditions.
+
+Add the missing power-domains property to associate GCC with RPMHPD_CX.
+
+Fixes: ffc50b2d3828 ("arm64: dts: qcom: Add base SM8550 dtsi")
+Signed-off-by: Neil Armstrong <neil.armstrong@linaro.org>
+Reviewed-by: Abel Vesa <abel.vesa@oss.qualcomm.com>
+Reviewed-by: Konrad Dybcio <konrad.dybcio@oss.qualcomm.com>
+---
+ arch/arm64/boot/dts/qcom/sm8550.dtsi | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/arch/arm64/boot/dts/qcom/sm8550.dtsi b/arch/arm64/boot/dts/qcom/sm8550.dtsi
+index 912525e9bca6..bc97259b378a 100644
+--- a/arch/arm64/boot/dts/qcom/sm8550.dtsi
++++ b/arch/arm64/boot/dts/qcom/sm8550.dtsi
+@@ -826,6 +826,7 @@ soc: soc@0 {
+ 		gcc: clock-controller@100000 {
+ 			compatible = "qcom,sm8550-gcc";
+ 			reg = <0 0x00100000 0 0x1f4200>;
++			power-domains = <&rpmhpd RPMHPD_CX>;
+ 			#clock-cells = <1>;
+ 			#reset-cells = <1>;
+ 			#power-domain-cells = <1>;
+-- 
+2.49.0
+

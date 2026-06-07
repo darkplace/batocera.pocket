@@ -1,0 +1,33 @@
+config BR2_PACKAGE_YUZU
+	bool "Yuzu (Nintendo Switch)"
+	depends on BR2_x86_64 || BR2_aarch64
+	select BR2_PACKAGE_BOOST
+	select BR2_PACKAGE_BOOST_CONTEXT
+	select BR2_PACKAGE_BOOST_FILESYSTEM
+	select BR2_PACKAGE_BOOST_SYSTEM
+	select BR2_PACKAGE_ENET
+	select BR2_PACKAGE_FFMPEG
+	select BR2_PACKAGE_FMT
+	select BR2_PACKAGE_JSON_FOR_MODERN_CPP
+	select BR2_PACKAGE_LIBOPENSSL
+	select BR2_PACKAGE_LZ4
+	select BR2_PACKAGE_OPUS
+	select BR2_PACKAGE_QT6
+	select BR2_PACKAGE_QT6BASE
+	select BR2_PACKAGE_QT6BASE_CONCURRENT
+	select BR2_PACKAGE_QT6BASE_DBUS
+	select BR2_PACKAGE_QT6BASE_GUI
+	select BR2_PACKAGE_QT6BASE_NETWORK
+	select BR2_PACKAGE_QT6BASE_VULKAN
+	select BR2_PACKAGE_QT6BASE_WIDGETS
+	select BR2_PACKAGE_QT6BASE_XCB if BR2_PACKAGE_XORG7
+	select BR2_PACKAGE_SDL2
+	select BR2_PACKAGE_VULKAN_HEADERS
+	select BR2_PACKAGE_VULKAN_LOADER
+	select BR2_PACKAGE_ZLIB
+	select BR2_PACKAGE_ZSTD
+	help
+	  Yuzu Nintendo Switch emulator.
+
+	  This package builds Yuzu from source and installs the native Qt
+	  frontend behind the wrapper script in /usr/bin/yuzu.

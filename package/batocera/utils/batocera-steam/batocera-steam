@@ -46,6 +46,21 @@ restore_sm8550_gpu_profile() {
     echo "Steam GPU profile: restored sm8x50 GPU profile" >> "${log}"
 }
 
+apply_steam_launch_environment() {
+    case "${BATOCERA_STEAM_UNSET_MESA_LOADER_DRIVER_OVERRIDE:-0}" in
+        1|true|TRUE|True|yes|YES|Yes|on|ON|On)
+            unset MESA_LOADER_DRIVER_OVERRIDE
+            echo "Steam launch environment: unset MESA_LOADER_DRIVER_OVERRIDE" >> "${log}"
+            ;;
+    esac
+
+    if [[ "${PROTON_LOG:-0}" == "1" ]]; then
+        export PROTON_LOG_DIR="${PROTON_LOG_DIR:-/userdata/system/logs}"
+        mkdir -p "${PROTON_LOG_DIR}" 2>/dev/null || true
+        echo "Steam launch environment: Proton logging enabled at ${PROTON_LOG_DIR}" >> "${log}"
+    fi
+}
+
 export HOME="/userdata/system"
 export XDG_DATA_HOME="${HOME}/.local/share"
 export XDG_CONFIG_HOME="${HOME}/.config"
@@ -71,6 +86,7 @@ cleanup_steam_portal_session() {
 
 trap cleanup_steam_portal_session EXIT
 apply_sm8550_gpu_profile
+apply_steam_launch_environment
 
 runtime_dir_usable() {
     local candidate="$1"

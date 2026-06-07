@@ -1,0 +1,33 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Mon, 1 Jun 2026 06:35:00 +0000
+Subject: [PATCH] common: include owned standard headers in watcher
+
+GCC 13 no longer lets watcher.h rely on unrelated transitive includes
+for fixed-width integer types. Include the standard headers used by the
+public declarations directly.
+
+Signed-off-by: suckbluefrog <suckbluefrog@proton.me>
+---
+ src/emu/common/include/common/watcher.h | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/src/emu/common/include/common/watcher.h b/src/emu/common/include/common/watcher.h
+index 7c80e4d0..763663aa 100644
+--- a/src/emu/common/include/common/watcher.h
++++ b/src/emu/common/include/common/watcher.h
+@@ -20,9 +20,12 @@
+ #pragma once
+
++#include <cstdint>
+ #include <functional>
+ #include <memory>
+ #include <string>
+ #include <tuple>
++#include <utility>
++#include <vector>
+ 
+ namespace eka2l1::common {
+     struct directory_watcher_impl;
+-- 
+2.43.0

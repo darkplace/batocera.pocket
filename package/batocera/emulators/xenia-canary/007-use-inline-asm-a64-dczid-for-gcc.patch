@@ -1,0 +1,38 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Sun, 07 Jun 2026 13:45:00 +0000
+Subject: [PATCH] Use inline asm a64 DCZID register read for GCC
+
+GCC's arm_acle.h does not provide __arm_rsr64. Read DCZID_EL0 with inline
+mrs asm for the A64 backend zero-by-address setup.
+
+Signed-off-by: suckbluefrog <suckbluefrog@proton.me>
+---
+ src/xenia/cpu/backend/a64/a64_seq_util.h | 12 +++++++++++-
+ 1 file changed, 11 insertions(+), 1 deletion(-)
+
+diff --git a/src/xenia/cpu/backend/a64/a64_seq_util.h b/src/xenia/cpu/backend/a64/a64_seq_util.h
+index 025f3aa27..8f6087fec 100644
+--- a/src/xenia/cpu/backend/a64/a64_seq_util.h
++++ b/src/xenia/cpu/backend/a64/a64_seq_util.h
+@@ -24,8 +24,18 @@ constexpr uint32_t DCZID_EL0 = ARM64_SYSREG(0b11, 0b011, 0b0000, 0b0000, 0b111);
+ #define xe_cpu_mrs(reg) _ReadStatusReg(reg)
+ #elif XE_COMPILER_CLANG || XE_COMPILER_GNUC
+ #include <arm_acle.h>
++#if XE_COMPILER_CLANG
+ #define xe_cpu_mrs(reg) __arm_rsr64(#reg)
+-#else
++#else  // XE_COMPILER_GNUC
++static inline uint64_t xe_cpu_mrs_DCZID_EL0() {
++  uint64_t value;
++  __asm__ volatile("mrs %0, dczid_el0" : "=r"(value));
++  return value;
++}
++#define xe_cpu_mrs(reg) xe_cpu_mrs_##reg()
++#endif
++#else
+ #error "No MRS wrapper available for current compiler implemented."
+ #endif
+ 
+-- 
+2.43.0

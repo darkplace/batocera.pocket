@@ -1,2 +1,3 @@
-# Locally generated from the Buildroot git4 archive.
-sha256  bc6fc37618bcb45cc08f20d1c28b084c1d4132576e6e804d3588a2309b783e1c  xenia-edge-d2b24e8a98ea13c9e5bc524b1bb4d16efa136c0-git4.tar.gz
+sha256  ac9a8d81c9a6a8b26d75e003ad7c5c219651a07a04e2297f580bcf1198279959  xenia_edge_linux.AppImage
+sha256  34b7be72f1de4ecc52c48c9de4c75f309c0bac6a5cd5c6f83fc9a932a51309d3  xenia-edge-6101f13ec1971199ed5bf6d9f3d43ff6eda84dae-git4.tar.gz
+sha256  ab8cb37a56a378bfaf81c93449f011bebca4a3538d57edb833ffad7f19a95158  xenia-edge-07021f019cf55105bc26c0474e0b0835808353e2-git4.tar.gz

@@ -16,6 +16,10 @@ export STEAM_ROOT="${BATOCERA_STEAM_ROOT:-${XDG_DATA_HOME}/Steam}"
 export PROTON11_ARM64_APPID="${BATOCERA_STEAM_PROTON11_ARM64_APPID:-4628740}"
 export PROTON11_ARM64_DIR_NAME="Proton 11.0 (ARM64)"
 export PROTON11_ARM64_INSTALL_URI="steam://install/${PROTON11_ARM64_APPID}"
+export PROTON_CACHYOS_VERSION_FULL="${BATOCERA_STEAM_PROTON_CACHYOS_VERSION:-11.0-20260521-slr}"
+export PROTON_CACHYOS_TAR="proton-cachyos-${PROTON_CACHYOS_VERSION_FULL}-arm64.tar.xz"
+export PROTON_CACHYOS_DIR="proton-cachyos-${PROTON_CACHYOS_VERSION_FULL}-arm64"
+export PROTON_CACHYOS_URL="${BATOCERA_STEAM_PROTON_CACHYOS_URL:-https://github.com/CachyOS/proton-cachyos/releases/download/cachyos-${PROTON_CACHYOS_VERSION_FULL}/${PROTON_CACHYOS_TAR}}"
 export BATOCERA_STEAM_FEX_ROOTFS_NAME="${BATOCERA_STEAM_FEX_ROOTFS_NAME:-Fedora_43.sqsh}"
 export BATOCERA_STEAM_FEX_ROOTFS_URL="${BATOCERA_STEAM_FEX_ROOTFS_URL:-https://rootfs.fex-emu.gg/Fedora_43/2026-01-20/Fedora_43.sqsh}"
 export PROTON_USE_ARM64="${PROTON_USE_ARM64:-1}"
@@ -28,6 +32,39 @@ STEAM_GPU_PROFILE_STATE=""
 
 log_msg() {
     printf '%s\n' "$*" >> "${log}"
+}
+
+apply_steam_launch_environment() {
+    case "${BATOCERA_STEAM_UNSET_MESA_LOADER_DRIVER_OVERRIDE:-0}" in
+        1|true|TRUE|True|yes|YES|Yes|on|ON|On)
+            unset MESA_LOADER_DRIVER_OVERRIDE
+            log_msg "Unset MESA_LOADER_DRIVER_OVERRIDE for Steam launch."
+            ;;
+    esac
+
+    if [[ "${PROTON_LOG:-0}" == "1" ]]; then
+        export PROTON_LOG_DIR="${PROTON_LOG_DIR:-/userdata/system/logs}"
+        mkdir -p "${PROTON_LOG_DIR}" 2>/dev/null || true
+        log_msg "Proton logging enabled at ${PROTON_LOG_DIR}."
+    fi
+}
+
+proton_cachyos_enabled() {
+    case "${BATOCERA_STEAM_PROTON_CACHYOS:-1}" in
+        0|false|FALSE|False|no|NO|No|off|OFF|Off)
+            return 1
+            ;;
+    esac
+
+    return 0
+}
+
+proton11_arm64_payload_exists() {
+    if proton_cachyos_enabled && [[ -x "${STEAM_ROOT}/compatibilitytools.d/${PROTON_CACHYOS_DIR}/proton" ]]; then
+        return 0
+    fi
+
+    [[ -x "${STEAM_ROOT}/steamapps/common/${PROTON11_ARM64_DIR_NAME}/proton" ]]
 }
 
 apply_sm8550_gpu_profile() {
@@ -518,12 +555,16 @@ build_steam_args() {
         out_args+=("${extra_args[@]}")
     fi
 
-    if [[ ! -x "${STEAM_ROOT}/steamapps/common/${PROTON11_ARM64_DIR_NAME}/proton" ]]; then
-        log_msg "Proton 11.0 (ARM64) payload missing; requesting Steam install for AppID ${PROTON11_ARM64_APPID}."
-        out_args+=("${PROTON11_ARM64_INSTALL_URI}")
-        if [[ -n "${game_target}" ]]; then
-            log_msg "Deferring requested game '${game_target}' until Proton 11.0 (ARM64) is installed."
-            return 0
+    if ! proton11_arm64_payload_exists; then
+        if proton_cachyos_enabled; then
+            log_msg "Proton-CachyOS ${PROTON_CACHYOS_VERSION_FULL} payload is missing; setup should install it before launch."
+        else
+            log_msg "Proton 11.0 (ARM64) payload missing; requesting Steam install for AppID ${PROTON11_ARM64_APPID}."
+            out_args+=("${PROTON11_ARM64_INSTALL_URI}")
+            if [[ -n "${game_target}" ]]; then
+                log_msg "Deferring requested game '${game_target}' until Proton 11.0 (ARM64) is installed."
+                return 0
+            fi
         fi
     fi
 
@@ -1007,6 +1048,49 @@ ensure_native_steam_client() {
     [[ -x "${STEAM_ROOT}/steamrtarm64/steam" ]] || die "ARM64 Steam client did not install to ${STEAM_ROOT}/steamrtarm64/steam."
 }
 
+install_proton_cachyos() {
+    local dest_dir="${STEAM_ROOT}/compatibilitytools.d"
+    local tar_path="${dest_dir}/${PROTON_CACHYOS_TAR}"
+    local extracted_dir="${dest_dir}/${PROTON_CACHYOS_DIR}"
+    local manifest_file="${extracted_dir}/toolmanifest.vdf"
+    local old_dir
+
+    proton_cachyos_enabled || return 0
+
+    command -v tar >/dev/null 2>&1 || die "tar is required to install Proton-CachyOS."
+    mkdir -p "${dest_dir}"
+
+    for old_dir in "${dest_dir}"/proton-cachyos-*-arm64; do
+        [[ -d "${old_dir}" ]] || continue
+        if [[ "${old_dir}" != "${extracted_dir}" ]]; then
+            log_msg "Removing old Proton-CachyOS: $(basename "${old_dir}")"
+            rm -rf "${old_dir}"
+        fi
+    done
+
+    if [[ -x "${extracted_dir}/proton" ]]; then
+        log_msg "Proton-CachyOS ${PROTON_CACHYOS_VERSION_FULL} already installed."
+        return 0
+    fi
+
+    if [[ -d "${extracted_dir}" ]]; then
+        log_msg "Removing incomplete Proton-CachyOS install: ${PROTON_CACHYOS_DIR}"
+        rm -rf "${extracted_dir}"
+    fi
+
+    log_msg "Downloading Proton-CachyOS ${PROTON_CACHYOS_VERSION_FULL} from ${PROTON_CACHYOS_URL}"
+    download_file "${PROTON_CACHYOS_URL}" "${tar_path}" "Proton-CachyOS ${PROTON_CACHYOS_VERSION_FULL}" || die "Failed to download Proton-CachyOS ${PROTON_CACHYOS_VERSION_FULL}."
+    tar -xf "${tar_path}" -C "${dest_dir}" >> "${log}" 2>&1 || die "Failed to extract Proton-CachyOS ${PROTON_CACHYOS_VERSION_FULL}."
+    rm -f "${tar_path}"
+
+    if [[ -f "${manifest_file}" ]]; then
+        sed -i '/require_tool_appid/d' "${manifest_file}" 2>/dev/null || true
+    fi
+
+    [[ -x "${extracted_dir}/proton" ]] || die "Proton-CachyOS did not install to ${extracted_dir}/proton."
+    log_msg "Installed Proton-CachyOS ${PROTON_CACHYOS_VERSION_FULL}."
+}
+
 prepare_arm64_steam_layout() {
     local helper
 
@@ -1086,7 +1170,9 @@ register_proton11_arm64() {
     write_compatibilitytool_vdf "${compat_dir}/compatibilitytool.vdf"
     write_toolmanifest_vdf "${proton_dir}/toolmanifest.vdf"
 
-    if [[ -e "${proton_dir}/proton" ]]; then
+    if [[ -x "${STEAM_ROOT}/compatibilitytools.d/${PROTON_CACHYOS_DIR}/proton" ]]; then
+        log_msg "Registered Proton-CachyOS ${PROTON_CACHYOS_VERSION_FULL} as a Steam compatibility tool."
+    elif [[ -e "${proton_dir}/proton" ]]; then
         chmod +x "${proton_dir}/proton" 2>/dev/null || true
         log_msg "Registered installed Proton 11.0 (ARM64) as compatibility tool proton11_arm64."
     else
@@ -1221,7 +1307,12 @@ steam_setup_state() {
         return 0
     fi
 
-    if [[ ! -x "${STEAM_ROOT}/steamapps/common/${PROTON11_ARM64_DIR_NAME}/proton" ]]; then
+    if proton_cachyos_enabled && [[ ! -x "${STEAM_ROOT}/compatibilitytools.d/${PROTON_CACHYOS_DIR}/proton" ]]; then
+        printf 'support\n'
+        return 0
+    fi
+
+    if ! proton11_arm64_payload_exists; then
         printf 'support\n'
         return 0
     fi
@@ -1256,7 +1347,11 @@ ensure_network_for_steam_setup() {
     else
         flash_msg 7 "After setup completes, you may need to relaunch Steam." 19
     fi
-    flash_msg 9 "Select Proton 11.0 (ARM64) as the Steam compatibility runner." 16
+    if proton_cachyos_enabled; then
+        flash_msg 9 "Select Proton-CachyOS as the Steam compatibility runner." 16
+    else
+        flash_msg 9 "Select Proton 11.0 (ARM64) as the Steam compatibility runner." 16
+    fi
 
     if has_network; then
         log_msg "Network is available for Steam setup."
@@ -1429,6 +1524,7 @@ launch_steam_deck_session() {
 
 trap cleanup EXIT
 apply_sm8550_gpu_profile
+apply_steam_launch_environment
 
 ensure_runtime_dir
 start_compat_shims
@@ -1438,6 +1534,7 @@ sync_steam_library_folders
 ensure_network_for_steam_setup
 ensure_native_steam_client
 prepare_arm64_steam_layout
+install_proton_cachyos
 register_proton11_arm64
 apply_steam_user_selection "${BATOCERA_STEAM_USER:-auto}"
 ensure_fex_rootfs

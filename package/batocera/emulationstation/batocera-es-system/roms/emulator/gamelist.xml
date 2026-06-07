@@ -31,6 +31,11 @@
     <image>./images/eden.png</image>
   </game>
   <game>
+    <path>./Configure_Yuzu.sh</path>
+    <name>Configure Yuzu</name>
+    <image>./images/yuzu.png</image>
+  </game>
+  <game>
     <path>./Configure_Dolphin.sh</path>
     <name>Configure Dolphin</name>
     <image>./images/dolphin.png</image>

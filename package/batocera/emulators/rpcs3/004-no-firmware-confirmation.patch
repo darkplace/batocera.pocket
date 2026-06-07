@@ -1,7 +1,7 @@
 diff --git a/rpcs3/rpcs3qt/main_window.cpp b/rpcs3/rpcs3qt/main_window.cpp
 --- a/rpcs3/rpcs3qt/main_window.cpp
 +++ b/rpcs3/rpcs3qt/main_window.cpp
-@@ -1397,12 +1397,12 @@ void main_window::InstallPup(main_window* mw, QString file_path)
+@@ -1398,12 +1398,12 @@ void main_window::InstallPup(main_window* mw, QString file_path)
  	}
  	else if (mw)
  	{

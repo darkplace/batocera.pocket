@@ -1,0 +1,25 @@
+#!/bin/sh
+set -eu
+
+appdir="/usr/share/batocera/apps/peazip"
+
+export HOME="/userdata/saves/apps/peazip"
+export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
+export XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
+export XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+
+mkdir -p "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_CACHE_HOME" "$XDG_RUNTIME_DIR" 2>/dev/null || true
+
+export LD_LIBRARY_PATH="$appdir/lib:${LD_LIBRARY_PATH:-}"
+export QT_PLUGIN_PATH="${QT_PLUGIN_PATH:-/usr/lib/qt6/plugins:/usr/lib/qt/plugins}"
+export QT_QPA_PLATFORM_PLUGIN_PATH="${QT_QPA_PLATFORM_PLUGIN_PATH:-/usr/lib/qt6/plugins/platforms:/usr/lib/qt/plugins/platforms}"
+if [ -z "${QT_QPA_PLATFORM:-}" ]; then
+    if [ -n "${WAYLAND_DISPLAY:-}" ] && [ -e /usr/lib/qt6/plugins/platforms/libqwayland.so ]; then
+        export QT_QPA_PLATFORM=wayland
+    else
+        export QT_QPA_PLATFORM=xcb
+    fi
+fi
+
+exec "$appdir/peazip/peazip" "$@"

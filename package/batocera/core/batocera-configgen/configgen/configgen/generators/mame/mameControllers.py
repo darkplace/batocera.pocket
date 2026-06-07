@@ -35,6 +35,9 @@ def generatePadsConfig(cfgPath: Path, playersControllers: Controllers, sysName: 
         overwriteMAME = False
     else:
         overwriteMAME = True
+    if not playersControllers and not (useGuns and guns):
+        _logger.warning("No controllers detected; keeping existing MAME input config")
+        overwriteMAME = False
 
     # Load standard controls from csv
     controlFile = MAME_DEFAULT_DATA / 'mameControls.csv'
