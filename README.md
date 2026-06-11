@@ -8,6 +8,8 @@ https://drive.proton.me/urls/RRPFQ38NX8#LmFz5AIaV2aI
 
 ## Current Builds
 - Odin 3 (Beta)
+  <img width="1175" height="881" alt="image" src="https://github.com/user-attachments/assets/57433181-374b-4015-980f-18938350a717" />
+
 - Odin2 / Thor Series  
 - Powkiddy X55
 - Anbernic RG-DS (Beta)
