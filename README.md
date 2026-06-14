@@ -45,7 +45,7 @@ Extra libraries (e.g. `libcups`) included for better AppImage compatibility
 
 ---
 
-## Qualcomm Builds (SM8550,SM8750, QCS6490)
+## Qualcomm Builds (SM8550, SM8750, QCS6490)
 Includes additional emulators where supported:
 - AetherSX2  
 - ARMSX2
