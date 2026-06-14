@@ -399,7 +399,11 @@ case "${XKB_LAYOUT:-}" in
         export XKB_LAYOUT=us
         ;;
 esac
-export XKB_DEFAULT_LAYOUT="${XKB_DEFAULT_LAYOUT:-$XKB_LAYOUT}"
+case "${XKB_DEFAULT_LAYOUT:-}" in
+    ""|en)
+        export XKB_DEFAULT_LAYOUT="$XKB_LAYOUT"
+        ;;
+esac
 export XKB_VARIANT="${XKB_VARIANT:-}"
 # Use -d for debugging
 #WLR_LIBINPUT_NO_DEVICES=1 /usr/bin/sway -d > "$SWAY_LOG_FILE" 2>&1
