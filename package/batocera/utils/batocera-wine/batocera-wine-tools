@@ -10,7 +10,9 @@ WINETRICKS_ALL_URL="https://raw.githubusercontent.com/Winetricks/winetricks/mast
 KRON4EK_RELEASES_URL="https://api.github.com/repos/Kron4ek/Wine-Builds/releases?per_page=300"
 WINE_GE_RELEASES_URL="https://api.github.com/repos/GloriousEggroll/wine-ge-custom/releases?per_page=100"
 PROTON_GE_RELEASES_URL="https://api.github.com/repos/GloriousEggroll/proton-ge-custom/releases?per_page=100"
+CACHYOS_PROTON_RELEASES_URL="https://api.github.com/repos/CachyOS/proton-cachyos/releases?per_page=100"
 FREE_WINDOWS_GAMES_BASE_URL="https://raw.githubusercontent.com/foclabroc/toolbox/refs/heads/main/windows"
+STEAM_PROTON_CACHYOS_CONFIG="/userdata/system/configs/steam/proton-cachyos.conf"
 
 clear_screen() {
     clear >/dev/null 2>&1 || true
@@ -138,6 +140,29 @@ select_multiple_from_json() {
     local rc=$?
     clear_screen
     return "$rc"
+}
+
+select_single_from_json() {
+    local title="$1"
+    local prompt="$2"
+    local json="$3"
+    local options=()
+    local count idx label choice
+
+    count=$(printf '%s' "$json" | jq 'length') || return 1
+    [ "$count" -gt 0 ] || return 1
+
+    for ((idx=0; idx<count; idx++)); do
+        label=$(printf '%s' "$json" | jq -r ".[$idx].label")
+        options+=("$((idx + 1))" "$label")
+    done
+
+    choice=$(dialog --clear --title "$title" --menu "$prompt" 24 100 14 "${options[@]}" 2>&1 >/dev/tty) || {
+        clear_screen
+        return 1
+    }
+    clear_screen
+    printf '%s\n' "$choice"
 }
 
 select_radiolist() {
@@ -426,6 +451,194 @@ ge_proton_menu() {
         return 1
     }
     download_release_selection "GE-Proton" "Select GE-Proton builds to download:" "$filtered"
+}
+
+steam_root_dir() {
+    case "$(uname -m)" in
+        aarch64|arm64)
+            printf '%s\n' "${BATOCERA_STEAM_ROOT:-/userdata/system/.local/share/Steam}"
+            ;;
+        *)
+            printf '%s\n' "${BATOCERA_STEAM_ROOT:-/userdata/system/steam}"
+            ;;
+    esac
+}
+
+write_steam_proton_cachyos_config() {
+    local version="$1"
+    local url="$2"
+
+    mkdir -p "$(dirname "$STEAM_PROTON_CACHYOS_CONFIG")" || return 1
+    {
+        printf '%s\n' "# Batocera Steam Proton-CachyOS ARM64 selection"
+        printf '%s\n' "BATOCERA_STEAM_PROTON_CACHYOS=1"
+        printf '%s\n' "BATOCERA_STEAM_PROTON_CACHYOS_VERSION=${version}"
+        printf '%s\n' "BATOCERA_STEAM_PROTON_CACHYOS_URL=${url}"
+    } > "$STEAM_PROTON_CACHYOS_CONFIG"
+    chmod 0644 "$STEAM_PROTON_CACHYOS_CONFIG" 2>/dev/null || true
+}
+
+write_steam_proton_toolmanifest_vdf() {
+    local target="$1"
+
+    cat > "$target" <<'EOF'
+"manifest"
+{
+  "version" "2"
+  "commandline" "/proton %verb%"
+  "use_sessions" "1"
+  "compatmanager_layer_name" "proton"
+}
+EOF
+}
+
+write_steam_proton_cachyos_compatibilitytool_vdf() {
+    local outdir="$1"
+    local version="$2"
+    local tool_id="proton-cachyos-${version}-arm64"
+
+    cat > "${outdir}/compatibilitytool.vdf" <<EOF
+"compatibilitytools"
+{
+  "compat_tools"
+  {
+    "${tool_id}"
+    {
+      "install_path" "."
+      "display_name" "Proton-CachyOS ${version} (ARM64)"
+      "from_oslist" "windows"
+      "to_oslist" "linux"
+    }
+  }
+}
+EOF
+}
+
+prepare_steam_proton_cachyos_dir() {
+    local outdir="$1"
+    local version="$2"
+    local manifest="${outdir}/toolmanifest.vdf"
+
+    if [ ! -e "$outdir/files" ] && [ -d "$outdir/share/default_pfx_arm64" ]; then
+        ln -s . "$outdir/files" 2>/dev/null || true
+    fi
+
+    if [ -f "$manifest" ]; then
+        sed -i '/require_tool_appid/d' "$manifest" 2>/dev/null || true
+    fi
+    if [ ! -f "$manifest" ] || ! grep -q '"commandline"[[:space:]]*"/proton %verb%"' "$manifest" 2>/dev/null; then
+        write_steam_proton_toolmanifest_vdf "$manifest"
+    fi
+
+    write_steam_proton_cachyos_compatibilitytool_vdf "$outdir" "$version"
+    chmod +x "$outdir/proton" 2>/dev/null || true
+}
+
+download_steam_proton_cachyos_selection() {
+    local json="$1"
+    local selections idx archive url dirname version steam_root compat_dir tmpfile outdir
+    local default_version="" default_url="" installed=0 failed=0
+
+    selections=$(select_multiple_from_json \
+        "Steam Proton-CachyOS ARM64" \
+        "Select one or more Proton builds for Steam to download:" \
+        "$json") || return 1
+    [ -n "$selections" ] || return 1
+
+    steam_root="$(steam_root_dir)"
+    compat_dir="${steam_root}/compatibilitytools.d"
+    mkdir -p "$compat_dir" || return 1
+
+    for idx in $selections; do
+        idx=$((idx - 1))
+        archive=$(printf '%s' "$json" | jq -r ".[$idx].archive")
+        url=$(printf '%s' "$json" | jq -r ".[$idx].url")
+        dirname=$(archive_dir_name "$archive") || {
+            msg_box "Unsupported archive format: ${archive}"
+            failed=$((failed + 1))
+            continue
+        }
+        version="${dirname#proton-cachyos-}"
+        version="${version%-arm64}"
+        tmpfile="${compat_dir}/${archive}"
+        outdir="${compat_dir}/${dirname}"
+
+        if ! download_with_gauge "$url" "$tmpfile" "Downloading Proton-CachyOS ${version} for Steam..."; then
+            msg_box "Download failed: ${archive}"
+            rm -f "$tmpfile"
+            failed=$((failed + 1))
+            continue
+        fi
+
+        rm -rf "$outdir"
+        mkdir -p "$outdir" || return 1
+        if ! extract_archive_with_gauge "$tmpfile" "$outdir" "Extracting Proton-CachyOS ${version} for Steam..."; then
+            msg_box "Extraction failed: ${archive}"
+            rm -f "$tmpfile"
+            rm -rf "$outdir"
+            failed=$((failed + 1))
+            continue
+        fi
+        rm -f "$tmpfile"
+
+        prepare_steam_proton_cachyos_dir "$outdir" "$version"
+        if [ ! -x "$outdir/proton" ]; then
+            msg_box "Proton-CachyOS ${version} did not install a runnable proton script at:\n${outdir}/proton"
+            failed=$((failed + 1))
+            continue
+        fi
+
+        default_version="$version"
+        default_url="$url"
+        installed=$((installed + 1))
+    done
+
+    if [ "$installed" -eq 0 ]; then
+        msg_box "No Proton-CachyOS builds for Steam were installed."
+        return 1
+    fi
+
+    write_steam_proton_cachyos_config "$default_version" "$default_url" || {
+        msg_box "Installed ${installed} build(s), but failed to write ${STEAM_PROTON_CACHYOS_CONFIG}."
+        return 1
+    }
+
+    msg_box "Installed ${installed} Proton-CachyOS build(s) for Steam.\n\nSteam will list each build as a separate compatibility tool after restart. The last installed build, ${default_version}, is now the default preflight install target.\n\nFailed installs: ${failed}"
+}
+
+steam_proton_cachyos_menu() {
+    case "$(uname -m)" in
+        aarch64|arm64) ;;
+        *)
+            msg_box "Steam Proton-CachyOS ARM64 downloads are only enabled on ARM64 builds."
+            return 1
+            ;;
+    esac
+
+    require_commands jq curl wget tar xz || return 1
+    local data filtered
+    data=$(fetch_json "$CACHYOS_PROTON_RELEASES_URL") || {
+        msg_box "Failed to fetch Steam Proton-CachyOS releases."
+        return 1
+    }
+    filtered=$(printf '%s' "$data" | jq -c '
+        [.[] as $r
+         | $r.assets[]?
+         | select((.name | startswith("proton-cachyos-11.0-")) and (.name | endswith("-arm64.tar.xz")))
+         | {
+             label: ("Proton build for Steam: CachyOS ARM64 " + (.name | ltrimstr("proton-cachyos-") | rtrimstr("-arm64.tar.xz")) + " [" + $r.tag_name + "]"),
+             archive: .name,
+             url: .browser_download_url
+           }
+        ]') || {
+        msg_box "Failed to parse Steam Proton-CachyOS releases."
+        return 1
+    }
+    if [ "$(printf '%s' "$filtered" | jq 'length')" -eq 0 ]; then
+        msg_box "No Steam Proton-CachyOS 11 ARM64 builds were found."
+        return 1
+    fi
+    download_steam_proton_cachyos_selection "$filtered"
 }
 
 translate_free_game_installer() {
@@ -1068,6 +1281,8 @@ main_menu() {
 
         if [[ "$(uname -m)" == "x86_64" ]]; then
             menu_options+=(4 "Download GE-Proton builds")
+        elif [[ "$(uname -m)" == "aarch64" || "$(uname -m)" == "arm64" ]]; then
+            menu_options+=(4 "Download Steam Proton-CachyOS ARM64 builds")
         fi
 
         menu_options+=(
@@ -1098,7 +1313,12 @@ main_menu() {
             1) wine_vanilla_menu ;;
             2) wine_tkg_menu ;;
             3) wine_ge_menu ;;
-            4) ge_proton_menu ;;
+            4)
+                case "$(uname -m)" in
+                    x86_64) ge_proton_menu ;;
+                    aarch64|arm64) steam_proton_cachyos_menu ;;
+                esac
+                ;;
             5) prepare_dependency_installers ;;
             6) run_easy_winetricks ;;
             7) create_autorun_cmd_menu ;;

@@ -10,7 +10,9 @@ ES_THEME_CARBON_SITE = $(call github,suckbluefrog,es-theme-carbon,$(ES_THEME_CAR
 define ES_THEME_CARBON_INSTALL_TARGET_CMDS
 	mkdir -p $(TARGET_DIR)/usr/share/emulationstation/themes/es-theme-carbon
 	cp -r $(@D)/* $(TARGET_DIR)/usr/share/emulationstation/themes/es-theme-carbon
+	mkdir -p $(TARGET_DIR)/usr/share/emulationstation/themes/es-theme-carbon/art/icons
 	mkdir -p $(TARGET_DIR)/usr/share/emulationstation/themes/es-theme-carbon/art/logos
+	$(INSTALL) -D -m 0644 $(ES_THEME_CARBON_PKGDIR)/assets/icons/Steam.png $(TARGET_DIR)/usr/share/emulationstation/themes/es-theme-carbon/art/icons/Steam.png
 	$(INSTALL) -D -m 0644 $(ES_THEME_CARBON_PKGDIR)/assets/logos/apps.png $(TARGET_DIR)/usr/share/emulationstation/themes/es-theme-carbon/art/logos/apps.png
 	$(INSTALL) -D -m 0644 $(ES_THEME_CARBON_PKGDIR)/assets/logos/internet.png $(TARGET_DIR)/usr/share/emulationstation/themes/es-theme-carbon/art/logos/internet.png
 	$(INSTALL) -D -m 0644 $(ES_THEME_CARBON_PKGDIR)/assets/logos/lutris.png $(TARGET_DIR)/usr/share/emulationstation/themes/es-theme-carbon/art/logos/lutris.png

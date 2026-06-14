@@ -1,0 +1,92 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Thu, 04 Jun 2026 10:24:21 +0000
+Subject: [PATCH] Add SteamOS mode to the main menu
+
+---
+ es-app/src/ApiSystem.cpp       | 36 ++++++++++++++++++++++++++++++++++++
+ es-app/src/ApiSystem.h         |  3 +++
+ es-app/src/guis/GuiMenu.cpp    | 12 ++++++++++++
+ 3 files changed, 51 insertions(+)
+
+diff --git a/es-app/src/ApiSystem.cpp b/es-app/src/ApiSystem.cpp
+--- a/es-app/src/ApiSystem.cpp
++++ b/es-app/src/ApiSystem.cpp
+@@ -461,6 +461,42 @@ bool ApiSystem::launchKodi(Window *window)
+ 	return exitCode == 0;
+ }
+ 
++#ifdef BATOCERA
++bool ApiSystem::launchSteamOS(Window *window)
++{
++	LOG(LogDebug) << "ApiSystem::launchSteamOS";
++
++	std::string command;
++	if (Utils::FileSystem::exists("/usr/bin/emulatorlauncher") &&
++		Utils::FileSystem::exists("/userdata/roms/steam/Steam GamepadUI Gamescope.steam"))
++		command = "/usr/bin/emulatorlauncher -system steam -rom \"/userdata/roms/steam/Steam GamepadUI Gamescope.steam\"";
++	else
++	{
++		command =
++			"BATOCERA_STEAM_MODE=steamos "
++			"BATOCERA_STEAM_GAMEPADUI=1 "
++			"BATOCERA_STEAM_USE_GAMESCOPE=1 "
++			"BATOCERA_STEAM_VISIBLE_UPDATE_PREFLIGHT=1 "
++			"BATOCERA_STEAM_UPDATE_TERMINAL=0 ";
++
++		if (Utils::FileSystem::exists("/usr/bin/steam-direct-session.sh"))
++			command += "/usr/bin/steam-direct-session.sh";
++		else
++			command += "/usr/bin/batocera-steam";
++	}
++
++	ApiSystem::launchExternalWindow_before(window);
++
++	int exitCode = system(command.c_str());
++	if (WIFEXITED(exitCode))
++		exitCode = WEXITSTATUS(exitCode);
++
++	ApiSystem::launchExternalWindow_after(window);
++
++	return exitCode == 0;
++}
++#endif
++
+ bool ApiSystem::launchFileManager(Window *window) 
+ {
+ 	LOG(LogDebug) << "ApiSystem::launchFileManager";
+diff --git a/es-app/src/ApiSystem.h b/es-app/src/ApiSystem.h
+--- a/es-app/src/ApiSystem.h
++++ b/es-app/src/ApiSystem.h
+@@ -209,6 +209,9 @@ public:
+ 	virtual bool isReadyFlagSet();
+ 
+     virtual bool launchKodi(Window *window);
++#ifdef BATOCERA
++    virtual bool launchSteamOS(Window *window);
++#endif
+     bool launchFileManager(Window *window);
+ 
+ #ifdef BATOCERA
+diff --git a/es-app/src/guis/GuiMenu.cpp b/es-app/src/guis/GuiMenu.cpp
+--- a/es-app/src/guis/GuiMenu.cpp
++++ b/es-app/src/guis/GuiMenu.cpp
+@@ -158,6 +158,18 @@ GuiMenu::GuiMenu(Window *window, bool animate) : GuiComponent(window), mMenu(win
+ 	}, "iconKodi");	
+ #endif
+ 
++#ifdef BATOCERA
++	if (Utils::FileSystem::exists("/usr/bin/steam-direct-session.sh") || Utils::FileSystem::exists("/usr/bin/batocera-steam"))
++		addEntry(_("STEAMOS MODE").c_str(), false, [this]
++	{
++		Window *window = mWindow;
++		delete this;
++		if (!ApiSystem::getInstance()->launchSteamOS(window))
++			LOG(LogWarning) << "SteamOS mode terminated with non-zero result!";
++
++	}, "iconSteamOS");
++#endif
++
+ 	if (ApiSystem::getInstance()->isScriptingSupported(ApiSystem::RETROACHIVEMENTS) &&
+ 		SystemConf::getInstance()->getBool("global.retroachievements") &&
+ 		Settings::getInstance()->getBool("RetroachievementsMenuitem") && 

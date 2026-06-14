@@ -1,0 +1,20 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Thu, 04 Jun 2026 10:24:21 +0000
+Subject: [PATCH] Add SteamOS main menu icon
+
+---
+ views/menu.xml | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/views/menu.xml b/views/menu.xml
+--- a/views/menu.xml
++++ b/views/menu.xml
+@@ -57,6 +57,7 @@
+     </menuBackground>
+     <menuIcons name="menuicons">
+       <iconKodi>./../art/icons/Kodi.png</iconKodi>
++      <iconSteamOS>./../art/icons/Steam.png</iconSteamOS>
+       <iconSystem>./../art/icons/System.png</iconSystem>
+       <iconUpdates>./../art/icons/Updates.png</iconUpdates>
+       <iconGames>./../art/icons/Games.png</iconGames>

@@ -1,0 +1,6 @@
+config BR2_PACKAGE_BATOCERA_SPLASH_SM8550
+    bool "batocera-splash-sm8550"
+    depends on BR2_PACKAGE_BATOCERA_TARGET_SM8550
+    depends on BR2_PACKAGE_BATOCERA_SPLASH
+    help
+      sm8550 splash images.

@@ -153,8 +153,8 @@ stop_emulationstation_for_update() {
     if ! emulationstation_running; then
         return 0
     fi
-    if is_thor_top_bottom_display; then
-        log "keeping EmulationStation running during Thor visible Steam updater preflight"
+    if keep_emulationstation_during_preflight; then
+        log "keeping EmulationStation running during visible Steam updater preflight"
         return 0
     fi
 
@@ -348,6 +348,17 @@ is_thor_top_bottom_display() {
     [[ "${model}" == "AYN_Thor" ]] || return 1
     [[ "$(batocera-settings-get-master display.position 2>/dev/null || true)" == "top-bottom" ]] || return 1
     [[ -n "$(batocera-settings-get-master global.videooutput2 2>/dev/null || true)" ]]
+}
+
+keep_emulationstation_during_preflight() {
+    case "${BATOCERA_STEAM_KEEP_ES_DURING_PREFLIGHT:-0}" in
+        1|true|TRUE|yes|YES|on|ON)
+            is_thor_top_bottom_display
+            ;;
+        *)
+            return 1
+            ;;
+    esac
 }
 
 setup_sway_env() {

@@ -132,6 +132,9 @@ for generated_game in generated_root.findall("game"):
         if merged_child is None:
             merged_game.append(copy.deepcopy(generated_child))
             continue
+        if tag == "hidden" and (generated_child.text or "").strip().lower() == "true":
+            merged_child.text = "true"
+            continue
         if (merged_child.text is None or not merged_child.text.strip()) and generated_child.text:
             merged_child.text = generated_child.text
 
@@ -211,7 +214,7 @@ es_game_hidden() {
     local game_name="${1,,}"
 
     case "${game_name}" in
-        *proton*|*runtime*)
+        *proton*|*runtime*|*redistributable*)
             printf 'true\n'
             ;;
         *)

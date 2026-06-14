@@ -16,7 +16,6 @@ LOG = "/userdata/system/logs/steam-uimode-watch.log"
 CDP_LIST_URL = "http://127.0.0.1:8080/json/list"
 SWITCH_BIN = "/usr/bin/batocera-steam-desktop-switch"
 DIRECT_APP_SESSION_FLAG = "/var/run/batocera-steam-direct-app-session"
-GAMESCOPE_ES_SESSION_FLAG = "/var/run/batocera-steam-es-gamescope-session"
 PREFLIGHT_SESSION_FLAG = "/var/run/batocera-steam-update-preflight"
 TRIGGER_MODES = {7}
 DESKTOP_SWITCH_BANNER = "Switching to Desktop..."
@@ -54,9 +53,6 @@ def steam_stack_active() -> bool:
 def desktop_switch_blocked() -> bool:
     if os.path.exists(DIRECT_APP_SESSION_FLAG):
         log("desktop switch ignored during direct app session")
-        return True
-    if os.path.exists(GAMESCOPE_ES_SESSION_FLAG):
-        log("desktop switch ignored during ES-launched gamescope session")
         return True
     if os.path.exists(PREFLIGHT_SESSION_FLAG):
         log("desktop switch ignored during Steam updater preflight")

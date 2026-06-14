@@ -16,6 +16,49 @@ export STEAM_ROOT="${BATOCERA_STEAM_ROOT:-${XDG_DATA_HOME}/Steam}"
 export PROTON11_ARM64_APPID="${BATOCERA_STEAM_PROTON11_ARM64_APPID:-4628740}"
 export PROTON11_ARM64_DIR_NAME="Proton 11.0 (ARM64)"
 export PROTON11_ARM64_INSTALL_URI="steam://install/${PROTON11_ARM64_APPID}"
+export BATOCERA_STEAM_PROTON_CACHYOS_CONFIG="${BATOCERA_STEAM_PROTON_CACHYOS_CONFIG:-/userdata/system/configs/steam/proton-cachyos.conf}"
+
+load_proton_cachyos_config() {
+    local key
+    local value
+
+    [[ -r "${BATOCERA_STEAM_PROTON_CACHYOS_CONFIG}" ]] || return 0
+
+    while IFS='=' read -r key value || [[ -n "${key:-}" ]]; do
+        case "${key}" in
+            ''|\#*)
+                continue
+                ;;
+        esac
+
+        value="${value%$'\r'}"
+        value="${value%\"}"
+        value="${value#\"}"
+
+        case "${key}" in
+            BATOCERA_STEAM_PROTON_CACHYOS)
+                case "${value}" in
+                    0|1|true|false|TRUE|FALSE|True|False|yes|no|YES|NO|Yes|No|on|off|ON|OFF|On|Off)
+                        export BATOCERA_STEAM_PROTON_CACHYOS="${value}"
+                        ;;
+                esac
+                ;;
+            BATOCERA_STEAM_PROTON_CACHYOS_VERSION)
+                if [[ "${value}" =~ ^[A-Za-z0-9._-]+$ ]]; then
+                    export BATOCERA_STEAM_PROTON_CACHYOS_VERSION="${value}"
+                fi
+                ;;
+            BATOCERA_STEAM_PROTON_CACHYOS_URL)
+                if [[ "${value}" =~ ^https://github\.com/CachyOS/proton-cachyos/releases/download/[A-Za-z0-9._-]+/proton-cachyos-[A-Za-z0-9._-]+-arm64\.tar\.xz$ ]]; then
+                    export BATOCERA_STEAM_PROTON_CACHYOS_URL="${value}"
+                fi
+                ;;
+        esac
+    done < "${BATOCERA_STEAM_PROTON_CACHYOS_CONFIG}"
+}
+
+load_proton_cachyos_config
+
 export PROTON_CACHYOS_VERSION_FULL="${BATOCERA_STEAM_PROTON_CACHYOS_VERSION:-11.0-20260521-slr}"
 export PROTON_CACHYOS_TAR="proton-cachyos-${PROTON_CACHYOS_VERSION_FULL}-arm64.tar.xz"
 export PROTON_CACHYOS_DIR="proton-cachyos-${PROTON_CACHYOS_VERSION_FULL}-arm64"
@@ -59,8 +102,22 @@ proton_cachyos_enabled() {
     return 0
 }
 
+proton_cachyos_any_payload_exists() {
+    local proton_dir
+
+    for proton_dir in "${STEAM_ROOT}/compatibilitytools.d"/proton-cachyos-*-arm64; do
+        [[ -x "${proton_dir}/proton" ]] && return 0
+    done
+
+    return 1
+}
+
 proton11_arm64_payload_exists() {
     if proton_cachyos_enabled && [[ -x "${STEAM_ROOT}/compatibilitytools.d/${PROTON_CACHYOS_DIR}/proton" ]]; then
+        return 0
+    fi
+
+    if proton_cachyos_enabled && proton_cachyos_any_payload_exists; then
         return 0
     fi
 
@@ -363,21 +420,6 @@ ensure_runtime_dir() {
     export XDG_RUNTIME_DIR="${candidate}"
 }
 
-ensure_x11_session_env() {
-    if [[ -z "${DISPLAY:-}" ]]; then
-        if command -v getLocalXDisplay >/dev/null 2>&1; then
-            export DISPLAY="$(getLocalXDisplay)"
-        else
-            export DISPLAY=":0"
-        fi
-    else
-        export DISPLAY
-    fi
-
-    export GDK_BACKEND="${GDK_BACKEND:-x11}"
-    export SDL_VIDEODRIVER="${SDL_VIDEODRIVER:-x11}"
-}
-
 ensure_system_bus_address() {
     if [[ -n "${DBUS_SYSTEM_BUS_ADDRESS:-}" ]]; then
         return
@@ -391,6 +433,111 @@ ensure_system_bus_address() {
     if [[ -n "${DBUS_SESSION_BUS_ADDRESS:-}" ]]; then
         export DBUS_SYSTEM_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS}"
     fi
+}
+
+frontend_env_value() {
+    local pid="$1"
+    local key="$2"
+
+    [[ -r "/proc/${pid}/environ" ]] || return 1
+    tr '\0' '\n' < "/proc/${pid}/environ" | sed -n "s/^${key}=//p" | head -n 1
+}
+
+capture_frontend_env() {
+    local pid
+    local -a candidates=()
+
+    FRONTEND_DISPLAY=""
+    FRONTEND_WAYLAND_DISPLAY=""
+    FRONTEND_XDG_RUNTIME_DIR=""
+    FRONTEND_SWAYSOCK=""
+    FRONTEND_XDG_CURRENT_DESKTOP=""
+    FRONTEND_XDG_SESSION_TYPE=""
+    FRONTEND_XDG_SESSION_DESKTOP=""
+    FRONTEND_DBUS_SESSION_BUS_ADDRESS=""
+    FRONTEND_DBUS_SYSTEM_BUS_ADDRESS=""
+    FRONTEND_WLR_XWAYLAND_NO_AUTH=""
+
+    while IFS= read -r pid; do
+        [[ -n "${pid}" ]] && candidates+=("${pid}")
+    done < <(
+        {
+            pgrep -o -x sway
+            pgrep -o -x labwc
+            pgrep -o -f '(^|/)emulationstation([[:space:]]|$)'
+            pgrep -o -f '(^|/)emulationstation-standalone([[:space:]]|$)'
+        } 2>/dev/null | awk 'NF && !seen[$0]++'
+    )
+
+    for pid in "${candidates[@]}"; do
+        [[ -r "/proc/${pid}/environ" ]] || continue
+        FRONTEND_DISPLAY="$(frontend_env_value "${pid}" DISPLAY || true)"
+        FRONTEND_WAYLAND_DISPLAY="$(frontend_env_value "${pid}" WAYLAND_DISPLAY || true)"
+        FRONTEND_XDG_RUNTIME_DIR="$(frontend_env_value "${pid}" XDG_RUNTIME_DIR || true)"
+        FRONTEND_SWAYSOCK="$(frontend_env_value "${pid}" SWAYSOCK || true)"
+        FRONTEND_XDG_CURRENT_DESKTOP="$(frontend_env_value "${pid}" XDG_CURRENT_DESKTOP || true)"
+        FRONTEND_XDG_SESSION_TYPE="$(frontend_env_value "${pid}" XDG_SESSION_TYPE || true)"
+        FRONTEND_XDG_SESSION_DESKTOP="$(frontend_env_value "${pid}" XDG_SESSION_DESKTOP || true)"
+        FRONTEND_DBUS_SESSION_BUS_ADDRESS="$(frontend_env_value "${pid}" DBUS_SESSION_BUS_ADDRESS || true)"
+        FRONTEND_DBUS_SYSTEM_BUS_ADDRESS="$(frontend_env_value "${pid}" DBUS_SYSTEM_BUS_ADDRESS || true)"
+        FRONTEND_WLR_XWAYLAND_NO_AUTH="$(frontend_env_value "${pid}" WLR_XWAYLAND_NO_AUTH || true)"
+        return 0
+    done
+
+    return 1
+}
+
+ensure_frontend_session_env() {
+    local display=""
+    local sway_sock=""
+
+    capture_frontend_env || true
+
+    unset GAMESCOPE_WAYLAND_DISPLAY
+    unset GAMESCOPE_DISPLAY
+    unset GAMESCOPE_SESSION
+    unset WAYLAND_DISPLAY
+
+    if [[ -S /tmp/.X11-unix/X0 ]]; then
+        display=":0"
+    elif [[ -n "${FRONTEND_DISPLAY:-}" ]]; then
+        display="${FRONTEND_DISPLAY}"
+    elif command -v getLocalXDisplay >/dev/null 2>&1; then
+        display="$(getLocalXDisplay 2>/dev/null || true)"
+    fi
+    export DISPLAY="${display:-${DISPLAY:-:0}}"
+
+    sway_sock="${FRONTEND_SWAYSOCK:-}"
+    if [[ -z "${sway_sock}" && -n "${XDG_RUNTIME_DIR:-}" && -S "${XDG_RUNTIME_DIR}/sway-ipc.0.sock" ]]; then
+        sway_sock="${XDG_RUNTIME_DIR}/sway-ipc.0.sock"
+    elif [[ -z "${sway_sock}" && -S /var/run/sway-ipc.0.sock ]]; then
+        sway_sock="/var/run/sway-ipc.0.sock"
+    fi
+    if [[ -n "${sway_sock}" ]]; then
+        export SWAYSOCK="${sway_sock}"
+    else
+        unset SWAYSOCK
+    fi
+
+    if [[ -f /var/lib/.Xauthority ]]; then
+        export XAUTHORITY="/var/lib/.Xauthority"
+    fi
+    export WLR_XWAYLAND_NO_AUTH="${FRONTEND_WLR_XWAYLAND_NO_AUTH:-1}"
+    export XDG_SESSION_TYPE="x11"
+    export XDG_CURRENT_DESKTOP="${FRONTEND_XDG_CURRENT_DESKTOP:-sway}"
+    export XDG_SESSION_DESKTOP="${FRONTEND_XDG_SESSION_DESKTOP:-${XDG_CURRENT_DESKTOP}}"
+    export DBUS_SESSION_BUS_ADDRESS="${FRONTEND_DBUS_SESSION_BUS_ADDRESS:-${DBUS_SESSION_BUS_ADDRESS:-unix:path=/run/dbus/system_bus_socket}}"
+    export DBUS_SYSTEM_BUS_ADDRESS="${FRONTEND_DBUS_SYSTEM_BUS_ADDRESS:-${DBUS_SYSTEM_BUS_ADDRESS:-unix:path=/run/dbus/system_bus_socket}}"
+    case "${XDG_RUNTIME_DIR:-}" in
+        /run|/var/run)
+            unset XDG_RUNTIME_DIR
+            ;;
+    esac
+    ensure_runtime_dir
+    export GDK_BACKEND="x11"
+    export SDL_VIDEODRIVER="x11"
+
+    log_msg "Steam frontend env (${MODE}): DISPLAY=${DISPLAY}, WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-unset}, SWAYSOCK=${SWAYSOCK:-unset}, XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-unset}, DBUS_SESSION_BUS_ADDRESS=${DBUS_SESSION_BUS_ADDRESS}"
 }
 
 start_stub() {
@@ -1052,23 +1199,14 @@ install_proton_cachyos() {
     local dest_dir="${STEAM_ROOT}/compatibilitytools.d"
     local tar_path="${dest_dir}/${PROTON_CACHYOS_TAR}"
     local extracted_dir="${dest_dir}/${PROTON_CACHYOS_DIR}"
-    local manifest_file="${extracted_dir}/toolmanifest.vdf"
-    local old_dir
 
     proton_cachyos_enabled || return 0
 
     command -v tar >/dev/null 2>&1 || die "tar is required to install Proton-CachyOS."
     mkdir -p "${dest_dir}"
 
-    for old_dir in "${dest_dir}"/proton-cachyos-*-arm64; do
-        [[ -d "${old_dir}" ]] || continue
-        if [[ "${old_dir}" != "${extracted_dir}" ]]; then
-            log_msg "Removing old Proton-CachyOS: $(basename "${old_dir}")"
-            rm -rf "${old_dir}"
-        fi
-    done
-
     if [[ -x "${extracted_dir}/proton" ]]; then
+        repair_proton_cachyos_dir "${extracted_dir}"
         log_msg "Proton-CachyOS ${PROTON_CACHYOS_VERSION_FULL} already installed."
         return 0
     fi
@@ -1083,11 +1221,8 @@ install_proton_cachyos() {
     tar -xf "${tar_path}" -C "${dest_dir}" >> "${log}" 2>&1 || die "Failed to extract Proton-CachyOS ${PROTON_CACHYOS_VERSION_FULL}."
     rm -f "${tar_path}"
 
-    if [[ -f "${manifest_file}" ]]; then
-        sed -i '/require_tool_appid/d' "${manifest_file}" 2>/dev/null || true
-    fi
-
     [[ -x "${extracted_dir}/proton" ]] || die "Proton-CachyOS did not install to ${extracted_dir}/proton."
+    repair_proton_cachyos_dir "${extracted_dir}"
     log_msg "Installed Proton-CachyOS ${PROTON_CACHYOS_VERSION_FULL}."
 }
 
@@ -1161,6 +1296,104 @@ write_toolmanifest_vdf() {
 EOF
 }
 
+proton_cachyos_version_from_dir() {
+    local proton_dir="${1%/}"
+    local version="${proton_dir##*/}"
+
+    version="${version#proton-cachyos-}"
+    version="${version%-arm64}"
+    printf '%s\n' "${version}"
+}
+
+write_proton_cachyos_toolmanifest_vdf() {
+    local target="$1"
+
+    cat > "${target}" <<'EOF'
+"manifest"
+{
+  "version" "2"
+  "commandline" "/proton %verb%"
+  "use_sessions" "1"
+  "compatmanager_layer_name" "proton"
+}
+EOF
+    chmod 0644 "${target}" 2>/dev/null || true
+}
+
+write_proton_cachyos_compatibilitytool_vdf() {
+    local proton_dir="$1"
+    local version="$2"
+    local tool_id="proton-cachyos-${version}-arm64"
+    local target="${proton_dir}/compatibilitytool.vdf"
+
+    cat > "${target}" <<EOF
+"compatibilitytools"
+{
+  "compat_tools"
+  {
+    "${tool_id}"
+    {
+      "install_path" "."
+      "display_name" "Proton-CachyOS ${version} (ARM64)"
+      "from_oslist" "windows"
+      "to_oslist" "linux"
+    }
+  }
+}
+EOF
+    chmod 0644 "${target}" 2>/dev/null || true
+}
+
+repair_proton_cachyos_dir() {
+    local proton_dir="$1"
+    local version
+    local manifest
+
+    [[ -d "${proton_dir}" ]] || return 1
+
+    if [[ ! -e "${proton_dir}/files" && -d "${proton_dir}/share/default_pfx_arm64" ]]; then
+        ln -s . "${proton_dir}/files" 2>/dev/null || true
+    fi
+
+    version="$(proton_cachyos_version_from_dir "${proton_dir}")"
+    manifest="${proton_dir}/toolmanifest.vdf"
+
+    if [[ -f "${manifest}" ]]; then
+        sed -i '/require_tool_appid/d' "${manifest}" 2>/dev/null || true
+    fi
+
+    if [[ ! -f "${manifest}" ]] || ! grep -q '"commandline" "/proton %verb%"' "${manifest}" 2>/dev/null; then
+        write_proton_cachyos_toolmanifest_vdf "${manifest}"
+    fi
+    chmod 0644 "${manifest}" 2>/dev/null || true
+
+    write_proton_cachyos_compatibilitytool_vdf "${proton_dir}" "${version}"
+    chmod +x "${proton_dir}/proton" 2>/dev/null || true
+}
+
+register_proton_cachyos_versions() {
+    local proton_dir
+    local version
+    local registered=0
+
+    for proton_dir in "${STEAM_ROOT}/compatibilitytools.d"/proton-cachyos-*-arm64; do
+        [[ -d "${proton_dir}" ]] || continue
+
+        version="$(proton_cachyos_version_from_dir "${proton_dir}")"
+        if [[ -x "${proton_dir}/proton" ]]; then
+            repair_proton_cachyos_dir "${proton_dir}" || true
+            registered=$((registered + 1))
+            log_msg "Registered Proton-CachyOS ${version} as a Steam compatibility tool."
+        else
+            log_msg "Ignoring incomplete Proton-CachyOS ${version}: missing executable proton script."
+        fi
+    done
+
+    if (( registered > 1 )); then
+        log_msg "Registered ${registered} Proton-CachyOS ARM64 compatibility-tool variants."
+    fi
+}
+
 register_proton11_arm64() {
     local proton_dir="${STEAM_ROOT}/steamapps/common/${PROTON11_ARM64_DIR_NAME}"
     local compat_dir="${STEAM_ROOT}/compatibilitytools.d"
@@ -1169,9 +1402,10 @@ register_proton11_arm64() {
     ln -sfn "${proton_dir}" "${compat_dir}/Proton11ARM"
     write_compatibilitytool_vdf "${compat_dir}/compatibilitytool.vdf"
     write_toolmanifest_vdf "${proton_dir}/toolmanifest.vdf"
+    register_proton_cachyos_versions
 
     if [[ -x "${STEAM_ROOT}/compatibilitytools.d/${PROTON_CACHYOS_DIR}/proton" ]]; then
-        log_msg "Registered Proton-CachyOS ${PROTON_CACHYOS_VERSION_FULL} as a Steam compatibility tool."
+        log_msg "Selected Proton-CachyOS ${PROTON_CACHYOS_VERSION_FULL} is available."
     elif [[ -e "${proton_dir}/proton" ]]; then
         chmod +x "${proton_dir}/proton" 2>/dev/null || true
         log_msg "Registered installed Proton 11.0 (ARM64) as compatibility tool proton11_arm64."
@@ -1307,7 +1541,7 @@ steam_setup_state() {
         return 0
     fi
 
-    if proton_cachyos_enabled && [[ ! -x "${STEAM_ROOT}/compatibilitytools.d/${PROTON_CACHYOS_DIR}/proton" ]]; then
+    if proton_cachyos_enabled && [[ ! -x "${STEAM_ROOT}/compatibilitytools.d/${PROTON_CACHYOS_DIR}/proton" ]] && ! proton_cachyos_any_payload_exists; then
         printf 'support\n'
         return 0
     fi
@@ -1463,7 +1697,7 @@ launch_native_steam() {
         fi
 
         log_msg "Launching native ARM64 Steam in ${MODE} mode (attempt ${attempt}/${max_attempts}): ${STEAM_ROOT}/steamrtarm64/steam ${steam_args[*]:-}"
-        ensure_x11_session_env
+        ensure_frontend_session_env
         batocera-mouse show
         set +e
         (cd "${STEAM_ROOT}" && "${STEAM_ROOT}/steamrtarm64/steam" "${steam_args[@]}")

@@ -38,7 +38,7 @@ define BATOCERA_ES_SYSTEM_INSTALL_WINE_TOOLS
 endef
 endif
 
-ifeq ($(BR2_PACKAGE_GAMEPAD_CALIBRATION),y)
+ifeq ($(BR2_PACKAGE_GAMEPADCALIBRATION),y)
 define BATOCERA_ES_SYSTEM_INSTALL_GAMEPAD_CALIBRATION_TOOL
 	$(INSTALL) -D -m 0755 \
 		$(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/controllers/pads/gamepadcalibration/datainit/roms/emulator/Gamepad_Calibration.sh \

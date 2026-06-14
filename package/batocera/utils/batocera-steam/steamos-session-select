@@ -296,7 +296,7 @@ restore_ally_hotkeys_es() {
 case "${request}" in
     plasma|desktop)
         if [[ -e "${gamescope_es_session_flag}" ]]; then
-            echo "SteamOS session switch returning to ES-launched gamescope session: ${request}" >> "${log}"
+            echo "SteamOS session switch returning ES-launched gamescope session to EmulationStation: ${request}" >> "${log}"
             restore_ally_hotkeys_es
             terminate_steam_stack
             if ! resume_es; then

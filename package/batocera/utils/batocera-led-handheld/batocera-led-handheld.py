@@ -124,11 +124,19 @@ def default_led_config_for(led):
     if hasattr(led, "set_status_color") and is_split_status_led_device(led):
         # read_color() uses >= threshold matching, so we express "at/under X%" cutoffs by placing
         # the next bucket just above X (ex: 21 for "above 20%").
-        # - Charging: amber (100 bucket is used when status == Charging)
+        # - Charging: orange (100 bucket is used when status == Charging)
         # - <=20%: yellow
         # - <=5%: red (solid)
         # - <=3%: pulse
-        return ["100=FFAA00", "21=00FF00", "6=FFFF00", "4=FF0000", "3=PULSE", "0=FF0000"]
+        return ["100=FF8000", "21=00FF00", "6=FFFF00", "4=FF0000", "3=PULSE", "0=FF0000"]
+    if hasattr(led, "status_paths") and hasattr(led, "accent_paths"):
+        status_paths = getattr(led, "status_paths", [])
+        accent_paths = getattr(led, "accent_paths", [])
+        if status_paths and accent_paths and set(status_paths) == set(accent_paths):
+            # Accent-only RGB devices, including the current Odin3 DTS, do not expose
+            # a separate battery/status LED. Keep the user-selected ES colour while
+            # charging instead of turning the rings green.
+            return ["100=ESCOLOR", "15=ESCOLOR", "10=CC3333", "5=FF0000", "3=PULSE"]
     # Legacy behavior: use ES accent colour for normal battery levels.
     return ["100=009900", "15=ESCOLOR", "10=CC3333", "5=FF0000", "3=PULSE"]
 
@@ -235,6 +243,15 @@ def led_check(led):
         try:
             bt, ch = read_battery_state()
             block = get_status_colour_for_battery(ledconfig, bt, ch)
+            if hasattr(led, "set_status_color"):
+                try:
+                    led.set_status_color(block)
+                    prevblock = block
+                except Exception as e:
+                    print(f"Error: {e}")
+                time.sleep(CHECK_INTERVAL)
+                continue
+
             # Keep ESCOLOR in sync continuously for non-split devices so the
             # visible ring always follows ES sliders even if a prior update was missed.
             if block == "ESCOLOR":
@@ -297,7 +314,10 @@ if len(sys.argv)>1:
             print (f"Could not launch daemon: {e}")
             t.stop()
     elif sys.argv[1] == "stop" or sys.argv[1] == "off":
-        led.turn_off()
+        if hasattr(led, "turn_off_all"):
+            led.turn_off_all()
+        else:
+            led.turn_off()
     elif sys.argv[1] == "retroachievement" or sys.argv[1] == "blink":
         if leds_runtime_enabled() and color_changes_allowed():
             led.blink_effect()

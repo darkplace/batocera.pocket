@@ -110,6 +110,20 @@ trim_value() {
     printf '%s\n' "${value}"
 }
 
+settings_get_effective() {
+    local key="$1"
+
+    if command -v batocera-settings-get-master >/dev/null 2>&1; then
+        batocera-settings-get-master "${key}" 2>/dev/null && return 0
+    fi
+
+    if command -v batocera-settings-get >/dev/null 2>&1; then
+        batocera-settings-get "${key}" 2>/dev/null && return 0
+    fi
+
+    return 1
+}
+
 apply_steam_launcher_overrides() {
     local launcher
     local line
@@ -244,26 +258,24 @@ default_gamescope_backend() {
     local value
     local model=""
 
-    if command -v batocera-settings-get >/dev/null 2>&1; then
-        for value in \
-            "$(batocera-settings-get steam.gamescope_backend 2>/dev/null || true)" \
-            "$(batocera-settings-get steam.gamescope.backend 2>/dev/null || true)" \
-            "$(batocera-settings-get gamescope_backend 2>/dev/null || true)"
-        do
-            case "${value}" in
-                auto|drm|wayland|sdl|headless)
-                    printf '%s\n' "${value}"
-                    return 0
-                    ;;
-            esac
-        done
-    fi
+    for value in \
+        "$(settings_get_effective steam.gamescope_backend || true)" \
+        "$(settings_get_effective steam.gamescope.backend || true)" \
+        "$(settings_get_effective gamescope_backend || true)"
+    do
+        case "${value}" in
+            auto|drm|wayland|sdl|headless)
+                printf '%s\n' "${value}"
+                return 0
+                ;;
+        esac
+    done
 
     if command -v batocera-info >/dev/null 2>&1; then
         model="$(batocera-info 2>/dev/null | awk -F': ' '/^Model:/ {print $2; exit}')"
     fi
     case "${model}" in
-        AYN_Thor)
+        AYN_Thor|AYN_Odin_3)
             printf 'wayland\n'
             return 0
             ;;
@@ -373,20 +385,25 @@ detect_preferred_drm_connector() {
         fi
     done
 
-    if command -v batocera-settings-get >/dev/null 2>&1; then
-        for value in \
-            "$(batocera-settings-get steam.gamescope.output 2>/dev/null || true)" \
-            "$(batocera-settings-get global.videooutput 2>/dev/null || true)"
-        do
-            path="$(connected_drm_connector_path "${value}" || true)"
-            if [[ -n "${path}" ]]; then
-                printf '%s\n' "${value}"
-                return 0
-            fi
-        done
-    fi
+    for value in \
+        "$(settings_get_effective steam.gamescope.output || true)" \
+        "$(settings_get_effective global.videooutput || true)"
+    do
+        path="$(connected_drm_connector_path "${value}" || true)"
+        if [[ -n "${path}" ]]; then
+            printf '%s\n' "${value}"
+            return 0
+        fi
+    done
 
     case "${model}" in
+        AYN_Odin_3)
+            path="$(connected_drm_connector_path "DSI-1" || true)"
+            if [[ -n "${path}" ]]; then
+                printf 'DSI-1\n'
+                return 0
+            fi
+            ;;
         AYN_Thor)
             path="$(connected_drm_connector_path "DSI-2" || true)"
             if [[ -n "${path}" ]]; then
@@ -487,32 +504,30 @@ detect_gamescope_orientation() {
         model="$(batocera-info 2>/dev/null | awk -F': ' '/^Model:/ {print $2; exit}')"
     fi
 
-    if command -v batocera-settings-get >/dev/null 2>&1; then
-        value="$(batocera-settings-get steam.gamescope.orientation 2>/dev/null || true)"
-        if valid_gamescope_orientation "${value}"; then
-            printf '%s\n' "${value}"
-            return 0
-        fi
-
-        output="$(batocera-settings-get global.videooutput 2>/dev/null || true)"
-        output2="$(batocera-settings-get global.videooutput2 2>/dev/null || true)"
-        for key in \
-            "display.rotate.${output}" \
-            "display.rotate2.${output}" \
-            "display.rotate2.${output2}" \
-            "display.rotate.DSI-2" \
-            "display.rotate.DSI-1" \
-            "display.rotate.DSI" \
-            "display.rotate"
-        do
-            [[ "${key}" != "display.rotate." ]] || continue
-            value="$(batocera-settings-get "${key}" 2>/dev/null || true)"
-            if [[ "${value}" =~ ^[0-3]$ ]]; then
-                rotation="${value}"
-                break
-            fi
-        done
+    value="$(settings_get_effective steam.gamescope.orientation || true)"
+    if valid_gamescope_orientation "${value}"; then
+        printf '%s\n' "${value}"
+        return 0
     fi
+
+    output="$(settings_get_effective global.videooutput || true)"
+    output2="$(settings_get_effective global.videooutput2 || true)"
+    for key in \
+        "display.rotate.${output}" \
+        "display.rotate2.${output}" \
+        "display.rotate2.${output2}" \
+        "display.rotate.DSI-2" \
+        "display.rotate.DSI-1" \
+        "display.rotate.DSI" \
+        "display.rotate"
+    do
+        [[ "${key}" != "display.rotate." ]] || continue
+        value="$(settings_get_effective "${key}" || true)"
+        if [[ "${value}" =~ ^[0-3]$ ]]; then
+            rotation="${value}"
+            break
+        fi
+    done
 
     value="$(display_rotation_to_orientation "${rotation}")"
     if [[ -n "${value}" ]]; then
@@ -622,6 +637,17 @@ is_thor_top_bottom_display() {
     [[ "${model}" == "AYN_Thor" ]] || return 1
     [[ "$(batocera-settings-get-master display.position 2>/dev/null || true)" == "top-bottom" ]] || return 1
     [[ -n "$(batocera-settings-get-master global.videooutput2 2>/dev/null || true)" ]]
+}
+
+keep_emulationstation_during_preflight() {
+    case "${BATOCERA_STEAM_KEEP_ES_DURING_PREFLIGHT:-0}" in
+        1|true|TRUE|yes|YES|on|ON)
+            is_thor_top_bottom_display
+            ;;
+        *)
+            return 1
+            ;;
+    esac
 }
 
 restore_backglass_widget() {
@@ -1012,8 +1038,8 @@ start_session_supervisor "steam-direct-session"
 
 if [[ "${BATOCERA_STEAM_VISIBLE_UPDATE_PREFLIGHT:-0}" != "0" && -x /usr/bin/batocera-steam-update-preflight ]]; then
     if emulationstation_running; then
-        if is_thor_top_bottom_display; then
-            log "keeping EmulationStation running during Thor visible Steam updater preflight"
+        if keep_emulationstation_during_preflight; then
+            log "keeping EmulationStation running during visible Steam updater preflight"
         else
             log "stopping EmulationStation before visible Steam updater preflight"
             stop_emulationstation TERM
@@ -1106,7 +1132,14 @@ fi
 if [[ "${BATOCERA_STEAM_GS_BACKEND}" == "drm" ]]; then
     export BATOCERA_STEAM_GS_FORCE_ORIENTATION="${BATOCERA_STEAM_GS_FORCE_ORIENTATION:-${detected_orientation}}"
     export BATOCERA_STEAM_GS_XWAYLAND_COUNT="${BATOCERA_STEAM_GS_XWAYLAND_COUNT:-2}"
-    export BATOCERA_STEAM_GS_USE_ROTATION_SHADER="${BATOCERA_STEAM_GS_USE_ROTATION_SHADER:-1}"
+    case "$(batocera-info 2>/dev/null | awk -F': ' '/^Model:/ {print $2; exit}')" in
+        AYN_Odin_3)
+            export BATOCERA_STEAM_GS_USE_ROTATION_SHADER="${BATOCERA_STEAM_GS_USE_ROTATION_SHADER:-0}"
+            ;;
+        *)
+            export BATOCERA_STEAM_GS_USE_ROTATION_SHADER="${BATOCERA_STEAM_GS_USE_ROTATION_SHADER:-1}"
+            ;;
+    esac
     export BATOCERA_STEAM_GS_BORDERLESS="${BATOCERA_STEAM_GS_BORDERLESS:-1}"
     unset BATOCERA_STEAM_GS_DISABLE_HW_COMPOSITION
     unset BATOCERA_STEAM_GS_FORCE_COMPOSITION_PIPELINE

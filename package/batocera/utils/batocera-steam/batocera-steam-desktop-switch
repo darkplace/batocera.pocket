@@ -6,6 +6,7 @@ log="/userdata/system/logs/steam-desktop-switch.log"
 mkdir -p "$(dirname "${log}")"
 lock="/var/run/batocera-steam-desktop-switch.lock"
 direct_app_session_flag="/var/run/batocera-steam-direct-app-session"
+gamescope_es_session_flag="/var/run/batocera-steam-es-gamescope-session"
 preflight_session_flag="/var/run/batocera-steam-update-preflight"
 steam_session_pattern='(^|/)batocera-steam-session([[:space:]]|$)'
 decky_stack_pattern='/userdata/system/homebrew/services/PluginLoader|Decky Loader|/userdata/system/homebrew/plugins/'
@@ -261,6 +262,17 @@ terminate_steam_stack() {
 }
 
 echo "[$(date +%F\ %T)] switch-to-desktop: invoked" >> "${log}"
+if [[ -f "${gamescope_es_session_flag}" ]]; then
+    echo "[$(date +%F\ %T)] switch-to-desktop: returning ES-launched gamescope session to EmulationStation" >> "${log}"
+    recover_hotkeys_force
+    terminate_steam_stack
+    if command -v batocera-steam-frontend-recover >/dev/null 2>&1; then
+        batocera-steam-frontend-recover --reason desktop-switch-es-gamescope >> "${log}" 2>&1 || true
+    fi
+    recover_hotkeys_force
+    exit 0
+fi
+
 launcher_started=0
 if start_desktop_launcher; then
     launcher_started=1
