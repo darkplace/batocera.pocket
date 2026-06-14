@@ -45,10 +45,11 @@ Extra libraries (e.g. `libcups`) included for better AppImage compatibility
 
 ---
 
-## Qualcomm Builds (SM8550, QCS6490)
+## Qualcomm Builds (SM8550,SM8750, QCS6490)
 Includes additional emulators where supported:
 - AetherSX2  
-- RPCS3  
+- ARMSX2
+- RPCS3
 - Vita3K  
 - Cemu
 - Xenia
@@ -57,12 +58,14 @@ Includes additional emulators where supported:
 - NanoBoy Advance
 - And more emulators
 - Dusk Port Engine
-- Steam aarch64 (aarch64 client) (with gamescope working on sm8550) (h/t tipoex/mashy)
+- Opeangoal Engine
+- Steam aarch64 (aarch64 client) (with gamescope working on sm8550/sm8750) (h/t tipoex/mashy)
 - DXVK (DX11 support)
 - Fex-Emu support on Wine runners
 - LSFG-VK (requires Losless.dll - can be bought on steam)
   <img width="661" height="881" alt="image" src="https://github.com/user-attachments/assets/7183369d-ca34-4d24-9f6b-86d35feb9918" />
 - Docker *(enable in Services menu)*
+- Waydroid
 - Hotkey + touchscreen support for on-screen keyboard  
 
 ---
@@ -76,11 +79,21 @@ Includes additional emulators where supported:
 - Vulkan-native titles perform best  
 - Not a replacement for x86 gaming PCs
 
-
 ## Extra thor perks like lower widget Conky System monitor, retroarch lower panel controls, waydroid
   <img width="661" height="881" alt="image" src="https://github.com/user-attachments/assets/2696ed6f-0bdd-48f6-9c82-d4e3ed377acb" />
   <img width="583" height="777" alt="image" src="https://github.com/user-attachments/assets/8f00df20-a3e4-40a8-a8aa-eda8cbea1ae7" />
   <img width="661" height="881" alt="image" src="https://github.com/user-attachments/assets/307330f2-39b4-4c33-8893-85c19507884f" />
+
+
+## SM8750 (Snapdrgon 8gen Elite)
+- Same stack as above with more power
+- Waydroid currently not working on sm8750 as Adreno 830 currently doesn't support hardware acceleration on waydroid.
+  
+
+---
+
+## Qualcomm GPU Stack
+- Mesa + Freedreno + Turnip drivers  
 
 
 ### General Notes
@@ -93,9 +106,7 @@ Includes additional emulators where supported:
 
 ## Rockchip / Allwinner Devices
 
-### GPU Stack
-- Mesa + Panfrost  
-- Powkiddy X55 & RG-DS have mali blobs with gpudriver toggle in settings to panfrost
+
   
 ### Wine Expectations
 > “No! It can't run Crysis”
@@ -123,12 +134,9 @@ Do **NOT** expect:
 - Modern Unity / Unreal engines  
 - Heavy physics or CPU-bound games  
 
----
-
-## Qualcomm GPU Stack
-- Mesa + Freedreno + Turnip  
-- Supports higher-end emulation where hardware allows  
-
+### GPU Stack
+- Mesa + Panfrost  
+- Powkiddy X55 & RG-DS have mali blobs with gpudriver toggle in settings to panfrost
 ---
 
 ## Support Policy
@@ -137,9 +145,40 @@ These are unofficial builds and are **NOT supported** by the Batocera team.
 
 ---
 
+## Upstream Contributions
+
+This project focuses on building a modern, feature-rich Batocera variant. The goal is to deliver working integrations quickly, not to manage upstream contribution workflows.
+
+All source code is provided in full compliance with open-source licensing.
+If you would like a feature from this project included upstream:
+
+- You are free to submit a PR upstream yourself
+- You may reuse or adapt any code from this repository (per license terms)
+- You are responsible for meeting upstream requirements, scope, and policies
+
+Please do not request that features from this project be upstreamed on your behalf.
+
+This project intentionally targets a different scope (modern hardware, newer graphics stack, etc.), and not all features are designed to align with upstream constraints.
+
+---
 ## License & Disclaimer
 - Released under Batocera’s LGPLv3 & Buildroot's GPLv2 License  
 - Source code is included  
 - Use at your own risk  
 - No warranty  
-- No support provided  
+- No support provided
+ --- 
+ 
+## Credits
+
+Thanks to:
+
+- The Batocera Team for core development
+- Rion for initial draft of gamescope 
+- UUreel
+- Cliffy
+- Contributors from batocera.pro whose work was integrated
+
+---
+
+x86-64 PC builds are here: https://github.com/suckbluefrog/Batocera-Multilib
