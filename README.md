@@ -26,7 +26,7 @@ https://drive.proton.me/urls/RRPFQ38NX8#LmFz5AIaV2aI
 ## Core Features (All ARM64 Builds)
 - Flatpak enabled (with DBus + Wayland fixes)  
 - Wine + Box64 + Box86  
-- PortMaster fixes with multilib 32-bit support  
+- PortMaster fixes with multilib 32-bit support  (32bit not availble on CQ8725S)
 
 
 
@@ -45,7 +45,7 @@ Extra libraries (e.g. `libcups`) included for better AppImage compatibility
 
 ---
 
-## Qualcomm Builds (SM8550, SM8750, QCS6490)
+## Qualcomm Builds (SM8550, CQ8725S, QCS6490)
 Includes additional emulators where supported:
 - AetherSX2  
 - ARMSX2
@@ -85,9 +85,9 @@ Includes additional emulators where supported:
   <img width="661" height="881" alt="image" src="https://github.com/user-attachments/assets/307330f2-39b4-4c33-8893-85c19507884f" />
 
 
-## SM8750 (Snapdrgon 8gen Elite)
+## CQ8725S (Dragonwing Q8 - Odin 3)
 - Same stack as above with more power
-- Waydroid currently not working on sm8750 as Adreno 830 currently doesn't support hardware acceleration on waydroid.
+- Waydroid currently not working on CQ8725S as Adreno 830 currently doesn't support hardware acceleration on waydroid.
   
 
 ---
