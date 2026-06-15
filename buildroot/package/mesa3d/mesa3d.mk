@@ -5,9 +5,9 @@
 ################################################################################
 # batocera - remove 0001 patch file with bump
 # When updating the version, please also update mesa3d-headers
-MESA3D_VERSION = 26.1.1
+MESA3D_VERSION = 26.1.2
 ifeq ($(BR2_PACKAGE_BATOCERA_TARGET_SM8750),y)
-MESA3D_VERSION = 26.1.1
+MESA3D_VERSION = 26.1.2
 endif
 ifeq ($(BR2_PACKAGE_BATOCERA_TARGET_SM8250),y)
 MESA3D_VERSION = 25.3.6

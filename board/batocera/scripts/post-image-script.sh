@@ -65,6 +65,10 @@ SUFFIXDATE=$(date +%Y%m%d)
 for BATOCERA_PATHSUBTARGET in ${BATOCERA_IMAGES_TARGETS}
 do
     BATOCERA_SUBTARGET=$(basename "${BATOCERA_PATHSUBTARGET}")
+    BATOCERA_BOARD="${BATOCERA_SUBTARGET}"
+    if [ "${BATOCERA_BOARD}" = "sm8750" ]; then
+        BATOCERA_BOARD="cq8725s"
+    fi
 
     #### prepare the boot dir ######
     BOOTNAMEDDIR="${BATOCERA_BINARIES_DIR}/boot_${BATOCERA_SUBTARGET}"
@@ -74,7 +78,7 @@ do
     # add some common files
     cp -pr "${BINARIES_DIR}/tools"              "${BATOCERA_BINARIES_DIR}/boot/" || exit 1
     cp     "${BINARIES_DIR}/batocera-boot.conf" "${BATOCERA_BINARIES_DIR}/boot/" || exit 1
-    echo   "${BATOCERA_SUBTARGET}" > "${BATOCERA_BINARIES_DIR}/boot/boot/batocera.board" || exit 1
+    echo   "${BATOCERA_BOARD}" > "${BATOCERA_BINARIES_DIR}/boot/boot/batocera.board" || exit 1
 
     #### boot.tar.xz ###############
     echo "creating images/${BATOCERA_SUBTARGET}/boot.tar.xz"
