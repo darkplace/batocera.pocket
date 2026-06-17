@@ -154,6 +154,8 @@ define BATOCERA_EMULATIONSTATION_RESOURCES
 	# hooks
 	cp $(BATOCERA_EMULATIONSTATION_SOURCE_PATH)/batocera-preupdate-gamelists-hook \
 	    $(TARGET_DIR)/usr/bin/
+	$(INSTALL) -m 0755 $(BATOCERA_EMULATIONSTATION_SOURCE_PATH)/batocera-xenia-profiles \
+	    $(TARGET_DIR)/usr/bin/
 endef
 
 ### S31emulationstation

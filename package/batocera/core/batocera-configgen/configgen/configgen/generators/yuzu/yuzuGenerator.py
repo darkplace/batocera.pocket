@@ -128,6 +128,7 @@ def _pick_existing_path(*candidates: Path) -> Path | None:
 
 def _resolve_firmware_dir() -> Path | None:
     candidates = (
+        SWITCH_BIOS / "registered",
         SWITCH_FIRMWARE / "registered",
         SWITCH_FIRMWARE / "Contents" / "registered",
         SWITCH_FIRMWARE / "system" / "Contents" / "registered",

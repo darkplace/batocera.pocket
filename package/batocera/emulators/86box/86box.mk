@@ -4,7 +4,7 @@
 #
 ################################################################################
 
-86BOX_VERSION = v5.3
+86BOX_VERSION = v6.0
 86BOX_SITE = https://github.com/86Box/86Box.git
 86BOX_SITE_METHOD = git
 86BOX_LICENSE = GPL-2.0-or-later

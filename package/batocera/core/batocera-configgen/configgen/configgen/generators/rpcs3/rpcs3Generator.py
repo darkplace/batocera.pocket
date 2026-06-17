@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import json
 import logging
 import re
 import shutil
+import struct
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final, cast
 
@@ -24,8 +26,115 @@ _logger = logging.getLogger(__name__)
 
 _ACHIEVEMENT_SOUND_ROOT: Final = Path("/usr/share/libretro/assets/sounds")
 _DEFAULT_RPCS3_TROPHY_SOUND: Final = "ps3-trophy"
+_RPCS3_GAME_PROFILE_KEY: Final = "rpcs3_game_profile"
+_RPCS3_GAME_PROFILE_DATABASE: Final = "database"
+_RPCS3_GAME_PROFILE_MANUAL: Final = "manual"
+_RPCS3_DATABASE_CHOICE: Final = "rpcs3_database"
+_RPCS3_DATABASE_CONFIGS: Final = (
+    RPCS3_CONFIG_DIR / "GuiConfigs" / "config_database.dat",
+    Path("/usr/share/rpcs3/GuiConfigs/config_database.dat"),
+)
+_RPCS3_DATABASE_KEYS: Final[dict[str, tuple[tuple[str, ...], ...]]] = {
+    "rpcs3_ppudecoder": (("Core", "PPU Decoder"),),
+    "rpcs3_spudecoder": (("Core", "SPU Decoder"),),
+    "rpcs3_spuxfloataccuracy": (("Core", "SPU XFloat Accuracy"),),
+    "rpcs3_spuloopdetection": (("Core", "SPU loop detection"),),
+    "rpcs3_spublocksize": (("Core", "SPU Block Size"),),
+    "rpcs3_sleep_timers_accuracy": (("Core", "Sleep Timers Accuracy"),),
+    "rpcs3_framelimit": (("Video", "Frame limit"),),
+    "rpcs3_anisotropic": (("Video", "Anisotropic Filter Override"),),
+    "rpcs3_aa": (("Video", "MSAA"),),
+    "rpcs3_zcull": (("Video", "Accurate ZCULL stats"), ("Video", "Relaxed ZCULL Sync")),
+    "rpcs3_shader": (("Video", "Shader Precision"),),
+    "rpcs3_shadermode": (("Video", "Shader Mode"),),
+    "rpcs3_colorbuffers": (("Video", "Write Color Buffers"),),
+    "rpcs3_write_depth_buffers": (("Video", "Write Depth Buffer"),),
+    "rpcs3_read_color_buffers": (("Video", "Read Color Buffers"),),
+    "rpcs3_read_depth_buffers": (("Video", "Read Depth Buffer"),),
+    "rpcs3_strict": (("Video", "Strict Rendering Mode"),),
+    "rpcs3_vertexcache": (("Video", "Disable Vertex Cache"),),
+    "rpcs3_rsx": (("Video", "Multithreaded RSX"),),
+    "rpcs3_cpu_blit": (("Video", "Force CPU Blit"),),
+    "rpcs3_disable_zcull_queries": (("Video", "Disable ZCull Occlusion Queries"),),
+    "rpcs3_audio_format": (("Audio", "Audio Format"),),
+    "rpcs3_audiobuffer": (("Audio", "Enable Buffering"),),
+    "rpcs3_timestretch": (("Audio", "Enable Time Stretching"),),
+}
+_RPCS3_DATABASE_KEY_ALIASES: Final[dict[str, tuple[str, ...]]] = {
+    "rpcs3_ppudecoder": ("ppudecoder",),
+    "rpcs3_spudecoder": ("spudecoder",),
+    "rpcs3_spuxfloataccuracy": ("rpcs3_xfloat", "xfloat"),
+    "rpcs3_spuloopdetection": ("spuloopdetect",),
+    "rpcs3_spublocksize": ("spublocksize",),
+    "rpcs3_sleep_timers_accuracy": ("sleep_timers_accuracy",),
+    "rpcs3_framelimit": ("framelimit",),
+    "rpcs3_anisotropic": ("anisotropicfilter",),
+    "rpcs3_zcull": ("zcull_accuracy",),
+    "rpcs3_shader": ("shader_quality",),
+    "rpcs3_shadermode": ("shadermode",),
+    "rpcs3_colorbuffers": ("writecolorbuffers",),
+    "rpcs3_write_depth_buffers": ("writedepthbuffers",),
+    "rpcs3_read_color_buffers": ("readcolorbuffers",),
+    "rpcs3_read_depth_buffers": ("readdepthbuffers",),
+    "rpcs3_strict": ("strict_rendering",),
+    "rpcs3_vertexcache": ("disablevertex",),
+    "rpcs3_rsx": ("multithreadedrsx",),
+    "rpcs3_cpu_blit": ("cpu_blit",),
+    "rpcs3_disable_zcull_queries": ("disable_zcull_queries",),
+    "rpcs3_audio_format": ("audiochannels",),
+    "rpcs3_audiobuffer": ("audio_buffering",),
+}
+_RPCS3_DATABASE_PROFILE_TARGETS: Final[tuple[tuple[str, ...], ...]] = (
+    ("Core", "PPU Decoder"),
+    ("Core", "SPU Decoder"),
+    ("Core", "SPU XFloat Accuracy"),
+    ("Core", "SPU loop detection"),
+    ("Core", "SPU Block Size"),
+    ("Core", "Sleep Timers Accuracy"),
+    ("Core", "Libraries Control"),
+    ("Core", "Max SPURS Threads"),
+    ("Core", "Accurate SPU DMA"),
+    ("Core", "Disable SPU GETLLAR Spin Optimization"),
+    ("Core", "Debug Console Mode"),
+    ("Core", "Accurate RSX reservation access"),
+    ("Core", "RSX FIFO Fetch Accuracy"),
+    ("Video", "Frame limit"),
+    ("Video", "Anisotropic Filter Override"),
+    ("Video", "MSAA"),
+    ("Video", "Accurate ZCULL stats"),
+    ("Video", "Relaxed ZCULL Sync"),
+    ("Video", "Shader Precision"),
+    ("Video", "Shader Mode"),
+    ("Video", "Write Color Buffers"),
+    ("Video", "Write Depth Buffer"),
+    ("Video", "Read Color Buffers"),
+    ("Video", "Read Depth Buffer"),
+    ("Video", "Strict Rendering Mode"),
+    ("Video", "Disable Vertex Cache"),
+    ("Video", "Multithreaded RSX"),
+    ("Video", "Force CPU Blit"),
+    ("Video", "Disable ZCull Occlusion Queries"),
+    ("Video", "Handle RSX Memory Tiling"),
+    ("Video", "Emulate Special Depth Comparison"),
+    ("Video", "Vblank NTSC Fixup"),
+    ("Video", "Vulkan", "Asynchronous Texture Streaming"),
+    ("Audio", "Audio Format"),
+    ("Audio", "Enable Buffering"),
+    ("Audio", "Enable Time Stretching"),
+)
+_RPCS3_GT6_TITLE_IDS: Final = frozenset(("BCES01893", "BCJS37016", "BCUS98296"))
+_MISSING_DATABASE_VALUE: Final = object()
 
 def _cfg_get(system: Emulator, key: str, default: Any, *aliases: str) -> Any:
+    if key in _RPCS3_DATABASE_KEYS and _rpcs3_database_profile_requested(system):
+        return default
+
+    value = _cfg_get_configured_value(system, key, *aliases)
+    if value is system.config.MISSING or _cfg_value_is_rpcs3_database(value):
+        return default
+    return value
+
+def _cfg_get_configured_value(system: Emulator, key: str, *aliases: str) -> Any:
     missing = system.config.MISSING
     value = system.config.get(key, missing)
     if value is not missing:
@@ -34,25 +143,227 @@ def _cfg_get(system: Emulator, key: str, default: Any, *aliases: str) -> Any:
         value = system.config.get(alias, missing)
         if value is not missing:
             return value
-    return default
+    return missing
+
+def _cfg_value_is_rpcs3_database(value: Any) -> bool:
+    return str(value).casefold() == _RPCS3_DATABASE_CHOICE
+
+def _cfg_uses_rpcs3_database(system: Emulator, key: str, *aliases: str) -> bool:
+    value = _cfg_get_configured_value(system, key, *aliases)
+    return value is not system.config.MISSING and _cfg_value_is_rpcs3_database(value)
+
+def _rpcs3_database_profile_requested(system: Emulator) -> bool:
+    value = _cfg_get_configured_value(system, _RPCS3_GAME_PROFILE_KEY)
+    if value is system.config.MISSING:
+        return not _has_legacy_database_profile_setting(system)
+
+    profile = str(value).casefold()
+    if profile == _RPCS3_GAME_PROFILE_MANUAL:
+        return False
+
+    return profile == _RPCS3_GAME_PROFILE_DATABASE or profile == _RPCS3_DATABASE_CHOICE
+
+def _has_legacy_database_profile_setting(system: Emulator) -> bool:
+    for key in _RPCS3_DATABASE_KEYS:
+        value = _cfg_get_configured_value(system, key, *_RPCS3_DATABASE_KEY_ALIASES.get(key, ()))
+        if value is not system.config.MISSING:
+            return True
+
+    return False
 
 def _cfg_get_bool(system: Emulator, key: str, default: bool = False, *aliases: str) -> bool:
+    if key in _RPCS3_DATABASE_KEYS and _rpcs3_database_profile_requested(system):
+        return default
+
     missing = system.config.MISSING
-    if system.config.get(key, missing) is not missing:
+    value = system.config.get(key, missing)
+    if value is not missing:
+        if _cfg_value_is_rpcs3_database(value):
+            return default
         return system.config.get_bool(key, default)
     for alias in aliases:
-        if system.config.get(alias, missing) is not missing:
+        value = system.config.get(alias, missing)
+        if value is not missing:
+            if _cfg_value_is_rpcs3_database(value):
+                return default
             return system.config.get_bool(alias, default)
     return default
 
 def _cfg_get_int(system: Emulator, key: str, default: int, *aliases: str) -> int:
+    if key in _RPCS3_DATABASE_KEYS and _rpcs3_database_profile_requested(system):
+        return default
+
     missing = system.config.MISSING
-    if system.config.get(key, missing) is not missing:
+    value = system.config.get(key, missing)
+    if value is not missing:
+        if _cfg_value_is_rpcs3_database(value):
+            return default
         return system.config.get_int(key, default)
     for alias in aliases:
-        if system.config.get(alias, missing) is not missing:
+        value = system.config.get(alias, missing)
+        if value is not missing:
+            if _cfg_value_is_rpcs3_database(value):
+                return default
             return system.config.get_int(alias, default)
     return default
+
+def _read_param_sfo_title_id(param_sfo: Path) -> str:
+    return _read_param_sfo_string(param_sfo, "TITLE_ID").upper()
+
+def _read_param_sfo_string(param_sfo: Path, wanted_key: str) -> str:
+    if not param_sfo.is_file():
+        return ""
+
+    try:
+        data = param_sfo.read_bytes()
+        if len(data) < 20 or data[:4] != b"\0PSF":
+            return ""
+
+        key_table_start, data_table_start, entries = struct.unpack_from("<III", data, 8)
+        for index in range(entries):
+            entry_offset = 20 + (index * 16)
+            key_offset, _fmt, data_len, _data_max_len, data_offset = struct.unpack_from("<HHIII", data, entry_offset)
+            key_start = key_table_start + key_offset
+            key_end = data.index(b"\0", key_start)
+            key = data[key_start:key_end].decode("utf-8", errors="ignore")
+            if key == wanted_key:
+                value_start = data_table_start + data_offset
+                value_end = value_start + data_len
+                return data[value_start:value_end].decode("utf-8", errors="ignore").strip("\0 \t\r\n")
+    except (OSError, ValueError, struct.error):
+        _logger.debug("Could not read RPCS3 PARAM.SFO %s from %s", wanted_key, param_sfo)
+
+    return ""
+
+def _get_rpcs3_param_sfo_string(rom: Path, key: str) -> str:
+    for param_sfo in (rom / "PS3_GAME" / "PARAM.SFO", rom / "PARAM.SFO"):
+        value = _read_param_sfo_string(param_sfo, key)
+        if value:
+            return value
+
+    return ""
+
+def _get_rpcs3_title_id(rom: Path) -> str:
+    if rom.suffix == ".psn":
+        try:
+            with rom.open() as fp:
+                for line in fp:
+                    title_id = line.strip().upper()
+                    if len(title_id) >= 9:
+                        return title_id
+        except OSError:
+            _logger.debug("Could not read RPCS3 PSN title id from %s", rom)
+        return ""
+
+    for param_sfo in (rom / "PS3_GAME" / "PARAM.SFO", rom / "PARAM.SFO"):
+        title_id = _read_param_sfo_title_id(param_sfo)
+        if title_id:
+            return title_id
+
+    return ""
+
+def _version_at_most(version: str, maximum: str) -> bool:
+    try:
+        parsed_version = tuple(int(part) for part in version.split("."))
+        parsed_maximum = tuple(int(part) for part in maximum.split("."))
+    except ValueError:
+        return False
+
+    width = max(len(parsed_version), len(parsed_maximum))
+    return parsed_version + (0,) * (width - len(parsed_version)) <= parsed_maximum + (0,) * (width - len(parsed_maximum))
+
+def _load_rpcs3_database_config(title_id: str) -> dict[str, dict[str, Any]]:
+    database_path = next((path for path in _RPCS3_DATABASE_CONFIGS if path.is_file()), None)
+    if not title_id or database_path is None:
+        return {}
+
+    try:
+        with database_path.open("r", encoding="utf-8") as config_file:
+            database = json.load(config_file)
+    except (OSError, json.JSONDecodeError):
+        _logger.debug("Could not read RPCS3 config database from %s", database_path)
+        return {}
+
+    try:
+        config_text = database["games"][title_id]["config"]
+    except (KeyError, TypeError):
+        _logger.debug("RPCS3 config database has no entry for title id %s", title_id)
+        return {}
+
+    yaml = YAML(typ='safe', pure=True)
+    try:
+        database_config = yaml.load(config_text) or {}
+    except Exception:
+        _logger.debug("Could not parse RPCS3 database config for title id %s", title_id)
+        return {}
+
+    return cast('dict[str, dict[str, Any]]', database_config)
+
+def _get_rpcs3_database_value(database_config: dict[str, Any], path: tuple[str, ...]) -> Any:
+    value: Any = database_config
+    for part in path:
+        if not isinstance(value, dict) or part not in value:
+            return _MISSING_DATABASE_VALUE
+        value = value[part]
+
+    return value
+
+def _set_rpcs3_config_value(rpcs3ymlconfig: dict[str, dict[str, Any]], path: tuple[str, ...], value: Any) -> None:
+    config: dict[str, Any] = rpcs3ymlconfig
+    for part in path[:-1]:
+        section = config.get(part)
+        if not isinstance(section, dict):
+            section = {}
+            config[part] = section
+        config = section
+
+    config[path[-1]] = value
+
+def _apply_rpcs3_database_choices(system: Emulator, rpcs3ymlconfig: dict[str, dict[str, Any]], rom: Path, title_id: str) -> None:
+    if _rpcs3_database_profile_requested(system):
+        requested = [
+            (_RPCS3_GAME_PROFILE_KEY, target)
+            for target in _RPCS3_DATABASE_PROFILE_TARGETS
+        ]
+    else:
+        requested = [
+            (key, target)
+            for key, targets in _RPCS3_DATABASE_KEYS.items()
+            if _cfg_uses_rpcs3_database(system, key, *_RPCS3_DATABASE_KEY_ALIASES.get(key, ()))
+            for target in targets
+        ]
+
+    if not requested:
+        return
+
+    database_config = _load_rpcs3_database_config(title_id)
+    if not database_config:
+        _logger.debug("RPCS3 database choices requested, but no database config was available for %s", title_id or "unknown title id")
+        _apply_rpcs3_database_overrides(system, rpcs3ymlconfig, rom, title_id)
+        return
+
+    for config_key, target in requested:
+        value = _get_rpcs3_database_value(database_config, target)
+        if value is _MISSING_DATABASE_VALUE:
+            if config_key != _RPCS3_GAME_PROFILE_KEY:
+                _logger.debug("RPCS3 database entry for %s has no %s setting", title_id, config_key)
+            continue
+
+        _set_rpcs3_config_value(rpcs3ymlconfig, target, value)
+
+    _apply_rpcs3_database_overrides(system, rpcs3ymlconfig, rom, title_id)
+
+def _apply_rpcs3_database_overrides(system: Emulator, rpcs3ymlconfig: dict[str, dict[str, Any]], rom: Path, title_id: str) -> None:
+    if not _rpcs3_database_profile_requested(system) or title_id not in _RPCS3_GT6_TITLE_IDS:
+        return
+
+    _set_rpcs3_config_value(rpcs3ymlconfig, ("Video", "Disable ZCull Occlusion Queries"), True)
+
+    app_version = _get_rpcs3_param_sfo_string(rom, "APP_VER")
+    if _version_at_most(app_version, "01.05"):
+        _set_rpcs3_config_value(rpcs3ymlconfig, ("Video", "Force CPU Blit"), True)
+        _set_rpcs3_config_value(rpcs3ymlconfig, ("Video", "Write Color Buffers"), False)
+        _set_rpcs3_config_value(rpcs3ymlconfig, ("Video", "Read Color Buffers"), False)
 
 def _retroachievements_sound_disabled(sound: str) -> bool:
     return sound.lower() in ("", "0", "false", "none")
@@ -153,7 +464,8 @@ class Rpcs3Generator(Generator):
         # Set the SPU Decoder based on config
         rpcs3ymlconfig["Core"]["SPU Decoder"] = _cfg_get(system, "rpcs3_spudecoder", "Recompiler (LLVM)", "spudecoder")
         # Set the SPU XFloat Accuracy based on config
-        rpcs3ymlconfig["Core"]["XFloat Accuracy"] = _cfg_get(system, "rpcs3_spuxfloataccuracy", "Approximate", "rpcs3_xfloat", "xfloat")
+        rpcs3ymlconfig["Core"].pop("XFloat Accuracy", None)
+        rpcs3ymlconfig["Core"]["SPU XFloat Accuracy"] = _cfg_get(system, "rpcs3_spuxfloataccuracy", "Approximate", "rpcs3_xfloat", "xfloat")
         # Set the Default Core Values we need
         # Force to True for now to account for updates where exiting config file present.
         rpcs3ymlconfig["Core"]["SPU Cache"] = True
@@ -241,7 +553,7 @@ class Rpcs3Generator(Generator):
         rpcs3ymlconfig["Video"]["Anisotropic Filter Override"] = _cfg_get_int(system, "rpcs3_anisotropic", 0, "anisotropicfilter")
         
         # MSAA
-        rpcs3ymlconfig["Video"]["MSAA"] = system.config.get("rpcs3_aa", "Auto")
+        rpcs3ymlconfig["Video"]["MSAA"] = _cfg_get(system, "rpcs3_aa", "Auto")
         
         # ZCULL Accuracy
         match _cfg_get(system, "rpcs3_zcull", "", "zcull_accuracy"):
@@ -309,7 +621,7 @@ class Rpcs3Generator(Generator):
         
         # Time stretching
         time_stretch_mode = _cfg_get(system, "time_stretching", "")
-        if system.config.get_bool("rpcs3_timestretch"):
+        if _cfg_get_bool(system, "rpcs3_timestretch", False):
             rpcs3ymlconfig["Audio"]["Enable Time Stretching"] = True
             rpcs3ymlconfig["Audio"]["Enable Buffering"] = True
         elif time_stretch_mode in ("low", "medium", "high"):
@@ -392,6 +704,9 @@ class Rpcs3Generator(Generator):
         # Show trophy popups
         rpcs3ymlconfig["Miscellaneous"]["Show trophy popups"] = _cfg_get_bool(system, "rpcs3_show_trophy", False, "show_trophy")
 
+        title_id = _get_rpcs3_title_id(rom)
+        _apply_rpcs3_database_choices(system, rpcs3ymlconfig, rom, title_id)
+
         with RPCS3_CONFIG.open("w") as file:
             yaml = YAML(pure=True)
             yaml.default_flow_style = False
@@ -432,7 +747,8 @@ class Rpcs3Generator(Generator):
 
         env = {
             "XDG_CONFIG_HOME": CONFIGS,
-            "XDG_CACHE_HOME": CACHE
+            "XDG_CACHE_HOME": CACHE,
+            "BATOCERA_RPCS3_DISABLE_AUTO_DATABASE_CONFIG": "1"
         }
         if _cfg_get_bool(system, "rpcs3_achievement_sound", True):
             if sound_path := _retroachievements_sound_path(system):

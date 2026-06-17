@@ -3,6 +3,8 @@ shared_features:
   - powermode
   - tdp
   - videomode
+  - hud
+  - hud_corner
 custom_features:
   xenia_license:
     prompt: XBOX LIVE ARCADE
@@ -11,6 +13,26 @@ custom_features:
       No licenses enabled: 0
       XBLA license enabled (Default): 1
       All possible licenses (Not recommended): -1
+  xenia_profile:
+    submenu: PROFILE
+    prompt: GAMER PROFILE
+    description: Select an existing Xenia profile to sign in as player 1.
+    preset: xeniaprofiles
+  xenia_profile2:
+    submenu: PROFILE
+    prompt: GAMER PROFILE P2
+    description: Select an existing Xenia profile to sign in as player 2.
+    preset: xeniaprofiles
+  xenia_profile3:
+    submenu: PROFILE
+    prompt: GAMER PROFILE P3
+    description: Select an existing Xenia profile to sign in as player 3.
+    preset: xeniaprofiles
+  xenia_profile4:
+    submenu: PROFILE
+    prompt: GAMER PROFILE P4
+    description: Select an existing Xenia profile to sign in as player 4.
+    preset: xeniaprofiles
   xenia_resolution:
     prompt: INTERNAL DISPLAY RESOLUTION
     description: Allow games that support different resolutions to be rendered in a specific resolution.

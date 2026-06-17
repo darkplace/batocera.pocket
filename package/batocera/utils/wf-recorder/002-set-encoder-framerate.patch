@@ -1,0 +1,32 @@
+--- a/src/frame-writer.cpp
++++ b/src/frame-writer.cpp
+@@ -438,7 +438,15 @@ void FrameWriter::init_video_filters(const AVCodec *codec)
+     this->videoCodecCtx->height = filter_output->h;
+     this->videoCodecCtx->pix_fmt = (AVPixelFormat)filter_output->format;
+     this->videoCodecCtx->time_base = filter_output->time_base;
+-    this->videoCodecCtx->framerate = AVRational{1,0};
++    if (params.framerate != 0) {
++        this->videoCodecCtx->framerate = AVRational{params.framerate, 1};
++        this->videoCodecCtx->time_base = av_inv_q(this->videoCodecCtx->framerate);
++    } else if (params.buffrate != 0) {
++        this->videoCodecCtx->framerate = AVRational{params.buffrate, 1};
++        this->videoCodecCtx->time_base = av_inv_q(this->videoCodecCtx->framerate);
++    } else {
++        this->videoCodecCtx->framerate = AVRational{0, 1};
++    }
+     this->videoCodecCtx->sample_aspect_ratio = filter_output->sample_aspect_ratio;
+ 
+     this->hw_frame_context = av_buffersink_get_hw_frames_ctx(
+@@ -509,6 +517,12 @@ void FrameWriter::init_video_stream()
+         std::exit(-1);
+     }
+ 
++    if (videoCodecCtx->framerate.num > 0 && videoCodecCtx->framerate.den > 0) {
++        videoStream->avg_frame_rate = videoCodecCtx->framerate;
++        videoStream->r_frame_rate = videoCodecCtx->framerate;
++        videoStream->time_base = videoCodecCtx->time_base;
++    }
++
+     if ((ret = avcodec_parameters_from_context(videoStream->codecpar, videoCodecCtx)) < 0) {
+         av_strerror(ret, err, 256);
+         std::cerr << "avcodec_parameters_from_context failed: " << err << std::endl;

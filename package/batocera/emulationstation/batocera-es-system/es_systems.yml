@@ -2261,6 +2261,9 @@ ps3:
     PS3 roms are directories must be renamed to end with .ps3.
     PSN digital games are installed in rpcs3-config, create a text file ending with .psn that contains the game's ID.
     First time you load a game, it takes time (a progress bar is visible). It doesn't happen next times.
+    Batocera includes an initial RPCS3 game profile database for the "RPCS3 Database (Game Profile)" advanced options.
+    To update it, open rpcs3-config from menu>f1>Applications, then right-click the RPCS3 game list and choose Download Config Database.
+    The updated database is saved to /userdata/system/configs/rpcs3/GuiConfigs/config_database.dat.
 
     For more info: https://wiki.batocera.org/systems:ps3
   comment_fr: |

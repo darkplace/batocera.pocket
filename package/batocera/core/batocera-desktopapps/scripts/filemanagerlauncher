@@ -1,20 +1,5 @@
 #!/bin/bash
 
-is_ayn_thor() {
-    for f in /sys/firmware/devicetree/base/compatible /proc/device-tree/compatible; do
-        [ -r "$f" ] || continue
-        tr '\0' '\n' < "$f" | grep -qx 'ayn,thor' && return 0
-    done
-    return 1
-}
-
-if is_ayn_thor; then
-    batocera-mouse show
-    pcmanfm "$@"
-    batocera-mouse hide
-    exit $?
-fi
-
 export XDG_MENU_PREFIX=batocera-
 export XDG_CONFIG_DIRS=/etc/xdg
 
@@ -24,22 +9,17 @@ export XDG_CACHE_HOME=/tmp/xdg_cache
 # Fix xterm via F4 is not previously set up
 python << EOF
 import configparser
-import os
-
 F = '/userdata/system/.config/libfm/libfm.conf'
-os.makedirs(os.path.dirname(F), exist_ok=True)
-
 c = configparser.ConfigParser()
 c.read(F)
-
-if not c.has_section('config'):
-    c.add_section('config')
-
-t = c['config'].get('terminal')
-if not t:
-    with open(F, 'w') as wf:
-        c['config']['terminal'] = 'xterm'
-        c.write(wf)
+try:
+   t = c['config']['terminal']
+except:
+   t = None
+if (not t or t == ''):
+   with open(F, 'w') as wf:
+     c['config']['terminal'] = 'xterm'
+     c.write(wf)
 EOF
 
 batocera-backglass disable

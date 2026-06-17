@@ -1,0 +1,132 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import hashlib
+import hmac
+import os
+import re
+from pathlib import Path
+
+
+XUID_RE = re.compile(r"^[0-9A-Fa-f]{16}$")
+PROFILE_TITLE_ID = "FFFE07D1"
+PROFILE_CONTENT_TYPE = "00010000"
+ACCOUNT_INFO_SIZE = 0x17C
+ACCOUNT_FILE_SIZE = ACCOUNT_INFO_SIZE + 0x18
+
+XEKEYS = (
+    bytes((0xE1, 0xBC, 0x15, 0x9C, 0x73, 0xB1, 0xEA, 0xE9,
+           0xAB, 0x31, 0x70, 0xF3, 0xAD, 0x47, 0xEB, 0xF3)),
+    bytes((0xDA, 0xB6, 0x9A, 0xD9, 0x8E, 0x28, 0x76, 0x4F,
+           0x97, 0x7E, 0xE2, 0x48, 0x7E, 0x4F, 0x3F, 0x68)),
+)
+
+
+def rc4(key: bytes, data: bytes) -> bytes:
+    state = list(range(256))
+    index_j = 0
+
+    for index_i in range(256):
+        index_j = (index_j + state[index_i] + key[index_i % len(key)]) & 0xFF
+        state[index_i], state[index_j] = state[index_j], state[index_i]
+
+    index_i = 0
+    index_j = 0
+    out = bytearray()
+
+    for value in data:
+        index_i = (index_i + 1) & 0xFF
+        index_j = (index_j + state[index_i]) & 0xFF
+        state[index_i], state[index_j] = state[index_j], state[index_i]
+        out.append(value ^ state[(state[index_i] + state[index_j]) & 0xFF])
+
+    return bytes(out)
+
+
+def decode_gamertag(raw: bytes) -> str:
+    def decode(endian: str) -> str:
+        chars: list[str] = []
+        for offset in range(0, len(raw), 2):
+            codepoint = int.from_bytes(raw[offset:offset + 2], endian)
+            if codepoint == 0:
+                break
+            if codepoint < 32:
+                return ""
+            chars.append(chr(codepoint))
+        return "".join(chars).strip()
+
+    return decode("big") or decode("little")
+
+
+def decrypt_gamertag(path: Path) -> str:
+    try:
+        data = path.read_bytes()
+    except OSError:
+        return ""
+
+    if len(data) < ACCOUNT_FILE_SIZE:
+        return ""
+
+    expected_hash = data[:0x10]
+    encrypted = data[0x10:0x10 + ACCOUNT_INFO_SIZE + 8]
+
+    for key in XEKEYS:
+        rc4_key = hmac.new(key, expected_hash, hashlib.sha1).digest()[:0x10]
+        decrypted = rc4(rc4_key, encrypted)
+        actual_hash = hmac.new(key, decrypted, hashlib.sha1).digest()[:0x10]
+        if actual_hash != expected_hash:
+            continue
+
+        account = decrypted[8:8 + ACCOUNT_INFO_SIZE]
+        return decode_gamertag(account[8:8 + 0x20])
+
+    return ""
+
+
+def content_roots() -> list[Path]:
+    candidates: list[Path] = []
+
+    env_root = os.environ.get("BATOCERA_XENIA_CONTENT_ROOT")
+    if env_root:
+        candidates.append(Path(env_root))
+
+    candidates.append(Path("/userdata/saves/xbox360"))
+
+    roots: list[Path] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        key = str(candidate.resolve(strict=False))
+        if key in seen:
+            continue
+        seen.add(key)
+        roots.append(candidate)
+
+    return roots
+
+
+def list_profiles() -> None:
+    found: dict[str, str] = {}
+
+    for root in content_roots():
+        if not root.is_dir():
+            continue
+
+        for profile_root in sorted(root.iterdir(), key=lambda item: item.name.casefold()):
+            xuid = profile_root.name.upper()
+            if not XUID_RE.fullmatch(profile_root.name) or xuid == "0000000000000000":
+                continue
+
+            profile_dir = profile_root / PROFILE_TITLE_ID / PROFILE_CONTENT_TYPE / xuid
+            if not profile_dir.is_dir():
+                continue
+
+            account = profile_dir / "Account"
+            gamertag = decrypt_gamertag(account)
+            found[xuid] = f"{gamertag} ({xuid})" if gamertag else xuid
+
+    for xuid, label in sorted(found.items(), key=lambda item: item[1].casefold()):
+        print(f"{xuid}:{label}")
+
+
+if __name__ == "__main__":
+    list_profiles()

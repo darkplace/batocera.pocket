@@ -1,0 +1,21 @@
+diff --git a/rpcs3/Emu/System.cpp b/rpcs3/Emu/System.cpp
+--- a/rpcs3/Emu/System.cpp
++++ b/rpcs3/Emu/System.cpp
+@@ -47,7 +47,8 @@
+ #include "util/init_mutex.hpp"
+ #include "util/sysinfo.hpp"
+ 
++#include <cstdlib>
+ #include <memory>
+ #include <regex>
+ #include <shared_mutex>
+ 
+@@ -1600,6 +1601,7 @@ game_boot_result Emulator::Load(const std::string& title_id, bool add_only, bool
+ 
+ 		{
+-			if (m_config_mode == cfg_mode::database_config || m_config_mode == cfg_mode::custom)
++			const bool batocera_disable_auto_database_config = ::getenv("BATOCERA_RPCS3_DISABLE_AUTO_DATABASE_CONFIG") != nullptr;
++			if (m_config_mode == cfg_mode::database_config || (m_config_mode == cfg_mode::custom && !batocera_disable_auto_database_config))
+ 			{
+ 				if (!m_db_config)
+ 				{

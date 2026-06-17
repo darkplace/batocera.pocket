@@ -1,0 +1,19 @@
+--- a/gpcal/gamedata/Klib/RPocket.py
++++ b/gpcal/gamedata/Klib/RPocket.py
+@@ -413,10 +413,10 @@ class RPCalibration:
+ 
+     def __str__(self):
+-        return self.axis_leftx \
+-            + self.axis_lefty \
+-            + self.axis_rightx \
+-            + self.axis_righty \
+-            + self.trigger_left \
+-            + self.trigger_right \
+-            +f"self.update_params={self.update_params}\n"
++        return str(self.axis_leftx) \
++            + str(self.axis_lefty) \
++            + str(self.axis_rightx) \
++            + str(self.axis_righty) \
++            + str(self.trigger_left) \
++            + str(self.trigger_right) \
++            + f"self.update_params={self.update_params}\n"

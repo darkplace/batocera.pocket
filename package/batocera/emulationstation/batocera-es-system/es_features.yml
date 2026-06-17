@@ -11317,8 +11317,15 @@ reicast:
 rpcs3:
   shared: [powermode, tdp, videomode, bezel, bezel_stretch, hud, hud_corner, bezel.tattoo, bezel.tattoo_corner, bezel.tattoo_file, bezel.resize_tattoo, use_guns, use_wheels, wheel_rotation, wheel_deadzone, wheel_midzone]
   cfeatures:
+        rpcs3_game_profile:
+            submenu: GAME PROFILE
+            prompt: RPCS3 GAME PROFILE
+            description: Use RPCS3's per-game compatibility database, or manually configure the compatibility settings below.
+            choices:
+                "RPCS3 Database Defaults (Default)": database
+                "Manual Batocera Settings": manual
         rpcs3_ppudecoder:
-            submenu: CPU
+            submenu: MANUAL GAME PROFILE
             prompt: PPU DECODER
             description: LLVM is fastest, use the Interpreter settings if there are issues.
             choices:
@@ -11326,7 +11333,7 @@ rpcs3:
                 "Dynamic Interpreter": Interpreter (dynamic)
                 "Static Interpreter":  Interpreter (static)
         rpcs3_spudecoder:
-            submenu: CPU
+            submenu: MANUAL GAME PROFILE
             prompt: SPU DECODER
             description: If game crashes, try ASMJIT. If still crashing, try Fast Interpreter.
             choices:
@@ -11335,7 +11342,7 @@ rpcs3:
                 "Fast Interpreter":    Interpreter (fast)
                 "Precise Interpreter": Interpreter (precise)
         rpcs3_spuxfloataccuracy:
-            submenu: CPU
+            submenu: MANUAL GAME PROFILE
             prompt: SPU XFloat Accuracy
             description: Can fix bugs in some games. Only relevant for dynamic or LLVM SPU decoder.
             choices:
@@ -11354,14 +11361,14 @@ rpcs3:
                 "5 threads": 5
                 "6 threads": 6
         rpcs3_spuloopdetection:
-            submenu: CPU
+            submenu: MANUAL GAME PROFILE
             prompt: SPU LOOP DETECTION
             description: May provide performance gain on CPUs with low core/thread count at the expense of possible broken timings.
             choices:
                 "Off (Default)": False
                 "On": True
         rpcs3_spublocksize:
-            submenu: CPU
+            submenu: MANUAL GAME PROFILE
             prompt: SPU BLOCK SIZE
             description: Mega and Giga modes may improve performance. Use the Safe mode for maximum compatibility.
             choices:
@@ -11378,7 +11385,7 @@ rpcs3:
                 "Moderate": "100"
                 "Maximum": "150"
         rpcs3_sleep_timers_accuracy:
-            submenu: CPU
+            submenu: MANUAL GAME PROFILE
             prompt: SLEEP TIMERS ACCURACY
             description: Changes the sleep period accuracy. Some games need this set to improve performance.
             choices:
@@ -11400,7 +11407,7 @@ rpcs3:
                 "OpenGL": OpenGL
                 "Vulkan": Vulkan
         rpcs3_framelimit:
-            submenu: VIDEO
+            submenu: MANUAL GAME PROFILE
             prompt: ADDITIONAL FRAMELIMIT
             description: Most games already have an internal framelimit. Minor performance cost.
             choices:
@@ -11416,7 +11423,7 @@ rpcs3:
                 "59.94":                  59.94
                 "60":                     60
         rpcs3_anisotropic:
-            submenu: RENDER
+            submenu: MANUAL GAME PROFILE
             prompt: ANISOTROPIC FILTER
             description: Improves clarity of distant textures.
             choices:
@@ -11425,14 +11432,14 @@ rpcs3:
                 "8x":  8
                 "16x": 16
         rpcs3_aa:
-            submenu: RENDER
+            submenu: MANUAL GAME PROFILE
             prompt: ANTI-ALIASING
             description: Enhancement. Smooth out jagged edges on 3D object polygons.
             choices:
                 # Auto is Auto
                 "Disabled": Disabled
         rpcs3_zcull:
-            submenu: RENDER
+            submenu: MANUAL GAME PROFILE
             prompt: ZCULL ACCURACY
             description: Can improve performance at the expense of graphics accuracy.
             choices:
@@ -11440,7 +11447,7 @@ rpcs3:
                 "Approximate (Fast)":         Approximate # Both false
                 "Relaxed (Fastest)":          Relaxed     # Relaxed ZCULL Sync: true
         rpcs3_shader:
-            submenu: RENDER
+            submenu: MANUAL GAME PROFILE
             prompt: SHADER QUALITY
             description: Controls precision of generated shaders. Low quality can improved performance.
             choices:
@@ -11473,7 +11480,7 @@ rpcs3:
                 "Bilinear (Default)":          Bilinear
                 "FidelityFX Super Resolution": FidelityFX Super Resolution
         rpcs3_shadermode:
-            submenu: RENDER
+            submenu: MANUAL GAME PROFILE
             prompt: SHADER MODE
             description: Only Async (skip draw) avoids freezing while compiling shaders.
             choices:
@@ -11503,21 +11510,35 @@ rpcs3:
                 "15": 15
                 "16": 16
         rpcs3_colorbuffers:
-            submenu: RENDER
+            submenu: MANUAL GAME PROFILE
             prompt: WRITE COLOR BUFFERS
             description: May fix missing graphics and broken lighting at the cost of performance.
             choices:
                 "Off (Default)": False
                 "On":            True
         rpcs3_write_depth_buffers:
-            submenu: RENDER
+            submenu: MANUAL GAME PROFILE
             prompt: WRITE DEPTH BUFFERS
             description: Writes depth buffer values to VM memory. Some games need this to fix broken graphics.
             choices:
                 "Off (Default)": False
                 "On": True
+        rpcs3_read_color_buffers:
+            submenu: MANUAL GAME PROFILE
+            prompt: READ COLOR BUFFERS
+            description: Reads color buffer values from VM memory. Some games need this to fix broken graphics.
+            choices:
+                "Off (Default)": False
+                "On": True
+        rpcs3_read_depth_buffers:
+            submenu: MANUAL GAME PROFILE
+            prompt: READ DEPTH BUFFERS
+            description: Reads depth buffer values from VM memory. Some games need this to fix broken graphics.
+            choices:
+                "Off (Default)": False
+                "On": True
         rpcs3_strict:
-            submenu: RENDER
+            submenu: MANUAL GAME PROFILE
             prompt: STRICT RENDERING MODE
             description: Straict API specification. Can resolve rare cases of missing graphics and flickering.
             choices:
@@ -11538,16 +11559,30 @@ rpcs3:
                 "Off": False
                 "On":  True
         rpcs3_vertexcache:
-            submenu: RENDER
+            submenu: MANUAL GAME PROFILE
             prompt: DISABLE VERTEX CACHE
             description: Disables the vertex cache. Might resolve missing or flickering graphics output but degrade performance.
             choices:
                 "Off (Default)": False
                 "On":            True
         rpcs3_rsx:
-            submenu: RENDER
+            submenu: MANUAL GAME PROFILE
             prompt: MULTITHREADED RSX
             description: Offloads some RSX operations to a secondary thread. Improves performance in high-core processors.
+            choices:
+                "Off (Default)": False
+                "On":            True
+        rpcs3_cpu_blit:
+            submenu: MANUAL GAME PROFILE
+            prompt: FORCE CPU BLIT EMULATION
+            description: Can fix flickering in some games at the cost of performance and some lighting effects.
+            choices:
+                "Off (Default)": False
+                "On":            True
+        rpcs3_disable_zcull_queries:
+            submenu: MANUAL GAME PROFILE
+            prompt: DISABLE ZCULL OCCLUSION QUERIES
+            description: Can improve performance in games with expensive occlusion queries.
             choices:
                 "Off (Default)": False
                 "On":            True
@@ -11559,7 +11594,7 @@ rpcs3:
                 "Off (Default)":    False
                 "On (Vulkan Only)": True
         rpcs3_audio_format:
-            submenu: AUDIO
+            submenu: MANUAL GAME PROFILE
             prompt: AUDIO FORMAT
             description: Choose number of audio channels.
             choices:
@@ -11574,7 +11609,7 @@ rpcs3:
                 "Off (Default)": False
                 "On":            True
         rpcs3_audiobuffer:
-            submenu: AUDIO
+            submenu: MANUAL GAME PROFILE
             prompt: ENABLE AUDIO BUFFERING
             description: Can reduce crackle and stutter but increases audio latency.
             choices:
@@ -11599,7 +11634,7 @@ rpcs3:
                 "220ms":           220
                 "240ms":           240
         rpcs3_timestretch:
-            submenu: AUDIO
+            submenu: MANUAL GAME PROFILE
             prompt: ENABLE TIME STRETCHING
             description: Reduces crackle and stutter further, but may cause a very noticeable reduction in audio quality on slower CPUs.
             choices:
@@ -16385,7 +16420,6 @@ ryujinx:
   - padtokeyboard
   shared:
   - powermode
-  - gpu_performance_profile
   - tdp
   - videomode
   - bezel
@@ -16398,27 +16432,148 @@ ryujinx:
   - bezel.resize_tattoo
   cfeatures:
     ryujinx_api:
+      submenu: RENDERING
       prompt: GRAPHICS API
       description: Choose which graphics API library to use.
       choices:
-        OpenGL: OpenGL
+        OpenGL: OpenGl
         Vulkan: Vulkan
+    lsfg_vk:
+      archs_include:
+      - x86_64
+      - x86-64-v3
+      - qcs6490
+      - sm8250
+      - sm8550
+      - sm8750
+      submenu: SYSTEM
+      prompt: LSFG-VK FRAME GENERATION
+      description: Enables the Lossless Scaling Frame Generation Vulkan layer when
+        the Vulkan backend is selected. Requires Lossless.dll from a purchased Lossless
+        Scaling install.
+      choices:
+        'Off': 0
+        'On': 1
+    lsfg_vk_dll:
+      archs_include:
+      - x86_64
+      - x86-64-v3
+      - qcs6490
+      - sm8250
+      - sm8550
+      - sm8750
+      submenu: SYSTEM
+      prompt: LOSSLESS.DLL PATH
+      description: Optional path to Lossless.dll. Leave blank to use automatic lookup.
+      message: Default location is ~/wine/lossless-config/Lossless.dll (/userdata/system/wine/lossless-config/Lossless.dll).
+      preset: input
+    lsfg_vk_multiplier:
+      archs_include:
+      - x86_64
+      - x86-64-v3
+      - qcs6490
+      - sm8250
+      - sm8550
+      - sm8750
+      submenu: SYSTEM
+      prompt: LSFG MULTIPLIER
+      choices:
+        2x (Default): 2
+        3x: 3
+        4x: 4
+    lsfg_vk_flow_scale:
+      archs_include:
+      - x86_64
+      - x86-64-v3
+      - qcs6490
+      - sm8250
+      - sm8550
+      - sm8750
+      submenu: SYSTEM
+      prompt: LSFG FLOW SCALE
+      choices:
+        1.0 (Default x86): '1.0'
+        0.75 (Default ARM): '0.75'
+        0.5: '0.5'
+        0.25: '0.25'
+    lsfg_vk_performance:
+      archs_include:
+      - x86_64
+      - x86-64-v3
+      - qcs6490
+      - sm8250
+      - sm8550
+      - sm8750
+      submenu: SYSTEM
+      prompt: LSFG PERFORMANCE MODE
+      choices:
+        'Off': 0
+        'On': 1
+    lsfg_vk_hdr:
+      archs_include:
+      - x86_64
+      - x86-64-v3
+      - qcs6490
+      - sm8250
+      - sm8550
+      - sm8750
+      submenu: SYSTEM
+      prompt: LSFG HDR MODE
+      choices:
+        'Off': 0
+        'On': 1
+    lsfg_vk_present_mode:
+      archs_include:
+      - x86_64
+      - x86-64-v3
+      - qcs6490
+      - sm8250
+      - sm8550
+      - sm8750
+      submenu: SYSTEM
+      prompt: LSFG PRESENT MODE
+      choices:
+        Auto (Default): ''
+        FIFO: fifo
+        Mailbox: mailbox
+        Immediate: immediate
     ryujinx_async_gpu_shader:
+      submenu: RENDERING
       prompt: ASYNC GPU SHADER (VULKAN)
       description: Enable asynchronous GPU threading and shader cache when using Vulkan.
       choices:
         Enabled (Default): 'true'
         Disabled: 'false'
+    ryujinx_backend_threading:
+      submenu: RENDERING
+      prompt: GPU BACKEND THREADING
+      description: Auto lets Ryujinx decide whether threaded graphics backend work is useful.
+      choices:
+        Auto (Default): Auto
+        'On': 'On'
+        'Off': 'Off'
+    ryujinx_shader_cache:
+      submenu: RENDERING
+      prompt: SHADER CACHE
+      description: Cache translated shaders to reduce stutter after the first run.
+      choices:
+        Enabled (Default): 'true'
+        Disabled: 'false'
     ryujinx_scale:
+      submenu: VIDEO
       prompt: RENDERING RESOLUTION
       description: Enhancement. Increase the rendering resolution. Makes 3D objects
         clearer.
       choices:
+        0.5x (360p/540p): 0.5
+        0.75x (540p/810p): 0.75
         Native (720p/1080p): 1
+        1.5x (1080p/1620p): 1.5
         2x (1440p/2160p): 2
         3x (2160p/3240p): 3
         4x (2880p/4320p): 4
     ryujinx_ratio:
+      submenu: VIDEO
       prompt: ASPECT RATIO
       description: Change the output resolution ratio.
       choices:
@@ -16428,21 +16583,275 @@ ryujinx:
         '21:9': Fixed21x9
         '32:9': Fixed32x9
         Stretch to fit window: Stretched
+    ryujinx_vsync:
+      submenu: RENDERING
+      prompt: VSYNC
+      description: Switch mode caps to the emulated refresh rate. Unbounded disables
+        VSync.
+      choices:
+        'Off': Unbounded
+        Switch Refresh (Default): Switch
+        Custom Interval: Custom
+    ryujinx_custom_vsync_interval:
+      submenu: RENDERING
+      prompt: CUSTOM VSYNC INTERVAL
+      description: Used only when VSync is set to Custom Interval.
+      choices:
+        30 Hz: 30
+        45 Hz: 45
+        60 Hz: 60
+        90 Hz: 90
+        120 Hz (Default): 120
+        144 Hz: 144
     ryujinx_docked_mode:
+      submenu: SYSTEM
       prompt: DOCK MODE
       description: Choose whether the virtual switch is docked or not.
       choices:
         Undocked: 'false'
         Docked (Default): 'true'
     ryujinx_filtering:
+      submenu: RENDERING
       prompt: ANISOTROPIC FILTERING
       description: Improves clarity of distant textures.
       choices:
+        Auto (Default): -1
         2x: 2
         4x: 4
         8x: 8
         16x: 16
+    ryujinx_scaling_filter:
+      submenu: RENDERING
+      prompt: TEXTURE FILTERING
+      description: Select the final image scaling filter.
+      choices:
+        Bilinear (Default): Bilinear
+        Nearest Neighbour: Nearest
+        AMD FidelityFX Super Resolution: Fsr
+        Area: Area
+    ryujinx_scaling_filter_level:
+      submenu: RENDERING
+      prompt: FSR SHARPNESS
+      description: Higher values sharpen FSR output. Used only with the FSR scaling
+        filter.
+      choices:
+        20%: 20
+        40%: 40
+        60%: 60
+        80% (Default): 80
+        100%: 100
+    ryujinx_antialiasing:
+      submenu: RENDERING
+      prompt: ANTI-ALIASING METHOD
+      description: Apply post-process anti-aliasing to the rendered image.
+      choices:
+        None (Default): None
+        FXAA: Fxaa
+        SMAA Low: SmaaLow
+        SMAA Medium: SmaaMedium
+        SMAA High: SmaaHigh
+        SMAA Ultra: SmaaUltra
+    ryujinx_texture_recompression:
+      submenu: RENDERING
+      prompt: TEXTURE RECOMPRESSION
+      description: Reduce VRAM use in some games at a possible quality or performance
+        cost.
+      choices:
+        Off (Default): 'false'
+        'On': 'true'
+    ryujinx_macro_hle:
+      submenu: RENDERING
+      prompt: MACRO HLE
+      description: Enable high-level emulation for GPU macros.
+      choices:
+        On (Default): 'true'
+        'Off': 'false'
+    ryujinx_color_space_passthrough:
+      submenu: RENDERING
+      prompt: COLOR SPACE PASSTHROUGH
+      choices:
+        Off (Default): 'false'
+        'On': 'true'
+    ryujinx_enable_ptc:
+      submenu: CPU
+      prompt: PPTC CACHE
+      description: Enable profiled persistent translation cache.
+      choices:
+        Enabled (Default): 'true'
+        Disabled: 'false'
+    ryujinx_low_power_ptc:
+      submenu: CPU
+      prompt: LOW POWER PPTC
+      description: Reduce PPTC loading power use at possible startup cost.
+      choices:
+        Off (Default): 'false'
+        'On': 'true'
+    ryujinx_memory_manager:
+      submenu: CPU
+      prompt: MEMORY MANAGER MODE
+      description: Host mapped unsafe is fastest. Software page table is most compatible.
+      choices:
+        Host mapped unsafe (Default): HostMappedUnsafe
+        Host mapped: HostMapped
+        Software page table: SoftwarePageTable
+    ryujinx_dram_size:
+      submenu: CPU
+      prompt: EXPANDED MEMORY
+      description: Emulated Switch memory size.
+      choices:
+        4GB (Default): MemoryConfiguration4GiB
+        6GB: MemoryConfiguration6GiB
+        8GB: MemoryConfiguration8GiB
+        12GB: MemoryConfiguration12GiB
+    ryujinx_tick_scalar:
+      submenu: CPU
+      prompt: CPU CLOCK SCALE
+      description: 100 is normal speed. Higher values can help games sensitive to
+        CPU timing.
+      choices:
+        50% (Default): 50
+        100% (Normal): 100
+        150%: 150
+        200%: 200
+        300%: 300
+    ryujinx_fs_integrity:
+      submenu: SYSTEM
+      prompt: FS INTEGRITY CHECKS
+      description: Verify game content files.
+      choices:
+        Enabled (Default): 'true'
+        Disabled: 'false'
+    ryujinx_ignore_missing:
+      submenu: SYSTEM
+      prompt: IGNORE MISSING SERVICES
+      description: Continue when games call services Ryujinx does not implement.
+      choices:
+        Off (Default): 'false'
+        'On': 'true'
+    ryujinx_ignore_applet:
+      submenu: SYSTEM
+      prompt: IGNORE CONTROLLER APPLET
+      description: Skip the controller applet dialog.
+      choices:
+        Off (Default): 'false'
+        'On': 'true'
+    ryujinx_audio_backend:
+      submenu: AUDIO
+      prompt: AUDIO BACKEND
+      description: Select Ryujinx audio output backend.
+      choices:
+        OpenAL (Default): OpenAl
+        SDL2: SDL2
+        SoundIO: SoundIo
+        Dummy: Dummy
+    ryujinx_audio_volume:
+      submenu: AUDIO
+      prompt: AUDIO VOLUME
+      choices:
+        100% (Default): 100
+        75%: 75
+        50%: 50
+        25%: 25
+        Muted: 0
+    ryujinx_network:
+      submenu: NETWORK
+      prompt: MULTIPLAYER MODE
+      description: Select Ryujinx local wireless mode.
+      choices:
+        Disabled (Default): 'no'
+        Local Wireless: local
+        LDN Internet: internet
+    ryujinx_internet:
+      submenu: NETWORK
+      prompt: GUEST INTERNET ACCESS
+      choices:
+        Off (Default): 'false'
+        'On': 'true'
+    ryujinx_padtype:
+      submenu: CONTROLS
+      prompt: CONTROLLER TYPE
+      description: Controller style reported to games.
+      choices:
+        Pro Controller (Default): ProController
+        Joy-Con Pair: JoyconPair
+        Left Joy-Con: JoyconLeft
+        Right Joy-Con: JoyconRight
+    ryujinx_gamepadbuttons:
+      submenu: CONTROLS
+      prompt: USE GAMEPAD BUTTON LABELS
+      description: Use physical gamepad labels instead of Nintendo-style face button
+        mapping.
+      choices:
+        Off (Default): 'false'
+        'On': 'true'
+    ryujinx_rumble:
+      submenu: CONTROLS
+      prompt: CONTROLLER RUMBLE
+      choices:
+        Enabled (Default): 'true'
+        Disabled: 'false'
+    ryujinx_motion:
+      submenu: CONTROLS
+      prompt: MOTION CONTROLS
+      choices:
+        Enabled (Default): 'true'
+        Disabled: 'false'
+    ryujinx_deadzone_left:
+      submenu: CONTROLS
+      prompt: LEFT STICK DEADZONE
+      choices:
+        0% (Default): 0
+        5%: 0.05
+        10%: 0.1
+        15%: 0.15
+        20%: 0.2
+    ryujinx_deadzone_right:
+      submenu: CONTROLS
+      prompt: RIGHT STICK DEADZONE
+      choices:
+        0% (Default): 0
+        5%: 0.05
+        10%: 0.1
+        15%: 0.15
+        20%: 0.2
+    ryujinx_skip_user_profiles:
+      submenu: UI
+      prompt: SKIP USER PROFILE SELECTOR
+      choices:
+        Enabled (Default): 'true'
+        Disabled: 'false'
+    ryujinx_no_ui:
+      submenu: UI
+      prompt: START WITHOUT UI
+      description: Hide the Ryujinx game list when launching games.
+      choices:
+        Auto (Default): ''
+        Enabled: 'true'
+        Disabled: 'false'
+    ryujinx_hide_cursor:
+      submenu: UI
+      prompt: HIDE CURSOR
+      choices:
+        On idle (Default): OnIdle
+        Always: Always
+        Never: Never
+    ryujinx_show_title_bar:
+      submenu: UI
+      prompt: SHOW TITLE BAR
+      choices:
+        Off (Default): 'false'
+        'On': 'true'
+    ryujinx_focus_lost:
+      submenu: UI
+      prompt: WHEN FOCUS IS LOST
+      choices:
+        Do nothing (Default): DoNothing
+        Block input: BlockInput
+        Mute audio: MuteAudio
+        Block input and mute audio: BlockInputAndMuteAudio
+        Pause emulation: PauseEmulation
     ryujinx_language:
+      submenu: SYSTEM
       prompt: LANGUAGE
       description: Change the game's language.
       choices:
@@ -16465,6 +16874,7 @@ ryujinx:
         Traditional Chinese: TraditionalChinese
         Brazilian Portuguese: BrazilianPortuguese
     ryujinx_region:
+      submenu: SYSTEM
       prompt: CHOOSE CONSOLE REGION
       description: Choose your console region.
       choices:
@@ -16476,6 +16886,7 @@ ryujinx:
         Korea: Korea
         Taiwan: Taiwan
     ryujinx_timeoffset:
+      submenu: SYSTEM
       prompt: CHOOSE CONSOLE TIMEZONE
       description: Choose your console UTC timezone.
       choices:
@@ -16701,6 +17112,8 @@ xenia:
   - gpu_performance_profile
   - tdp
   - videomode
+  - hud
+  - hud_corner
   cfeatures:
     xenia_api:
       archs_include:
@@ -17072,6 +17485,8 @@ xenia-canary:
   - gpu_performance_profile
   - tdp
   - videomode
+  - hud
+  - hud_corner
   - gamescope
   - gamescope_output_resolution
   - gamescope_nested_resolution
@@ -17110,6 +17525,26 @@ xenia-canary:
         No licenses enabled: 0
         XBLA license enabled (Default): 1
         All possible licenses (Not recommended): -1
+    xenia_profile:
+      submenu: PROFILE
+      prompt: GAMER PROFILE
+      description: Select an existing Xenia profile to sign in as player 1.
+      preset: xeniaprofiles
+    xenia_profile2:
+      submenu: PROFILE
+      prompt: GAMER PROFILE P2
+      description: Select an existing Xenia profile to sign in as player 2.
+      preset: xeniaprofiles
+    xenia_profile3:
+      submenu: PROFILE
+      prompt: GAMER PROFILE P3
+      description: Select an existing Xenia profile to sign in as player 3.
+      preset: xeniaprofiles
+    xenia_profile4:
+      submenu: PROFILE
+      prompt: GAMER PROFILE P4
+      description: Select an existing Xenia profile to sign in as player 4.
+      preset: xeniaprofiles
     xenia_resolution:
       prompt: INTERNAL DISPLAY RESOLUTION
       description: Allow game that support different resolutions to be rendered in
@@ -17564,6 +17999,8 @@ xenia-edge:
   - gpu_performance_profile
   - tdp
   - videomode
+  - hud
+  - hud_corner
   cfeatures:
     xenia_license:
       prompt: XBOX LIVE ARCADE
@@ -17573,6 +18010,26 @@ xenia-edge:
         No licenses enabled: 0
         XBLA license enabled (Default): 1
         All possible licenses (Not recommended): -1
+    xenia_profile:
+      submenu: PROFILE
+      prompt: GAMER PROFILE
+      description: Select an existing Xenia profile to sign in as player 1.
+      preset: xeniaprofiles
+    xenia_profile2:
+      submenu: PROFILE
+      prompt: GAMER PROFILE P2
+      description: Select an existing Xenia profile to sign in as player 2.
+      preset: xeniaprofiles
+    xenia_profile3:
+      submenu: PROFILE
+      prompt: GAMER PROFILE P3
+      description: Select an existing Xenia profile to sign in as player 3.
+      preset: xeniaprofiles
+    xenia_profile4:
+      submenu: PROFILE
+      prompt: GAMER PROFILE P4
+      description: Select an existing Xenia profile to sign in as player 4.
+      preset: xeniaprofiles
     xenia_resolution:
       prompt: INTERNAL DISPLAY RESOLUTION
       description: Allow game that support different resolutions to be rendered in

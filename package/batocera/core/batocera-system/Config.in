@@ -1553,6 +1553,13 @@ config BR2_PACKAGE_BATOCERA_CONSOLE_SYSTEMS
 	                                    BR2_PACKAGE_BATOCERA_TARGET_SM8X50     || \
 	                                       BR2_PACKAGE_BATOCERA_TARGET_SM8250     || \
 	                                       BR2_PACKAGE_BATOCERA_TARGET_QCS6490     
+
+	# IBM PC compatibles
+	select BR2_PACKAGE_86BOX			if BR2_PACKAGE_BATOCERA_TARGET_X86_64_ANY || \
+	                                           BR2_PACKAGE_BATOCERA_TARGET_SM8X50     || \
+	                                           BR2_PACKAGE_BATOCERA_TARGET_SM8250     || \
+	                                           BR2_PACKAGE_BATOCERA_TARGET_QCS6490
+
 	# Microsoft Xbox 360
 	select BR2_PACKAGE_XENIA			if BR2_PACKAGE_BATOCERA_TARGET_X86_64_ANY 
 	select BR2_PACKAGE_XENIA_CANARY		if BR2_PACKAGE_BATOCERA_TARGET_X86_64_ANY || \

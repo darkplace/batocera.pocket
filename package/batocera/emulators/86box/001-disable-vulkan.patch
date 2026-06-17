@@ -69,7 +69,7 @@ diff -urN a/src/qt/qt_rendererstack.cpp b/src/qt/qt_rendererstack.cpp
  
  #include "qt_mainwindow.hpp"
  #include "qt_util.hpp"
-@@ -400,42 +399,6 @@
+@@ -416,42 +415,6 @@
                  current.reset(this->createWindowContainer(hw));
                  break;
              }
@@ -81,7 +81,7 @@ diff -urN a/src/qt/qt_rendererstack.cpp b/src/qt/qt_rendererstack.cpp
 -                try {
 -                    hw = new VulkanWindowRenderer(this);
 -                } catch (std::runtime_error &e) {
--                    auto msgBox = new QMessageBox(QMessageBox::Critical, "86Box", e.what() + tr("\nFalling back to software rendering."), QMessageBox::Ok);
+-                    auto msgBox = new QMessageBox(QMessageBox::Critical, QString(), tr("Failed to initialize Vulkan renderer.") + QStringLiteral("\n") + e.what() + QStringLiteral("\n") + tr("Falling back to software rendering."), QMessageBox::Ok);
 -                    msgBox->setAttribute(Qt::WA_DeleteOnClose);
 -                    msgBox->show();
 -                    imagebufs = {};
@@ -99,7 +99,7 @@ diff -urN a/src/qt/qt_rendererstack.cpp b/src/qt/qt_rendererstack.cpp
 -                });
 -                connect(hw, &VulkanWindowRenderer::errorInitializing, [=]() {
 -                    /* Renderer could not initialize, fallback to software. */
--                    auto msgBox = new QMessageBox(QMessageBox::Critical, "86Box", tr("Failed to initialize Vulkan renderer.") % tr("\nFalling back to software rendering."), QMessageBox::Ok);
+-                    auto msgBox = new QMessageBox(QMessageBox::Critical, QString(), tr("Failed to initialize Vulkan renderer.") % QStringLiteral("\n") % tr("Falling back to software rendering."), QMessageBox::Ok);
 -                    msgBox->setAttribute(Qt::WA_DeleteOnClose);
 -                    msgBox->show();
 -                    imagebufs = {};
@@ -112,7 +112,7 @@ diff -urN a/src/qt/qt_rendererstack.cpp b/src/qt/qt_rendererstack.cpp
      }
      if (current.get() == nullptr) {
          return;
-@@ -453,7 +416,7 @@
+@@ -469,7 +432,7 @@
  
      currentBuf = 0;
  

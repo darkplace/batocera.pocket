@@ -16,8 +16,15 @@ shared_features:
   - wheel_deadzone
   - wheel_midzone
 custom_features:
+  rpcs3_game_profile:
+    submenu: GAME PROFILE
+    prompt: RPCS3 GAME PROFILE
+    description: Use RPCS3's per-game compatibility database, or manually configure the compatibility settings below.
+    choices:
+      RPCS3 Database Defaults (Default): database
+      Manual Batocera Settings: manual
   rpcs3_ppudecoder:
-    submenu: CPU
+    submenu: MANUAL GAME PROFILE
     prompt: PPU DECODER
     description: LLVM is fastest, use the Interpreter settings if there are issues.
     choices:
@@ -25,7 +32,7 @@ custom_features:
       Dynamic Interpreter: Interpreter (dynamic)
       Static Interpreter: Interpreter (static)
   rpcs3_spudecoder:
-    submenu: CPU
+    submenu: MANUAL GAME PROFILE
     prompt: SPU DECODER
     description: If game crashes, try ASMJIT. If still crashing, try Fast Interpreter.
     choices:
@@ -34,7 +41,7 @@ custom_features:
       Fast Interpreter: Interpreter (fast)
       Precise Interpreter: Interpreter (precise)
   rpcs3_spuxfloataccuracy:
-    submenu: CPU
+    submenu: MANUAL GAME PROFILE
     prompt: SPU XFloat Accuracy
     description: Can fix bugs in some games. Only relevant for dynamic or LLVM SPU decoder.
     choices:
@@ -53,14 +60,14 @@ custom_features:
       5 threads: 5
       6 threads: 6
   rpcs3_spuloopdetection:
-    submenu: CPU
+    submenu: MANUAL GAME PROFILE
     prompt: SPU LOOP DETECTION
     description: May provide performance gain on CPUs with low core/thread count at the expense of possible broken timings.
     choices:
       Off (Default): false
       'On': true
   rpcs3_spublocksize:
-    submenu: CPU
+    submenu: MANUAL GAME PROFILE
     prompt: SPU BLOCK SIZE
     description: Mega and Giga modes may improve performance. Use the Safe mode for maximum compatibility.
     choices:
@@ -77,7 +84,7 @@ custom_features:
       Moderate: "100"
       Maximum: "150"
   rpcs3_sleep_timers_accuracy:
-    submenu: CPU
+    submenu: MANUAL GAME PROFILE
     prompt: SLEEP TIMERS ACCURACY
     description: Changes the sleep period accuracy. Some games need this set to improve performance.
     choices:
@@ -99,7 +106,7 @@ custom_features:
       OpenGL: OpenGL
       Vulkan: Vulkan
   rpcs3_framelimit:
-    submenu: VIDEO
+    submenu: MANUAL GAME PROFILE
     prompt: ADDITIONAL FRAMELIMIT
     description: Most games already have an internal framelimit. Minor performance cost.
     choices:
@@ -115,7 +122,7 @@ custom_features:
       "59.94": 59.94
       "60": 60
   rpcs3_anisotropic:
-    submenu: RENDER
+    submenu: MANUAL GAME PROFILE
     prompt: ANISOTROPIC FILTER
     description: Improves clarity of distant textures.
     choices:
@@ -124,13 +131,13 @@ custom_features:
       8x: 8
       16x: 16
   rpcs3_aa:
-    submenu: RENDER
+    submenu: MANUAL GAME PROFILE
     prompt: ANTI-ALIASING
     description: Enhancement. Smooth out jagged edges on 3D object polygons.
     choices:
       Disabled: Disabled
   rpcs3_zcull:
-    submenu: RENDER
+    submenu: MANUAL GAME PROFILE
     prompt: ZCULL ACCURACY
     description: Can improve performance at the expense of graphics accuracy.
     choices:
@@ -138,7 +145,7 @@ custom_features:
       Approximate (Fast): Approximate
       Relaxed (Fastest): Relaxed
   rpcs3_shader:
-    submenu: RENDER
+    submenu: MANUAL GAME PROFILE
     prompt: SHADER QUALITY
     description: Controls precision of generated shaders. Low quality can improved performance.
     choices:
@@ -171,7 +178,7 @@ custom_features:
       Bilinear (Default): Bilinear
       FidelityFX Super Resolution: FidelityFX Super Resolution
   rpcs3_shadermode:
-    submenu: RENDER
+    submenu: MANUAL GAME PROFILE
     prompt: SHADER MODE
     description: Only Async (skip draw) avoids freezing while compiling shaders.
     choices:
@@ -201,21 +208,35 @@ custom_features:
       "15": 15
       "16": 16
   rpcs3_colorbuffers:
-    submenu: RENDER
+    submenu: MANUAL GAME PROFILE
     prompt: WRITE COLOR BUFFERS
     description: May fix missing graphics and broken lighting at the cost of performance.
     choices:
       Off (Default): false
       'On': true
   rpcs3_write_depth_buffers:
-    submenu: RENDER
+    submenu: MANUAL GAME PROFILE
     prompt: WRITE DEPTH BUFFERS
     description: Writes depth buffer values to VM memory. Some games need this to fix broken graphics.
     choices:
       Off (Default): false
       'On': true
+  rpcs3_read_color_buffers:
+    submenu: MANUAL GAME PROFILE
+    prompt: READ COLOR BUFFERS
+    description: Reads color buffer values from VM memory. Some games need this to fix broken graphics.
+    choices:
+      Off (Default): false
+      'On': true
+  rpcs3_read_depth_buffers:
+    submenu: MANUAL GAME PROFILE
+    prompt: READ DEPTH BUFFERS
+    description: Reads depth buffer values from VM memory. Some games need this to fix broken graphics.
+    choices:
+      Off (Default): false
+      'On': true
   rpcs3_strict:
-    submenu: RENDER
+    submenu: MANUAL GAME PROFILE
     prompt: STRICT RENDERING MODE
     description: Straict API specification. Can resolve rare cases of missing graphics and flickering.
     choices:
@@ -236,16 +257,30 @@ custom_features:
       'Off': false
       'On': true
   rpcs3_vertexcache:
-    submenu: RENDER
+    submenu: MANUAL GAME PROFILE
     prompt: DISABLE VERTEX CACHE
     description: Disables the vertex cache. Might resolve missing or flickering graphics output but degrade performance.
     choices:
       Off (Default): false
       'On': true
   rpcs3_rsx:
-    submenu: RENDER
+    submenu: MANUAL GAME PROFILE
     prompt: MULTITHREADED RSX
     description: Offloads some RSX operations to a secondary thread. Improves performance in high-core processors.
+    choices:
+      Off (Default): false
+      'On': true
+  rpcs3_cpu_blit:
+    submenu: MANUAL GAME PROFILE
+    prompt: FORCE CPU BLIT EMULATION
+    description: Can fix flickering in some games at the cost of performance and some lighting effects.
+    choices:
+      Off (Default): false
+      'On': true
+  rpcs3_disable_zcull_queries:
+    submenu: MANUAL GAME PROFILE
+    prompt: DISABLE ZCULL OCCLUSION QUERIES
+    description: Can improve performance in games with expensive occlusion queries.
     choices:
       Off (Default): false
       'On': true
@@ -257,7 +292,7 @@ custom_features:
       Off (Default): false
       On (Vulkan Only): true
   rpcs3_audio_format:
-    submenu: AUDIO
+    submenu: MANUAL GAME PROFILE
     prompt: AUDIO FORMAT
     description: Choose number of audio channels.
     choices:
@@ -272,7 +307,7 @@ custom_features:
       Off (Default): false
       'On': true
   rpcs3_audiobuffer:
-    submenu: AUDIO
+    submenu: MANUAL GAME PROFILE
     prompt: ENABLE AUDIO BUFFERING
     description: Can reduce crackle and stutter but increases audio latency.
     choices:
@@ -297,7 +332,7 @@ custom_features:
       220ms: 220
       240ms: 240
   rpcs3_timestretch:
-    submenu: AUDIO
+    submenu: MANUAL GAME PROFILE
     prompt: ENABLE TIME STRETCHING
     description: Reduces crackle and stutter further, but may cause a very noticeable reduction in audio quality on slower CPUs.
     choices:

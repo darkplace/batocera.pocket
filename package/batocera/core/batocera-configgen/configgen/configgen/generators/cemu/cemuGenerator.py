@@ -52,10 +52,6 @@ class CemuGenerator(Generator):
             "keys": { "exit": ["KEY_LEFTALT", "KEY_F4"], "swap_screen": ["KEY_LEFTCTRL", "KEY_TAB"] }
         }
 
-    # disable hud & bezels for now - causes game issues
-    def hasInternalMangoHUDCall(self):
-        return True
-
     def generate(self, system, rom, playersControllers, metadata, guns, wheels, gameResolution):
         # in case of squashfs, the root directory is passed
         paths = list(rom.glob('**/code/*.rpx'))

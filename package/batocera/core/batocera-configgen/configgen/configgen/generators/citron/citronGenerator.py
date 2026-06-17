@@ -196,6 +196,7 @@ class CitronGenerator(Generator):
     def _resolve_bios_firmware_dir() -> Path | None:
         firmware_root = SWITCH_BIOS / "firmware"
         candidates = (
+            SWITCH_BIOS / "registered",
             firmware_root / "registered",
             firmware_root / "Contents" / "registered",
             firmware_root / "system" / "Contents" / "registered",

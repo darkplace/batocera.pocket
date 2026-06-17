@@ -1,0 +1,75 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Tue, 16 Jun 2026 00:00:00 +0000
+Subject: [PATCH] Add Xenia profile feature preset
+
+---
+ es-app/src/ApiSystem.cpp    |  5 +++++
+ es-app/src/ApiSystem.h      |  1 +
+ es-app/src/guis/GuiMenu.cpp | 28 ++++++++++++++++++++++++++++
+ 3 files changed, 34 insertions(+)
+
+diff --git a/es-app/src/ApiSystem.cpp b/es-app/src/ApiSystem.cpp
+--- a/es-app/src/ApiSystem.cpp
++++ b/es-app/src/ApiSystem.cpp
+@@ -624,6 +624,11 @@ std::vector<std::string> ApiSystem::getSteamUsers()
+ 	return executeEnumerationScript("batocera-steam-users");
+ }
+ 
++std::vector<std::string> ApiSystem::getXeniaProfiles()
++{
++	return executeEnumerationScript("batocera-xenia-profiles");
++}
++
+ std::vector<std::string> ApiSystem::getAvailableBackupDevices() 
+ {
+ 	return executeEnumerationScript("batocera-sync list");
+diff --git a/es-app/src/ApiSystem.h b/es-app/src/ApiSystem.h
+--- a/es-app/src/ApiSystem.h
++++ b/es-app/src/ApiSystem.h
+@@ -265,6 +265,7 @@ public:
+     virtual std::vector<std::string> getVideoModes(const std::string output = "");
+ 	std::vector<std::string> getCustomRunners();
+ 	std::vector<std::string> getSteamUsers();
++	std::vector<std::string> getXeniaProfiles();
+ 
+ 	virtual std::vector<std::string> getAvailableStorageDevices();
+ 	virtual std::vector<std::string> getSystemInformations();
+diff --git a/es-app/src/guis/GuiMenu.cpp b/es-app/src/guis/GuiMenu.cpp
+--- a/es-app/src/guis/GuiMenu.cpp
++++ b/es-app/src/guis/GuiMenu.cpp
+@@ -2625,6 +2625,34 @@ void GuiMenu::addFeatureItem(Window* window, GuiSettings* settings, const Custom
+ 
+ 			item->add(label, value, storedValue == value);
+ 		}
++	}
++	else if (feat.preset == "xeniaprofiles")
++	{
++		item->add(_("AUTO"), "auto", storedValue.empty() || storedValue == "auto");
++		item->add(_("NONE"), "none", storedValue == "none");
++
++		auto profiles = ApiSystem::getInstance()->getXeniaProfiles();
++		for (auto xeniaProfile : profiles)
++		{
++			std::vector<std::string> tokens = Utils::String::split(xeniaProfile, ':');
++			if (tokens.size() == 0)
++				continue;
++
++			std::string value = tokens.at(0);
++			std::string label = value;
++			if (tokens.size() > 1)
++			{
++				label.clear();
++				for (unsigned int i = 1; i < tokens.size(); i++)
++				{
++					if (i > 1)
++						label += ":";
++					label += tokens.at(i);
++				}
++			}
++
++			item->add(label, value, storedValue == value);
++		}
+ 	}
+ 	else
+ 	{

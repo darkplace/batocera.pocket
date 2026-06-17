@@ -12,7 +12,7 @@ RPCS3_LICENSE = GPLv2
 RPCS3_EMULATOR_INFO = rpcs3.emulator.yml
 RPCS3_SUPPORTS_IN_SOURCE_BUILD = NO
 
-RPCS3_DEPENDENCIES += alsa-lib faudio ffmpeg flatbuffers host-clang libcurl libevdev
+RPCS3_DEPENDENCIES += alsa-lib faudio ffmpeg flatbuffers host-clang host-libcurl libcurl libevdev
 RPCS3_DEPENDENCIES += libglew libglu libpng libusb libxml2 llvm mesa3d ncurses openal
 RPCS3_DEPENDENCIES += opencv4 qt6base qt6declarative qt6multimedia qt6svg rtmpdump
 RPCS3_DEPENDENCIES += sdl3 wolfssl
@@ -54,7 +54,15 @@ define RPCS3_INSTALL_RPCS3_EXIT
 	$(INSTALL) -D -m 0755 $(RPCS3_PKGDIR)/rpcs3-exit $(TARGET_DIR)/usr/bin/rpcs3-exit
 endef
 
+define RPCS3_INSTALL_CONFIG_DATABASE
+	mkdir -p $(TARGET_DIR)/usr/share/rpcs3/GuiConfigs
+	$(HOST_DIR)/bin/curl -fL --retry 3 -A 'RPCS3/1.0' \
+		'https://api.rpcs3.net/config/?api=v1' \
+		-o $(TARGET_DIR)/usr/share/rpcs3/GuiConfigs/config_database.dat
+endef
+
 RPCS3_POST_INSTALL_TARGET_HOOKS += RPCS3_INSTALL_RPCS3_EXIT
+RPCS3_POST_INSTALL_TARGET_HOOKS += RPCS3_INSTALL_CONFIG_DATABASE
 
 $(eval $(cmake-package))
 $(eval $(emulator-info-package))

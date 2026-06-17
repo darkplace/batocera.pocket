@@ -135,6 +135,12 @@
 			<choice display="Mid (30fps)" action="batocera-record set-quality mid" afterclick="bcc_refresh" />
 			<choice display="Low (30fps)" action="batocera-record set-quality low" afterclick="bcc_refresh" />
 		</feature>
+		<feature display="Encoder">
+			<text display='${batocera-record get-encoder}' refresh="1" />
+			<choice display="Auto" action="batocera-record set-encoder auto" afterclick="bcc_refresh" />
+			<choice display="Hardware" action="batocera-record set-encoder hardware" afterclick="bcc_refresh" />
+			<choice display="Software" action="batocera-record set-encoder software" afterclick="bcc_refresh" />
+		</feature>
 		<feature display="Audio Source">
 			<text display='${batocera-record get-audio}' refresh="1" />
 			<choice display="System (Default)" action="batocera-record set-audio auto" afterclick="bcc_refresh" />

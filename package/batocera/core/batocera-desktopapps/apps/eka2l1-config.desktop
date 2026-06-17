@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Icon=applications-games
+Exec=/usr/bin/batocera-config-eka2l1
+Terminal=false
+Type=Application
+Categories=Game;batocera.linux;
+Name=EKA2L1
+GenericName=Symbian Emulator
+Comment=Configure EKA2L1 devices and firmware

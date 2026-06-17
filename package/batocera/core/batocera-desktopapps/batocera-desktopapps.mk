@@ -119,6 +119,13 @@ ifeq ($(BR2_PACKAGE_MODEL2EMU),y)
   BATOCERA_DESKTOPAPPS_ICONS   += model2emu.png
 endif
 
+# 86Box
+ifeq ($(BR2_PACKAGE_86BOX),y)
+  BATOCERA_DESKTOPAPPS_SCRIPTS += 86Box.sh
+  BATOCERA_DESKTOPAPPS_APPS    += 86box.desktop
+  BATOCERA_DESKTOPAPPS_ICONS   += 86box.png
+endif
+
 # flatpak
 ifeq ($(BR2_PACKAGE_BAUH),y)
   BATOCERA_DESKTOPAPPS_APPS    += flatpak-config.desktop

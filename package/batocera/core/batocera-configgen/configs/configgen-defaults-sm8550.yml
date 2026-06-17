@@ -120,11 +120,14 @@ vsmile:
 xegs:
   emulator: mame
   core:     mame
+switch:
+  options:
+    hud_support: true
 xbox360:
   emulator: xenia-canary
   core:     xenia-canary
   options:
-    hud_support: false
+    hud_support: true
     xenia_api: Vulkan
     gpu: Vulkan
 atom:

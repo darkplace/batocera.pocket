@@ -1,57 +1,399 @@
 #!/bin/sh
 
-ACTION=$1
+PID_FILE="/tmp/wf-recorder.pid"
+STATE_FILE="/tmp/wf-recorder.state"
+CONF_FILE="/tmp/rec.conf"
+BASE_DIR="/userdata/recordings"
+LOG_FILE="/userdata/system/logs/recording.log"
+
+DEFAULT_QUALITY="mid"
+DEFAULT_AUDIO="auto"
+DEFAULT_ALL="false"
+DEFAULT_ENCODER="auto"
 
 usage() {
-    echo "Usage: $0 [--ultra-fast | --very-fast | --help]"
-    echo "  --ultra-fast      Record 30fps with the fastest encoding settings (Recommended)"
-    echo "  --very-fast       Record 30fps with very-fast encoding settings"
-    echo "  --high-quality    Record with 60fps high quality settings (Hurt that ARM CPU!)"
-    echo "  -h, --help        Show this help message"
+    echo "Usage: $0 [start|stop|status|is_running|get-quality|get-audio|get-all|get-encoder]" >&2
+    echo "       $0 [set-quality <ultra|high|mid|low>|set-audio <auto|mic|none>|set-all <true|false>]" >&2
+    echo "       $0 [set-encoder <auto|hardware|software>]" >&2
+    echo "       $0 [--ultra-fast|--very-fast|--high-quality]" >&2
 }
 
-record_ultra_fast() {
-    wf-recorder -a$PULSEAUDIO_MONITOR -c libx264 -p crf=30 preset=ultrafast -C aac -r 30 -o $DISPLAY -f ${OUTPUT}
-    echo "Recording to: ${OUTPUT}"
+log() {
+    mkdir -p "$(dirname "$LOG_FILE")"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "$LOG_FILE"
 }
 
-record_very_fast() {
-    wf-recorder -a$PULSEAUDIO_MONITOR -c libx264 -p crf=28 preset=veryfast -C aac -r 30 -o $DISPLAY -f ${OUTPUT}
-    echo "Recording to: ${OUTPUT}"
+get_conf() {
+    if [ -f "$CONF_FILE" ]; then
+        val=$(grep "^$1=" "$CONF_FILE" | tail -1 | cut -d= -f2-)
+        echo "${val:-$2}"
+    else
+        echo "$2"
+    fi
 }
 
-record_high_quality() {
-    wf-recorder -a$PULSEAUDIO_MONITOR -c libx264 -p crf=23 preset=fast -C aac -r 60 -o $DISPLAY -f ${OUTPUT}
-    echo "Recording to: ${OUTPUT}"
+set_conf() {
+    touch "$CONF_FILE"
+    sed -i "/^$1=/d" "$CONF_FILE"
+    echo "$1=$2" >> "$CONF_FILE"
+    log "Config changed: $1=$2"
 }
 
-DISPLAY=$(batocera-resolution currentOutput)
-TIMESTAMP=$(date +%Y.%m.%d-%Hh%M.%S)
-OUTPUT="/userdata/recordings/capture-${TIMESTAMP}.mkv"
-PULSEAUDIO_MONITOR=$(LC_ALL=C pactl info | grep -E ^Default Sink:  | sed -e s+"^Default Sink: "+""+ | head -1).monitor
+setup_wayland_env() {
+    if [ -r /etc/profile.d/xdg.sh ]; then
+        . /etc/profile.d/xdg.sh
+    fi
+    if [ -r /etc/profile.d/wayland.sh ]; then
+        . /etc/profile.d/wayland.sh
+    fi
 
-mkdir -p /userdata/recordings || exit 1
+    export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/var/run}"
 
-echo
-echo "Recording to file: ${OUTPUT}"
-echo
-echo "+-------------------------------+" >&2
-echo "| Press Ctrl+c to end recording |" >&2
-echo "+-------------------------------+" >&2
+    if [ -z "${WAYLAND_DISPLAY:-}" ] || [ ! -S "${XDG_RUNTIME_DIR}/${WAYLAND_DISPLAY}" ]; then
+        if command -v getLocalWaylandDisplay >/dev/null 2>&1; then
+            WAYLAND_DISPLAY=$(getLocalWaylandDisplay 2>/dev/null)
+        fi
+        if [ -z "${WAYLAND_DISPLAY:-}" ]; then
+            for socket in "${XDG_RUNTIME_DIR}"/wayland-* /run/wayland-* /var/run/wayland-*; do
+                [ -S "$socket" ] || continue
+                WAYLAND_DISPLAY=$(basename "$socket")
+                XDG_RUNTIME_DIR=$(dirname "$socket")
+                break
+            done
+        fi
+        export XDG_RUNTIME_DIR WAYLAND_DISPLAY
+    fi
 
-case "$ACTION" in
-    --ultra-fast)
-        record_ultra_fast
+    if [ -z "${SWAYSOCK:-}" ] || [ ! -S "${SWAYSOCK}" ]; then
+        for socket in "${XDG_RUNTIME_DIR}"/sway-ipc.*.sock /run/sway-ipc.*.sock /var/run/sway-ipc.*.sock; do
+            [ -S "$socket" ] || continue
+            export SWAYSOCK="$socket"
+            break
+        done
+    fi
+}
+
+is_running() {
+    if [ -f "$PID_FILE" ]; then
+        while read -r pid; do
+            [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null && return 0
+        done < "$PID_FILE"
+    fi
+    return 1
+}
+
+audio_source() {
+    case "$(get_conf AUDIO "$DEFAULT_AUDIO")" in
+        mic)
+            pactl list short sources 2>/dev/null | grep -v monitor | awk 'NR == 1 { print $2 }'
+            ;;
+        none)
+            echo "none"
+            ;;
+        *)
+            sink=$(LC_ALL=C pactl info 2>/dev/null | grep -E '^Default Sink: ' | sed -e 's/^Default Sink: //' | head -1)
+            [ -n "$sink" ] && echo "${sink}.monitor"
+            ;;
+    esac
+}
+
+current_output() {
+    if [ "$(get_conf ALL "$DEFAULT_ALL")" = "true" ]; then
+        return
+    fi
+    batocera-resolution currentOutput 2>/dev/null | head -1
+}
+
+has_hardware_encoder() {
+    command -v ffmpeg >/dev/null 2>&1 || return 1
+    command -v wf-recorder >/dev/null 2>&1 || return 1
+    ffmpeg -hide_banner -encoders 2>/dev/null | grep -q " h264_v4l2m2m "
+}
+
+use_hardware_encoder() {
+    case "$(get_conf ENCODER "$DEFAULT_ENCODER")" in
+        software|soft|off|false|0)
+            return 1
+            ;;
+        hardware|hw|v4l2m2m|auto|"")
+            has_hardware_encoder
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+run_low_priority_ffmpeg() {
+    if command -v ionice >/dev/null 2>&1; then
+        ionice -c3 nice -n 10 ffmpeg "$@"
+    else
+        nice -n 10 ffmpeg "$@"
+    fi
+}
+
+start_software_recording() {
+    sw_timestamp=$1
+    sw_output_name=$2
+    sw_audio=$3
+    sw_fps=$4
+    sw_crf=$5
+    sw_preset=$6
+    sw_output="${BASE_DIR}/capture-${sw_timestamp}.mkv"
+
+    rm -f "$STATE_FILE"
+    log "Output: $sw_output"
+    log "Encoder: libx264 software"
+    log "Video: output=${sw_output_name:-all} fps=$sw_fps crf=$sw_crf preset=$sw_preset"
+    log "Audio: ${sw_audio:-none}"
+
+    if [ -n "$sw_audio" ] && [ "$sw_audio" != "none" ]; then
+        if [ -n "$sw_output_name" ]; then
+            wf-recorder -a"$sw_audio" -c libx264 -p "crf=$sw_crf" -p "preset=$sw_preset" -C aac -r "$sw_fps" -o "$sw_output_name" -f "$sw_output" >> "$LOG_FILE" 2>&1 &
+        else
+            wf-recorder -a"$sw_audio" -c libx264 -p "crf=$sw_crf" -p "preset=$sw_preset" -C aac -r "$sw_fps" -f "$sw_output" >> "$LOG_FILE" 2>&1 &
+        fi
+    else
+        if [ -n "$sw_output_name" ]; then
+            wf-recorder -c libx264 -p "crf=$sw_crf" -p "preset=$sw_preset" -r "$sw_fps" -o "$sw_output_name" -f "$sw_output" >> "$LOG_FILE" 2>&1 &
+        else
+            wf-recorder -c libx264 -p "crf=$sw_crf" -p "preset=$sw_preset" -r "$sw_fps" -f "$sw_output" >> "$LOG_FILE" 2>&1 &
+        fi
+    fi
+
+    echo "$!" > "$PID_FILE"
+    echo "$sw_output"
+}
+
+start_hardware_recording() {
+    hw_timestamp=$1
+    hw_output_name=$2
+    hw_audio=$3
+    hw_fps=$4
+    hw_bitrate=$5
+    hw_output="${BASE_DIR}/capture-${hw_timestamp}.mp4"
+    hw_raw="${BASE_DIR}/.capture-${hw_timestamp}.h264"
+    hw_audio_file=""
+
+    log "Output: $hw_output"
+    log "Encoder: h264_v4l2m2m hardware"
+    log "Video: output=${hw_output_name:-all} fps=$hw_fps bitrate=$hw_bitrate pix_fmt=nv12"
+    log "Audio: ${hw_audio:-none}"
+
+    rm -f "$hw_raw" "$STATE_FILE"
+    if [ -n "$hw_output_name" ]; then
+        wf-recorder -c h264_v4l2m2m -x nv12 -r "$hw_fps" -B "$hw_fps" -b 0 -p "b=$hw_bitrate" -m h264 -o "$hw_output_name" -f "$hw_raw" >> "$LOG_FILE" 2>&1 &
+    else
+        wf-recorder -c h264_v4l2m2m -x nv12 -r "$hw_fps" -B "$hw_fps" -b 0 -p "b=$hw_bitrate" -m h264 -f "$hw_raw" >> "$LOG_FILE" 2>&1 &
+    fi
+    hw_video_pid=$!
+    echo "$hw_video_pid" > "$PID_FILE"
+    sleep 0.5
+
+    if ! kill -0 "$hw_video_pid" 2>/dev/null; then
+        log "Hardware wf-recorder failed to start"
+        rm -f "$PID_FILE" "$hw_raw"
+        return 1
+    fi
+
+    if [ -n "$hw_audio" ] && [ "$hw_audio" != "none" ] && command -v ffmpeg >/dev/null 2>&1; then
+        hw_audio_file="${BASE_DIR}/.capture-${hw_timestamp}.aac"
+        rm -f "$hw_audio_file"
+        ffmpeg -hide_banner -y -f pulse -ac 2 -channel_layout stereo -i "$hw_audio" -c:a aac -b:a 160k -f adts "$hw_audio_file" >> "$LOG_FILE" 2>&1 &
+        hw_audio_pid=$!
+        sleep 0.2
+        if kill -0 "$hw_audio_pid" 2>/dev/null; then
+            echo "$hw_audio_pid" >> "$PID_FILE"
+        else
+            log "Audio capture failed to start; continuing video-only"
+            hw_audio_file=""
+        fi
+    fi
+
+    {
+        echo "MODE=hardware"
+        echo "OUTPUT=$hw_output"
+        echo "RAW_OUTPUT=$hw_raw"
+        echo "AUDIO_OUTPUT=$hw_audio_file"
+        echo "FPS=$hw_fps"
+    } > "$STATE_FILE"
+
+    echo "$hw_output"
+}
+
+finalize_hardware_recording() {
+    [ -f "$STATE_FILE" ] || return 0
+    # shellcheck disable=SC1090
+    . "$STATE_FILE"
+    rm -f "$STATE_FILE"
+
+    [ "${MODE:-}" = "hardware" ] || return 0
+
+    if [ ! -s "${RAW_OUTPUT:-}" ]; then
+        log "Hardware recording produced no video data"
+        return 1
+    fi
+
+    log "Finalizing hardware recording: $OUTPUT"
+    if [ -n "${AUDIO_OUTPUT:-}" ] && [ -s "$AUDIO_OUTPUT" ]; then
+        run_low_priority_ffmpeg -hide_banner -y -fflags +genpts -r "$FPS" -f h264 -i "$RAW_OUTPUT" -i "$AUDIO_OUTPUT" -map 0:v:0 -map 1:a:0 -c:v copy -c:a copy -movflags +faststart -video_track_timescale "$FPS" "$OUTPUT" >> "$LOG_FILE" 2>&1
+    else
+        run_low_priority_ffmpeg -hide_banner -y -fflags +genpts -r "$FPS" -f h264 -i "$RAW_OUTPUT" -map 0:v:0 -c:v copy -movflags +faststart -video_track_timescale "$FPS" "$OUTPUT" >> "$LOG_FILE" 2>&1
+    fi
+    finalize_rc=$?
+
+    if [ "$finalize_rc" -eq 0 ] && [ -s "$OUTPUT" ]; then
+        rm -f "$RAW_OUTPUT" "${AUDIO_OUTPUT:-}"
+        log "Hardware recording finalized: $OUTPUT"
+        return 0
+    fi
+
+    log "Failed to finalize hardware recording; keeping raw files"
+    return 1
+}
+
+start_recording() {
+    setup_wayland_env
+    mkdir -p "$BASE_DIR" "$(dirname "$LOG_FILE")" || exit 1
+    : > "$LOG_FILE"
+
+    if is_running; then
+        log "Recording already running"
+        exit 0
+    fi
+
+    case "$1" in
+        ultra)
+            crf=18
+            preset=medium
+            fps=60
+            bitrate=20000000
+            ;;
+        high|--high-quality)
+            crf=23
+            preset=fast
+            fps=60
+            bitrate=14000000
+            ;;
+        low)
+            crf=35
+            preset=ultrafast
+            fps=30
+            bitrate=4000000
+            ;;
+        --ultra-fast)
+            crf=30
+            preset=ultrafast
+            fps=30
+            bitrate=6000000
+            ;;
+        --very-fast)
+            crf=28
+            preset=veryfast
+            fps=30
+            bitrate=8000000
+            ;;
+        *)
+            crf=28
+            preset=veryfast
+            fps=30
+            bitrate=8000000
+            ;;
+    esac
+
+    output_name=$(current_output)
+    audio=$(audio_source)
+    timestamp=$(date +%Y.%m.%d-%Hh%M.%S)
+
+    log "--- Start Recording Sequence ---"
+    log "Wayland: XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-} WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-} SWAYSOCK=${SWAYSOCK:-}"
+
+    if use_hardware_encoder; then
+        output=$(start_hardware_recording "$timestamp" "$output_name" "$audio" "$fps" "$bitrate")
+        if [ -n "$output" ]; then
+            echo "Recording to: ${output}"
+            return
+        fi
+        log "Falling back to software recording"
+    fi
+
+    output=$(start_software_recording "$timestamp" "$output_name" "$audio" "$fps" "$crf" "$preset")
+    sleep 0.5
+
+    if ! is_running; then
+        log "wf-recorder failed to start"
+        rm -f "$PID_FILE"
+        exit 1
+    fi
+
+    echo "Recording to: ${output}"
+}
+
+stop_recording() {
+    if [ -f "$PID_FILE" ]; then
+        while read -r pid; do
+            [ -n "$pid" ] && kill -2 "$pid" 2>/dev/null
+        done < "$PID_FILE"
+        while read -r pid; do
+            waited=0
+            while [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; do
+                sleep 0.1
+                waited=$((waited + 1))
+                if [ "$waited" -ge 50 ]; then
+                    kill -15 "$pid" 2>/dev/null
+                    sleep 1
+                    kill -0 "$pid" 2>/dev/null && kill -9 "$pid" 2>/dev/null
+                    break
+                fi
+            done
+        done < "$PID_FILE"
+        rm -f "$PID_FILE"
+    fi
+    finalize_hardware_recording
+}
+
+case "$1" in
+    status)
+        is_running && echo "RECORDING..." || echo "Ready"
         ;;
-    --very-fast)
-        record_very_fast
+    is_running)
+        is_running && echo "true" || echo "false"
         ;;
-    --high-quality)
-        record_high_quality
+    stop)
+        stop_recording
+        ;;
+    get-quality)
+        get_conf QUALITY "$DEFAULT_QUALITY"
+        ;;
+    get-audio)
+        get_conf AUDIO "$DEFAULT_AUDIO"
+        ;;
+    get-all)
+        get_conf ALL "$DEFAULT_ALL"
+        ;;
+    get-encoder)
+        get_conf ENCODER "$DEFAULT_ENCODER"
+        ;;
+    set-quality)
+        set_conf QUALITY "$2"
+        ;;
+    set-audio)
+        set_conf AUDIO "$2"
+        ;;
+    set-all)
+        set_conf ALL "$2"
+        ;;
+    set-encoder)
+        set_conf ENCODER "$2"
+        ;;
+    start)
+        start_recording "$(get_conf QUALITY "$DEFAULT_QUALITY")"
+        ;;
+    --ultra-fast|--very-fast|--high-quality)
+        start_recording "$1"
         ;;
     -h|--help)
         usage
-        exit 0
         ;;
     *)
         usage
