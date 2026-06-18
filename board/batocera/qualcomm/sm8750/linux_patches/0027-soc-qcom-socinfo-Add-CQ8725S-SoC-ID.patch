@@ -15,14 +15,13 @@ diff --git a/drivers/soc/qcom/socinfo.c b/drivers/soc/qcom/socinfo.c
 index 003a2304d535..7a9f85efec96 100644
 --- a/drivers/soc/qcom/socinfo.c
 +++ b/drivers/soc/qcom/socinfo.c
-@@ -522,6 +522,7 @@ static const struct soc_id soc_id[] = {
+@@ -526,6 +526,7 @@ static const struct soc_id soc_id[] = {
  	{ qcom_board_id(QCS8275) },
  	{ qcom_board_id(QCS9075) },
  	{ qcom_board_id(QCS615) },
 +	{ qcom_board_id(CQ8725S) },
- };
- 
- static const char *socinfo_machine(struct device *dev, unsigned int id)
+ 	{ qcom_board_id(CQ7790M) },
+ 	{ qcom_board_id(CQ7790S) },
+ 	{ qcom_board_id(IPQ5200) },
 -- 
 2.43.0
-

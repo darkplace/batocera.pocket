@@ -16,6 +16,15 @@ HOST_GMP_DEPENDENCIES = host-m4
 
 GMP_CONF_ENV += CC_FOR_BUILD="$(HOSTCC) -std=c99"
 
+GMP_HOST_GCC_MAJOR = $(shell $(HOSTCC_NOCCACHE) -dumpfullversion -dumpversion 2>/dev/null | cut -d. -f1)
+
+# gcc 15 defaults to -std=gnu23, where an empty function parameter list
+# means no arguments. GMP 6.3.0's configure probes still rely on the
+# older GNU C behavior, so keep host-gmp on the previous default.
+ifeq ($(shell test $(GMP_HOST_GCC_MAJOR) -ge 15 2>/dev/null && echo y),y)
+HOST_GMP_CONF_ENV += CFLAGS="$(HOST_CFLAGS) -std=gnu17"
+endif
+
 # GMP doesn't support assembly for coldfire or mips r6 ISA yet
 # Disable for ARM v7m since it has different asm constraints
 ifeq ($(BR2_m68k_cf)$(BR2_MIPS_CPU_MIPS32R6)$(BR2_MIPS_CPU_MIPS64R6)$(BR2_ARM_CPU_ARMV7M),y)

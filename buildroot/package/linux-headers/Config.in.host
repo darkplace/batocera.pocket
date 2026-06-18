@@ -76,15 +76,18 @@ config BR2_KERNEL_HEADERS_6_17
 	bool "Linux 6.17.x kernel headers"
 	select BR2_TOOLCHAIN_HEADERS_AT_LEAST_6_17
 
+config BR2_KERNEL_HEADERS_7_1
+	bool "Linux 7.1.x kernel headers"
+	select BR2_TOOLCHAIN_HEADERS_AT_LEAST_7_1
+	select BR2_KERNEL_HEADERS_LATEST
+
 config BR2_KERNEL_HEADERS_7_0
 	bool "Linux 7.0.x kernel headers"
 	select BR2_TOOLCHAIN_HEADERS_AT_LEAST_7_0
-	select BR2_KERNEL_HEADERS_LATEST
 
 config BR2_KERNEL_HEADERS_6_18
-	bool "Linux 6.17.x kernel headers"
+	bool "Linux 6.18.x kernel headers"
 	select BR2_TOOLCHAIN_HEADERS_AT_LEAST_6_18
-	select BR2_KERNEL_HEADERS_LATEST
 
 config BR2_KERNEL_HEADERS_VERSION
 	bool "Manually specified Linux version"
@@ -162,8 +165,12 @@ choice
 	  If your kernel headers are more recent than the latest version
 	  in the choice, then select the latest version.
 
+config BR2_PACKAGE_HOST_LINUX_HEADERS_CUSTOM_7_1
+	bool "7.1.x or later"
+	select BR2_TOOLCHAIN_HEADERS_AT_LEAST_7_1
+
 config BR2_PACKAGE_HOST_LINUX_HEADERS_CUSTOM_7_0
-	bool "7.0.x or later"
+	bool "7.0.x"
 	select BR2_TOOLCHAIN_HEADERS_AT_LEAST_7_0
 
 config BR2_PACKAGE_HOST_LINUX_HEADERS_CUSTOM_6_12
@@ -481,6 +488,7 @@ config BR2_DEFAULT_KERNEL_HEADERS
 	default "6.14.11"  	if BR2_KERNEL_HEADERS_6_14
 	default "6.15.11"  	if BR2_KERNEL_HEADERS_6_15
 	default "6.17.7"    if BR2_KERNEL_HEADERS_6_17
+	default "7.1"       if BR2_KERNEL_HEADERS_7_1
 	default "7.0.12"    if BR2_KERNEL_HEADERS_7_0
 	default "6.18.3"    if BR2_KERNEL_HEADERS_6_18
 	default BR2_DEFAULT_KERNEL_VERSION if BR2_KERNEL_HEADERS_VERSION
