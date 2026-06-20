@@ -5745,7 +5745,7 @@ dxx-rebirth:
     Para mais informações: https://wiki.batocera.org/systems:dxx-rebirth
 
 dusk:
-  name: Dusk
+  name: Dusklight
   manufacturer: Ports
   release:
   hardware: port
@@ -5766,7 +5766,7 @@ dusk:
     Use that exact filename so the seeded artwork and game entry match.
 
     Recommended dump: USA GameCube, Game ID GZ2E01, RVZ format.
-    Dusk opens to its own main menu; select the RVZ from there.
+    Dusklight opens to its own main menu; select the RVZ from there.
   comment_fr: |
     Moteur natif pour Twilight Princess.
 

@@ -101,11 +101,13 @@ EOG
 
 es_add_game_end() {
     echo "</gameList>" >> "$TMP_XML"
+    cp "$TMP_XML" "${ROMS_DIR}/gamelist.xml"
     curl -s -X POST \
         -H "Content-type: application/x-www-form-urlencoded" \
         -H "Accept: text/plain" \
         "${ES_SERVER}/addgames/flatpak" \
         -d @"$TMP_XML" > /dev/null || true
+    cp "$TMP_XML" "${ROMS_DIR}/gamelist.xml"
 }
 
 get_desktop_name() {
@@ -199,6 +201,11 @@ if [ "$added" -gt 0 ]; then
 
     chmod -R a+rX /userdata/saves/flatpak/binaries || exit 1
     chmod a+rx /userdata /userdata/saves /userdata/saves/flatpak || exit 1
+else
+    cat > "${ROMS_DIR}/gamelist.xml" <<'EOF'
+<gameList>
+</gameList>
+EOF
 fi
 
 exit 0

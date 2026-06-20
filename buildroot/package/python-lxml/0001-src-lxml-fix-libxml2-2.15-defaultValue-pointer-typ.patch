@@ -1,0 +1,51 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Thu, 18 Jun 2026 13:36:00 +0000
+Subject: [PATCH] src/lxml: fix libxml2 2.15 defaultValue pointer type
+
+libxml2 2.15 exposes xmlAttribute.defaultValue as xmlChar *, while
+lxml's dictionary-fixup helper accepts const_xmlChar **.  GCC rejects
+passing &defaultValue directly as an incompatible pointer type.
+
+Cast this one call explicitly, matching the existing casts used for
+other mutable libxml2 string fields in the same helper.
+
+Patch both the Cython source and generated C file because Buildroot
+builds lxml from the release tarball without regenerating Cython output.
+
+Upstream: N/A
+Signed-off-by: suckbluefrog <suckbluefrog@proton.me>
+---
+ src/lxml/etree.c   | 2 +-
+ src/lxml/proxy.pxi | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/src/lxml/etree.c b/src/lxml/etree.c
+index 85cf1f8bc..b3676716e 100644
+--- a/src/lxml/etree.c
++++ b/src/lxml/etree.c
+@@ -28108,7 +28108,7 @@ static void __pyx_f_4lxml_5etree_fixThreadDictNamesForDtd(xmlDtd *__pyx_v_c_dtd
+  *                 _fixThreadDictPtr(&c_attribute.name, c_src_dict, c_dict)
+  *                 _fixThreadDictPtr(&c_attribute.prefix, c_src_dict, c_dict)
+  */
+-        __pyx_f_4lxml_5etree__fixThreadDictPtr((&__pyx_v_c_attribute->defaultValue), __pyx_v_c_src_dict, __pyx_v_c_dict);
++        __pyx_f_4lxml_5etree__fixThreadDictPtr(((const xmlChar **)(&__pyx_v_c_attribute->defaultValue)), __pyx_v_c_src_dict, __pyx_v_c_dict);
+ 
+         /* "src/lxml/proxy.pxi":578
+  *             while c_attribute:
+diff --git a/src/lxml/proxy.pxi b/src/lxml/proxy.pxi
+index d1fb922b6..6bc01f26d 100644
+--- a/src/lxml/proxy.pxi
++++ b/src/lxml/proxy.pxi
+@@ -574,7 +574,7 @@ cdef void fixThreadDictNamesForDtd(tree.xmlDtd* c_dtd,
+                 _fixThreadDictPtr(&c_element.content.prefix, c_src_dict, c_dict)
+             c_attribute = c_element.attributes
+             while c_attribute:
+-                _fixThreadDictPtr(&c_attribute.defaultValue, c_src_dict, c_dict)
++                _fixThreadDictPtr(<const_xmlChar**>&c_attribute.defaultValue, c_src_dict, c_dict)
+                 _fixThreadDictPtr(&c_attribute.name, c_src_dict, c_dict)
+                 _fixThreadDictPtr(&c_attribute.prefix, c_src_dict, c_dict)
+                 _fixThreadDictPtr(&c_attribute.elem, c_src_dict, c_dict)
+-- 
+2.43.0
+

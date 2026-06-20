@@ -43,11 +43,11 @@ nds:
   core:     melonds
 steam:
   emulator: steam
-  core:     gamepadui
+  core:     steamos
   options:
     bezel: none
     gamescope: true
-    steam_session_mode: gamepadui
+    steam_session_mode: steamos
     steam_gamepadui: true
     steam_user: auto
     steam_extra_args: ""

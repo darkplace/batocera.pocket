@@ -140,7 +140,14 @@ define MAME_GENIE
 	USE_QTDEBUG=0 DEBUG=0 IGNORE_GIT=1 MPARAM=""
 endef
 
-MAME_PRE_BUILD_HOOKS += MAME_GENIE
+define MAME_REMOVE_EMPTY_OBJECTS
+	# Interrupted compiles can leave zero-byte objects that make treats as current.
+	if [ -d "$(@D)/build" ]; then \
+		find "$(@D)/build" -type f -name '*.o' -size 0 -delete; \
+	fi
+endef
+
+MAME_PRE_BUILD_HOOKS += MAME_GENIE MAME_REMOVE_EMPTY_OBJECTS
 
 define MAME_BUILD_CMDS
 	+cd $(@D) ; \

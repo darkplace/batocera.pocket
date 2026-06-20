@@ -43,11 +43,13 @@ EOG
 
 es_add_game_end() {
     echo '</gameList>' >> "$TMP_XML"
+    cp "$TMP_XML" "$GAMELIST"
     curl -s -X POST \
         -H 'Content-type: application/x-www-form-urlencoded' \
         -H 'Accept: text/plain' \
         "${ES_SERVER}/addgames/android" \
         -d @"$TMP_XML" > /dev/null || true
+    cp "$TMP_XML" "$GAMELIST"
 }
 
 if [ -d "$LEGACY_ROMS_DIR" ] && [ ! -e "$ROMS_DIR" ]; then
@@ -100,7 +102,6 @@ if [ -d "$DESKTOP_DIR" ]; then
 fi
 
 if [ "$added" -gt 0 ]; then
-    cp "$TMP_XML" "$GAMELIST"
     es_add_game_end
 else
     cat > "$GAMELIST" <<'EOF'

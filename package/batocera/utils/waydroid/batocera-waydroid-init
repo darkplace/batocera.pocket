@@ -59,6 +59,91 @@ with open(cfg_path, "w") as handle:
 PY
 }
 
+configure_waydroid_hardware_gpu() {
+    [ -f "${WAYDROID_CFG}" ] || return 1
+
+    python3 - "${WAYDROID_CFG}" <<'PY'
+import argparse
+import configparser
+import os
+import sys
+
+sys.path.insert(0, "/usr/lib/waydroid")
+
+import tools.config
+from tools.helpers import gpu
+
+cfg_path = sys.argv[1]
+args = argparse.Namespace(config=cfg_path, quiet=True, verbose=False, cache={})
+
+try:
+    dri, _ = gpu.getDriNode(args)
+except Exception as exc:
+    print(f"Waydroid hardware GPU setup skipped: failed to detect DRM render node: {exc}")
+    sys.exit(1)
+
+if not dri:
+    print("Waydroid hardware GPU setup skipped: no DRM render node detected")
+    sys.exit(1)
+
+try:
+    vulkan = gpu.getVulkanDriver(args, os.path.basename(dri))
+except Exception:
+    vulkan = ""
+
+cfg = configparser.ConfigParser()
+cfg.read(cfg_path)
+if "properties" not in cfg:
+    cfg["properties"] = {}
+
+props = cfg["properties"]
+props["ro.hardware.gralloc"] = "gbm"
+props["ro.hardware.egl"] = "mesa"
+props["gralloc.gbm.device"] = dri
+props["debug.stagefright.ccodec"] = "0"
+props["ro.opengles.version"] = "196610"
+if vulkan:
+    props["ro.hardware.vulkan"] = vulkan
+
+with open(cfg_path, "w") as handle:
+    cfg.write(handle)
+
+print(f"Waydroid hardware GPU configured: gralloc=gbm egl=mesa drm={dri} vulkan={vulkan or 'none'}")
+PY
+}
+
+rebuild_waydroid_base_props() {
+    [ -f "${WAYDROID_CFG}" ] || return 1
+
+    python3 - <<'PY'
+import argparse
+import sys
+
+sys.path.insert(0, "/usr/lib/waydroid")
+
+import tools.config
+from tools.helpers import lxc
+
+args = argparse.Namespace()
+args.config = "/var/lib/waydroid/waydroid.cfg"
+args.work = "/var/lib/waydroid"
+args.log = None
+args.details_to_stdout = False
+args.verbose = False
+args.quiet = True
+args.cache = {}
+
+cfg = tools.config.load(args)
+args.arch = cfg["waydroid"]["arch"]
+args.images_path = cfg["waydroid"]["images_path"]
+args.vendor_type = cfg["waydroid"]["vendor_type"]
+args.system_ota = cfg["waydroid"].get("system_ota", "None")
+args.vendor_ota = cfg["waydroid"].get("vendor_ota", "None")
+
+lxc.make_base_props(args)
+PY
+}
+
 need_waydroid_init=0
 need_waydroid_download=0
 expected_images_dir="/var/lib/waydroid/images"
@@ -119,6 +204,11 @@ fi
 # Allow Android to react to hotplugged controllers and other input devices.
 ensure_waydroid_property "persist.waydroid.udev" "true"
 ensure_waydroid_property "persist.waydroid.uevent" "true"
+
+# Force the native Mesa/GBM path when a host DRM render node is available.
+if configure_waydroid_hardware_gpu >>"${LOG_FILE}" 2>&1; then
+    rebuild_waydroid_base_props >>"${LOG_FILE}" 2>&1 || true
+fi
 
 # Re-apply native-bridge support after init refreshes images/overlay state.
 if [ -x /usr/bin/batocera-waydroid-arm ]; then

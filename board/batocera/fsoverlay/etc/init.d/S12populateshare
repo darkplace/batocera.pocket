@@ -150,6 +150,35 @@ then
     fi
 fi
 
+# The Steam updater owns generated aarch64 Steam launchers and gamelists.
+# Keep them present for existing userdata so ES exposes the Steam system.
+if [ -x /usr/bin/batocera-steam-update ] && [ -f "$IN/roms/steam/Steam GamepadUI Gamescope.steam" ]; then
+    STEAM_GAMELIST="$OUT/roms/steam/gamelist.xml"
+    STEAM_UPDATE=0
+
+    [ -f "$OUT/roms/steam/Steam GamepadUI Gamescope.steam" ] || STEAM_UPDATE=1
+    [ -f "$STEAM_GAMELIST" ] || STEAM_UPDATE=1
+
+    STEAM_MANIFEST=$(find /userdata/system/.local/share/Steam \
+                          /userdata/system/steam \
+                          /userdata/system/.steam/steam \
+                          /userdata/roms/steam/steamapps \
+                          -path '*/steamapps/appmanifest_*.acf' -print -quit 2>/dev/null)
+    if [ -n "$STEAM_MANIFEST" ]; then
+        if [ "$STEAM_UPDATE" = 0 ] && ! grep -q 'steam-app-[0-9][0-9]*\.steam' "$STEAM_GAMELIST" 2>/dev/null; then
+            STEAM_UPDATE=1
+        fi
+        if [ "$STEAM_UPDATE" = 0 ] && [ "$STEAM_MANIFEST" -nt "$STEAM_GAMELIST" ]; then
+            STEAM_UPDATE=1
+        fi
+    fi
+
+    if [ "$STEAM_UPDATE" = 1 ]; then
+        mkdir -p "$OUT/roms/steam"
+        /usr/bin/batocera-steam-update >/dev/null 2>&1 || true
+    fi
+fi
+
 # directories / files to copy when initializing the user data
 #
 # NO UPDATE IS POSSIBLE ON THESE DIRECTORIES WHEN batocera.linux IS UPDATED

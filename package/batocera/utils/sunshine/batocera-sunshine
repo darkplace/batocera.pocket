@@ -88,6 +88,19 @@ set_config_key() {
 	mv "$tmp" "$config"
 }
 
+v4l2m2m_encoder_available() {
+	command -v ffmpeg >/dev/null 2>&1 || return 1
+	ffmpeg -hide_banner -encoders 2>/dev/null | grep -q '[[:space:]]h264_v4l2m2m[[:space:]]'
+}
+
+ensure_encoder_default() {
+	[ -s "$config" ] || return 0
+	grep -q '^[[:space:]]*encoder[[:space:]]*=' "$config" && return 0
+	v4l2m2m_encoder_available || return 0
+
+	set_config_key encoder v4l2m2m
+}
+
 append_unique_origin() {
 	origin="$1"
 	[ -n "$origin" ] || return 0
@@ -189,6 +202,7 @@ if [ ! -s "$config" ]; then
 	{
 		echo "capture = wlr"
 		[ -z "$output_name" ] || echo "output_name = $output_name"
+		v4l2m2m_encoder_available && echo "encoder = v4l2m2m"
 		echo "origin_web_ui_allowed = lan"
 		csrf_origins="$(build_csrf_allowed_origins)"
 		[ -z "$csrf_origins" ] || echo "csrf_allowed_origins = $csrf_origins"
@@ -196,6 +210,7 @@ if [ ! -s "$config" ]; then
 fi
 
 ensure_output_name_default
+ensure_encoder_default
 ensure_web_config_defaults
 
 exec /usr/bin/sunshine "$@"

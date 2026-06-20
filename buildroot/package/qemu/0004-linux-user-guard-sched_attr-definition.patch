@@ -1,0 +1,43 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Thu, 18 Jun 2026 12:43:00 +0000
+Subject: [PATCH] linux-user: guard sched_attr definition
+
+Recent host kernel headers expose struct sched_attr through
+<linux/sched/types.h>, which can be pulled in indirectly by <sched.h>.
+QEMU 9.1.0 keeps a local fallback definition because older glibc/kernel
+header combinations did not provide one, but on newer hosts this causes a
+redefinition error while building linux-user/syscall.c.
+
+Keep the local fallback only when the host headers have not provided the
+sched_attr ABI macros.
+
+Upstream: N/A
+Signed-off-by: suckbluefrog <suckbluefrog@proton.me>
+---
+ linux-user/syscall.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/linux-user/syscall.c b/linux-user/syscall.c
+index 3bcd12c2f7..c904b252e2 100644
+--- a/linux-user/syscall.c
++++ b/linux-user/syscall.c
+@@ -360,6 +360,7 @@ _syscall3(int, sys_sched_getaffinity, pid_t, pid, unsigned int, len,
+ #define __NR_sys_sched_setaffinity __NR_sched_setaffinity
+ _syscall3(int, sys_sched_setaffinity, pid_t, pid, unsigned int, len,
+           unsigned long *, user_mask_ptr);
++#ifndef SCHED_ATTR_SIZE_VER0
+ /* sched_attr is not defined in glibc */
+ struct sched_attr {
+     uint32_t size;
+@@ -373,6 +374,7 @@ struct sched_attr {
+     uint32_t sched_util_min;
+     uint32_t sched_util_max;
+ };
++#endif
+ #define __NR_sys_sched_getattr __NR_sched_getattr
+ _syscall4(int, sys_sched_getattr, pid_t, pid, struct sched_attr *, attr,
+           unsigned int, size, unsigned int, flags);
+-- 
+2.43.0
+

@@ -962,6 +962,15 @@ start_session_supervisor() {
     batocera-steam-session-supervisor start "${1:-steam-direct-session}" >/dev/null 2>&1 || true
 }
 
+refresh_steam_es_entries() {
+    command -v batocera-steam-update >/dev/null 2>&1 || return 0
+
+    log "refreshing Steam ES launchers after Steam exit"
+    if ! /usr/bin/batocera-steam-update >> "${LOG}" 2>&1; then
+        log "Steam ES launcher refresh failed after Steam exit"
+    fi
+}
+
 cleanup() {
     local rc=$?
     local es_gamescope_session=0
@@ -988,8 +997,10 @@ cleanup() {
         exit "${rc}"
     fi
     terminate_steam_stack
-    restore_frontend || true
-    start_frontend_recover_monitor "steam-direct-session-cleanup"
+    refresh_steam_es_entries
+    if ! restore_frontend; then
+        start_frontend_recover_monitor "steam-direct-session-cleanup"
+    fi
     restore_backglass_widget
     restore_sm8550_gpu_profile
     release_direct_session_lock

@@ -687,7 +687,7 @@ spectravideo:
   core:     bluemsx
 steam:
   emulator: steam
-  core:     gamepadui
+  core:     steamos
 superbroswar:
   emulator: libretro
   core:     superbroswar

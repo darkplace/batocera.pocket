@@ -190,6 +190,18 @@ es_add_game() {
     local game_path="$1"
     local game_name="$2"
     local game_image="$3"
+    local game_emulator="${4:-}"
+    local game_core="${5:-}"
+    local emulator_xml=""
+    local core_xml=""
+
+    if [[ -n "${game_emulator}" ]]; then
+        emulator_xml="  <emulator>$(xml_escape "${game_emulator}")</emulator>"
+    fi
+
+    if [[ -n "${game_core}" ]]; then
+        core_xml="  <core>$(xml_escape "${game_core}")</core>"
+    fi
 
     cat >> "${tmp_xml}" <<EOF
 <game>
@@ -204,6 +216,8 @@ es_add_game() {
   <genre></genre>
   <players></players>
   <image>$(xml_escape "${game_image}")</image>
+${emulator_xml}
+${core_xml}
   <manual></manual>
   <video></video>
 </game>
@@ -214,7 +228,7 @@ es_game_hidden() {
     local game_name="${1,,}"
 
     case "${game_name}" in
-        *proton*|*runtime*|*redistributable*)
+        *proton*|*runtime*|*redistributable*|*steamworks*|*pressure-vessel*|*pressure\ vessel*|*shader\ pre-caching*)
             printf 'true\n'
             ;;
         *)
@@ -546,10 +560,13 @@ while IFS= read -r library; do
         launcher_name="steam-app-${appid}.steam"
         cat > "${roms_dir}/${launcher_name}" <<EOF
 appid=${appid}
+mode=steamos
+gamepadui=1
+gamescope=1
 EOF
 
         image_rel="$(copy_game_image "${appid}")"
-        es_add_game "./${launcher_name}" "${name}" "${image_rel}"
+        es_add_game "./${launcher_name}" "${name}" "${image_rel}" "steam" "steamos"
         game_count+=1
     done < <(find "${library}" -maxdepth 1 -type f -name 'appmanifest_*.acf' -print0 2>/dev/null)
 done < <(discover_libraries)
@@ -568,10 +585,13 @@ while IFS=$'\t' read -r shortcut_appid shortcut_name; do
     cat > "${roms_dir}/${launcher_name}" <<EOF
 appid=${shortcut_appid}
 steam_uri=steam://rungameid/${shortcut_appid}
+mode=steamos
+gamepadui=1
+gamescope=1
 EOF
 
     image_rel="$(copy_game_image "${shortcut_appid}")"
-    es_add_game "./${launcher_name}" "${shortcut_name}" "${image_rel}"
+    es_add_game "./${launcher_name}" "${shortcut_name}" "${image_rel}" "steam" "steamos"
     shortcut_count+=1
 done < <(list_steam_shortcuts)
 
