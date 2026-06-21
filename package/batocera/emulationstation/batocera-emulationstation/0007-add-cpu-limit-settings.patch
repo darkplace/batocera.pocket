@@ -1,0 +1,156 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Sun, 21 Jun 2026 00:00:00 +0000
+Subject: [PATCH] Add CPU speed limit settings
+
+---
+ es-app/src/guis/GuiMenu.cpp | 137 +++++++++++++++++++++++++++++++++++
+ 1 file changed, 137 insertions(+)
+
+diff --git a/es-app/src/guis/GuiMenu.cpp b/es-app/src/guis/GuiMenu.cpp
+--- a/es-app/src/guis/GuiMenu.cpp
++++ b/es-app/src/guis/GuiMenu.cpp
+@@ -1581,6 +1581,143 @@ void GuiMenu::openSystemSettings()
+ 	}
+ #endif
+ 
++#if !WIN32
++	const std::string cpuLimitScript = "/usr/bin/batocera-cpu-limit";
++	if (Utils::FileSystem::exists(cpuLimitScript) &&
++		system((cpuLimitScript + " --available >/dev/null 2>&1").c_str()) == 0)
++	{
++		auto getCpuLimitOutput = [](const std::string& command) -> std::string
++		{
++			std::array<char, 128> buffer;
++			std::string result;
++			std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(command.c_str(), "r"), pclose);
++
++			if (!pipe)
++				return "";
++
++			while (fgets(buffer.data(), buffer.size(), pipe.get()) != nullptr)
++				result += buffer.data();
++
++			return Utils::String::trim(result);
++		};
++
++		auto modeLabel = [](const std::string& mode) -> std::string
++		{
++			if (mode == "auto")
++				return _("AUTO");
++			if (mode == "adaptive")
++				return _("ADAPTIVE (FPS)");
++			return _("OFF");
++		};
++
++		auto capLabel = [](const std::string& cap) -> std::string
++		{
++			if (cap == "auto")
++				return _("AUTO");
++			if (cap == "none")
++				return _("NO LIMIT");
++			return cap + "%";
++		};
++
++		auto targetLabel = [](const std::string& target) -> std::string
++		{
++			if (target == "auto")
++				return _("AUTO");
++			return target + " FPS";
++		};
++
++		auto optionsHeatMode = std::make_shared<OptionListComponent<std::string>>(mWindow, _("MITIGATE HEAT"), false);
++		std::string selectedHeatMode = getCpuLimitOutput(cpuLimitScript + " saved-mode");
++		if (selectedHeatMode.empty())
++			selectedHeatMode = "off";
++
++		bool hasHeatModeOptions = false;
++		std::string heatModeOption;
++		for (std::stringstream ss(getCpuLimitOutput(cpuLimitScript + " mode-options")); ss >> heatModeOption; )
++		{
++			heatModeOption = Utils::String::trim(heatModeOption);
++			if (!heatModeOption.empty())
++			{
++				optionsHeatMode->add(modeLabel(heatModeOption), heatModeOption, heatModeOption == selectedHeatMode);
++				hasHeatModeOptions = true;
++			}
++		}
++
++		if (!hasHeatModeOptions)
++			optionsHeatMode->add(_("OFF"), "off", true);
++
++		s->addWithDescription(
++			_("MITIGATE HEAT"),
++			_("Dynamically limits CPU maximum frequency from temperature and fan speed. Adaptive also lowers clocks when FPS stays above target."),
++			optionsHeatMode);
++		s->addSaveFunc([cpuLimitScript, optionsHeatMode]
++		{
++			if (optionsHeatMode->changed())
++				Utils::Platform::ProcessStartInfo(cpuLimitScript + " set-mode " + optionsHeatMode->getSelected()).run();
++		});
++
++		auto optionsCpuLimit = std::make_shared<OptionListComponent<std::string>>(mWindow, _("CPU SPEED LIMIT"), false);
++		std::string selectedCpuLimit = getCpuLimitOutput(cpuLimitScript + " saved-global");
++		if (selectedCpuLimit.empty())
++			selectedCpuLimit = "auto";
++
++		bool hasCpuLimitOptions = false;
++		std::string cpuLimitOption;
++		for (std::stringstream ss(getCpuLimitOutput(cpuLimitScript + " cap-options")); ss >> cpuLimitOption; )
++		{
++			cpuLimitOption = Utils::String::trim(cpuLimitOption);
++			if (!cpuLimitOption.empty())
++			{
++				optionsCpuLimit->add(capLabel(cpuLimitOption), cpuLimitOption, cpuLimitOption == selectedCpuLimit);
++				hasCpuLimitOptions = true;
++			}
++		}
++
++		if (!hasCpuLimitOptions)
++			optionsCpuLimit->add(_("AUTO"), "auto", true);
++
++		s->addWithDescription(
++			_("CPU SPEED LIMIT"),
++			_("Default maximum CPU frequency cap for games and apps. Per-game settings can override it."),
++			optionsCpuLimit);
++		s->addSaveFunc([cpuLimitScript, optionsCpuLimit]
++		{
++			if (optionsCpuLimit->changed())
++				Utils::Platform::ProcessStartInfo(cpuLimitScript + " set-global " + optionsCpuLimit->getSelected()).run();
++		});
++
++		auto optionsTargetFps = std::make_shared<OptionListComponent<std::string>>(mWindow, _("ADAPTIVE FPS TARGET"), false);
++		std::string selectedTargetFps = getCpuLimitOutput(cpuLimitScript + " saved-target");
++		if (selectedTargetFps.empty())
++			selectedTargetFps = "auto";
++
++		bool hasTargetFpsOptions = false;
++		std::string targetFpsOption;
++		for (std::stringstream ss(getCpuLimitOutput(cpuLimitScript + " target-options")); ss >> targetFpsOption; )
++		{
++			targetFpsOption = Utils::String::trim(targetFpsOption);
++			if (!targetFpsOption.empty())
++			{
++				optionsTargetFps->add(targetLabel(targetFpsOption), targetFpsOption, targetFpsOption == selectedTargetFps);
++				hasTargetFpsOptions = true;
++			}
++		}
++
++		if (!hasTargetFpsOptions)
++			optionsTargetFps->add(_("AUTO"), "auto", true);
++
++		s->addWithDescription(
++			_("ADAPTIVE FPS TARGET"),
++			_("Target frame rate for Adaptive CPU speed limiting. Auto learns from available FPS telemetry."),
++			optionsTargetFps);
++		s->addSaveFunc([cpuLimitScript, optionsTargetFps]
++		{
++			if (optionsTargetFps->changed())
++				Utils::Platform::ProcessStartInfo(cpuLimitScript + " set-target " + optionsTargetFps->getSelected()).run();
++		});
++	}
++#endif
++
+ #if defined(_ENABLE_TTS_) || defined(WIN32)
+ 	if (TextToSpeech::getInstance()->isAvailable())
+ 	{

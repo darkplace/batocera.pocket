@@ -30,6 +30,36 @@ shared:
         Balanced: balanced
         Power Saver: powersaver
         Do Not Change: default
+    cpu_max_freq:
+      group: POWER OPTIONS
+      prompt: CPU SPEED LIMIT
+      description: Limit CPU maximum frequency while this game or app is running.
+        Auto inherits the global setting; No Limit disables the manual cap.
+      choices:
+        Auto: auto
+        No Limit: none
+        95%: 95
+        90%: 90
+        85%: 85
+        80%: 80
+        75%: 75
+        70%: 70
+        65%: 65
+        60%: 60
+        55%: 55
+        50%: 50
+    cpu_limit_target_fps:
+      group: POWER OPTIONS
+      prompt: ADAPTIVE FPS TARGET
+      description: Target frame rate used by Adaptive CPU speed limiting. Auto learns
+        from the current game when FPS telemetry is available.
+      choices:
+        Auto: auto
+        30 FPS: 30
+        50 FPS: 50
+        60 FPS: 60
+        90 FPS: 90
+        120 FPS: 120
     tdp:
       archs_include:
       - x86_64
@@ -795,6 +825,8 @@ shared:
 global:
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - batterymode
   - gpu_performance_profile
   - tdp
@@ -860,6 +892,8 @@ global:
 libretro:
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -8430,6 +8464,8 @@ amiberry:
   - padtokeyboard
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -8512,6 +8548,8 @@ amiberry:
 cannonball:
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -8532,6 +8570,8 @@ cannonball:
 cemu:
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -8703,6 +8743,8 @@ hypseus-singe:
   - padtokeyboard
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -8820,6 +8862,8 @@ devilutionx:
   - padtokeyboard
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -8843,6 +8887,8 @@ dolphin:
     dolphin:
       shared:
       - powermode
+      - cpu_max_freq
+      - cpu_limit_target_fps
       - tdp
       - videomode
       - bezel
@@ -9341,6 +9387,8 @@ dosbox:
   - padtokeyboard
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -9397,6 +9445,8 @@ dosbox_staging:
   - padtokeyboard
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -9443,6 +9493,8 @@ dosbox-x:
   - padtokeyboard
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -9487,6 +9539,8 @@ dosbox-x:
 duckstation:
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -9834,6 +9888,8 @@ duckstation:
 flycast:
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -10030,6 +10086,8 @@ fsuae:
   - padtokeyboard
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -10047,6 +10105,8 @@ hatari:
   - padtokeyboard
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -10112,6 +10172,8 @@ hatari:
 melonds:
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -10248,6 +10310,8 @@ melonds:
 moonlight:
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -10324,6 +10388,8 @@ moonlight:
 mupen64plus:
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -10594,6 +10660,8 @@ mupen64plus:
 openbor:
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -10646,6 +10714,8 @@ pcsx2:
     pcsx2:
       shared:
       - powermode
+      - cpu_max_freq
+      - cpu_limit_target_fps
       - tdp
       - videomode
       - bezel
@@ -10997,6 +11067,8 @@ pcsx2:
 ppsspp:
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -11287,6 +11359,8 @@ pygame:
   - padtokeyboard
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -11302,6 +11376,8 @@ pygame:
 reicast:
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -11315,7 +11391,7 @@ reicast:
   - bezel.tattoo_file
   - bezel.resize_tattoo
 rpcs3:
-  shared: [powermode, tdp, videomode, bezel, bezel_stretch, hud, hud_corner, bezel.tattoo, bezel.tattoo_corner, bezel.tattoo_file, bezel.resize_tattoo, use_guns, use_wheels, wheel_rotation, wheel_deadzone, wheel_midzone]
+  shared: [powermode, cpu_max_freq, cpu_limit_target_fps, tdp, videomode, bezel, bezel_stretch, hud, hud_corner, bezel.tattoo, bezel.tattoo_corner, bezel.tattoo_file, bezel.resize_tattoo, use_guns, use_wheels, wheel_rotation, wheel_deadzone, wheel_midzone]
   cfeatures:
         rpcs3_game_profile:
             submenu: GAME PROFILE
@@ -11779,6 +11855,8 @@ scummvm:
   - padtokeyboard
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -11854,6 +11932,8 @@ scummvm:
 opengoal:
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - tdp
   - videomode
   - hud
@@ -11937,6 +12017,8 @@ opengoal:
 easyrpg:
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -11973,6 +12055,8 @@ easyrpg:
 redream:
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -12059,6 +12143,8 @@ sdlpop:
   - padtokeyboard
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -12068,6 +12154,8 @@ superbroswar:
   features: []
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -12085,6 +12173,8 @@ supermodel:
   - padtokeyboard
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -12181,6 +12271,8 @@ cgenius:
   - padtokeyboard
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -12236,6 +12328,8 @@ vice:
   - padtokeyboard
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -12261,6 +12355,8 @@ tsugaru:
   - padtokeyboard
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -12294,6 +12390,8 @@ mame:
   - padtokeyboard
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -13548,6 +13646,8 @@ wine:
   - padtokeyboard
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -13976,6 +14076,8 @@ wine:
 solarus:
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -14000,6 +14102,8 @@ mugen:
   - padtokeyboard
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -14030,6 +14134,8 @@ ikemen:
   - padtokeyboard
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -14046,6 +14152,8 @@ ruffle:
   - padtokeyboard
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -14054,6 +14162,8 @@ lightspark:
   - padtokeyboard
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -14068,6 +14178,8 @@ lightspark:
 drastic:
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -14164,6 +14276,8 @@ drastic:
 xemu:
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -14261,6 +14375,8 @@ lexaloffle:
   - padtokeyboard
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -14277,6 +14393,8 @@ ecwolf:
   - padtokeyboard
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -14293,6 +14411,8 @@ sonic2013:
   - padtokeyboard
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -14360,6 +14480,8 @@ soniccd:
   - padtokeyboard
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -14425,6 +14547,8 @@ model2emu:
   - padtokeyboard
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -14549,6 +14673,8 @@ gsplus:
   - padtokeyboard
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -14575,6 +14701,8 @@ applewin:
   - padtokeyboard
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - tdp
   - videomode
   cfeatures:
@@ -14671,6 +14799,8 @@ play:
   - padtokeyboard
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -14748,6 +14878,8 @@ flatpak:
   - padtokeyboard
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -14936,6 +15068,8 @@ apps:
   - padtokeyboard
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -14984,6 +15118,8 @@ waydroid:
   - padtokeyboard
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -15035,6 +15171,8 @@ ios:
   - padtokeyboard
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -15072,6 +15210,8 @@ steam:
   - padtokeyboard
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -15269,6 +15409,8 @@ heroic:
   - padtokeyboard
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -15311,6 +15453,8 @@ lutris:
   - padtokeyboard
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -15353,6 +15497,8 @@ n64recomp:
   - padtokeyboard
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -15395,6 +15541,8 @@ citron:
   - padtokeyboard
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -15787,6 +15935,8 @@ eden:
   - padtokeyboard
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -16113,6 +16263,8 @@ yuzu:
   - padtokeyboard
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -16420,6 +16572,8 @@ ryujinx:
   - padtokeyboard
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - tdp
   - videomode
   - bezel
@@ -16920,6 +17074,8 @@ samcoupe:
   - padtokeyboard
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -16936,6 +17092,8 @@ hcl:
   - padtokeyboard
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -16946,6 +17104,8 @@ hurrican:
   - padtokeyboard
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -16956,6 +17116,8 @@ tyrian:
   - padtokeyboard
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -16966,6 +17128,8 @@ openjazz:
   - padtokeyboard
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -17004,6 +17168,8 @@ abuse:
   - padtokeyboard
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -17020,6 +17186,8 @@ cdogs:
   - padtokeyboard
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -17036,6 +17204,8 @@ openmsx:
   - padtokeyboard
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -17065,6 +17235,8 @@ sh:
   - padtokeyboard
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -17109,6 +17281,8 @@ xenia:
   features: []
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -17482,6 +17656,8 @@ xenia-canary:
   features: []
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -17996,6 +18172,8 @@ xenia-edge:
   features: []
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -18574,6 +18752,8 @@ freej2me:
   features: []
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -18642,6 +18822,8 @@ gopher64:
   features: []
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -18702,6 +18884,8 @@ nanoboyadvance:
   features: []
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -18760,6 +18944,8 @@ ares:
   - padtokeyboard
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -18785,6 +18971,8 @@ skyemu:
   - cheevos
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -18812,6 +19000,8 @@ eka2l1:
   features: []
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -18827,6 +19017,8 @@ odcommander:
   - padtokeyboard
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -18835,6 +19027,8 @@ odcommander:
 gzdoom:
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -18865,6 +19059,8 @@ gzdoom:
 corsixth:
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -18893,6 +19089,8 @@ corsixth:
 stella:
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -18901,6 +19099,8 @@ stella:
 eduke32:
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -18922,6 +19122,8 @@ eduke32:
 fury:
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -18943,6 +19145,8 @@ fury:
 raze:
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -18972,6 +19176,8 @@ raze:
 vita3k:
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -19029,6 +19235,8 @@ vita3k:
 bigpemu:
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -19137,6 +19345,8 @@ pyxel:
   - padtokeyboard
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -19151,6 +19361,8 @@ pyxel:
 ioquake3:
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -19180,6 +19392,8 @@ thextech:
   - padtokeyboard
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -19204,6 +19418,8 @@ vpinball:
   - padtokeyboard
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -19459,7 +19675,7 @@ vpinball:
 
 fpinball:
   features: [padtokeyboard]
-  shared: [powermode, tdp, videomode, ratio, bezel, bezel_stretch, hud, hud_corner, bezel.tattoo, bezel.tattoo_corner, bezel.tattoo_file, bezel.resize_tattoo]
+  shared: [powermode, cpu_max_freq, cpu_limit_target_fps, tdp, videomode, ratio, bezel, bezel_stretch, hud, hud_corner, bezel.tattoo, bezel.tattoo_corner, bezel.tattoo_file, bezel.resize_tattoo]
   cfeatures:
     fpcontroller:
       prompt: CONTROLLER CONFIGURATION
@@ -19473,6 +19689,8 @@ theforceengine:
   - padtokeyboard
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -19636,6 +19854,8 @@ theforceengine:
 iortcw:
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -19711,6 +19931,8 @@ iortcw:
 fallout1-ce:
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -19764,6 +19986,8 @@ fallout1-ce:
 fallout2-ce:
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -19817,6 +20041,8 @@ fallout2-ce:
 dxx-rebirth:
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -19858,6 +20084,8 @@ dxx-rebirth:
 etlegacy:
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -19971,6 +20199,8 @@ taradino:
   - padtokeyboard
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -19987,6 +20217,8 @@ x16emu:
   - padtokeyboard
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -20025,6 +20257,8 @@ shadps4:
   - padtokeyboard
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -20143,6 +20377,8 @@ dhewm3:
   - padtokeyboard
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -20185,6 +20421,8 @@ jazz2-native:
   - padtokeyboard
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -20201,6 +20439,8 @@ catacombgl:
   - padtokeyboard
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -20217,6 +20457,8 @@ lindbergh-loader:
   - padtokeyboard
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -20358,6 +20600,8 @@ vkquake:
   - padtokeyboard
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -20374,6 +20618,8 @@ vkquake2:
   - padtokeyboard
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -20388,6 +20634,8 @@ vkquake2:
 vkquake3:
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -20421,6 +20669,8 @@ vkquake3:
 tr1x:
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -20446,6 +20696,8 @@ tr2x:
   - padtokeyboard
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -20462,6 +20714,8 @@ bstone:
   - padtokeyboard
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -20498,6 +20752,8 @@ openjkdf2:
   - padtokeyboard
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -20740,6 +20996,8 @@ openjk:
   - padtokeyboard
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -20911,6 +21169,8 @@ openjk:
 azahar:
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -21043,6 +21303,8 @@ citra:
   - cheevos
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -21139,6 +21401,8 @@ openmohaa:
   - padtokeyboard
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -21305,6 +21569,8 @@ ymir:
   - padtokeyboard
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -21350,6 +21616,8 @@ clk:
   - padtokeyboard
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -21366,6 +21634,8 @@ yquake2:
   - padtokeyboard
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -21374,6 +21644,8 @@ xroar:
   - padtokeyboard
   shared:
   - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
   - videomode
@@ -21424,6 +21696,8 @@ aethersx2:
     'aethersx2': &aethersx2_core_features
       shared:
       - powermode
+      - cpu_max_freq
+      - cpu_limit_target_fps
       - tdp
       - videomode
       - bezel

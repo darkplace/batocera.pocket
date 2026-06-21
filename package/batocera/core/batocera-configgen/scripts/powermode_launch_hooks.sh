@@ -4,6 +4,9 @@ STATE_DIR="/var/run/batocera-emulator-performance"
 UCLAMP_WATCHER_PID="${STATE_DIR}/uclamp-watcher.pid"
 ES_AUDIO_STATE="${STATE_DIR}/es-audio-sink-inputs"
 BACKGLASS_STATE="${STATE_DIR}/backglass-disabled"
+CPU_LIMIT_HELPER="/usr/bin/batocera-cpu-limit"
+CPU_LIMIT_FPS_DIR="/var/run/batocera-cpu-limit/fps"
+CPU_LIMIT_GAMESCOPE_FPS_PIPE="/var/run/batocera-cpu-limit/gamescope-stats.pipe"
 
 HAS_CPUFREQ=0
 if [ -e /sys/devices/system/cpu/cpufreq/policy0/scaling_governor ] &&
@@ -87,6 +90,66 @@ get_cpu_profile() {
     fi
 
     echo "${CPU_PROFILE}"
+}
+
+get_cpu_max_freq() {
+    local SYSTEM_NAME="$1"
+    local GAME_NAME="$2"
+    local CPU_MAX_FREQ=""
+
+    if [ -n "${GAME_NAME}" ]; then
+        CPU_MAX_FREQ="$(/usr/bin/batocera-settings-get-master "${SYSTEM_NAME}[\"${GAME_NAME}\"].cpu_max_freq" 2>/dev/null)"
+        [ "${CPU_MAX_FREQ}" = "auto" ] && CPU_MAX_FREQ=""
+    fi
+
+    if [ -z "${CPU_MAX_FREQ}" ] && [ -n "${SYSTEM_NAME}" ]; then
+        CPU_MAX_FREQ="$(/usr/bin/batocera-settings-get-master "${SYSTEM_NAME}.cpu_max_freq" 2>/dev/null)"
+        [ "${CPU_MAX_FREQ}" = "auto" ] && CPU_MAX_FREQ=""
+    fi
+
+    if [ -z "${CPU_MAX_FREQ}" ]; then
+        CPU_MAX_FREQ="$(/usr/bin/batocera-settings-get-master global.cpu_max_freq 2>/dev/null)"
+    fi
+
+    echo "${CPU_MAX_FREQ:-auto}"
+}
+
+get_cpu_limit_target_fps() {
+    local SYSTEM_NAME="$1"
+    local GAME_NAME="$2"
+    local TARGET_FPS=""
+
+    if [ -n "${GAME_NAME}" ]; then
+        TARGET_FPS="$(/usr/bin/batocera-settings-get-master "${SYSTEM_NAME}[\"${GAME_NAME}\"].cpu_limit_target_fps" 2>/dev/null)"
+        [ "${TARGET_FPS}" = "auto" ] && TARGET_FPS=""
+    fi
+
+    if [ -z "${TARGET_FPS}" ] && [ -n "${SYSTEM_NAME}" ]; then
+        TARGET_FPS="$(/usr/bin/batocera-settings-get-master "${SYSTEM_NAME}.cpu_limit_target_fps" 2>/dev/null)"
+        [ "${TARGET_FPS}" = "auto" ] && TARGET_FPS=""
+    fi
+
+    if [ -z "${TARGET_FPS}" ]; then
+        TARGET_FPS="$(/usr/bin/batocera-settings-get-master global.cpu_limit_target_fps 2>/dev/null)"
+    fi
+
+    echo "${TARGET_FPS:-auto}"
+}
+
+apply_cpu_limit() {
+    local CPU_MAX_FREQ="$1"
+    local TARGET_FPS="$2"
+    local SYSTEM_NAME="$3"
+    local FPS_PATH="${CPU_LIMIT_FPS_DIR}"
+
+    [ -x "${CPU_LIMIT_HELPER}" ] || return 0
+    [ "${SYSTEM_NAME}" = "steam" ] && FPS_PATH="${CPU_LIMIT_GAMESCOPE_FPS_PIPE}"
+    "${CPU_LIMIT_HELPER}" game-start "${CPU_MAX_FREQ:-auto}" "${FPS_PATH}" "${TARGET_FPS:-auto}" >/dev/null 2>&1 || true
+}
+
+restore_cpu_limit() {
+    [ -x "${CPU_LIMIT_HELPER}" ] || return 0
+    "${CPU_LIMIT_HELPER}" game-stop >/dev/null 2>&1 || true
 }
 
 uclamp_profile_values() {
@@ -505,6 +568,7 @@ is_power_connected() {
 
 handle_game_stop() {
     stop_uclamp_watcher
+    restore_cpu_limit
     restore_es_audio
     restore_aux_display
     refresh_controlcenter_backglass
@@ -527,6 +591,8 @@ handle_game_start() {
     local CORE_NAME="$3"
     local GAME_NAME="$4"
     local CPU_PROFILE
+    local CPU_MAX_FREQ
+    local TARGET_FPS
 
     # Extract the base game name
     GAME_NAME="${GAME_NAME##*/}"
@@ -556,6 +622,9 @@ handle_game_start() {
     /usr/bin/batocera-power-mode "${POWER_MODE:-default}"
     CPU_PROFILE="$(get_cpu_profile "${SYSTEM_NAME}" "${GAME_NAME}")"
     apply_cpu_profile "${CPU_PROFILE}"
+    CPU_MAX_FREQ="$(get_cpu_max_freq "${SYSTEM_NAME}" "${GAME_NAME}")"
+    TARGET_FPS="$(get_cpu_limit_target_fps "${SYSTEM_NAME}" "${GAME_NAME}")"
+    apply_cpu_limit "${CPU_MAX_FREQ}" "${TARGET_FPS}" "${SYSTEM_NAME}"
     start_uclamp_watcher "${CPU_PROFILE}" "${SYSTEM_NAME}" "${EMULATOR_NAME}" "${CORE_NAME}"
     pause_es_audio "${CPU_PROFILE}"
     pause_aux_display "${CPU_PROFILE}" "${SYSTEM_NAME}" "${EMULATOR_NAME}" "${CORE_NAME}" "${GAME_NAME}"

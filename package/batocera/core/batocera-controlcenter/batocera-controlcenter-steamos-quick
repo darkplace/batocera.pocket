@@ -1,6 +1,7 @@
 #!/bin/sh
 
 LOG="/userdata/system/logs/controlcenter.log"
+STEAMOS_GAMESCOPE_ROM="/userdata/roms/steam/Steam GamepadUI Gamescope.steam"
 
 log_msg() {
     mkdir -p "$(dirname "${LOG}")" 2>/dev/null || true
@@ -127,6 +128,12 @@ terminate_controlcenter() {
 launch_steamos() {
     quick_launch_delay
     wait_input_quiet
+
+    if [ -x /usr/bin/emulatorlauncher ] && [ -f "${STEAMOS_GAMESCOPE_ROM}" ]; then
+        log_msg "launching SteamOS through ES steam system launcher"
+        /usr/bin/emulatorlauncher -system steam -rom "${STEAMOS_GAMESCOPE_ROM}"
+        return
+    fi
 
     if [ -x /usr/bin/steam-direct-session.sh ]; then
         log_msg "launching SteamOS direct gamescope session"

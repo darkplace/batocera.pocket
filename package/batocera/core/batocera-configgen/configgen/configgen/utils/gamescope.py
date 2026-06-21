@@ -215,7 +215,9 @@ def add_gamescope_arguments(command: Command, system: Emulator, current_resoluti
     if system.config.get_bool("gamescope_hdr"):
         args.append("--hdr-enabled")
 
-    stats_path = system.config.get_str("gamescope_stats_path", "").strip()
+    stats_path = str(command.env.get("BATOCERA_STEAM_GS_STATS_PATH", "")).strip()
+    if not stats_path:
+        stats_path = system.config.get_str("gamescope_stats_path", "").strip()
     if stats_path:
         _append_supported_option(args, supported_flags, "--stats-path", stats_path)
 

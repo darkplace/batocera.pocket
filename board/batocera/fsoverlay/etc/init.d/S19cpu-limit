@@ -1,0 +1,18 @@
+#!/bin/bash
+
+case "$1" in
+  start|restart|reload)
+    [ -x /usr/bin/batocera-cpu-limit ] || exit 0
+    /usr/bin/batocera-cpu-limit apply-mode >/dev/null 2>&1 || true
+    ;;
+  stop)
+    [ -x /usr/bin/batocera-cpu-limit ] || exit 0
+    /usr/bin/batocera-cpu-limit stop >/dev/null 2>&1 || true
+    ;;
+  *)
+    echo "Usage: $0 {start|stop|restart|reload}"
+    exit 1
+    ;;
+esac
+
+exit 0

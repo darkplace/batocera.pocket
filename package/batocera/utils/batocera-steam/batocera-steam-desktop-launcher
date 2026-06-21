@@ -21,6 +21,26 @@ log_msg() {
     echo "[$(date +%F\ %T)] desktop-launcher: $*" >> "${log}"
 }
 
+frontend_clean_env() {
+    local steam_env
+
+    (
+        for steam_env in ${!BATOCERA_STEAM_@}; do
+            unset "${steam_env}"
+        done
+
+        env \
+            -u MANGOHUD \
+            -u MANGOHUD_CONFIG \
+            -u MANGOHUD_CONFIGFILE \
+            -u MANGOHUD_DLSYM \
+            -u MANGOAPP_CONFIG \
+            -u LD_PRELOAD \
+            -u LD_AUDIT \
+            "$@"
+    )
+}
+
 steam_stack_alive() {
     pgrep -x batocera-steam >/dev/null 2>&1 || \
     pgrep -f "${steam_session_pattern}" >/dev/null 2>&1 || \
@@ -181,11 +201,11 @@ restore_frontend() {
         if pgrep -x sway >/dev/null 2>&1 || pgrep -x labwc >/dev/null 2>&1 || pgrep -x openbox >/dev/null 2>&1; then
             if ! pgrep -f '(^|/)emulationstation([[:space:]]|$)' >/dev/null 2>&1 && ! emulationstation_runner_alive && command -v emulationstation-standalone >/dev/null 2>&1; then
                 log_msg "starting EmulationStation frontend inside existing compositor"
-                nohup /usr/bin/emulationstation-standalone >> "${log}" 2>&1 &
+                frontend_clean_env nohup /usr/bin/emulationstation-standalone >> "${log}" 2>&1 &
             fi
         else
             log_msg "starting EmulationStation after desktop steam exit"
-            "${es_service}" restart >/dev/null 2>&1 || "${es_service}" start >/dev/null 2>&1 || true
+            frontend_clean_env "${es_service}" restart >/dev/null 2>&1 || frontend_clean_env "${es_service}" start >/dev/null 2>&1 || true
         fi
 
         for i in $(seq 1 240); do

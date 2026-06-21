@@ -674,6 +674,7 @@ run_frontend_env() {
     local frontend_wayland="${WAYLAND_DISPLAY:-wayland-1}"
     local frontend_sway="/var/run/sway-ipc.0.sock"
     local frontend_info
+    local steam_env
 
     if [[ ! -S "${frontend_runtime}/${frontend_wayland}" ]]; then
         frontend_info="$(find_wayland_socket || true)"
@@ -686,26 +687,39 @@ run_frontend_env() {
         frontend_sway="$(find_sway_socket || true)"
     fi
 
-    env \
-        -u GAMESCOPE_DISPLAY \
-        -u GAMESCOPE_WAYLAND_DISPLAY \
-        -u GAMESCOPE_SESSION \
-        -u STEAM_GAME_DISPLAY_0 \
-        -u STEAM_MULTIPLE_XWAYLANDS \
-        -u DESKTOP_STARTUP_ID \
-        -u XKB_LAYOUT \
-        -u XKB_DEFAULT_LAYOUT \
-        -u XKB_VARIANT \
-        -u XKB_DEFAULT_VARIANT \
-        XDG_CURRENT_DESKTOP=sway \
-        XDG_SESSION_TYPE=wayland \
-        XDG_RUNTIME_DIR="${frontend_runtime}" \
-        WAYLAND_DISPLAY="${frontend_wayland}" \
-        DISPLAY="${DISPLAY:-:0}" \
-        SWAYSOCK="${frontend_sway}" \
-        I3SOCK="${frontend_sway}" \
-        WLR_XWAYLAND_NO_AUTH=1 \
-        "$@"
+    (
+        for steam_env in ${!BATOCERA_STEAM_@}; do
+            unset "${steam_env}"
+        done
+
+        env \
+            -u MANGOHUD \
+            -u MANGOHUD_CONFIG \
+            -u MANGOHUD_CONFIGFILE \
+            -u MANGOHUD_DLSYM \
+            -u MANGOAPP_CONFIG \
+            -u LD_PRELOAD \
+            -u LD_AUDIT \
+            -u GAMESCOPE_DISPLAY \
+            -u GAMESCOPE_WAYLAND_DISPLAY \
+            -u GAMESCOPE_SESSION \
+            -u STEAM_GAME_DISPLAY_0 \
+            -u STEAM_MULTIPLE_XWAYLANDS \
+            -u DESKTOP_STARTUP_ID \
+            -u XKB_LAYOUT \
+            -u XKB_DEFAULT_LAYOUT \
+            -u XKB_VARIANT \
+            -u XKB_DEFAULT_VARIANT \
+            XDG_CURRENT_DESKTOP=sway \
+            XDG_SESSION_TYPE=wayland \
+            XDG_RUNTIME_DIR="${frontend_runtime}" \
+            WAYLAND_DISPLAY="${frontend_wayland}" \
+            DISPLAY="${DISPLAY:-:0}" \
+            SWAYSOCK="${frontend_sway}" \
+            I3SOCK="${frontend_sway}" \
+            WLR_XWAYLAND_NO_AUTH=1 \
+            "$@"
+    )
 }
 
 run_frontend_service_cmd() {

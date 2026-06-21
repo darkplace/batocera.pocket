@@ -56,6 +56,18 @@ _player_controllers_lock = threading.Lock()
 _active_player_controllers = []
 # Global reference to the evmapy configurator instance
 _evmapy_instance = None
+CPU_LIMIT_HELPER = Path("/usr/bin/batocera-cpu-limit")
+CPU_LIMIT_FPS_DIR = Path("/var/run/batocera-cpu-limit/fps")
+CPU_LIMIT_GAMESCOPE_FPS_PIPE = Path("/var/run/batocera-cpu-limit/gamescope-stats.pipe")
+MANGOHUD_ENV_KEYS = (
+    "MANGOHUD",
+    "MANGOHUD_CONFIG",
+    "MANGOHUD_CONFIGFILE",
+    "MANGOHUD_DLSYM",
+    "MANGOAPP_CONFIG",
+    "LD_PRELOAD",
+    "LD_AUDIT",
+)
 
 def main(args: argparse.Namespace, maxnbplayers: int) -> int:
     # squashfs roms if squashed
@@ -172,12 +184,27 @@ def start_rom(args: argparse.Namespace, maxnbplayers: int, rom: Path, original_r
 
                 cmd = generator.generate(system, rom, player_controllers, metadata, guns, wheels, gameResolution)
 
+                cpu_limit_adaptive = cpuLimitAdaptiveEnabled()
+                if args.systemname == "steam" and cpu_limit_adaptive:
+                    addCpuLimitSteamGamescopeStats(cmd)
+                if args.systemname == "steam":
+                    disableMangoHud(cmd)
+
+                hud_level = getHudLevel(system)
                 disable_mangohud = str(cmd.env.get("DISABLE_MANGOHUD", "")).lower() in ("1", "true", "yes")
                 if args.systemname != "steam" and system.config.get_bool('hud_support') and not disable_mangohud:
                     hud_bezel = getHudBezel(system, generator, rom, gameResolution, system.guns_borders_size_name(guns), system.guns_border_ratio_type(guns))
-                    if ((hud := system.config.get('hud')) and hud != "none") or hud_bezel is not None:
+                    hud_mode = system.config.get('hud')
+                    hud_requested = (
+                        (hud_level is not None and hud_level > 0)
+                        or (hud_level is None and bool(hud_mode and hud_mode != "none"))
+                    )
+                    hud_enabled = hud_requested or hud_bezel is not None
+                    if hud_enabled or cpu_limit_adaptive:
                         cmd.env["MANGOHUD_DLSYM"] = "1"
-                        hudconfig = getHudConfig(system, args.systemname, system.config.emulator, effectiveCore, rom, hud_bezel)
+                        hudconfig = getHudConfig(system, args.systemname, system.config.emulator, effectiveCore, rom, hud_bezel, hud_level)
+                        if cpu_limit_adaptive:
+                            hudconfig = addCpuLimitHudLogging(hudconfig, not hud_requested)
                         hud_config_file = Path('/var/run/hud.config')
                         with hud_config_file.open('w') as f:
                             f.write(hudconfig)
@@ -390,13 +417,92 @@ def hudConfig_protectStr(string: str | Path | None) -> str:
         return ""
     return str(string)
 
-def getHudConfig(system: Emulator, systemName: str, emulator: str, core: str, rom: Path, bezel: Path | None) -> str:
+def getHudLevel(system: Emulator) -> int | None:
+    value = system.config.get_str('hud_level', '').strip()
+    if not value:
+        return None
+
+    try:
+        level = int(value)
+    except ValueError:
+        return None
+
+    if 0 <= level <= 4:
+        return level
+    return None
+
+def getHudLevelConfig(level: int, hud_position: str) -> str:
+    if level == 1:
+        return (
+            f"position={hud_position}\n"
+            "background_alpha=0\n"
+            "legacy_layout=false\n"
+            "fps\n"
+        )
+
+    if level == 2:
+        return (
+            "position=top-left\n"
+            "background_alpha=0.35\n"
+            "legacy_layout=false\n"
+            "horizontal=1\n"
+            "hud_no_margin=1\n"
+            "fps\n"
+            "frame_timing\n"
+            "gpu_stats\n"
+            "cpu_stats\n"
+            "ram\n"
+            "battery\n"
+        )
+
+    if level == 3:
+        return (
+            f"position={hud_position}\n"
+            "background_alpha=0.75\n"
+            "legacy_layout=false\n"
+            "fps\n"
+            "frame_timing\n"
+            "gpu_stats\n"
+            "gpu_temp\n"
+            "cpu_stats\n"
+            "cpu_temp\n"
+            "ram\n"
+        )
+
+    return (
+        f"position={hud_position}\n"
+        "background_alpha=0.9\n"
+        "legacy_layout=false\n"
+        "custom_text=%GAMENAME%\n"
+        "custom_text=%SYSTEMNAME%\n"
+        "custom_text=%EMULATORCORE%\n"
+        "fps\n"
+        "frame_timing\n"
+        "frametime\n"
+        "gpu_name\n"
+        "engine_version\n"
+        "vulkan_driver\n"
+        "resolution\n"
+        "ram\n"
+        "gpu_stats\n"
+        "gpu_temp\n"
+        "cpu_stats\n"
+        "cpu_temp\n"
+        "core_load\n"
+        "battery\n"
+    )
+
+def getHudConfig(system: Emulator, systemName: str, emulator: str, core: str, rom: Path, bezel: Path | None, hud_level: int | None = None) -> str:
     configstr = ""
 
     if bezel != "" and bezel != "none" and bezel is not None:
         configstr = f"background_image={hudConfig_protectStr(bezel)}\nlegacy_layout=false\n"
 
-    if (mode := system.config.get('hud', 'none')) == 'none':
+    if hud_level == 0:
+        return configstr + "background_alpha=0\n" # hide the background
+
+    mode = system.config.get('hud', 'none')
+    if hud_level is None and mode == 'none':
         return configstr + "background_alpha=0\n" # hide the background
 
     hud_position = "bottom-left"
@@ -416,8 +522,10 @@ def getHudConfig(system: Emulator, systemName: str, emulator: str, core: str, ro
     gameThumbnail = system.es_game_info.get("thumbnail", "")
 
     # predefined values
-    if mode == "perf":
-        configstr += f"position={hud_position}\nbackground_alpha=0.9\nlegacy_layout=false\ncustom_text=%GAMENAME%\ncustom_text=%SYSTEMNAME%\ncustom_text=%EMULATORCORE%\nfps\ngpu_name\nengine_version\nvulkan_driver\nresolution\nram\ngpu_stats\ngpu_temp\ncpu_stats\ncpu_temp\ncore_load"
+    if hud_level is not None and hud_level > 0:
+        configstr += getHudLevelConfig(hud_level, hud_position)
+    elif mode == "perf":
+        configstr += getHudLevelConfig(4, hud_position)
     elif mode == "game":
         configstr += f"position={hud_position}\nbackground_alpha=0\nlegacy_layout=false\nfont_size=32\nimage_max_width=200\nimage=%THUMBNAIL%\ncustom_text=%GAMENAME%\ncustom_text=%SYSTEMNAME%\ncustom_text=%EMULATORCORE%"
     elif mode == "custom" and (hud_custom := system.config.get_str('hud_custom')):
@@ -429,6 +537,58 @@ def getHudConfig(system: Emulator, systemName: str, emulator: str, core: str, ro
     configstr = configstr.replace("%GAMENAME%", hudConfig_protectStr(gameName))
     configstr = configstr.replace("%EMULATORCORE%", hudConfig_protectStr(emulatorstr))
     return configstr.replace("%THUMBNAIL%", hudConfig_protectStr(gameThumbnail))
+
+def cpuLimitAdaptiveEnabled() -> bool:
+    if not CPU_LIMIT_HELPER.exists():
+        return False
+    try:
+        mode = subprocess.check_output(
+            [str(CPU_LIMIT_HELPER), "saved-mode"],
+            stderr=subprocess.DEVNULL,
+            timeout=1,
+            text=True,
+        ).strip()
+    except Exception:
+        return False
+    return mode == "adaptive"
+
+def addCpuLimitHudLogging(configstr: str, hide_hud: bool) -> str:
+    try:
+        CPU_LIMIT_FPS_DIR.mkdir(parents=True, exist_ok=True)
+    except Exception as e:
+        _logger.debug("Failed to create CPU limit FPS directory: %s", e)
+
+    lines = [configstr.rstrip()]
+    if hide_hud:
+        lines.append("no_display")
+    lines.extend([
+        "fps",
+        "autostart_log=1",
+        "log_interval=1000",
+        f"output_folder={CPU_LIMIT_FPS_DIR}",
+    ])
+    return "\n".join(line for line in lines if line) + "\n"
+
+
+def addCpuLimitSteamGamescopeStats(cmd: Command) -> None:
+    if cmd.env.get("BATOCERA_STEAM_USE_GAMESCOPE") != "1":
+        return
+    if str(cmd.env.get("BATOCERA_STEAM_GS_STATS_PATH", "")).strip():
+        return
+    cmd.env["BATOCERA_STEAM_GS_STATS_PATH"] = str(CPU_LIMIT_GAMESCOPE_FPS_PIPE)
+
+
+def disableMangoHud(cmd: Command) -> None:
+    cmd.env["DISABLE_MANGOHUD"] = "1"
+    stripMangoHud(cmd.array, cmd.env)
+
+
+def stripMangoHud(command_array: list[str | Path], env: dict[str, str | Path]) -> None:
+    while command_array and Path(str(command_array[0])).name == "mangohud":
+        del command_array[0]
+    for key in MANGOHUD_ENV_KEYS:
+        env.pop(key, None)
+
 
 def _reconfigure_evmapy_on_the_fly():
     # Re-runs the evmapy configuration by creating a NEW evmapy instance with the latest controller list.
@@ -555,6 +715,8 @@ def runCommand(command: Command) -> int:
     envvars: dict[str, str | Path] = dict(os.environ)
     envvars.update(command.env)
     command.env = envvars
+    if str(command.env.get("DISABLE_MANGOHUD", "")).lower() in ("1", "true", "yes", "on"):
+        stripMangoHud(command.array, command.env)
 
     _logger.debug("command: %s", command)
     _logger.debug("command: %s", command.array)

@@ -41,26 +41,41 @@ run_detached() {
 }
 
 run_frontend_env() {
-    env \
-        -u WAYLAND_DISPLAY \
-        -u DISPLAY \
-        -u SWAYSOCK \
-        -u I3SOCK \
-        -u GAMESCOPE_DISPLAY \
-        -u GAMESCOPE_WAYLAND_DISPLAY \
-        -u GAMESCOPE_SESSION \
-        -u STEAM_GAME_DISPLAY_0 \
-        -u STEAM_MULTIPLE_XWAYLANDS \
-        -u DESKTOP_STARTUP_ID \
-        -u XKB_LAYOUT \
-        -u XKB_DEFAULT_LAYOUT \
-        -u XKB_VARIANT \
-        -u XKB_DEFAULT_VARIANT \
-        XDG_CURRENT_DESKTOP=sway \
-        XDG_SESSION_TYPE=wayland \
-        XDG_RUNTIME_DIR=/var/run \
-        WLR_XWAYLAND_NO_AUTH=1 \
-        "$@"
+    local steam_env
+
+    (
+        for steam_env in ${!BATOCERA_STEAM_@}; do
+            unset "${steam_env}"
+        done
+
+        env \
+            -u MANGOHUD \
+            -u MANGOHUD_CONFIG \
+            -u MANGOHUD_CONFIGFILE \
+            -u MANGOHUD_DLSYM \
+            -u MANGOAPP_CONFIG \
+            -u LD_PRELOAD \
+            -u LD_AUDIT \
+            -u WAYLAND_DISPLAY \
+            -u DISPLAY \
+            -u SWAYSOCK \
+            -u I3SOCK \
+            -u GAMESCOPE_DISPLAY \
+            -u GAMESCOPE_WAYLAND_DISPLAY \
+            -u GAMESCOPE_SESSION \
+            -u STEAM_GAME_DISPLAY_0 \
+            -u STEAM_MULTIPLE_XWAYLANDS \
+            -u DESKTOP_STARTUP_ID \
+            -u XKB_LAYOUT \
+            -u XKB_DEFAULT_LAYOUT \
+            -u XKB_VARIANT \
+            -u XKB_DEFAULT_VARIANT \
+            XDG_CURRENT_DESKTOP=sway \
+            XDG_SESSION_TYPE=wayland \
+            XDG_RUNTIME_DIR=/var/run \
+            WLR_XWAYLAND_NO_AUTH=1 \
+            "$@"
+    )
 }
 
 run_es_cmd() {

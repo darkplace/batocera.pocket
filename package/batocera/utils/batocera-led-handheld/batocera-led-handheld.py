@@ -39,6 +39,8 @@ CHECK_INTERVAL  = 1  # seconds between two checks (kept low for responsive ES LE
 LED_CHANGE_TIME = 120 # seconds to prevent changes while entering the settings menu
 CONFIG_FILE='/userdata/system/configs/leds.conf'
 BLOCK_FILE='/var/run/led-handheld-block'
+CHARGE_LIMIT_SETTING='system.battery.charge_limit'
+CHARGE_TARGET_REACHED_COLOR='0000FF'
 
 def check_support():
     model = batoled.batocera_model()
@@ -146,7 +148,59 @@ def read_battery_state():
         ch = st.readline().strip()
         return bt, ch
 
-def get_status_colour_for_battery(ledconfig, bt, ch):
+def read_int_file(path):
+    try:
+        with open(path, 'r') as f:
+            return int(f.readline().strip())
+    except Exception:
+        return None
+
+def charge_limit_target():
+    limit = batoled.batoconf(CHARGE_LIMIT_SETTING)
+    try:
+        value = int(limit) if limit is not None else None
+    except Exception:
+        value = None
+    if value is None:
+        value = read_int_file(PATH + '/charge_control_end_threshold')
+    if value is None:
+        return 100
+    return max(0, min(100, value))
+
+def charger_online():
+    for power_supply in glob.glob('/sys/class/power_supply/*'):
+        if os.path.abspath(power_supply) == os.path.abspath(PATH):
+            continue
+        supply_type = ""
+        try:
+            with open(power_supply + '/type', 'r') as f:
+                supply_type = f.readline().strip()
+        except Exception:
+            pass
+        if supply_type == "Battery":
+            continue
+        for field in ('online', 'present'):
+            value = read_int_file(power_supply + '/' + field)
+            if value and value > 0:
+                return True
+    return False
+
+def charge_target_reached(led, bt, ch):
+    if not is_split_status_led_device(led):
+        return False
+    if ch not in ("Full", "Not charging"):
+        return False
+    try:
+        capacity = int(bt)
+    except Exception:
+        return False
+    target = charge_limit_target()
+    return target < 100 and capacity >= target and charger_online()
+
+def get_status_colour_for_battery(led, ledconfig, bt, ch):
+    if charge_target_reached(led, bt, ch):
+        return CHARGE_TARGET_REACHED_COLOR
+
     # Charging/Full are treated specially. Buildroot/Batocera commonly expose these statuses.
     if ch == "Full":
         return "00FF00"
@@ -208,7 +262,7 @@ def led_check(led):
                 # Also restore the status/battery LED immediately (it may have brightness=0 after disable).
                 try:
                     bt, ch = read_battery_state()
-                    block = get_status_colour_for_battery(ledconfig, bt, ch)
+                    block = get_status_colour_for_battery(led, ledconfig, bt, ch)
                     if hasattr(led, "set_status_color"):
                         led.set_status_color(block)
                     else:
@@ -242,7 +296,7 @@ def led_check(led):
 
         try:
             bt, ch = read_battery_state()
-            block = get_status_colour_for_battery(ledconfig, bt, ch)
+            block = get_status_colour_for_battery(led, ledconfig, bt, ch)
             if hasattr(led, "set_status_color"):
                 try:
                     led.set_status_color(block)

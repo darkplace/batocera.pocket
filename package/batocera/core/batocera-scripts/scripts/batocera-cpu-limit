@@ -1,0 +1,879 @@
+#!/usr/bin/env python3
+
+import csv
+import glob
+import json
+import os
+import signal
+import stat
+import subprocess
+import sys
+import time
+
+STATE_DIR = "/var/run/batocera-cpu-limit"
+PID_FILE = os.path.join(STATE_DIR, "daemon.pid")
+FPS_READER_PID_FILE = os.path.join(STATE_DIR, "fps-reader.pid")
+SESSION_FILE = os.path.join(STATE_DIR, "session.json")
+FPS_DIR = os.path.join(STATE_DIR, "fps")
+GAMESCOPE_FPS_FIFO = os.path.join(STATE_DIR, "gamescope-stats.pipe")
+GAMESCOPE_FPS_VALUE = os.path.join(STATE_DIR, "gamescope-fps.json")
+LOG_FILE = "/userdata/system/logs/cpu-limit.log"
+
+MODE_SETTING = "system.cpu.limit.mode"
+GLOBAL_CAP_SETTING = "global.cpu_max_freq"
+GLOBAL_TARGET_SETTING = "global.cpu_limit_target_fps"
+
+CAP_OPTIONS = ("auto", "none", "95", "90", "85", "80", "75", "70", "65", "60", "55", "50")
+TARGET_OPTIONS = ("auto", "30", "50", "60", "90", "120")
+LIMIT_TIERS = [None, 95, 90, 85, 80, 75, 70, 65, 60, 55, 50]
+THERMAL_STEPS = (
+    (88.0, 95, 60),
+    (84.0, 90, 70),
+    (80.0, 80, 80),
+    (75.0, 70, 90),
+)
+CHECK_INTERVAL = 3
+FPS_STALE_SECONDS = CHECK_INTERVAL * 10
+
+
+def read_file(path):
+    try:
+        with open(path, "r") as fp:
+            return fp.read().strip()
+    except Exception:
+        return ""
+
+
+def write_file(path, value):
+    with open(path, "w") as fp:
+        fp.write(str(value))
+
+
+def parse_int(value):
+    try:
+        return int(str(value).strip())
+    except Exception:
+        return None
+
+
+def parse_float(value):
+    try:
+        return float(str(value).strip())
+    except Exception:
+        return None
+
+
+def ensure_state_dir():
+    os.makedirs(STATE_DIR, exist_ok=True)
+    os.makedirs(FPS_DIR, exist_ok=True)
+
+
+def log(message):
+    try:
+        os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
+        with open(LOG_FILE, "a") as fp:
+            fp.write("{} {}\n".format(time.strftime("%Y-%m-%d %H:%M:%S"), message))
+    except Exception:
+        pass
+
+
+def helper_path():
+    return "/usr/bin/batocera-cpu-limit" if os.path.exists("/usr/bin/batocera-cpu-limit") else os.path.abspath(sys.argv[0])
+
+
+def run_output(argv):
+    try:
+        return subprocess.check_output(argv, stderr=subprocess.DEVNULL, text=True).strip()
+    except Exception:
+        return ""
+
+
+def settings_get(key):
+    for getter in ("/usr/bin/batocera-settings-get-master", "/usr/bin/batocera-settings-get"):
+        if os.path.exists(getter):
+            value = run_output([getter, key])
+            if value:
+                return value
+    return ""
+
+
+def settings_set(key, value):
+    if os.path.exists("/usr/bin/batocera-settings-set"):
+        try:
+            subprocess.call(
+                ["/usr/bin/batocera-settings-set", key, str(value)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except Exception:
+            pass
+
+
+def saved_mode():
+    mode = settings_get(MODE_SETTING).lower()
+    if mode in ("auto", "adaptive"):
+        return mode
+    return "off"
+
+
+def saved_global_cap():
+    cap = settings_get(GLOBAL_CAP_SETTING).lower()
+    return cap if cap in CAP_OPTIONS else "auto"
+
+
+def saved_global_target():
+    target = settings_get(GLOBAL_TARGET_SETTING).lower()
+    return target if target in TARGET_OPTIONS else "auto"
+
+
+def parse_cap(value):
+    value = str(value or "").strip().lower()
+    if value in ("", "auto", "none", "off", "disabled", "default", "100"):
+        return None
+    cap = parse_int(value)
+    if cap is None:
+        return None
+    return max(50, min(100, cap))
+
+
+def parse_target(value):
+    value = str(value or "").strip().lower()
+    if value in ("", "auto", "none", "off", "default"):
+        return None
+    target = parse_float(value)
+    if target is None or target <= 0:
+        return None
+    return target
+
+
+def list_policies():
+    policies = []
+    for base in sorted(glob.glob("/sys/devices/system/cpu/cpufreq/policy*")):
+        scaling_max = os.path.join(base, "scaling_max_freq")
+        if not os.path.exists(scaling_max):
+            continue
+
+        available = []
+        for item in read_file(os.path.join(base, "scaling_available_frequencies")).split():
+            freq = parse_int(item)
+            if freq:
+                available.append(freq)
+        available = sorted(set(available))
+
+        hw_max = parse_int(read_file(os.path.join(base, "cpuinfo_max_freq")))
+        if hw_max is None and available:
+            hw_max = max(available)
+        hw_min = parse_int(read_file(os.path.join(base, "cpuinfo_min_freq")))
+        scaling_min = parse_int(read_file(os.path.join(base, "scaling_min_freq")))
+        floor = scaling_min or hw_min or (min(available) if available else None)
+
+        if hw_max:
+            policies.append({
+                "base": base,
+                "scaling_max": scaling_max,
+                "available": available,
+                "hw_max": hw_max,
+                "floor": floor or 0,
+            })
+    return policies
+
+
+def available():
+    return bool(list_policies())
+
+
+def choose_frequency(policy, cap):
+    if cap is None or cap >= 100:
+        return policy["hw_max"]
+
+    target = int(policy["hw_max"] * cap / 100)
+    floor = policy["floor"]
+    if policy["available"]:
+        candidates = [freq for freq in policy["available"] if floor <= freq <= target]
+        if candidates:
+            return max(candidates)
+        candidates = [freq for freq in policy["available"] if freq >= floor]
+        if candidates:
+            return min(candidates)
+
+    return max(floor, target)
+
+
+def apply_cap(cap):
+    ok = False
+    for policy in list_policies():
+        freq = choose_frequency(policy, cap)
+        try:
+            write_file(policy["scaling_max"], freq)
+            ok = True
+        except Exception as exc:
+            log("failed to write {}: {}".format(policy["scaling_max"], exc))
+    return ok
+
+
+def most_restrictive(*caps):
+    values = [cap for cap in caps if cap is not None]
+    return min(values) if values else None
+
+
+def cap_label(cap):
+    return "none" if cap is None else "{}%".format(cap)
+
+
+def remove_path(path):
+    try:
+        os.unlink(path)
+    except Exception:
+        pass
+
+
+def is_fifo(path):
+    try:
+        return stat.S_ISFIFO(os.stat(path).st_mode)
+    except Exception:
+        return False
+
+
+def is_managed_gamescope_fifo(path):
+    try:
+        return os.path.abspath(str(path or "")) == os.path.abspath(GAMESCOPE_FPS_FIFO)
+    except Exception:
+        return False
+
+
+def read_session():
+    try:
+        with open(SESSION_FILE, "r") as fp:
+            data = json.load(fp)
+        if isinstance(data, dict):
+            return data
+    except Exception:
+        pass
+    return {}
+
+
+def write_session(cap, fps_path="", target_fps="auto"):
+    ensure_state_dir()
+    with open(SESSION_FILE, "w") as fp:
+        json.dump({
+            "cap": str(cap or "auto"),
+            "fps_path": str(fps_path or FPS_DIR),
+            "target_fps": str(target_fps or "auto"),
+        }, fp)
+
+
+def clear_managed_fps_logs(path):
+    if os.path.abspath(str(path or "")) != os.path.abspath(FPS_DIR):
+        if is_managed_gamescope_fifo(path):
+            stop_fps_reader(remove_fifo=True)
+        return
+    for item in glob.glob(os.path.join(FPS_DIR, "*.csv")):
+        try:
+            os.unlink(item)
+        except Exception:
+            pass
+
+
+def pid_matches(pid):
+    if pid == os.getpid():
+        return False
+    try:
+        raw = open("/proc/{}/cmdline".format(pid), "rb").read().decode("utf-8", "ignore")
+    except Exception:
+        return False
+    return "batocera-cpu-limit" in raw and ("\0daemon\0" in raw or raw.endswith("\0daemon"))
+
+
+def daemon_pids():
+    pids = []
+    pid = parse_int(read_file(PID_FILE))
+    if pid and pid_matches(pid):
+        pids.append(pid)
+    for path in glob.glob("/proc/[0-9]*"):
+        pid = parse_int(os.path.basename(path))
+        if pid and pid not in pids and pid_matches(pid):
+            pids.append(pid)
+    return pids
+
+
+def daemon_running():
+    return bool(daemon_pids())
+
+
+def fps_reader_pid_matches(pid):
+    try:
+        raw = open("/proc/{}/cmdline".format(pid), "rb").read().decode("utf-8", "ignore")
+    except Exception:
+        return False
+    return "batocera-cpu-limit" in raw and ("\0fps-reader\0" in raw or raw.endswith("\0fps-reader"))
+
+
+def fps_reader_pids():
+    pids = []
+    pid = parse_int(read_file(FPS_READER_PID_FILE))
+    if pid and fps_reader_pid_matches(pid):
+        pids.append(pid)
+    for path in glob.glob("/proc/[0-9]*"):
+        pid = parse_int(os.path.basename(path))
+        if pid and pid not in pids and fps_reader_pid_matches(pid):
+            pids.append(pid)
+    return pids
+
+
+def stop_fps_reader(remove_fifo=False):
+    pids = fps_reader_pids()
+    for pid in pids:
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except Exception:
+            pass
+    deadline = time.time() + 1
+    while time.time() < deadline and any(fps_reader_pid_matches(pid) for pid in pids):
+        time.sleep(0.05)
+    for pid in pids:
+        if fps_reader_pid_matches(pid):
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except Exception:
+                pass
+    remove_path(FPS_READER_PID_FILE)
+    if remove_fifo:
+        remove_path(GAMESCOPE_FPS_FIFO)
+        remove_path(GAMESCOPE_FPS_VALUE)
+
+
+def start_fps_reader(path):
+    if not is_managed_gamescope_fifo(path):
+        return
+
+    ensure_state_dir()
+    stop_fps_reader(remove_fifo=True)
+    try:
+        os.mkfifo(GAMESCOPE_FPS_FIFO, 0o666)
+    except FileExistsError:
+        pass
+    except Exception as exc:
+        log("failed to create gamescope stats fifo {}: {}".format(GAMESCOPE_FPS_FIFO, exc))
+        return
+
+    try:
+        proc = subprocess.Popen(
+            [helper_path(), "fps-reader", GAMESCOPE_FPS_FIFO, GAMESCOPE_FPS_VALUE],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        write_file(FPS_READER_PID_FILE, proc.pid)
+    except Exception as exc:
+        log("failed to start gamescope fps reader: {}".format(exc))
+
+
+def stop_daemon(reset=True, clear_session=False):
+    pids = daemon_pids()
+    for pid in pids:
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except Exception:
+            pass
+    deadline = time.time() + 2
+    while time.time() < deadline and any(pid_matches(pid) for pid in pids):
+        time.sleep(0.05)
+    for pid in pids:
+        if pid_matches(pid):
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except Exception:
+                pass
+    remove_path(PID_FILE)
+    if clear_session:
+        remove_path(SESSION_FILE)
+    if reset:
+        apply_cap(None)
+
+
+def start_daemon():
+    ensure_state_dir()
+    if daemon_running():
+        return True
+    try:
+        subprocess.Popen(
+            [helper_path(), "daemon"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        return True
+    except Exception as exc:
+        log("failed to start daemon: {}".format(exc))
+        return False
+
+
+def write_pid():
+    ensure_state_dir()
+    write_file(PID_FILE, os.getpid())
+
+
+def remove_pid(signum=None, frame=None):
+    if parse_int(read_file(PID_FILE)) == os.getpid():
+        remove_path(PID_FILE)
+    sys.exit(0)
+
+
+def read_max_temp():
+    temps = []
+    for path in glob.glob("/sys/class/thermal/thermal_zone*/temp"):
+        value = parse_float(read_file(path))
+        if value is None:
+            continue
+        if value > 1000:
+            value = value / 1000
+        if 0 < value < 150:
+            temps.append(value)
+    return max(temps) if temps else None
+
+
+def read_qcom_fan_percent():
+    if not os.path.exists("/usr/bin/qcom-fan"):
+        return None
+    value = parse_int(run_output(["/usr/bin/qcom-fan", "percent"]))
+    if value is None:
+        return None
+    return max(0, min(100, value))
+
+
+def read_generic_fan_percent():
+    for base in sorted(glob.glob("/sys/class/thermal/cooling_device*")):
+        ctype = read_file(os.path.join(base, "type")).lower()
+        if "fan" not in ctype:
+            continue
+        cur = parse_int(read_file(os.path.join(base, "cur_state")))
+        max_state = parse_int(read_file(os.path.join(base, "max_state")))
+        if cur is not None and max_state and max_state > 0:
+            return round(max(0, min(max_state, cur)) * 100 / max_state)
+    for path in sorted(glob.glob("/sys/class/hwmon/hwmon*/pwm[0-9]*")):
+        if path.endswith("_enable"):
+            continue
+        value = parse_int(read_file(path))
+        if value is not None:
+            return round(max(0, min(255, value)) * 100 / 255)
+    return None
+
+
+def read_fan_percent():
+    value = read_qcom_fan_percent()
+    if value is not None:
+        return value
+    return read_generic_fan_percent()
+
+
+def thermal_cap(temp, fan_percent):
+    for temp_threshold, fan_threshold, cap in THERMAL_STEPS:
+        if temp is not None and temp >= temp_threshold:
+            return cap
+        if fan_percent is not None and fan_percent >= fan_threshold:
+            return cap
+    return None
+
+
+def latest_csv(path):
+    if not path:
+        path = FPS_DIR
+    if os.path.isdir(path):
+        files = glob.glob(os.path.join(path, "*.csv"))
+        if not files:
+            return ""
+        return max(files, key=lambda item: os.path.getmtime(item))
+    return path if os.path.exists(path) else ""
+
+
+def parse_fps_from_line(line, header=None):
+    line = line.strip()
+    if not line:
+        return None
+    if "=" in line and "," not in line:
+        for token in line.replace(";", " ").split():
+            if token.startswith("fps="):
+                return parse_float(token.split("=", 1)[1])
+    try:
+        row = next(csv.reader([line]))
+    except Exception:
+        return None
+    if not row:
+        return None
+    if header and "fps" in header:
+        index = header.index("fps")
+        if index < len(row):
+            return parse_float(row[index])
+    return parse_float(row[0])
+
+
+def read_fps(path):
+    if is_managed_gamescope_fifo(path) or is_fifo(path):
+        return read_fps_value(GAMESCOPE_FPS_VALUE if is_managed_gamescope_fifo(path) else "{}.current".format(path))
+
+    csv_path = latest_csv(path)
+    if not csv_path:
+        return None
+    try:
+        with open(csv_path, "r", errors="ignore") as fp:
+            lines = fp.readlines()[-20:]
+    except Exception:
+        return None
+
+    header = None
+    values = []
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.lower().startswith("fps,"):
+            try:
+                header = [part.strip().lower() for part in next(csv.reader([stripped]))]
+            except Exception:
+                header = None
+            continue
+        value = parse_fps_from_line(stripped, header)
+        if value is not None and 1 <= value <= 1000:
+            values.append(value)
+    if not values:
+        return None
+    return sum(values[-5:]) / len(values[-5:])
+
+
+def read_fps_value(path):
+    try:
+        with open(path, "r", errors="ignore") as fp:
+            raw = fp.read().strip()
+    except Exception:
+        return None
+
+    if not raw:
+        return None
+
+    value = None
+    timestamp = None
+    try:
+        data = json.loads(raw)
+        if isinstance(data, dict):
+            value = parse_float(data.get("fps"))
+            timestamp = parse_float(data.get("time"))
+    except Exception:
+        value = parse_fps_from_line(raw)
+
+    if value is None or not 1 <= value <= 1000:
+        return None
+    if timestamp is not None and time.time() - timestamp > FPS_STALE_SECONDS:
+        return None
+    return value
+
+
+def write_fps_value(path, value):
+    tmp_path = "{}.tmp".format(path)
+    with open(tmp_path, "w") as fp:
+        json.dump({"fps": value, "time": time.time()}, fp)
+    os.replace(tmp_path, path)
+
+
+def fps_reader(fifo_path, value_path):
+    ensure_state_dir()
+    while True:
+        try:
+            with open(fifo_path, "r", errors="ignore") as fp:
+                for line in fp:
+                    value = parse_fps_from_line(line)
+                    if value is not None and 1 <= value <= 1000:
+                        write_fps_value(value_path, value)
+        except FileNotFoundError:
+            return 0
+        except Exception as exc:
+            log("gamescope fps reader error: {}".format(exc))
+            time.sleep(1)
+
+
+def infer_target(samples):
+    if len(samples) < 5:
+        return None
+    ordered = sorted(samples[-8:])
+    median = ordered[len(ordered) // 2]
+    for target in (144, 120, 90, 60, 50, 30):
+        if median >= target * 0.92:
+            return float(target)
+    return max(30.0, median)
+
+
+def next_more_restrictive(cap):
+    try:
+        index = LIMIT_TIERS.index(cap)
+    except ValueError:
+        index = 0
+    if index + 1 < len(LIMIT_TIERS):
+        return LIMIT_TIERS[index + 1]
+    return LIMIT_TIERS[-1]
+
+
+def next_less_restrictive(cap):
+    try:
+        index = LIMIT_TIERS.index(cap)
+    except ValueError:
+        return None
+    if index > 0:
+        return LIMIT_TIERS[index - 1]
+    return None
+
+
+def resolved_session_cap(session):
+    cap = session.get("cap", "")
+    if str(cap).lower() == "auto":
+        cap = saved_global_cap()
+    return parse_cap(cap)
+
+
+def resolved_session_target(session):
+    target = session.get("target_fps", "")
+    if str(target).lower() == "auto":
+        target = saved_global_target()
+    return parse_target(target)
+
+
+def daemon_loop():
+    signal.signal(signal.SIGTERM, remove_pid)
+    signal.signal(signal.SIGINT, remove_pid)
+    write_pid()
+
+    applied_cap = None
+    heat_cap = None
+    heat_cool_count = 0
+    adaptive_cap = None
+    adaptive_target = None
+    fps_samples = []
+    fps_good_count = 0
+    fps_bad_count = 0
+
+    while True:
+        mode = saved_mode()
+        session = read_session()
+        manual_cap = resolved_session_cap(session)
+
+        if not session:
+            manual_cap = parse_cap(saved_global_cap())
+
+        if mode == "off" and manual_cap is None:
+            apply_cap(None)
+            remove_path(PID_FILE)
+            return 0
+
+        temp = read_max_temp()
+        fan = read_fan_percent()
+        requested_heat_cap = thermal_cap(temp, fan)
+
+        if requested_heat_cap is not None:
+            heat_cap = most_restrictive(heat_cap, requested_heat_cap)
+            heat_cool_count = 0
+        elif heat_cap is not None:
+            cool_temp = temp is None or temp < 70
+            cool_fan = fan is None or fan < 55
+            if cool_temp and cool_fan:
+                heat_cool_count += 1
+                if heat_cool_count >= 4:
+                    heat_cap = next_less_restrictive(heat_cap)
+                    heat_cool_count = 0
+            else:
+                heat_cool_count = 0
+
+        fps_path = session.get("fps_path") or FPS_DIR
+        target = resolved_session_target(session)
+        fps = read_fps(fps_path) if mode == "adaptive" else None
+
+        if fps is not None:
+            fps_samples.append(fps)
+            fps_samples = fps_samples[-12:]
+        if target is None and mode == "adaptive":
+            if adaptive_target is None:
+                adaptive_target = infer_target(fps_samples)
+            target = adaptive_target
+
+        if mode == "adaptive" and fps is not None and target is not None:
+            if fps < target * 0.97:
+                fps_bad_count += 1
+                fps_good_count = 0
+                if fps_bad_count >= 2:
+                    adaptive_cap = next_less_restrictive(adaptive_cap)
+                    fps_bad_count = 0
+            elif fps >= target * 1.02 and (temp is None or temp < 75) and (fan is None or fan < 70):
+                fps_good_count += 1
+                fps_bad_count = 0
+                if fps_good_count >= 4:
+                    adaptive_cap = next_more_restrictive(adaptive_cap)
+                    fps_good_count = 0
+            else:
+                fps_good_count = 0
+                fps_bad_count = 0
+        elif mode != "adaptive":
+            adaptive_cap = None
+            adaptive_target = None
+            fps_samples = []
+            fps_good_count = 0
+            fps_bad_count = 0
+
+        effective_cap = most_restrictive(manual_cap, heat_cap, adaptive_cap)
+        if effective_cap != applied_cap:
+            if apply_cap(effective_cap):
+                log(
+                    "applied cap={} mode={} temp={} fan={} fps={} target={}".format(
+                        cap_label(effective_cap),
+                        mode,
+                        "{:.1f}".format(temp) if temp is not None else "n/a",
+                        fan if fan is not None else "n/a",
+                        "{:.1f}".format(fps) if fps is not None else "n/a",
+                        "{:.1f}".format(target) if target is not None else "auto",
+                    )
+                )
+                applied_cap = effective_cap
+
+        time.sleep(CHECK_INTERVAL)
+
+
+def set_mode(mode):
+    mode = str(mode or "").lower()
+    if mode not in ("off", "auto", "adaptive"):
+        return 1
+    settings_set(MODE_SETTING, mode)
+    if mode == "off":
+        stop_fps_reader(remove_fifo=True)
+        stop_daemon(reset=True, clear_session=False)
+        return 0
+    return 0 if start_daemon() else 1
+
+
+def set_global_cap(cap):
+    cap = str(cap or "").lower()
+    if cap not in CAP_OPTIONS:
+        return 1
+    settings_set(GLOBAL_CAP_SETTING, cap)
+    if saved_mode() != "off":
+        start_daemon()
+    return 0
+
+
+def set_global_target(target):
+    target = str(target or "").lower()
+    if target not in TARGET_OPTIONS:
+        return 1
+    settings_set(GLOBAL_TARGET_SETTING, target)
+    if saved_mode() != "off":
+        start_daemon()
+    return 0
+
+
+def game_start(argv):
+    cap = argv[0] if len(argv) > 0 else "auto"
+    fps_path = argv[1] if len(argv) > 1 else FPS_DIR
+    target_fps = argv[2] if len(argv) > 2 else "auto"
+    clear_managed_fps_logs(fps_path)
+    write_session(cap, fps_path, target_fps)
+
+    mode = saved_mode()
+    if mode == "adaptive":
+        start_fps_reader(fps_path)
+    manual_cap = resolved_session_cap(read_session())
+    if mode in ("auto", "adaptive"):
+        return 0 if start_daemon() else 1
+    if manual_cap is not None:
+        stop_daemon(reset=False, clear_session=False)
+        return 0 if apply_cap(manual_cap) else 1
+    stop_daemon(reset=True, clear_session=False)
+    return 0
+
+
+def game_stop():
+    stop_fps_reader(remove_fifo=True)
+    remove_path(SESSION_FILE)
+    if saved_mode() == "off":
+        stop_daemon(reset=True, clear_session=False)
+        return 0
+    return 0 if start_daemon() else 1
+
+
+def status():
+    session = read_session()
+    data = {
+        "available": available(),
+        "mode": saved_mode(),
+        "global_cap": saved_global_cap(),
+        "global_target_fps": saved_global_target(),
+        "session": session,
+        "running": daemon_running(),
+        "temp": read_max_temp(),
+        "fan_percent": read_fan_percent(),
+        "fps": read_fps(session.get("fps_path") or FPS_DIR),
+    }
+    print(json.dumps(data, sort_keys=True))
+    return 0 if data["available"] else 1
+
+
+def usage():
+    print(
+        "Usage: batocera-cpu-limit "
+        "[available|--available|mode-options|cap-options|target-options|saved-mode|saved-global|saved-target|"
+        "set-mode <off|auto|adaptive>|set-global <auto|none|50-95>|set-target <auto|30|50|60|90|120>|"
+        "apply-mode|game-start <cap> [fps-path] [target-fps]|game-stop|start|stop|daemon|status|json]",
+        file=sys.stderr,
+    )
+    return 1
+
+
+def main():
+    if len(sys.argv) < 2:
+        return status()
+
+    command = sys.argv[1]
+    if command in ("available", "--available"):
+        return 0 if available() else 1
+    if command == "mode-options":
+        print("off auto adaptive")
+        return 0
+    if command == "cap-options":
+        print(" ".join(CAP_OPTIONS))
+        return 0
+    if command == "target-options":
+        print(" ".join(TARGET_OPTIONS))
+        return 0
+    if command == "saved-mode":
+        print(saved_mode())
+        return 0
+    if command == "saved-global":
+        print(saved_global_cap())
+        return 0
+    if command == "saved-target":
+        print(saved_global_target())
+        return 0
+    if command == "set-mode" and len(sys.argv) > 2:
+        return set_mode(sys.argv[2])
+    if command == "set-global" and len(sys.argv) > 2:
+        return set_global_cap(sys.argv[2])
+    if command == "set-target" and len(sys.argv) > 2:
+        return set_global_target(sys.argv[2])
+    if command in ("apply-mode", "start"):
+        if saved_mode() == "off":
+            stop_daemon(reset=True, clear_session=False)
+            return 0
+        return 0 if start_daemon() else 1
+    if command == "game-start":
+        return game_start(sys.argv[2:])
+    if command == "game-stop":
+        return game_stop()
+    if command == "stop":
+        stop_fps_reader(remove_fifo=True)
+        stop_daemon(reset=True, clear_session=True)
+        return 0
+    if command == "daemon":
+        return daemon_loop()
+    if command == "fps-reader" and len(sys.argv) > 3:
+        return fps_reader(sys.argv[2], sys.argv[3])
+    if command in ("status", "json"):
+        return status()
+    return usage()
+
+
+if __name__ == "__main__":
+    sys.exit(main())

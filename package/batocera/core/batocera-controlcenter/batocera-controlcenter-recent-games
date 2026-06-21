@@ -15,6 +15,7 @@ CONFIG_GAMELISTS = Path("/userdata/system/configs/emulationstation/gamelists")
 CACHE = Path("/tmp/batocera-controlcenter-recent-games.json")
 CACHE_TTL_SECONDS = 2.0
 ES_BASE_URL = "http://127.0.0.1:1234"
+BCC_RECENT_LAUNCH_SETTLE_SECONDS = 0.5
 EMULATOR_LAUNCHER_PATTERN = r"(^|/)emulatorlauncher([[:space:]]|$)"
 EMULATOR_PATTERNS = (
     EMULATOR_LAUNCHER_PATTERN,
@@ -103,6 +104,10 @@ def running_game_from_api():
         "path": normalize_path(rom_path) if rom_path else "",
         "system": system,
     }
+
+
+def es_reports_running_game():
+    return running_game_from_api() is not None
 
 
 def running_game_from_emulatorlauncher():
@@ -356,6 +361,15 @@ def wait_for_emulators(timeout=8.0):
     return not any_emulator_running()
 
 
+def wait_for_es_running_game_clear(timeout=4.0):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if not es_reports_running_game():
+            return True
+        time.sleep(0.2)
+    return not es_reports_running_game()
+
+
 def force_kill_emulators():
     for signal_name in ("-TERM", "-KILL"):
         for pattern in EMULATOR_PATTERNS:
@@ -367,17 +381,32 @@ def force_kill_emulators():
 
 def stop_current_game():
     tracked_pids = descendant_pids(pids_for_pattern(EMULATOR_LAUNCHER_PATTERN))
+    if not tracked_pids and not any_emulator_running() and not es_reports_running_game():
+        return True
+
     http_get("/emukill", timeout=1.0)
     run_no_fail(["batocera-es-swissknife", "--emukill", "1.5"], timeout=4.0)
-    if wait_for_emulators(5.0) and wait_for_pids(tracked_pids, 0.5):
+    wait_for_es_running_game_clear(3.0)
+    if wait_for_emulators(5.0) and wait_for_es_running_game_clear(0.5) and wait_for_pids(tracked_pids, 0.5):
         return True
 
     signal_pids(tracked_pids, signal.SIGTERM)
-    if wait_for_emulators(1.5) and wait_for_pids(tracked_pids, 1.5):
+    if wait_for_emulators(1.5) and wait_for_es_running_game_clear(0.5) and wait_for_pids(tracked_pids, 1.5):
         return True
 
     signal_pids(tracked_pids, signal.SIGKILL)
-    return force_kill_emulators() and wait_for_pids(tracked_pids, 1.5)
+    return force_kill_emulators() and wait_for_es_running_game_clear(0.5) and wait_for_pids(tracked_pids, 1.5)
+
+
+def kill_running_emulator():
+    if not stop_current_game():
+        return False
+    try:
+        settle_seconds = float(os.environ.get("BCC_RECENT_LAUNCH_SETTLE_SECONDS", BCC_RECENT_LAUNCH_SETTLE_SECONDS))
+    except ValueError:
+        settle_seconds = BCC_RECENT_LAUNCH_SETTLE_SECONDS
+    time.sleep(max(0.0, settle_seconds))
+    return True
 
 
 def launch(index):
@@ -385,7 +414,7 @@ def launch(index):
     if not game:
         return 1
 
-    if not stop_current_game():
+    if not kill_running_emulator():
         sys.stderr.write("Failed to stop the current emulator before launching a recent game.\n")
         return 1
 

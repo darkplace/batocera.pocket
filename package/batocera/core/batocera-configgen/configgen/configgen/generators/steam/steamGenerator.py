@@ -105,6 +105,24 @@ def _normalize_steam_user(value: str | None) -> str:
     return normalized
 
 
+def _normalize_hud_level(value: str | None) -> int | None:
+    if value is None:
+        return None
+
+    normalized = value.strip()
+    if not normalized:
+        return None
+
+    try:
+        level = int(normalized)
+    except ValueError:
+        return None
+
+    if 0 <= level <= 4:
+        return level
+    return None
+
+
 def _append_unique_arg(value: str, arg: str) -> str:
     current = value.strip()
     if not current:
@@ -202,7 +220,7 @@ class SteamGenerator(Generator):
         steam_user = _normalize_steam_user(system.config.get_str("steam_user", "auto"))
         steam_gamepadui = system.config.get_bool("steam_gamepadui", True, return_values=("1", "0"))
         use_gamescope = system.config.get_bool("gamescope", True)
-        default_mangoapp = is_aarch64 and mode == "steamos" and use_gamescope
+        default_mangoapp = False
 
         if normalized_mode_override is not None or normalized_core is not None:
             if mode == "desktop":
@@ -238,6 +256,11 @@ class SteamGenerator(Generator):
         steam_extra_args = extra_args_override if extra_args_override else system.config.get_str("steam_extra_args", "")
         if system.config.get_bool("steam_noshaders", False):
             steam_extra_args = _append_unique_arg(steam_extra_args, "-noshaders")
+        hud_level = _normalize_hud_level(system.config.get_str("hud_level", ""))
+        mangoapp_enabled = system.config.get_bool("gamescope_mangoapp", default_mangoapp)
+        if hud_level is not None:
+            mangoapp_enabled = hud_level > 0
+        mangoapp_level = hud_level if hud_level is not None else (2 if mangoapp_enabled else 0)
 
         env = {
             "SDL_JOYSTICK_HIDAPI_XBOX": "0",
@@ -255,7 +278,8 @@ class SteamGenerator(Generator):
             "BATOCERA_STEAM_GS_DISABLE_DAMAGE_TRACKING": system.config.get_bool("gamescope_disable_damage_tracking", False, return_values=("1", "0")),
             "BATOCERA_STEAM_GS_DISABLE_HW_COMPOSITION": system.config.get_bool("gamescope_disable_hw_composition", False, return_values=("1", "0")),
             "BATOCERA_STEAM_GS_FORCE_COMPOSITION_PIPELINE": system.config.get_bool("gamescope_force_composition_pipeline", False, return_values=("1", "0")),
-            "BATOCERA_STEAM_GS_MANGOAPP": system.config.get_bool("gamescope_mangoapp", default_mangoapp, return_values=("1", "0")),
+            "BATOCERA_STEAM_GS_MANGOAPP": "1" if mangoapp_enabled else "0",
+            "BATOCERA_STEAM_GS_MANGOAPP_LEVEL": str(mangoapp_level),
             "BATOCERA_STEAM_GS_FORCE_WINDOWS_FULLSCREEN": system.config.get_bool("gamescope_force_windows_fullscreen", False, return_values=("1", "0")),
             "BATOCERA_STEAM_GS_IMMEDIATE_FLIPS": system.config.get_bool("gamescope_immediate_flips", False, return_values=("1", "0")),
             "BATOCERA_STEAM_GS_DISABLE_COLOR_MANAGEMENT": system.config.get_bool("gamescope_disable_color_management", False, return_values=("1", "0")),

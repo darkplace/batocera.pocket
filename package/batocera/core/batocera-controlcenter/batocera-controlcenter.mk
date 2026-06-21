@@ -42,8 +42,8 @@ define BATOCERA_CONTROLCENTER_INSTALL_TARGET_CMDS
 	    $(TARGET_DIR)/usr/bin/batocera-controlcenter-recent-games
 	install -m 0755 $(BATOCERA_CONTROLCENTER_PATH)/batocera-controlcenter-game-info \
 	    $(TARGET_DIR)/usr/bin/batocera-controlcenter-game-info
-	install -m 0755 $(BATOCERA_CONTROLCENTER_PATH)/batocera-controlcenter-steamos-quick \
-	    $(TARGET_DIR)/usr/bin/batocera-controlcenter-steamos-quick
+		install -m 0755 $(BATOCERA_CONTROLCENTER_PATH)/batocera-controlcenter-steamos-quick \
+		    $(TARGET_DIR)/usr/bin/batocera-controlcenter-steamos-quick
 	install -m 0755 $(BATOCERA_CONTROLCENTER_PATH)/batocera-controlcenter-screenshot \
 	    $(TARGET_DIR)/usr/bin/batocera-controlcenter-screenshot
 	install -m 0755 $(BATOCERA_CONTROLCENTER_PATH)/controlcenter.xml \

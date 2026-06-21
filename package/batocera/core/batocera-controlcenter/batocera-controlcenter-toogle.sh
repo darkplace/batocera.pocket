@@ -7,9 +7,11 @@ getCCPID() {
     X=$(cat "${PIDFILE}" 2>/dev/null)
     KEEP=""
 
-    # valiate that the pid is still running
-    if test -n "${X}" && test -e "/proc/${X}"; then
+    # validate that the pid is still a running Control Center instance
+    if isControlCenterPID "${X}"; then
         KEEP="${X}"
+    else
+        rm -f "${PIDFILE}"
     fi
 
     PIDS=$(pgrep -f '/usr/bin/batocera-controlcenter-app' 2>/dev/null | sort -n)
@@ -27,13 +29,21 @@ getCCPID() {
         fi
     done
 
-    if test -e "/proc/${KEEP}"; then
+    if isControlCenterPID "${KEEP}"; then
         echo "${KEEP}" >"${PIDFILE}"
         echo "${KEEP}"
         return 0
     fi
 
+    rm -f "${PIDFILE}"
     return 1
+}
+
+isControlCenterPID() {
+    PID="$1"
+    test -n "${PID}" || return 1
+    test -r "/proc/${PID}/cmdline" || return 1
+    tr '\0' ' ' <"/proc/${PID}/cmdline" | grep -q '/usr/bin/batocera-controlcenter-app'
 }
 
 setupDisplayEnv() {

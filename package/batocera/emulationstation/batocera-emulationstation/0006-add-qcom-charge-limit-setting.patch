@@ -1,0 +1,75 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Sun, 21 Jun 2026 00:00:00 +0000
+Subject: [PATCH] Add Qualcomm max charge setting
+
+---
+ es-app/src/guis/GuiMenu.cpp | 56 +++++++++++++++++++++++++++++++++++++
+ 1 file changed, 56 insertions(+)
+
+diff --git a/es-app/src/guis/GuiMenu.cpp b/es-app/src/guis/GuiMenu.cpp
+--- a/es-app/src/guis/GuiMenu.cpp
++++ b/es-app/src/guis/GuiMenu.cpp
+@@ -1525,6 +1525,62 @@ void GuiMenu::openSystemSettings()
+ 		PowerSaver::init();
+ 	});
+ 
++#if !WIN32
++	const std::string qcomChargeLimitScript = "/usr/bin/qcom-charge-limit";
++	if (Utils::FileSystem::exists(qcomChargeLimitScript) &&
++		system((qcomChargeLimitScript + " --available >/dev/null 2>&1").c_str()) == 0)
++	{
++		auto getQcomChargeLimitOutput = [](const std::string& command) -> std::string
++		{
++			std::array<char, 128> buffer;
++			std::string result;
++			std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(command.c_str(), "r"), pclose);
++
++			if (!pipe)
++				return "";
++
++			while (fgets(buffer.data(), buffer.size(), pipe.get()) != nullptr)
++				result += buffer.data();
++
++			return Utils::String::trim(result);
++		};
++
++		auto optionsChargeLimit = std::make_shared<OptionListComponent<std::string>>(mWindow, _("MAX CHARGE"), false);
++		std::string selectedChargeLimit = getQcomChargeLimitOutput(qcomChargeLimitScript + " --saved");
++		if (selectedChargeLimit.empty())
++			selectedChargeLimit = "100";
++
++		bool hasChargeLimitOptions = false;
++		std::string chargeLimitOption;
++		for (std::stringstream ss(getQcomChargeLimitOutput(qcomChargeLimitScript + " --options")); ss >> chargeLimitOption; )
++		{
++			chargeLimitOption = Utils::String::trim(chargeLimitOption);
++			if (!chargeLimitOption.empty())
++			{
++				std::string chargeLimitLabel = chargeLimitOption + "%";
++				if (chargeLimitOption == "100")
++					chargeLimitLabel = _("100% (DEFAULT)");
++
++				optionsChargeLimit->add(chargeLimitLabel, chargeLimitOption, chargeLimitOption == selectedChargeLimit);
++				hasChargeLimitOptions = true;
++			}
++		}
++
++		if (!hasChargeLimitOptions)
++			optionsChargeLimit->add(_("100% (DEFAULT)"), "100", true);
++
++		s->addWithDescription(
++			_("MAX CHARGE"),
++			_("Stops battery charging at the selected percentage when supported by the kernel."),
++			optionsChargeLimit);
++		s->addSaveFunc([qcomChargeLimitScript, optionsChargeLimit]
++		{
++			if (optionsChargeLimit->changed())
++				Utils::Platform::ProcessStartInfo(qcomChargeLimitScript + " " + optionsChargeLimit->getSelected()).run();
++		});
++	}
++#endif
++
+ #if defined(_ENABLE_TTS_) || defined(WIN32)
+ 	if (TextToSpeech::getInstance()->isAvailable())
+ 	{
