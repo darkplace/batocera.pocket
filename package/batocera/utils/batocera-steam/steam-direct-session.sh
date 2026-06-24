@@ -976,6 +976,13 @@ start_session_supervisor() {
     batocera-steam-session-supervisor start "${1:-steam-direct-session}" >/dev/null 2>&1 || true
 }
 
+stop_session_supervisor() {
+    command -v batocera-steam-session-supervisor >/dev/null 2>&1 || return 0
+
+    log "stopping Steam session supervisor before direct-session frontend restore"
+    batocera-steam-session-supervisor stop >/dev/null 2>&1 || true
+}
+
 refresh_steam_es_entries() {
     command -v batocera-steam-update >/dev/null 2>&1 || return 0
 
@@ -999,6 +1006,7 @@ cleanup() {
     [[ -e "${GAMESCOPE_ES_SESSION_FLAG}" ]] && es_gamescope_session=1
     rm -f "${DIRECT_APP_SESSION_FLAG}"
     rm -f "${GAMESCOPE_ES_SESSION_FLAG}"
+    stop_session_supervisor
     restore_sway_display_config
     if [[ "${BATOCERA_STEAM_GS_BACKEND:-}" == "drm" && "${BATOCERA_STEAM_RESET_DSI_AFTER_GAMESCOPE:-0}" == "1" ]]; then
         log "resetting DSI connector state after DRM gamescope exit"
@@ -1062,6 +1070,18 @@ fi
 start_session_supervisor "steam-direct-session"
 
 if [[ "${BATOCERA_STEAM_VISIBLE_UPDATE_PREFLIGHT:-0}" != "0" && -x /usr/bin/batocera-steam-update-preflight ]]; then
+    if [[ "${BATOCERA_STEAM_PREFLIGHT_STEAM_UPDATER:-auto}" == "auto" &&
+          "${BATOCERA_STEAM_MODE:-steamos}" == "steamos" &&
+          "${BATOCERA_STEAM_USE_GAMESCOPE:-1}" != "0" ]]; then
+        export BATOCERA_STEAM_PREFLIGHT_STEAM_UPDATER="external"
+        log "using external graphical Steam updater preflight before Gamescope"
+    fi
+    case "${BATOCERA_STEAM_PREFLIGHT_STEAM_UPDATER:-auto}" in
+        external|desktop)
+            export BATOCERA_STEAM_PREFLIGHT_SUPPRESS_CHILD_UI="${BATOCERA_STEAM_PREFLIGHT_SUPPRESS_CHILD_UI:-0}"
+            export BATOCERA_STEAM_PREFLIGHT_STATUS_XTERM="${BATOCERA_STEAM_PREFLIGHT_STATUS_XTERM:-0}"
+            ;;
+    esac
     if emulationstation_running; then
         if keep_emulationstation_during_preflight; then
             log "keeping EmulationStation running during visible Steam updater preflight"

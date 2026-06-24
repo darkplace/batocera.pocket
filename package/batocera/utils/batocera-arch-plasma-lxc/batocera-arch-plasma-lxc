@@ -10,6 +10,7 @@ STATE_DIR="${BATOCERA_ARCH_PLASMA_STATE_DIR:-/userdata/system/arch-plasma-lxc}"
 STATE_FILE="${STATE_DIR}/settings"
 LOG="${BATOCERA_ARCH_PLASMA_LOG:-/userdata/system/logs/arch-plasma-lxc.log}"
 HOST_RUNTIME_DIR="${BATOCERA_ARCH_PLASMA_RUNTIME:-/userdata/system/.runtime-arch-plasma}"
+HOST_RESOLV_CONF="${HOST_RUNTIME_DIR}/resolv.conf"
 CONTAINER_RUNTIME_DIR="/batocera-runtime"
 HOST_USERDATA_DIR="${BATOCERA_ARCH_PLASMA_HOST_USERDATA:-/userdata}"
 CONTAINER_HOST_USERDATA="${BATOCERA_ARCH_PLASMA_CONTAINER_HOST_USERDATA:-/host/userdata}"
@@ -70,6 +71,94 @@ clear_inherited_overlay_env() {
 
 close_inherited_frontend_lock
 clear_inherited_overlay_env
+
+read_device_tree_string() {
+    local path="$1"
+
+    [ -r "${path}" ] || return 1
+    tr -d '\0' < "${path}" 2>/dev/null || return 1
+}
+
+is_ayn_thor() {
+    local model compatible
+
+    model="$(read_device_tree_string /proc/device-tree/model 2>/dev/null || true)"
+    compatible="$(read_device_tree_string /proc/device-tree/compatible 2>/dev/null || true)"
+
+    case "${model} ${compatible}" in
+        *"AYN Thor"*|*"AYN-Thor"*|*"ayn,thor"*)
+            return 0
+            ;;
+    esac
+
+    return 1
+}
+
+is_ayn_odin2() {
+    local model compatible
+
+    model="$(read_device_tree_string /proc/device-tree/model 2>/dev/null || true)"
+    compatible="$(read_device_tree_string /proc/device-tree/compatible 2>/dev/null || true)"
+
+    case "${model} ${compatible}" in
+        *"AYN Odin 2"*|*"AYN-Odin2"*|*"ayn,odin2"*)
+            return 0
+            ;;
+    esac
+
+    return 1
+}
+
+configure_device_display_defaults() {
+    is_ayn_thor || return 0
+
+    if [ -z "${BATOCERA_ARCH_PLASMA_FORCE_OUTPUT+x}" ]; then
+        export BATOCERA_ARCH_PLASMA_FORCE_OUTPUT="largest"
+    fi
+    if [ -z "${BATOCERA_ARCH_PLASMA_FORCE_OUTPUT_MODE+x}" ]; then
+        export BATOCERA_ARCH_PLASMA_FORCE_OUTPUT_MODE="1920x1080"
+    fi
+    if [ -z "${BATOCERA_ARCH_PLASMA_FORCE_OUTPUT_MODE_FALLBACK+x}" ]; then
+        export BATOCERA_ARCH_PLASMA_FORCE_OUTPUT_MODE_FALLBACK="1080x1920"
+    fi
+    if [ -z "${BATOCERA_ARCH_PLASMA_DISABLE_OTHER_OUTPUTS+x}" ]; then
+        export BATOCERA_ARCH_PLASMA_DISABLE_OTHER_OUTPUTS="1"
+    fi
+    case "${BATOCERA_ARCH_PLASMA_TOUCH_KEEP_PATTERN:-}" in
+        ""|"i2c-4|4-0038|ft5426")
+            export BATOCERA_ARCH_PLASMA_TOUCH_KEEP_PATTERN="platform-a90000.i2c|platform-a90000_i2c"
+            ;;
+    esac
+    case "${BATOCERA_ARCH_PLASMA_TOUCH_KEEP_CALIBRATION_MATRIX:-}" in
+        ""|"1 0 0 0 0.5 0"|"0 1 0 -1 0 1"|"0 -1 1 1 0 0")
+            export BATOCERA_ARCH_PLASMA_TOUCH_KEEP_CALIBRATION_MATRIX="1 0 0 0 1 0"
+            ;;
+    esac
+    if [ -z "${BATOCERA_ARCH_PLASMA_TOUCH_OUTPUT_NAME+x}" ]; then
+        export BATOCERA_ARCH_PLASMA_TOUCH_OUTPUT_NAME="DSI-2"
+    fi
+    if [ -z "${BATOCERA_ARCH_PLASMA_TOUCH_KWIN_CALIBRATION_MATRIX+x}" ]; then
+        export BATOCERA_ARCH_PLASMA_TOUCH_KWIN_CALIBRATION_MATRIX="0,-1,1,0,1,0,0,0,0,0,1,0,0,0,0,1"
+    fi
+    if [ -z "${BATOCERA_ARCH_PLASMA_KWIN_DBUS_SESSION+x}" ]; then
+        export BATOCERA_ARCH_PLASMA_KWIN_DBUS_SESSION="1"
+    fi
+    if [ -z "${BATOCERA_ARCH_PLASMA_THOR_GAMEPAD_MOUSE+x}" ]; then
+        export BATOCERA_ARCH_PLASMA_THOR_GAMEPAD_MOUSE="1"
+    fi
+
+    log "applying AYN Thor display defaults: output=${BATOCERA_ARCH_PLASMA_FORCE_OUTPUT}, mode=${BATOCERA_ARCH_PLASMA_FORCE_OUTPUT_MODE}, touch=${BATOCERA_ARCH_PLASMA_TOUCH_KEEP_PATTERN}, touch_output=${BATOCERA_ARCH_PLASMA_TOUCH_OUTPUT_NAME}"
+}
+
+configure_device_input_defaults() {
+    is_ayn_odin2 || return 0
+
+    if [ -z "${BATOCERA_ARCH_PLASMA_THOR_GAMEPAD_MOUSE+x}" ]; then
+        export BATOCERA_ARCH_PLASMA_THOR_GAMEPAD_MOUSE="1"
+    fi
+
+    log "applying AYN Odin2 input defaults: gamepad_mouse=${BATOCERA_ARCH_PLASMA_THOR_GAMEPAD_MOUSE}"
+}
 
 run_detached() {
     if command -v setsid >/dev/null 2>&1; then
@@ -209,11 +298,15 @@ EOF
 }
 
 ensure_runtime_dir() {
+    configure_device_display_defaults
+    configure_device_input_defaults
+
     mkdir -p "${HOST_RUNTIME_DIR}/pulse" "${HOST_RUNTIME_DIR}/udev"
     chown 1000:1000 "${HOST_RUNTIME_DIR}" "${HOST_RUNTIME_DIR}/pulse" 2>/dev/null || true
     chmod 700 "${HOST_RUNTIME_DIR}" 2>/dev/null || true
     chmod 755 "${HOST_RUNTIME_DIR}/pulse" 2>/dev/null || true
 
+    start_thor_touch_mouse_bridge
     sync_udev_database
 
     # Batocera's PipeWire runs as root. Widen the session sockets so the
@@ -268,7 +361,7 @@ apply_touch_calibration_to_udev_tree() {
 
     for file in "${udev_root}"/data/*; do
         [ -f "${file}" ] || continue
-        grep -q '^E:ID_INPUT_TOUCHSCREEN=1$' "${file}" 2>/dev/null || continue
+        grep -q '^E:ID_INPUT_TOUCHSCREEN=1' "${file}" 2>/dev/null || continue
 
         if grep -q '^E:LIBINPUT_CALIBRATION_MATRIX=' "${file}" 2>/dev/null; then
             sed -i "s|^E:LIBINPUT_CALIBRATION_MATRIX=.*|E:LIBINPUT_CALIBRATION_MATRIX=${matrix}|" "${file}" 2>/dev/null || true
@@ -281,6 +374,401 @@ apply_touch_calibration_to_udev_tree() {
     if [ "${applied}" = "1" ]; then
         log "using touchscreen calibration matrix ${matrix} for Plasma session udev copy"
     fi
+}
+
+apply_touch_keep_pattern_to_udev_tree() {
+    local udev_root="$1"
+    local pattern="${BATOCERA_ARCH_PLASMA_TOUCH_KEEP_PATTERN:-}"
+    local keep_matrix="${BATOCERA_ARCH_PLASMA_TOUCH_KEEP_CALIBRATION_MATRIX:-}"
+    local file matched=0 applied=0
+
+    [ -n "${pattern}" ] || return 0
+    [ -d "${udev_root}/data" ] || return 0
+
+    for file in "${udev_root}"/data/*; do
+        [ -f "${file}" ] || continue
+        grep -q '^E:ID_INPUT_TOUCHSCREEN=1' "${file}" 2>/dev/null || continue
+        if grep -Eiq "${pattern}" "${file}" 2>/dev/null; then
+            matched=1
+            break
+        fi
+    done
+
+    if [ "${matched}" != "1" ]; then
+        log "no matching Plasma touchscreen found for keep pattern (${pattern})"
+        return 0
+    fi
+
+    for file in "${udev_root}"/data/*; do
+        [ -f "${file}" ] || continue
+        grep -q '^E:ID_INPUT_TOUCHSCREEN=1' "${file}" 2>/dev/null || continue
+        if grep -Eiq "${pattern}" "${file}" 2>/dev/null; then
+            if [ -n "${keep_matrix}" ]; then
+                sed -i '/^E:LIBINPUT_IGNORE_DEVICE=/d' "${file}" 2>/dev/null || true
+                if grep -q '^E:LIBINPUT_CALIBRATION_MATRIX=' "${file}" 2>/dev/null; then
+                    sed -i "s|^E:LIBINPUT_CALIBRATION_MATRIX=.*|E:LIBINPUT_CALIBRATION_MATRIX=${keep_matrix}|" "${file}" 2>/dev/null || true
+                else
+                    printf 'E:LIBINPUT_CALIBRATION_MATRIX=%s\n' "${keep_matrix}" >> "${file}" 2>/dev/null || true
+                fi
+            fi
+            continue
+        fi
+
+        if grep -q '^E:LIBINPUT_IGNORE_DEVICE=' "${file}" 2>/dev/null; then
+            sed -i 's|^E:LIBINPUT_IGNORE_DEVICE=.*|E:LIBINPUT_IGNORE_DEVICE=1|' "${file}" 2>/dev/null || true
+        else
+            printf 'E:LIBINPUT_IGNORE_DEVICE=1\n' >> "${file}" 2>/dev/null || true
+        fi
+        applied=1
+    done
+
+    if [ "${applied}" = "1" ]; then
+        log "ignoring non-matching touchscreens for Plasma session udev copy (${pattern})"
+    fi
+    if [ -n "${keep_matrix}" ]; then
+        log "using touchscreen calibration matrix ${keep_matrix} for kept Plasma touchscreen (${pattern})"
+    fi
+}
+
+find_input_event_by_sysfs_pattern() {
+    local pattern="$1"
+    local event_sys device devnode hex_major hex_minor major minor input_name
+
+    for event_sys in /sys/class/input/event*; do
+        [ -e "${event_sys}" ] || continue
+        device="$(readlink -f "${event_sys}/device" 2>/dev/null || true)"
+        [ -n "${device}" ] || continue
+        devnode="/dev/input/${event_sys##*/}"
+        input_name="$(basename "${device}")"
+        {
+            printf '%s\n' "${device}"
+            cat "${device}/uevent" 2>/dev/null || true
+            if [ -e "${devnode}" ]; then
+                read -r hex_major hex_minor <<EOF
+$(stat -c '%t %T' "${devnode}" 2>/dev/null)
+EOF
+                if [ -n "${hex_major}" ] && [ -n "${hex_minor}" ]; then
+                    major="$((16#${hex_major}))"
+                    minor="$((16#${hex_minor}))"
+                    cat "/run/udev/data/c${major}:${minor}" 2>/dev/null || true
+                fi
+            fi
+            cat "/run/udev/data/+input:${input_name}" 2>/dev/null || true
+        } | grep -Eiq "${pattern}" || continue
+        printf '/dev/input/%s\n' "${event_sys##*/}"
+        return 0
+    done
+
+    return 1
+}
+
+write_thor_touch_mouse_bridge() {
+    cat > "${HOST_RUNTIME_DIR}/thor-touch-mouse.py" <<'PY'
+#!/usr/bin/env python3
+import math, os, select, signal, time
+from evdev import InputDevice, UInput, ecodes
+
+TOUCH_SOURCE = os.environ.get("THOR_TOUCH_EVENT", "")
+GAMEPAD_SOURCE = os.environ.get("THOR_GAMEPAD_EVENT", "")
+TOUCH_SCALE = float(os.environ.get("THOR_TOUCH_MOUSE_SCALE", "1.0"))
+TOUCH_GRAB = os.environ.get("THOR_TOUCH_MOUSE_GRAB", "0").lower() in ("1", "yes", "true", "on")
+TAP_TIME = float(os.environ.get("THOR_TOUCH_TAP_TIME", "0.30"))
+TAP_MOVE = float(os.environ.get("THOR_TOUCH_TAP_MOVE", "24"))
+GAMEPAD_DEADZONE = float(os.environ.get("THOR_GAMEPAD_MOUSE_DEADZONE", "0.18"))
+GAMEPAD_SPEED = float(os.environ.get("THOR_GAMEPAD_MOUSE_SPEED", "24"))
+GAMEPAD_INTERVAL = 1.0 / float(os.environ.get("THOR_GAMEPAD_MOUSE_HZ", "60"))
+GAMEPAD_STICK = os.environ.get("THOR_GAMEPAD_MOUSE_STICK", "left").lower()
+GAMEPAD_TRIGGER_THRESHOLD = float(os.environ.get("THOR_GAMEPAD_MOUSE_TRIGGER_THRESHOLD", "0.50"))
+running = True
+
+def stop(_signum, _frame):
+    global running
+    running = False
+
+def click(ui):
+    ui.write(ecodes.EV_KEY, ecodes.BTN_LEFT, 1); ui.syn()
+    ui.write(ecodes.EV_KEY, ecodes.BTN_LEFT, 0); ui.syn()
+
+def open_device(path):
+    if not path:
+        return None
+    try:
+        return InputDevice(path)
+    except OSError:
+        return None
+
+def axis_norm(code, axis_values, axis_info):
+    info = axis_info.get(code)
+    if info is None:
+        return 0.0
+    center = (info.min + info.max) / 2.0
+    span = max(info.max - center, center - info.min, 1.0)
+    value = axis_values.get(code, info.value)
+    raw = max(-1.0, min(1.0, (value - center) / span))
+    if abs(raw) < GAMEPAD_DEADZONE:
+        return 0.0
+    return math.copysign((abs(raw) - GAMEPAD_DEADZONE) / (1.0 - GAMEPAD_DEADZONE), raw)
+
+def trigger_pressed(code, axis_values, axis_info):
+    info = axis_info.get(code)
+    if info is None:
+        return False
+    span = max(info.max - info.min, 1.0)
+    value = axis_values.get(code, info.value)
+    return ((value - info.min) / span) >= GAMEPAD_TRIGGER_THRESHOLD
+
+def handle_touch_event(event, state, ui):
+    if event.type == ecodes.EV_ABS:
+        if event.code in (ecodes.ABS_X, ecodes.ABS_MT_POSITION_X):
+            state["x"] = event.value
+        elif event.code in (ecodes.ABS_Y, ecodes.ABS_MT_POSITION_Y):
+            state["y"] = event.value
+        elif event.code == ecodes.ABS_MT_TRACKING_ID:
+            if event.value < 0:
+                if state["active"] and state["start_x"] is not None and time.monotonic() - state["start_t"] <= TAP_TIME and state["moved"] <= TAP_MOVE:
+                    click(ui)
+                state.update(active=False, last_x=None, last_y=None, start_x=None, start_y=None, moved=0.0)
+            else:
+                state.update(active=True, start_t=time.monotonic(), start_x=state["x"], start_y=state["y"],
+                             last_x=state["x"], last_y=state["y"], moved=0.0)
+    elif event.type == ecodes.EV_KEY and event.code == ecodes.BTN_TOUCH:
+        if event.value:
+            state.update(active=True, start_t=time.monotonic(), start_x=state["x"], start_y=state["y"],
+                         last_x=state["x"], last_y=state["y"], moved=0.0)
+        else:
+            if state["active"] and state["start_x"] is not None and time.monotonic() - state["start_t"] <= TAP_TIME and state["moved"] <= TAP_MOVE:
+                click(ui)
+            state.update(active=False, last_x=None, last_y=None, start_x=None, start_y=None, moved=0.0)
+    elif event.type == ecodes.EV_SYN and event.code == ecodes.SYN_REPORT:
+        x, y = state["x"], state["y"]
+        last_x, last_y = state["last_x"], state["last_y"]
+        if state["active"] and x is not None and y is not None and last_x is not None and last_y is not None:
+            dx, dy = x - last_x, y - last_y
+            if dx or dy:
+                state["moved"] += math.hypot(dx, dy)
+                rel_x, rel_y = int(round(dx * TOUCH_SCALE)), int(round(dy * TOUCH_SCALE))
+                if rel_x:
+                    ui.write(ecodes.EV_REL, ecodes.REL_X, rel_x)
+                if rel_y:
+                    ui.write(ecodes.EV_REL, ecodes.REL_Y, rel_y)
+                ui.syn()
+            state["last_x"], state["last_y"] = x, y
+
+def emit_gamepad_motion(state, ui):
+    lx = axis_norm(ecodes.ABS_X, state["axis_values"], state["axis_info"])
+    ly = axis_norm(ecodes.ABS_Y, state["axis_values"], state["axis_info"])
+    rx = axis_norm(ecodes.ABS_RX, state["axis_values"], state["axis_info"])
+    ry = axis_norm(ecodes.ABS_RY, state["axis_values"], state["axis_info"])
+    if GAMEPAD_STICK == "right":
+        vx, vy = rx, ry
+    elif GAMEPAD_STICK == "both" and math.hypot(rx, ry) >= math.hypot(lx, ly):
+        vx, vy = rx, ry
+    else:
+        vx, vy = lx, ly
+    if not vx and not vy:
+        state["frac_x"] = 0.0
+        state["frac_y"] = 0.0
+        return
+    state["frac_x"] += vx * GAMEPAD_SPEED
+    state["frac_y"] += vy * GAMEPAD_SPEED
+    rel_x, rel_y = math.trunc(state["frac_x"]), math.trunc(state["frac_y"])
+    state["frac_x"] -= rel_x
+    state["frac_y"] -= rel_y
+    if rel_x:
+        ui.write(ecodes.EV_REL, ecodes.REL_X, rel_x)
+    if rel_y:
+        ui.write(ecodes.EV_REL, ecodes.REL_Y, rel_y)
+    if rel_x or rel_y:
+        ui.syn()
+
+def emit_gamepad_button(ui, state, button, pressed):
+    if state["buttons"].get(button) == pressed:
+        return
+    state["buttons"][button] = pressed
+    ui.write(ecodes.EV_KEY, button, 1 if pressed else 0)
+    ui.syn()
+
+def update_gamepad_trigger_buttons(state, ui):
+    left = trigger_pressed(ecodes.ABS_Z, state["axis_values"], state["axis_info"])
+    right = trigger_pressed(ecodes.ABS_RZ, state["axis_values"], state["axis_info"])
+    emit_gamepad_button(ui, state, ecodes.BTN_LEFT, left)
+    emit_gamepad_button(ui, state, ecodes.BTN_RIGHT, right)
+
+def main():
+    signal.signal(signal.SIGTERM, stop)
+    signal.signal(signal.SIGINT, stop)
+    touch = open_device(TOUCH_SOURCE)
+    gamepad = open_device(GAMEPAD_SOURCE)
+    if touch is None and gamepad is None:
+        return
+
+    ui = UInput({ecodes.EV_KEY: [ecodes.BTN_LEFT, ecodes.BTN_RIGHT], ecodes.EV_REL: [ecodes.REL_X, ecodes.REL_Y]},
+                name="thor-top-touch-mouse", bustype=ecodes.BUS_USB)
+    devices = {}
+    touch_state = {"active": False, "x": None, "y": None, "last_x": None, "last_y": None,
+                   "start_x": None, "start_y": None, "start_t": 0.0, "moved": 0.0}
+    gamepad_state = None
+
+    if touch is not None:
+        devices[touch.fd] = ("touch", touch)
+        if TOUCH_GRAB:
+            touch.grab()
+    if gamepad is not None:
+        devices[gamepad.fd] = ("gamepad", gamepad)
+        axis_info = {}
+        axis_values = {}
+        for code in (ecodes.ABS_X, ecodes.ABS_Y, ecodes.ABS_RX, ecodes.ABS_RY, ecodes.ABS_Z, ecodes.ABS_RZ):
+            try:
+                info = gamepad.absinfo(code)
+            except OSError:
+                continue
+            axis_info[code] = info
+            axis_values[code] = info.value
+        gamepad_state = {"axis_info": axis_info, "axis_values": axis_values, "frac_x": 0.0, "frac_y": 0.0, "buttons": {}}
+
+    try:
+        while running:
+            ready, _, _ = select.select(list(devices), [], [], GAMEPAD_INTERVAL)
+            for fd in ready:
+                kind, dev = devices[fd]
+                for event in dev.read():
+                    if kind == "touch":
+                        handle_touch_event(event, touch_state, ui)
+                    elif kind == "gamepad":
+                        if event.type == ecodes.EV_ABS and event.code in gamepad_state["axis_info"]:
+                            gamepad_state["axis_values"][event.code] = event.value
+                            if event.code in (ecodes.ABS_Z, ecodes.ABS_RZ):
+                                update_gamepad_trigger_buttons(gamepad_state, ui)
+                        elif event.type == ecodes.EV_KEY:
+                            if event.code in (ecodes.BTN_SOUTH, ecodes.BTN_TL, ecodes.BTN_TL2):
+                                emit_gamepad_button(ui, gamepad_state, ecodes.BTN_LEFT, bool(event.value))
+                            elif event.code in (ecodes.BTN_EAST, ecodes.BTN_TR, ecodes.BTN_TR2):
+                                emit_gamepad_button(ui, gamepad_state, ecodes.BTN_RIGHT, bool(event.value))
+            if gamepad_state is not None:
+                emit_gamepad_motion(gamepad_state, ui)
+    finally:
+        if touch is not None and TOUCH_GRAB:
+            try:
+                touch.ungrab()
+            except Exception:
+                pass
+        ui.close()
+
+main()
+PY
+    chmod 0755 "${HOST_RUNTIME_DIR}/thor-touch-mouse.py"
+}
+
+start_thor_touch_mouse_bridge() {
+    local event_path gamepad_path pid pidfile log_path enable_touch enable_gamepad
+
+    is_ayn_thor || is_ayn_odin2 || return 0
+    enable_touch="${BATOCERA_ARCH_PLASMA_THOR_TOUCH_MOUSE:-0}"
+    enable_gamepad="${BATOCERA_ARCH_PLASMA_THOR_GAMEPAD_MOUSE:-0}"
+    [ "${enable_touch}" = "1" ] || [ "${enable_gamepad}" = "1" ] || return 0
+    [ -e /dev/uinput ] || modprobe uinput >/dev/null 2>&1 || true
+    [ -e /dev/uinput ] || return 0
+    command -v python3 >/dev/null 2>&1 || return 0
+    python3 - <<'PY' >/dev/null 2>&1 || return 0
+from evdev import InputDevice, UInput, ecodes
+PY
+
+    event_path=""
+    if [ "${enable_touch}" = "1" ]; then
+        event_path="$(find_input_event_by_sysfs_pattern 'platform-a90000\.i2c|platform-a90000_i2c' 2>/dev/null || true)"
+    fi
+    gamepad_path=""
+    if [ "${enable_gamepad}" = "1" ]; then
+        gamepad_path="$(find_input_event_by_sysfs_pattern 'AYN Odin2 Gamepad|rsinput-gamepad|2020/3001' 2>/dev/null || true)"
+    fi
+    [ -n "${event_path}${gamepad_path}" ] || {
+        log "AYN pointer bridge source not found"
+        return 0
+    }
+
+    pidfile="${HOST_RUNTIME_DIR}/thor-touch-mouse.pid"
+    log_path="${HOST_RUNTIME_DIR}/thor-touch-mouse.log"
+    if [ -s "${pidfile}" ]; then
+        pid="$(cat "${pidfile}" 2>/dev/null || true)"
+        if [ -n "${pid}" ] && [ -d "/proc/${pid}" ] && tr '\0' ' ' < "/proc/${pid}/cmdline" 2>/dev/null | grep -q 'thor-touch-mouse.py'; then
+            return 0
+        fi
+    fi
+
+    write_thor_touch_mouse_bridge
+    THOR_TOUCH_EVENT="${event_path}" \
+        THOR_GAMEPAD_EVENT="${gamepad_path}" \
+        THOR_TOUCH_MOUSE_SCALE="${BATOCERA_ARCH_PLASMA_THOR_TOUCH_MOUSE_SCALE:-1.0}" \
+        THOR_TOUCH_MOUSE_GRAB="${BATOCERA_ARCH_PLASMA_THOR_TOUCH_MOUSE_GRAB:-0}" \
+        THOR_GAMEPAD_MOUSE_SPEED="${BATOCERA_ARCH_PLASMA_THOR_GAMEPAD_MOUSE_SPEED:-24}" \
+        THOR_GAMEPAD_MOUSE_STICK="${BATOCERA_ARCH_PLASMA_THOR_GAMEPAD_MOUSE_STICK:-left}" \
+        THOR_GAMEPAD_MOUSE_TRIGGER_THRESHOLD="${BATOCERA_ARCH_PLASMA_THOR_GAMEPAD_MOUSE_TRIGGER_THRESHOLD:-0.50}" \
+        nohup "${HOST_RUNTIME_DIR}/thor-touch-mouse.py" >"${log_path}" 2>&1 &
+    printf '%s\n' "$!" > "${pidfile}"
+    log "started AYN pointer bridge touch=${event_path:-none} gamepad=${gamepad_path:-none}"
+}
+
+stop_thor_touch_mouse_bridge() {
+    local pid pidfile
+
+    is_ayn_thor || is_ayn_odin2 || return 0
+    pidfile="${HOST_RUNTIME_DIR}/thor-touch-mouse.pid"
+
+    if [ -s "${pidfile}" ]; then
+        pid="$(cat "${pidfile}" 2>/dev/null || true)"
+        if [ -n "${pid}" ] && [ -d "/proc/${pid}" ] && tr '\0' ' ' < "/proc/${pid}/cmdline" 2>/dev/null | grep -q 'thor-touch-mouse.py'; then
+            kill "${pid}" 2>/dev/null || true
+            for _ in $(seq 1 20); do
+                [ ! -d "/proc/${pid}" ] && break
+                sleep 0.1
+            done
+            [ -d "/proc/${pid}" ] && kill -KILL "${pid}" 2>/dev/null || true
+        fi
+    fi
+
+    pgrep -f "${HOST_RUNTIME_DIR}/thor-touch-mouse.py" 2>/dev/null | while read -r pid; do
+        [ -n "${pid}" ] || continue
+        kill "${pid}" 2>/dev/null || true
+    done
+    rm -f "${pidfile}" 2>/dev/null || true
+}
+
+synthesize_thor_touch_mouse_udev_record() {
+    local udev_root="$1"
+    local event_sys device name devnode hex_major hex_minor major minor input_name data_dir
+
+    is_ayn_thor || is_ayn_odin2 || return 0
+    [ -d "${udev_root}/data" ] || return 0
+
+    for event_sys in /sys/class/input/event*; do
+        [ -e "${event_sys}" ] || continue
+        device="$(readlink -f "${event_sys}/device" 2>/dev/null || true)"
+        [ -n "${device}" ] || continue
+        name="$(cat "${device}/name" 2>/dev/null || true)"
+        [ "${name}" = "thor-top-touch-mouse" ] || continue
+        devnode="/dev/input/${event_sys##*/}"
+        [ -e "${devnode}" ] || continue
+        read -r hex_major hex_minor <<EOF
+$(stat -c '%t %T' "${devnode}" 2>/dev/null)
+EOF
+        major="$((16#${hex_major}))"
+        minor="$((16#${hex_minor}))"
+        input_name="$(basename "${device}")"
+        data_dir="${udev_root}/data"
+        {
+            printf 'E:DEVNAME=%s\n' "${devnode}"
+            printf 'E:ID_INPUT=1\n'
+            printf 'E:ID_INPUT_MOUSE=1\n'
+            printf 'E:LIBINPUT_DEVICE_GROUP=3/1/1:thor-top-touch-mouse\n'
+        } > "${data_dir}/c${major}:${minor}"
+        {
+            printf 'E:ID_INPUT=1\n'
+            printf 'E:ID_INPUT_MOUSE=1\n'
+            printf 'E:LIBINPUT_DEVICE_GROUP=3/1/1:thor-top-touch-mouse\n'
+        } > "${data_dir}/+input:${input_name}"
+        log "added AYN pointer bridge udev record for ${devnode}"
+        return 0
+    done
 }
 
 sync_udev_database() {
@@ -296,9 +784,11 @@ sync_udev_database() {
         [ -e "/run/udev/${name}" ] || continue
         cp -a "/run/udev/${name}" "${HOST_RUNTIME_DIR}/udev.new/" 2>/dev/null || true
     done
+    synthesize_thor_touch_mouse_udev_record "${HOST_RUNTIME_DIR}/udev.new"
 
     matrix="$(touch_calibration_matrix 2>/dev/null || true)"
     apply_touch_calibration_to_udev_tree "${HOST_RUNTIME_DIR}/udev.new" "${matrix}"
+    apply_touch_keep_pattern_to_udev_tree "${HOST_RUNTIME_DIR}/udev.new"
 
     if [ -d "${HOST_RUNTIME_DIR}/udev" ]; then
         mv "${HOST_RUNTIME_DIR}/udev" "${HOST_RUNTIME_DIR}/udev.old" 2>/dev/null || true
@@ -308,9 +798,18 @@ sync_udev_database() {
 }
 
 configure_lxc() {
-    local cfg
+    local cfg tmp
     cfg="$(container_config)"
     [ -f "${cfg}" ] || die "missing LXC config at ${cfg}"
+
+    tmp="$(mktemp)"
+    if tr -d '\000' < "${cfg}" > "${tmp}" 2>/dev/null; then
+        if ! cmp -s "${cfg}" "${tmp}" 2>/dev/null; then
+            cat "${tmp}" > "${cfg}"
+            log "removed NUL bytes from LXC config ${cfg}"
+        fi
+    fi
+    rm -f "${tmp}" 2>/dev/null || true
 
     sed -i '/# BEGIN batocera arch plasma/,/# END batocera arch plasma/d' "${cfg}"
     sed -i '/^[[:space:]]*lxc\.apparmor\./d' "${cfg}"
@@ -330,7 +829,7 @@ lxc.mount.entry = /dev/input dev/input none rbind,optional,create=dir 0 0
 lxc.mount.entry = /dev/snd dev/snd none rbind,optional,create=dir 0 0
 lxc.mount.entry = /dev/tty0 dev/tty0 none bind,optional,create=file 0 0
 lxc.mount.entry = /dev/fuse dev/fuse none bind,optional,create=file 0 0
-lxc.mount.entry = /etc/resolv.conf etc/resolv.conf none bind,ro,optional,create=file 0 0
+lxc.mount.entry = ${HOST_RESOLV_CONF} etc/resolv.conf none bind,ro,optional,create=file 0 0
 lxc.mount.entry = /tmp/.X11-unix tmp/.X11-unix none rbind,optional,create=dir 0 0
 lxc.mount.entry = ${HOST_RUNTIME_DIR} ${CONTAINER_RUNTIME_DIR#/} none rbind,optional,create=dir 0 0
 lxc.mount.entry = ${HOST_USERDATA_DIR} ${CONTAINER_HOST_USERDATA#/} none rbind,optional,create=dir 0 0
@@ -343,9 +842,49 @@ EOF
 }
 
 configure_container_dns() {
-    local rootfs resolv
+    local rootfs resolv tmp_resolv
 
     rootfs="$(container_rootfs)"
+    tmp_resolv="${HOST_RESOLV_CONF}.new"
+
+    mkdir -p "$(dirname "${HOST_RESOLV_CONF}")"
+    if [ -s /etc/resolv.conf ]; then
+        awk '
+            $1 == "nameserver" {
+                ns = $2
+                if (ns ~ /^(127\.|0\.0\.0\.0$|::1$)/) {
+                    next
+                }
+                if (ns ~ /^fe80:/) {
+                    next
+                }
+                print "nameserver " ns
+                count++
+                next
+            }
+            $1 == "search" || $1 == "domain" || $1 == "options" {
+                extra[++extra_count] = $0
+            }
+            END {
+                if (count == 0) {
+                    print "nameserver 1.1.1.1"
+                    print "nameserver 8.8.8.8"
+                }
+                for (i = 1; i <= extra_count; i++) {
+                    print extra[i]
+                }
+            }
+        ' /etc/resolv.conf > "${tmp_resolv}" 2>>"${LOG}" || true
+    fi
+    if [ ! -s "${tmp_resolv}" ]; then
+        {
+            printf 'nameserver 1.1.1.1\n'
+            printf 'nameserver 8.8.8.8\n'
+        } > "${tmp_resolv}" 2>>"${LOG}" || true
+    fi
+    chmod 0644 "${tmp_resolv}" 2>/dev/null || true
+    mv -f "${tmp_resolv}" "${HOST_RESOLV_CONF}" 2>>"${LOG}" || true
+
     [ -d "${rootfs}/etc" ] || return 0
 
     resolv="${rootfs}/etc/resolv.conf"
@@ -353,14 +892,7 @@ configure_container_dns() {
         rm -f "${resolv}" 2>/dev/null || true
     fi
 
-    if [ -s /etc/resolv.conf ]; then
-        cp -f /etc/resolv.conf "${resolv}" 2>>"${LOG}" || true
-    else
-        {
-            printf 'nameserver 1.1.1.1\n'
-            printf 'nameserver 8.8.8.8\n'
-        } > "${resolv}" 2>>"${LOG}" || true
-    fi
+    cp -f "${HOST_RESOLV_CONF}" "${resolv}" 2>>"${LOG}" || true
     chmod 0644 "${resolv}" 2>/dev/null || true
 }
 
@@ -391,7 +923,7 @@ start_container() {
     configure_lxc
 
     if container_running && ! container_has_session_mounts; then
-        restart_container_for_config_reload
+        restart_container_for_config_reload || die "container could not be restarted to apply session device mounts"
     fi
 
     if ! container_running; then
@@ -401,7 +933,7 @@ start_container() {
     fi
 
     if ! container_has_session_mounts; then
-        restart_container_for_config_reload
+        restart_container_for_config_reload || die "container could not be restarted to apply session device mounts"
         log "starting LXC container ${CONTAINER}"
         lxc-start -P "${LXC_PATH}" -n "${CONTAINER}" -d >>"${LOG}" 2>&1
         lxc-wait -P "${LXC_PATH}" -n "${CONTAINER}" -s RUNNING -t 30 >>"${LOG}" 2>&1 || die "container did not reach RUNNING"
@@ -463,14 +995,47 @@ stop_container_udev_sync_loop() {
     wait "${pid}" 2>/dev/null || true
 }
 
+run_lxc_stop_bounded() {
+    local timeout_s="$1"
+    local stop_pid limit i
+    shift
+
+    "$@" >>"${LOG}" 2>&1 &
+    stop_pid="$!"
+    limit=$((timeout_s * 10))
+
+    for i in $(seq 1 "${limit}"); do
+        if ! kill -0 "${stop_pid}" 2>/dev/null; then
+            wait "${stop_pid}" 2>/dev/null || true
+            return 0
+        fi
+        if ! container_running; then
+            kill "${stop_pid}" 2>/dev/null || true
+            return 0
+        fi
+        sleep 0.1
+    done
+
+    log "warning: LXC stop command timed out after ${timeout_s}s; killing pid ${stop_pid}"
+    kill "${stop_pid}" 2>/dev/null || true
+    sleep 0.2
+    kill -KILL "${stop_pid}" 2>/dev/null || true
+}
+
 restart_container_for_config_reload() {
     log "restarting LXC container ${CONTAINER} to apply session device mounts"
-    lxc-stop -P "${LXC_PATH}" -n "${CONTAINER}" >>"${LOG}" 2>&1 || true
-    lxc-wait -P "${LXC_PATH}" -n "${CONTAINER}" -s STOPPED -t 15 >>"${LOG}" 2>&1 || true
+    run_lxc_stop_bounded 10 lxc-stop -P "${LXC_PATH}" -n "${CONTAINER}"
+    lxc-wait -P "${LXC_PATH}" -n "${CONTAINER}" -s STOPPED -t 5 >>"${LOG}" 2>&1 || true
     if container_running; then
-        lxc-stop -P "${LXC_PATH}" -n "${CONTAINER}" -k >>"${LOG}" 2>&1 || true
-        lxc-wait -P "${LXC_PATH}" -n "${CONTAINER}" -s STOPPED -t 10 >>"${LOG}" 2>&1 || true
+        log "graceful LXC stop did not complete; force-stopping ${CONTAINER}"
+        run_lxc_stop_bounded 10 lxc-stop -P "${LXC_PATH}" -n "${CONTAINER}" -k
+        lxc-wait -P "${LXC_PATH}" -n "${CONTAINER}" -s STOPPED -t 5 >>"${LOG}" 2>&1 || true
     fi
+    if container_running; then
+        log "ERROR: LXC container ${CONTAINER} did not stop for config reload"
+        return 1
+    fi
+    return 0
 }
 
 wait_for_container_command() {
@@ -707,6 +1272,11 @@ fi
 
 apply_static_output_scale
 
+if [ "${BATOCERA_ARCH_PLASMA_KWIN_DBUS_SESSION:-0}" = "1" ] && command -v dbus-run-session >/dev/null 2>&1; then
+    exec dbus-run-session -- kwin_wayland --drm --xwayland --socket wayland-0 --no-lockscreen "${inputmethod_args[@]}" \
+        --exit-with-session /usr/local/bin/batocera-plasma-session-wrapper
+fi
+
 exec kwin_wayland --drm --xwayland --socket wayland-0 --no-lockscreen "${inputmethod_args[@]}" \
     --exit-with-session /usr/local/bin/batocera-plasma-session-wrapper
 EOS
@@ -734,6 +1304,116 @@ done
 
 chmod 777 "${runtime_dir}/${wayland_display}" "${runtime_dir}/${wayland_display}.lock" 2>/dev/null || true
 
+find_kscreen_output_id() {
+    local output_file="$1"
+    local pattern="$2"
+
+    [ -n "${pattern}" ] || return 1
+
+    awk -v pattern="${pattern}" '
+        BEGIN {
+            pattern = tolower(pattern)
+        }
+        /^Output: / {
+            if (id != "" && found) {
+                print id
+                exit
+            }
+            id = $2
+            found = (index(tolower($0), pattern) > 0)
+            next
+        }
+        id != "" && index(tolower($0), pattern) > 0 {
+            found = 1
+        }
+        END {
+            if (id != "" && found) {
+                print id
+            }
+        }
+    ' "${output_file}" | head -n 1
+}
+
+find_largest_kscreen_output_id() {
+    local output_file="$1"
+
+    awk '
+        /^Output: / {
+            id = $2
+            connected = 0
+            next
+        }
+        id != "" && /^[[:space:]]*connected/ {
+            connected = 1
+            next
+        }
+        id != "" && /^[[:space:]]*(Modes:|Geometry:)/ {
+            line = $0
+            while (match(line, /[0-9]+x[0-9]+/)) {
+                split(substr(line, RSTART, RLENGTH), dims, "x")
+                area = dims[1] * dims[2]
+                if (connected && area > best_area) {
+                    best_area = area
+                    best_id = id
+                }
+                line = substr(line, RSTART + RLENGTH)
+            }
+        }
+        END {
+            if (best_id != "") {
+                print best_id
+            }
+        }
+    ' "${output_file}" | head -n 1
+}
+
+apply_forced_output_layout() {
+    local selector="${BATOCERA_ARCH_PLASMA_FORCE_OUTPUT:-}"
+    local mode="${BATOCERA_ARCH_PLASMA_FORCE_OUTPUT_MODE:-}"
+    local fallback_mode="${BATOCERA_ARCH_PLASMA_FORCE_OUTPUT_MODE_FALLBACK:-}"
+    local disable_others="${BATOCERA_ARCH_PLASMA_DISABLE_OTHER_OUTPUTS:-0}"
+    local output_file output_ids output_id target_id=""
+
+    [ -n "${selector}${mode}${fallback_mode}" ] || return 0
+    command -v kscreen-doctor >/dev/null 2>&1 || return 0
+
+    output_file="/tmp/batocera-kscreen-layout-$$.out"
+    for _ in $(seq 1 30); do
+        if NO_COLOR=1 TERM=dumb kscreen-doctor -o 2>/dev/null | sed -E 's/\x1B\[[0-9;]*[[:alpha:]]//g' > "${output_file}"; then
+            break
+        fi
+        sleep 0.1
+    done
+
+    if [ "${selector}" = "largest" ] || [ "${selector}" = "top" ]; then
+        target_id="$(find_largest_kscreen_output_id "${output_file}" 2>/dev/null || true)"
+    fi
+    [ -n "${target_id}" ] || target_id="$(find_kscreen_output_id "${output_file}" "${mode}" 2>/dev/null || true)"
+    [ -n "${target_id}" ] || target_id="$(find_kscreen_output_id "${output_file}" "${fallback_mode}" 2>/dev/null || true)"
+    [ -n "${target_id}" ] || target_id="$(find_kscreen_output_id "${output_file}" "${selector}" 2>/dev/null || true)"
+    output_ids="$(awk '/^Output: / { print $2 }' "${output_file}" 2>/dev/null || true)"
+    rm -f "${output_file}" 2>/dev/null || true
+
+    [ -n "${target_id}" ] || return 0
+
+    kscreen-doctor "output.${target_id}.enable" >/dev/null 2>&1 || true
+    if [ -n "${mode}" ]; then
+        kscreen-doctor "output.${target_id}.mode.${mode}" >/dev/null 2>&1 || \
+            { [ -n "${fallback_mode}" ] && kscreen-doctor "output.${target_id}.mode.${fallback_mode}" >/dev/null 2>&1; } || true
+    elif [ -n "${fallback_mode}" ]; then
+        kscreen-doctor "output.${target_id}.mode.${fallback_mode}" >/dev/null 2>&1 || true
+    fi
+    kscreen-doctor "output.${target_id}.position.0,0" >/dev/null 2>&1 || true
+    kscreen-doctor "output.${target_id}.primary" >/dev/null 2>&1 || true
+
+    if [ "${disable_others}" = "1" ]; then
+        for output_id in ${output_ids}; do
+            [ "${output_id}" != "${target_id}" ] || continue
+            kscreen-doctor "output.${output_id}.disable" >/dev/null 2>&1 || true
+        done
+    fi
+}
+
 apply_runtime_output_scale() {
     local scale="${BATOCERA_ARCH_PLASMA_OUTPUT_SCALE:-}"
     local output_file output_ids output_id
@@ -759,6 +1439,94 @@ apply_runtime_output_scale() {
     done
 }
 
+find_qdbus_command() {
+    local cmd
+
+    for cmd in qdbus6 qdbus; do
+        command -v "${cmd}" >/dev/null 2>&1 || continue
+        printf '%s\n' "${cmd}"
+        return 0
+    done
+
+    return 1
+}
+
+set_kwin_input_property() {
+    local event="$1"
+    local property="$2"
+    local value="$3"
+    local qdbus_cmd
+
+    if command -v busctl >/dev/null 2>&1; then
+        busctl --address="${DBUS_SESSION_BUS_ADDRESS}" set-property \
+            org.kde.KWin "/org/kde/KWin/InputDevice/${event}" \
+            org.kde.KWin.InputDevice "${property}" s "${value}" >/dev/null 2>&1 && return 0
+    fi
+
+    qdbus_cmd="$(find_qdbus_command 2>/dev/null || true)"
+    [ -n "${qdbus_cmd}" ] || return 1
+    "${qdbus_cmd}" org.kde.KWin "/org/kde/KWin/InputDevice/${event}" \
+        org.freedesktop.DBus.Properties.Set org.kde.KWin.InputDevice "${property}" "${value}" >/dev/null 2>&1
+}
+
+apply_touchscreen_output_mapping() {
+    local output_name="${BATOCERA_ARCH_PLASMA_TOUCH_OUTPUT_NAME:-}"
+    local kwin_matrix="${BATOCERA_ARCH_PLASMA_TOUCH_KWIN_CALIBRATION_MATRIX:-}"
+    local pattern="${BATOCERA_ARCH_PLASMA_TOUCH_KEEP_PATTERN:-}"
+    local qdbus_cmd layout_log event ev props sysfs name matched mapped=0
+
+    [ -n "${output_name}" ] || return 0
+    [ -n "${pattern}" ] || return 0
+    [ -n "${DBUS_SESSION_BUS_ADDRESS:-}" ] || return 0
+    qdbus_cmd="$(find_qdbus_command 2>/dev/null || true)"
+    [ -n "${qdbus_cmd}" ] || return 0
+
+    layout_log="${BATOCERA_ARCH_PLASMA_LAYOUT_LOG:-/batocera-runtime/plasma-output-layout.log}"
+    mkdir -p "$(dirname "${layout_log}")" 2>/dev/null || true
+
+    for _ in $(seq 1 50); do
+        "${qdbus_cmd}" org.kde.KWin >/dev/null 2>&1 && break
+        sleep 0.1
+    done
+    if ! "${qdbus_cmd}" org.kde.KWin >/dev/null 2>&1; then
+        printf 'KWin DBus service unavailable; touchscreen output mapping skipped\n' >> "${layout_log}" 2>/dev/null || true
+        return 0
+    fi
+
+    for event in /dev/input/event*; do
+        [ -e "${event}" ] || continue
+        ev="${event##*/}"
+        props="$(udevadm info -q property -n "${event}" 2>/dev/null || true)"
+        printf '%s\n' "${props}" | grep -q '^ID_INPUT_TOUCHSCREEN=1' || continue
+        sysfs="$(readlink -f "/sys/class/input/${ev}/device" 2>/dev/null || true)"
+        name="$(cat "/sys/class/input/${ev}/device/name" 2>/dev/null || true)"
+
+        matched=0
+        if { printf '%s\n%s\n%s\n' "${props}" "${sysfs}" "${name}" | grep -Eiq -- "${pattern}"; } 2>/dev/null; then
+            matched=1
+        fi
+        [ "${matched}" = "1" ] || continue
+
+        if set_kwin_input_property "${ev}" outputName "${output_name}"; then
+            printf 'mapped touchscreen %s (%s) to output %s\n' "${event}" "${name}" "${output_name}" >> "${layout_log}" 2>/dev/null || true
+            mapped=1
+        else
+            printf 'warning: failed to map touchscreen %s (%s) to output %s\n' "${event}" "${name}" "${output_name}" >> "${layout_log}" 2>/dev/null || true
+        fi
+        if [ -n "${kwin_matrix}" ]; then
+            if set_kwin_input_property "${ev}" calibrationMatrix "${kwin_matrix}"; then
+                printf 'mapped touchscreen %s (%s) KWin calibration %s\n' "${event}" "${name}" "${kwin_matrix}" >> "${layout_log}" 2>/dev/null || true
+            else
+                printf 'warning: failed to set touchscreen %s (%s) KWin calibration %s\n' "${event}" "${name}" "${kwin_matrix}" >> "${layout_log}" 2>/dev/null || true
+            fi
+        fi
+    done
+
+    [ "${mapped}" = "1" ] || printf 'no touchscreen matched output mapping pattern %s\n' "${pattern}" >> "${layout_log}" 2>/dev/null || true
+}
+
+apply_forced_output_layout
+apply_touchscreen_output_mapping
 apply_runtime_output_scale
 
 if [ -n "${XAUTHORITY:-}" ] && [ -e "${XAUTHORITY}" ]; then
@@ -797,10 +1565,152 @@ exec /usr/bin/runuser -u "${user}" -- /usr/bin/env \
     PIPEWIRE_REMOTE="${PIPEWIRE_REMOTE:-/batocera-runtime/pipewire-0}" \
     PULSE_SERVER="${PULSE_SERVER:-unix:/batocera-runtime/pulse/native}" \
     BATOCERA_ARCH_PLASMA_OUTPUT_SCALE="${BATOCERA_ARCH_PLASMA_OUTPUT_SCALE:-}" \
+    BATOCERA_ARCH_PLASMA_FORCE_OUTPUT="${BATOCERA_ARCH_PLASMA_FORCE_OUTPUT:-}" \
+    BATOCERA_ARCH_PLASMA_FORCE_OUTPUT_MODE="${BATOCERA_ARCH_PLASMA_FORCE_OUTPUT_MODE:-}" \
+    BATOCERA_ARCH_PLASMA_FORCE_OUTPUT_MODE_FALLBACK="${BATOCERA_ARCH_PLASMA_FORCE_OUTPUT_MODE_FALLBACK:-}" \
+    BATOCERA_ARCH_PLASMA_DISABLE_OTHER_OUTPUTS="${BATOCERA_ARCH_PLASMA_DISABLE_OTHER_OUTPUTS:-}" \
+    BATOCERA_ARCH_PLASMA_TOUCH_OUTPUT_NAME="${BATOCERA_ARCH_PLASMA_TOUCH_OUTPUT_NAME:-}" \
+    BATOCERA_ARCH_PLASMA_TOUCH_KWIN_CALIBRATION_MATRIX="${BATOCERA_ARCH_PLASMA_TOUCH_KWIN_CALIBRATION_MATRIX:-}" \
     BATOCERA_ARCH_PLASMA_POINTER_ACCEL="${BATOCERA_ARCH_PLASMA_POINTER_ACCEL:-}" \
     /usr/local/bin/batocera-plasma-session-payload
 EOS
 chmod 0755 /usr/local/bin/batocera-plasma-session-wrapper
+
+cat > /usr/local/bin/batocera-force-plasma-output <<'EOS'
+#!/bin/bash
+set -u
+
+selector="${BATOCERA_ARCH_PLASMA_FORCE_OUTPUT:-}"
+mode="${BATOCERA_ARCH_PLASMA_FORCE_OUTPUT_MODE:-}"
+fallback_mode="${BATOCERA_ARCH_PLASMA_FORCE_OUTPUT_MODE_FALLBACK:-}"
+disable_others="${BATOCERA_ARCH_PLASMA_DISABLE_OTHER_OUTPUTS:-0}"
+log="${BATOCERA_ARCH_PLASMA_LAYOUT_LOG:-/batocera-runtime/plasma-output-layout.log}"
+
+[ -n "${selector}${mode}${fallback_mode}" ] || exit 0
+command -v kscreen-doctor >/dev/null 2>&1 || exit 0
+
+find_kscreen_output_id() {
+    local output_file="$1"
+    local pattern="$2"
+
+    [ -n "${pattern}" ] || return 1
+
+    awk -v pattern="${pattern}" '
+        BEGIN {
+            pattern = tolower(pattern)
+        }
+        /^Output: / {
+            if (id != "" && found) {
+                print id
+                exit
+            }
+            id = $2
+            found = (index(tolower($0), pattern) > 0)
+            next
+        }
+        id != "" && index(tolower($0), pattern) > 0 {
+            found = 1
+        }
+        END {
+            if (id != "" && found) {
+                print id
+            }
+        }
+    ' "${output_file}" | head -n 1
+}
+
+find_largest_kscreen_output_id() {
+    local output_file="$1"
+
+    awk '
+        /^Output: / {
+            id = $2
+            connected = 0
+            next
+        }
+        id != "" && /^[[:space:]]*connected/ {
+            connected = 1
+            next
+        }
+        id != "" && /^[[:space:]]*(Modes:|Geometry:)/ {
+            line = $0
+            while (match(line, /[0-9]+x[0-9]+/)) {
+                split(substr(line, RSTART, RLENGTH), dims, "x")
+                area = dims[1] * dims[2]
+                if (connected && area > best_area) {
+                    best_area = area
+                    best_id = id
+                }
+                line = substr(line, RSTART + RLENGTH)
+            }
+        }
+        END {
+            if (best_id != "") {
+                print best_id
+            }
+        }
+    ' "${output_file}" | head -n 1
+}
+
+apply_forced_output_layout_once() {
+    local output_file output_ids output_id target_id=""
+
+    output_file="/tmp/batocera-kscreen-layout-user-$$.out"
+    NO_COLOR=1 TERM=dumb kscreen-doctor -o 2>&1 | sed -E 's/\x1B\[[0-9;]*[[:alpha:]]//g' > "${output_file}" || {
+        cat "${output_file}" 2>/dev/null || true
+        rm -f "${output_file}" 2>/dev/null || true
+        return 1
+    }
+
+    printf '%s\n' "--- kscreen-doctor -o ---"
+    cat "${output_file}" 2>/dev/null || true
+
+    if [ "${selector}" = "largest" ] || [ "${selector}" = "top" ]; then
+        target_id="$(find_largest_kscreen_output_id "${output_file}" 2>/dev/null || true)"
+    fi
+    [ -n "${target_id}" ] || target_id="$(find_kscreen_output_id "${output_file}" "${mode}" 2>/dev/null || true)"
+    [ -n "${target_id}" ] || target_id="$(find_kscreen_output_id "${output_file}" "${fallback_mode}" 2>/dev/null || true)"
+    [ -n "${target_id}" ] || target_id="$(find_kscreen_output_id "${output_file}" "${selector}" 2>/dev/null || true)"
+    output_ids="$(awk '/^Output: / { print $2 }' "${output_file}" 2>/dev/null || true)"
+    rm -f "${output_file}" 2>/dev/null || true
+
+    [ -n "${target_id}" ] || {
+        printf 'no matching output found for selector=%s mode=%s fallback=%s\n' "${selector}" "${mode}" "${fallback_mode}"
+        return 1
+    }
+
+    printf 'forcing output id=%s selector=%s mode=%s fallback=%s disable_others=%s\n' \
+        "${target_id}" "${selector}" "${mode}" "${fallback_mode}" "${disable_others}"
+
+    kscreen-doctor "output.${target_id}.enable" >/dev/null 2>&1 || true
+    if [ -n "${mode}" ]; then
+        kscreen-doctor "output.${target_id}.mode.${mode}" >/dev/null 2>&1 || \
+            { [ -n "${fallback_mode}" ] && kscreen-doctor "output.${target_id}.mode.${fallback_mode}" >/dev/null 2>&1; } || true
+    elif [ -n "${fallback_mode}" ]; then
+        kscreen-doctor "output.${target_id}.mode.${fallback_mode}" >/dev/null 2>&1 || true
+    fi
+    kscreen-doctor "output.${target_id}.position.0,0" >/dev/null 2>&1 || true
+    kscreen-doctor "output.${target_id}.primary" >/dev/null 2>&1 || true
+
+    if [ "${disable_others}" = "1" ]; then
+        for output_id in ${output_ids}; do
+            [ "${output_id}" != "${target_id}" ] || continue
+            printf 'disabling output id=%s\n' "${output_id}"
+            kscreen-doctor "output.${output_id}.disable" >/dev/null 2>&1 || true
+        done
+    fi
+}
+
+mkdir -p "$(dirname "${log}")" 2>/dev/null || true
+: > "${log}" 2>/dev/null || true
+for _ in $(seq 1 90); do
+    apply_forced_output_layout_once >> "${log}" 2>&1 || true
+    sleep 1
+done
+
+exit 0
+EOS
+chmod 0755 /usr/local/bin/batocera-force-plasma-output
 
 cat > /usr/local/bin/batocera-plasma-session-payload <<'EOS'
 #!/bin/bash
@@ -853,6 +1763,7 @@ start_plasma_shell_session() {
     run_if_available xdg-desktop-portal
     run_if_available xdg-desktop-portal-kde
     run_if_available krunner
+    run_if_available batocera-force-plasma-output
 
     exec plasmashell
 }
@@ -874,6 +1785,7 @@ if command -v dbus-run-session >/dev/null 2>&1; then
         run_if_available xdg-desktop-portal
         run_if_available xdg-desktop-portal-kde
         run_if_available krunner
+        run_if_available batocera-force-plasma-output
         export XDG_MENU_PREFIX=plasma-
         exec plasmashell
     '
@@ -1336,6 +2248,7 @@ launch_plasma_session() {
 
     start_container
     wait_for_container_command
+    container_has_session_mounts || die "container session device mounts are missing after start"
 
     uid="$(lxc-attach -P "${LXC_PATH}" -n "${CONTAINER}" -- id -u "${user}" 2>/dev/null || true)"
     [ -n "${uid}" ] || die "container user ${user} does not exist"
@@ -1380,6 +2293,14 @@ launch_plasma_session() {
             -v "PIPEWIRE_REMOTE=/batocera-runtime/pipewire-0" \
             -v "PULSE_SERVER=unix:/batocera-runtime/pulse/native" \
             -v "BATOCERA_ARCH_PLASMA_OUTPUT_SCALE=${BATOCERA_ARCH_PLASMA_OUTPUT_SCALE:-}" \
+            -v "BATOCERA_ARCH_PLASMA_FORCE_OUTPUT=${BATOCERA_ARCH_PLASMA_FORCE_OUTPUT:-}" \
+            -v "BATOCERA_ARCH_PLASMA_FORCE_OUTPUT_MODE=${BATOCERA_ARCH_PLASMA_FORCE_OUTPUT_MODE:-}" \
+            -v "BATOCERA_ARCH_PLASMA_FORCE_OUTPUT_MODE_FALLBACK=${BATOCERA_ARCH_PLASMA_FORCE_OUTPUT_MODE_FALLBACK:-}" \
+            -v "BATOCERA_ARCH_PLASMA_DISABLE_OTHER_OUTPUTS=${BATOCERA_ARCH_PLASMA_DISABLE_OTHER_OUTPUTS:-}" \
+            -v "BATOCERA_ARCH_PLASMA_TOUCH_KEEP_PATTERN=${BATOCERA_ARCH_PLASMA_TOUCH_KEEP_PATTERN:-}" \
+            -v "BATOCERA_ARCH_PLASMA_TOUCH_OUTPUT_NAME=${BATOCERA_ARCH_PLASMA_TOUCH_OUTPUT_NAME:-}" \
+            -v "BATOCERA_ARCH_PLASMA_TOUCH_KWIN_CALIBRATION_MATRIX=${BATOCERA_ARCH_PLASMA_TOUCH_KWIN_CALIBRATION_MATRIX:-}" \
+            -v "BATOCERA_ARCH_PLASMA_KWIN_DBUS_SESSION=${BATOCERA_ARCH_PLASMA_KWIN_DBUS_SESSION:-0}" \
             -v "BATOCERA_ARCH_PLASMA_ENABLE_INPUTMETHOD=${BATOCERA_ARCH_PLASMA_ENABLE_INPUTMETHOD:-1}" \
             -v "BATOCERA_ARCH_PLASMA_POINTER_ACCEL=${BATOCERA_ARCH_PLASMA_POINTER_ACCEL:-}" \
             -- /usr/local/bin/batocera-start-plasma-root >>"${LOG}" 2>&1
@@ -1417,6 +2338,7 @@ cleanup_session() {
     set +e
     load_state
     log "Arch Plasma session exited with status ${rc}"
+    stop_thor_touch_mouse_bridge
     terminate_plasma_session "${PLASMA_USER}"
     if command -v batocera-mouse >/dev/null 2>&1; then
         batocera-mouse hide >/dev/null 2>&1 || true

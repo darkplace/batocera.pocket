@@ -42,6 +42,7 @@ ALLY_SYSTEM_DEFAULT_MAP="${ALLY_SYSTEM_DIR}/ASUS_ROG_Ally_Config-b05-1abe.mappin
 ALLY_SYSTEM_ES_MAP="${ALLY_SYSTEM_DIR}/ASUS_ROG_Ally_Config-b05-1abe.mapping.es"
 ALLY_SYSTEM_STEAM_MAP="${ALLY_SYSTEM_DIR}/ASUS_ROG_Ally_Config-b05-1abe.mapping.steam"
 ALLY_DATAINIT_DIR="/usr/share/batocera/datainit/system/configs/hotkeygen"
+HOTKEY_PROFILE_SYSTEM_DIR="/usr/share/hotkeygen"
 
 run_ally_hotkey_hook() {
     local event="$1"
@@ -81,9 +82,57 @@ start_session_supervisor() {
     batocera-steam-session-supervisor start "batocera-steam-session" >/dev/null 2>&1 || true
 }
 
+apply_hotkey_profile_maps() {
+    local profile="$1"
+    local src=""
+    local base=""
+    local target=""
+    local applied=0
+    local -a sources=()
+
+    mkdir -p "${ALLY_HOTKEY_DIR}" 2>/dev/null || true
+    shopt -s nullglob
+    sources=(
+        "${ALLY_HOTKEY_DIR}"/*.mapping."${profile}"
+        "${HOTKEY_PROFILE_SYSTEM_DIR}"/*.mapping."${profile}"
+        "${ALLY_DATAINIT_DIR}"/*.mapping."${profile}"
+    )
+    shopt -u nullglob
+
+    for src in "${sources[@]}"; do
+        [[ -f "${src}" ]] || continue
+        case "$(basename "${src}")" in
+            ASUS_ROG_Ally_*)
+                continue
+                ;;
+        esac
+        base="$(basename "${src}")"
+        base="${base%.${profile}}"
+        target="${ALLY_HOTKEY_DIR}/${base}"
+        if [[ "${profile}" == "steam" && -f "${target}" && ! -f "${target}.es" ]]; then
+            cp -f "${target}" "${target}.es" 2>/dev/null || true
+        fi
+        cp -f "${src}" "${target}" 2>/dev/null || continue
+        applied=1
+        echo "Steam hotkeys: applied ${profile} profile from ${src}" >> "${log}"
+    done
+
+    if [[ "${applied}" == "1" ]]; then
+        ensure_hotkeygen_started
+        /usr/bin/hotkeygen --reload >/dev/null 2>&1 || true
+        return 0
+    fi
+
+    return 1
+}
+
 apply_ally_hotkey_map() {
     local profile="$1"
     local src=""
+
+    if apply_hotkey_profile_maps "${profile}"; then
+        return 0
+    fi
 
     mkdir -p "${ALLY_HOTKEY_DIR}" 2>/dev/null || true
 

@@ -59,7 +59,7 @@ load_proton_cachyos_config() {
 
 load_proton_cachyos_config
 
-export PROTON_CACHYOS_VERSION_FULL="${BATOCERA_STEAM_PROTON_CACHYOS_VERSION:-11.0-20260521-slr}"
+export PROTON_CACHYOS_VERSION_FULL="${BATOCERA_STEAM_PROTON_CACHYOS_VERSION:-11.0-20260602-slr}"
 export PROTON_CACHYOS_TAR="proton-cachyos-${PROTON_CACHYOS_VERSION_FULL}-arm64.tar.xz"
 export PROTON_CACHYOS_DIR="proton-cachyos-${PROTON_CACHYOS_VERSION_FULL}-arm64"
 export PROTON_CACHYOS_URL="${BATOCERA_STEAM_PROTON_CACHYOS_URL:-https://github.com/CachyOS/proton-cachyos/releases/download/cachyos-${PROTON_CACHYOS_VERSION_FULL}/${PROTON_CACHYOS_TAR}}"

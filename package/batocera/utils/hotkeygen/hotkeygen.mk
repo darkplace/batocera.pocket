@@ -27,6 +27,13 @@ define HOTKEYGEN_INSTALL_TARGET_CMDS
 			*) install -m 0644 "$$file" $(TARGET_DIR)/usr/share/hotkeygen/ ;; \
 		esac; \
 	done
+	for file in $(HOTKEYGEN_PATH)/conf/specific/*.mapping.*; do \
+		[ -e "$$file" ] || continue; \
+		case "$$(basename "$$file")" in \
+			ASUS_ROG_Ally_*) ;; \
+			*) install -m 0644 "$$file" $(TARGET_DIR)/usr/share/hotkeygen/ ;; \
+		esac; \
+	done
 	install -m 0755 $(HOTKEYGEN_PATH)/batocera-hotkeys.py $(TARGET_DIR)/usr/bin/batocera-hotkeys
 endef
 
