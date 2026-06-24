@@ -2,6 +2,8 @@ cores:
   pcsx2:
     shared_features:
       - powermode
+      - cpu_max_freq
+      - cpu_limit_target_fps
       - tdp
       - videomode
       - bezel
@@ -234,6 +236,57 @@ cores:
           None: 0
           Partial: 1
           Full (Hash Cache): 2
+      pcsx2_ee_cycle_rate:
+        submenu: PERFORMANCE
+        prompt: EE CYCLE RATE
+        description: Lower values can improve speed but may break game logic.
+        choices:
+          Very Fast (-3): -3
+          Fast (-2): -2
+          Moderate (-1): -1
+          Normal (Default): 0
+          Slow (+1): 1
+          Very Slow (+2): 2
+          Extremely Slow (+3): 3
+      pcsx2_ee_cycle_skip:
+        submenu: PERFORMANCE
+        prompt: EE CYCLE SKIP
+        description: Skip EE cycles. Can improve speed but may cause stutter.
+        choices:
+          Disabled (Default): 0
+          Mild: 1
+          Moderate: 2
+          Aggressive: 3
+      pcsx2_hw_download:
+        submenu: PERFORMANCE
+        prompt: HW DOWNLOAD MODE
+        description: GPU to CPU sync mode. Faster modes can reduce compatibility.
+        choices:
+          Accurate (Default): 0
+          Unsynchronized: 1
+          Disabled (Fast): 2
+          Disabled (Unsafe): 3
+      pcsx2_mtvu:
+        submenu: PERFORMANCE
+        prompt: MULTI-THREADED VU1 (MTVU)
+        description: Run VU1 on a separate thread for better performance.
+        choices:
+          Enabled (Default): "true"
+          Disabled: "false"
+      pcsx2_instant_vu1:
+        submenu: PERFORMANCE
+        prompt: INSTANT VU1
+        description: Low-latency VU1 path. Can cause visual glitches in some games.
+        choices:
+          Enabled (Default): "true"
+          Disabled: "false"
+      pcsx2_fast_cdvd:
+        submenu: PERFORMANCE
+        prompt: FAST CDVD
+        description: Speeds up disc access; can break FMVs or timing-sensitive games.
+        choices:
+          Disabled (Default): "false"
+          Enabled: "true"
       pcsx2_fastboot:
         prompt: SHOW BIOS BOOTLOGO
         description: Some games have issues when the animation is shown, others require it.

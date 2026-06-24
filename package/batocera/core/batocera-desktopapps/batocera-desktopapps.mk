@@ -195,6 +195,12 @@ ifeq ($(BR2_PACKAGE_WAYDROID),y)
   BATOCERA_DESKTOPAPPS_ICONS   += waydroid.png
 endif
 
+# Arch Plasma LXC
+ifeq ($(BR2_PACKAGE_BATOCERA_ARCH_PLASMA_LXC),y)
+  BATOCERA_DESKTOPAPPS_APPS    += arch-plasma-lxc.desktop
+  BATOCERA_DESKTOPAPPS_ICONS   += arch-plasma-lxc.svg
+endif
+
 # yuzu
 ifeq ($(BR2_PACKAGE_YUZU),y)
   BATOCERA_DESKTOPAPPS_SCRIPTS += batocera-config-yuzu

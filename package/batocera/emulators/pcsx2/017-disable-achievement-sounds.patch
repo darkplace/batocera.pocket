@@ -1,0 +1,118 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Wed, 24 Jun 2026 00:00:00 +0000
+Subject: [PATCH] achievements: play Batocera achievement sound directly
+
+PCSX2's Linux sound playback path can produce loud static on the ARM
+handheld targets. Bypass it entirely and play the selected Batocera
+RetroAchievements sound asset directly with PipeWire/PulseAudio helpers.
+---
+ pcsx2/Achievements.cpp | 77 +++++++++++++++++++++++++++++++++++++----
+ 1 file changed, 71 insertions(+), 6 deletions(-)
+
+diff --git a/pcsx2/Achievements.cpp b/pcsx2/Achievements.cpp
+index 1111111..2222222 100644
+--- a/pcsx2/Achievements.cpp
++++ b/pcsx2/Achievements.cpp
+@@ -43,6 +43,7 @@
+ #include <map>
+ #include <optional>
+ #include <string>
++#include <thread>
+ #include <vector>
+ 
+ #ifdef ENABLE_RAINTEGRATION
+@@ -74,6 +75,69 @@ namespace Achievements
+ 	// Chrome uses 10 server calls per domain, seems reasonable.
+ 	static constexpr u32 MAX_CONCURRENT_SERVER_CALLS = 10;
+ 
++	static constexpr const char* BATOCERA_ACHIEVEMENT_SOUND_ENV = "BATOCERA_PCSX2_ACHIEVEMENT_SOUND";
++	static constexpr const char* BATOCERA_ACHIEVEMENT_SOUND_ROOT = "/usr/share/libretro/assets/sounds";
++
++	static bool IsBatoceraAchievementSoundDisabled(const std::string_view value)
++	{
++		return value.empty() || value == "0" || value == "false" || value == "False" ||
++			value == "none" || value == "None";
++	}
++
++	static std::optional<std::string> GetBatoceraAchievementSoundPath(const std::string_view value)
++	{
++		if (IsBatoceraAchievementSoundDisabled(value))
++			return std::nullopt;
++
++		if (value.find('/') != std::string_view::npos)
++		{
++			std::string path(value);
++			if (FileSystem::FileExists(path.c_str()))
++				return path;
++			return std::nullopt;
++		}
++
++		std::string ogg_path = fmt::format("{}/{}.ogg", BATOCERA_ACHIEVEMENT_SOUND_ROOT, value);
++		if (FileSystem::FileExists(ogg_path.c_str()))
++			return ogg_path;
++
++		std::string wav_path = fmt::format("{}/{}.wav", BATOCERA_ACHIEVEMENT_SOUND_ROOT, value);
++		if (FileSystem::FileExists(wav_path.c_str()))
++			return wav_path;
++
++		return std::nullopt;
++	}
++
++	static std::string ShellQuote(const std::string_view value)
++	{
++		std::string quoted = "'";
++		for (const char c : value)
++		{
++			if (c == '\'')
++				quoted += "'\\''";
++			else
++				quoted += c;
++		}
++		quoted += "'";
++		return quoted;
++	}
++
++	static bool PlayBatoceraAchievementSound(const std::string_view value)
++	{
++		std::optional<std::string> sound_path = GetBatoceraAchievementSoundPath(value);
++		if (!sound_path)
++			return false;
++
++		std::thread([path = std::move(*sound_path)] {
++			const std::string quoted_path = ShellQuote(path);
++			const std::string pw_play_command = "/usr/bin/pw-play " + quoted_path + " >/dev/null 2>&1";
++			const std::string paplay_command = "/usr/bin/paplay " + quoted_path + " >/dev/null 2>&1";
++			if (std::system(pw_play_command.c_str()) != 0)
++				std::system(paplay_command.c_str());
++		}).detach();
++		return true;
++	}
++
+ 	namespace
+ 	{
+ 		struct LoginWithPasswordParameters
+@@ -942,13 +1006,15 @@ void Achievements::PlayAchievementSound(bool is_specific_sound_enabled, const st
+ void Achievements::PlayAchievementSound(bool is_specific_sound_enabled, const std::string& custom_sound_name, const std::string& default_sound_name)
+ {
+-	if (!EmuConfig.Achievements.SoundEffects || !is_specific_sound_enabled)
+-		return;
++	(void)is_specific_sound_enabled;
++	(void)custom_sound_name;
++	(void)default_sound_name;
+ 
+-	if (custom_sound_name.empty() || !FileSystem::FileExists(custom_sound_name.c_str()))
+-		Common::PlaySoundAsync(Path::Combine(EmuFolders::Resources, default_sound_name).c_str());
+-	else
+-		Common::PlaySoundAsync(custom_sound_name.c_str());
++	if (const char* sound = std::getenv(BATOCERA_ACHIEVEMENT_SOUND_ENV))
++		PlayBatoceraAchievementSound(sound);
++
++	// Never fall back to PCSX2's Linux sound path on Batocera ARM.
++	return;
+ }
+ 
+ void Achievements::GameChanged(u32 disc_crc, u32 crc)
+ {
+-- 
+2.50.1

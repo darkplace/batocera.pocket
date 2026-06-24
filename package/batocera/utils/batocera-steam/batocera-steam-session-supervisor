@@ -4,6 +4,7 @@ set -u
 LOG="/userdata/system/logs/steam-session-supervisor.log"
 PIDFILE="/var/run/batocera-steam-session-supervisor.pid"
 ACTIVE="/var/run/batocera-steam-session-supervisor.active"
+PREFLIGHT_SESSION_FLAG="/var/run/batocera-steam-update-preflight"
 ES_SERVICE="/etc/init.d/S31emulationstation"
 REASON="${2:-manual}"
 
@@ -41,6 +42,19 @@ steam_stack_alive() {
     pgrep -x gamescopestream >/dev/null 2>&1 || \
     pgrep -x gamescopectl >/dev/null 2>&1 || \
     pgrep -f 'steamrtarm64/steam|steamwebhelper\.sh|pressure-vessel|SteamLaunch AppId=|pw-audio-namespace|/proton waitforexitandrun|steam\.exe|/usr/share/fex-emu|/userdata/system/steam/rootfs|\.FEXMount|squashfuse|/userdata/system/steam/steam\.sh|/usr/share/steam/bin_steam\.sh|emulatorlauncher.*-system steam|Steam GamepadUI\.steam|Steam Desktop\.steam' >/dev/null 2>&1
+}
+
+preflight_active() {
+    local pid
+
+    if [[ -f "${PREFLIGHT_SESSION_FLAG}" ]]; then
+        pid="$(cat "${PREFLIGHT_SESSION_FLAG}" 2>/dev/null || true)"
+        if [[ -n "${pid}" && -e "/proc/${pid}" ]]; then
+            return 0
+        fi
+    fi
+
+    pgrep -f '(^|/)batocera-steam-update-preflight([[:space:]]|$)' >/dev/null 2>&1
 }
 
 frontend_ready() {
@@ -124,6 +138,9 @@ watch_loop() {
     while [[ -e "${ACTIVE}" ]]; do
         if steam_stack_alive; then
             seen_steam=1
+            empty_count=0
+            waiting_count=0
+        elif preflight_active; then
             empty_count=0
             waiting_count=0
         elif [[ "${seen_steam}" == "1" ]]; then

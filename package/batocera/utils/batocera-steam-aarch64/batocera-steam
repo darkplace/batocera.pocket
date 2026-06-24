@@ -1730,9 +1730,8 @@ launch_steam_deck_session() {
     export STEAM_COMPAT_CLIENT_INSTALL_PATH="${STEAM_ROOT}"
     export BATOCERA_STEAM_USE_GAMESCOPE="1"
     export BATOCERA_STEAM_GAMEPADUI="${BATOCERA_STEAM_GAMEPADUI:-1}"
-    if [[ "${BATOCERA_STEAM_FORCE_DISABLE_MANGOAPP:-0}" != "1" ]]; then
-        export BATOCERA_STEAM_GS_MANGOAPP="1"
-    fi
+    export BATOCERA_STEAM_GS_MANGOAPP="${BATOCERA_STEAM_GS_MANGOAPP:-0}"
+    export BATOCERA_STEAM_GS_MANGOAPP_LEVEL="${BATOCERA_STEAM_GS_MANGOAPP_LEVEL:-0}"
 
     for attempt in $(seq 1 "${max_attempts}"); do
         bootstrap_lines=0

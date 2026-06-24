@@ -47,3 +47,6 @@ BR2_TARGET_GRUB2_BUILTIN_MODULES_EFI="boot linux ext2 fat squash4 part_msdos par
 
 # Batocera Splash Support
 BR2_PACKAGE_BATOCERA_SPLASH_MPV=y
+
+# Arch Plasma LXC desktop
+BR2_PACKAGE_BATOCERA_ARCH_PLASMA_LXC=y

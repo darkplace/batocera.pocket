@@ -1,0 +1,23 @@
+config BR2_PACKAGE_BATOCERA_ARCH_PLASMA_LXC
+	bool "batocera-arch-plasma-lxc"
+	depends on BR2_aarch64
+	depends on BR2_PACKAGE_BATOCERA_TARGET_QCS6490 || \
+		   BR2_PACKAGE_BATOCERA_TARGET_SM8X50
+	depends on BR2_PACKAGE_BATOCERA_DESKTOPAPPS
+	depends on BR2_USE_MMU
+	depends on BR2_TOOLCHAIN_HAS_THREADS
+	depends on !BR2_STATIC_LIBS
+	depends on BR2_TOOLCHAIN_GCC_AT_LEAST_4_7
+	depends on BR2_TOOLCHAIN_HEADERS_AT_LEAST_3_0
+	depends on !BR2_TOOLCHAIN_USES_UCLIBC
+	select BR2_PACKAGE_BASH
+	select BR2_PACKAGE_DIALOG
+	select BR2_PACKAGE_DNSMASQ
+	select BR2_PACKAGE_IPTABLES
+	select BR2_PACKAGE_LXC
+	select BR2_PACKAGE_XTERM
+	help
+	  Arch Linux KDE Plasma desktop launcher using LXC with direct KWin
+	  DRM rendering. The LXC rootfs is created under /userdata on first
+	  launch and is not packaged into the image.
+

@@ -38,6 +38,37 @@ _PCSX2_BIN_DIR: Final = Path("/usr/pcsx2/bin")
 _PCSX2_RESOURCES_DIR: Final = _PCSX2_BIN_DIR / "resources"
 _PCSX2_CONFIG: Final = CONFIGS / "PCSX2"
 _PCSX2_BIOS: Final = BIOS / "ps2"
+_MANGOHUD_CORNER_TO_PCSX2_OSD: Final = {
+    "NW": "1",
+    "NE": "3",
+    "SE": "9",
+    "SW": "7",
+}
+
+
+def _retroachievements_sound_name(config: SystemConfig) -> str:
+    if not config.get_bool("retroachievements"):
+        return "none"
+
+    sound = str(config.get("retroachievements.sound", "mario-1up"))
+    if sound.lower() in ("", "0", "false", "none"):
+        return "none"
+
+    return sound
+
+
+def _pcsx2_osd_performance_position(config: SystemConfig) -> str:
+    if (position := config.get("pcsx2_osd_performance_position")) not in (None, ""):
+        return str(position)
+
+    hud_level = config.get("hud_level")
+    if hud_level not in (None, "", "0", 0):
+        return _MANGOHUD_CORNER_TO_PCSX2_OSD.get(config.get("hud_corner", ""), "7")
+
+    if config.get("hud") == "perf":
+        return _MANGOHUD_CORNER_TO_PCSX2_OSD.get(config.get("hud_corner", ""), "7")
+
+    return "0"
 
 class Pcsx2Generator(Generator):
 
@@ -123,7 +154,8 @@ class Pcsx2Generator(Generator):
                 _logger.warning("CPU does not support SSE4.1 which is required by pcsx2.  The emulator will likely crash with SIGILL (illegal instruction).")
 
         envcmd: dict[str, str | Path] = {
-            "XDG_CONFIG_HOME": CONFIGS
+            "XDG_CONFIG_HOME": CONFIGS,
+            "BATOCERA_PCSX2_ACHIEVEMENT_SOUND": _retroachievements_sound_name(system.config),
         }
 
         # wheels won't work correctly when SDL_GAMECONTROLLERCONFIG is set. excluding wheels from SDL_GAMECONTROLLERCONFIG doesn't fix too.
@@ -268,8 +300,8 @@ def configureINI(config_directory: Path, bios_directory: Path, system: Emulator,
     # set the settings we want always enabled
     pcsx2INIConfig.set("EmuCore", "EnableDiscordPresence", "false")
 
-    # Fastboot
-    pcsx2INIConfig.set("EmuCore", "EnableFastBoot", system.config.get_bool('pcsx2_fastboot', True, return_values=("false", "true")))
+    # Fastboot. ES stores "Show BIOS bootlogo"; PCSX2 stores "EnableFastBoot".
+    pcsx2INIConfig.set("EmuCore", "EnableFastBoot", system.config.get_bool('pcsx2_fastboot', False, return_values=("false", "true")))
 
     # Cheats
     pcsx2INIConfig.set("EmuCore", "EnableCheats", system.config.get('pcsx2_cheats', "false"))
@@ -291,36 +323,49 @@ def configureINI(config_directory: Path, bios_directory: Path, system: Emulator,
     pcsx2INIConfig.set("EmuCore/Speedhacks", "EECycleSkip", system.config.get("pcsx2_ee_cycle_skip", "0"))
 
     # MTVU
-    pcsx2INIConfig.set("EmuCore/Speedhacks", "vuThread", system.config.get_bool("pcsx2_mtvu", True, return_values=("false", "true")))
+    pcsx2INIConfig.set("EmuCore/Speedhacks", "vuThread", system.config.get_bool("pcsx2_mtvu", True, return_values=("true", "false")))
 
     # Instant VU1
-    pcsx2INIConfig.set("EmuCore/Speedhacks", "vu1Instant", system.config.get_bool("pcsx2_instant_vu1", True, return_values=("false", "true")))
+    pcsx2INIConfig.set("EmuCore/Speedhacks", "vu1Instant", system.config.get_bool("pcsx2_instant_vu1", True, return_values=("true", "false")))
 
     # Fast CDVD
-    pcsx2INIConfig.set("EmuCore/Speedhacks", "fastCDVD", system.config.get_bool("pcsx2_fast_cdvd", False, return_values=("false", "true")))
+    pcsx2INIConfig.set("EmuCore/Speedhacks", "fastCDVD", system.config.get_bool("pcsx2_fast_cdvd", False, return_values=("true", "false")))
 
     ## [Achievements]
     if not pcsx2INIConfig.has_section("Achievements"):
         pcsx2INIConfig.add_section("Achievements")
     pcsx2INIConfig.set("Achievements", "Enabled", "false")
+    pcsx2INIConfig.set("Achievements", "Notifications", "true")
+    pcsx2INIConfig.set("Achievements", "LeaderboardNotifications", "true")
+    achievement_sound_enabled = _retroachievements_sound_name(system.config) != "none"
+    pcsx2INIConfig.set("Achievements", "SoundEffects", "true" if achievement_sound_enabled else "false")
+    pcsx2INIConfig.set("Achievements", "InfoSound", "true" if achievement_sound_enabled else "false")
+    pcsx2INIConfig.set("Achievements", "UnlockSound", "true" if achievement_sound_enabled else "false")
+    pcsx2INIConfig.set("Achievements", "LBSubmitSound", "true" if achievement_sound_enabled else "false")
     if system.config.get_bool('retroachievements'):
         username  = system.config.get('retroachievements.username', "")
         token     = system.config.get('retroachievements.token', "")
+        challenge_indicators = system.config.get_bool('retroachievements.challenge_indicators', return_values=("true", "false"))
+        leaderboards = system.config.get_bool('retroachievements.leaderboards', return_values=("true", "false"))
         pcsx2INIConfig.set("Achievements", "Enabled", "true")
         pcsx2INIConfig.set("Achievements", "Username", username)
         pcsx2INIConfig.set("Achievements", "Token", token)
         pcsx2INIConfig.set("Achievements", "LoginTimestamp", str(int(time.time())))
         pcsx2INIConfig.set("Achievements", "ChallengeMode", system.config.get_bool('retroachievements.hardcore', return_values=("true", "false")))
-        pcsx2INIConfig.set("Achievements", "PrimedIndicators", system.config.get_bool('retroachievements.challenge_indicators', return_values=("true", "false")))
+        pcsx2INIConfig.set("Achievements", "PrimedIndicators", challenge_indicators)
+        pcsx2INIConfig.set("Achievements", "Overlays", challenge_indicators)
         pcsx2INIConfig.set("Achievements", "RichPresence", system.config.get_bool('retroachievements.richpresence', return_values=("true", "false")))
-        pcsx2INIConfig.set("Achievements", "Leaderboards", system.config.get_bool('retroachievements.leaderboards', return_values=("true", "false")))
+        pcsx2INIConfig.set("Achievements", "Leaderboards", leaderboards)
+        pcsx2INIConfig.set("Achievements", "LBOverlays", leaderboards)
         pcsx2INIConfig.set("Achievements", "EncoreMode", system.config.get_bool('retroachievements.encore', return_values=("true", "false")))
+        pcsx2INIConfig.set("Achievements", "SpectatorMode", "false")
         pcsx2INIConfig.set("Achievements", "UnofficialTestMode", system.config.get_bool('retroachievements.unofficial', return_values=("true", "false")))
     # set other settings
     pcsx2INIConfig.set("Achievements", "TestMode", "false")
-    pcsx2INIConfig.set("Achievements", "UnofficialTestMode", "false")
-    pcsx2INIConfig.set("Achievements", "Notifications", "true")
-    pcsx2INIConfig.set("Achievements", "SoundEffects", "true")
+    if not system.config.get_bool('retroachievements'):
+        pcsx2INIConfig.set("Achievements", "UnofficialTestMode", "false")
+        pcsx2INIConfig.set("Achievements", "Overlays", "false")
+        pcsx2INIConfig.set("Achievements", "LBOverlays", "false")
 
     ## [Filenames]
     if not pcsx2INIConfig.has_section("Filenames"):
@@ -425,7 +470,7 @@ def configureINI(config_directory: Path, bios_directory: Path, system: Emulator,
     pcsx2INIConfig.set("EmuCore/GS", "OsdMessagesPos", system.config.get("pcsx2_osd_messages_position", "2"))
 
     # OSD Performance Position
-    pcsx2INIConfig.set("EmuCore/GS", "OsdPerformancePos", system.config.get("pcsx2_osd_performance_position", "0"))
+    pcsx2INIConfig.set("EmuCore/GS", "OsdPerformancePos", _pcsx2_osd_performance_position(system.config))
 
     # TV Shader
     pcsx2INIConfig.set("EmuCore", "TVShader", system.config.get("pcsx2_shaderset", "0"))

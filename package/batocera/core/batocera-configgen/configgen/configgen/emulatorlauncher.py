@@ -580,6 +580,9 @@ def addCpuLimitSteamGamescopeStats(cmd: Command) -> None:
 
 def disableMangoHud(cmd: Command) -> None:
     cmd.env["DISABLE_MANGOHUD"] = "1"
+    cmd.env["BATOCERA_STEAM_FORCE_DISABLE_MANGOAPP"] = "1"
+    cmd.env["BATOCERA_STEAM_GS_MANGOAPP"] = "0"
+    cmd.env["BATOCERA_STEAM_GS_MANGOAPP_LEVEL"] = "0"
     stripMangoHud(cmd.array, cmd.env)
 
 

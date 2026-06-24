@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Icon=/usr/share/icons/batocera/arch-plasma-lxc.svg
+Exec=/usr/bin/batocera-arch-plasma-lxc
+Terminal=false
+Type=Application
+Categories=System;batocera.linux;
+Name=Arch Plasma LXC
+GenericName=Linux Desktop
+Comment=Launch an Arch Linux KDE Plasma desktop in LXC

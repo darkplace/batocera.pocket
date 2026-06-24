@@ -16,6 +16,11 @@
     <image>./images/armsx2.png</image>
   </game>
   <game>
+    <path>./Configure_PCSX2.sh</path>
+    <name>Configure PCSX2</name>
+    <image>./images/pcsx2.png</image>
+  </game>
+  <game>
     <path>./Configure_Azahar.sh</path>
     <name>Configure Azahar</name>
     <image>./images/azahar.png</image>
@@ -84,5 +89,12 @@
     <path>./File_Manager.sh</path>
     <name>File Manager</name>
     <image>./images/filemanagerlauncher.png</image>
+  </game>
+  <game>
+    <path>./Start_Arch_Plasma_LXC.sh</path>
+    <name>Arch Plasma LXC</name>
+    <desc>Launch an Arch Linux KDE Plasma desktop in LXC.</desc>
+    <image>./images/archkde.png</image>
+    <thumbnail>./images/archkde.png</thumbnail>
   </game>
 </gameList>
