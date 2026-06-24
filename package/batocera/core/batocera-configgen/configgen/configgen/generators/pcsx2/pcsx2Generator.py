@@ -44,6 +44,37 @@ _MANGOHUD_CORNER_TO_PCSX2_OSD: Final = {
     "SE": "9",
     "SW": "7",
 }
+_PCSX2_OSD_PERFORMANCE_KEYS: Final = (
+    "OsdShowSpeed",
+    "OsdShowFPS",
+    "OsdShowVPS",
+    "OsdShowResolution",
+    "OsdShowGSStats",
+    "OsdShowCPU",
+    "OsdShowGPU",
+    "OsdShowGPUDebug",
+    "OsdShowFrameTimes",
+    "OsdShowHardwareInfo",
+    "OsdShowVersion",
+    "OsdShowSettings",
+)
+_PCSX2_OSD_LEVEL_KEYS: Final = {
+    1: ("OsdShowFPS",),
+    2: ("OsdShowSpeed", "OsdShowFPS", "OsdShowCPU", "OsdShowGPU"),
+    3: ("OsdShowSpeed", "OsdShowFPS", "OsdShowCPU", "OsdShowGPU", "OsdShowFrameTimes"),
+    4: (
+        "OsdShowSpeed",
+        "OsdShowFPS",
+        "OsdShowVPS",
+        "OsdShowResolution",
+        "OsdShowGSStats",
+        "OsdShowCPU",
+        "OsdShowGPU",
+        "OsdShowFrameTimes",
+        "OsdShowHardwareInfo",
+        "OsdShowVersion",
+    ),
+}
 
 
 def _retroachievements_sound_name(config: SystemConfig) -> str:
@@ -57,18 +88,32 @@ def _retroachievements_sound_name(config: SystemConfig) -> str:
     return sound
 
 
+def _pcsx2_osd_performance_level(config: SystemConfig) -> int:
+    if (hud_level := config.get("hud_level", "")) not in (None, ""):
+        try:
+            level = int(hud_level)
+        except (TypeError, ValueError):
+            level = 0
+        if 0 <= level <= 4:
+            return level
+
+    return 4 if config.get("hud", "none") == "perf" else 0
+
+
 def _pcsx2_osd_performance_position(config: SystemConfig) -> str:
-    if (position := config.get("pcsx2_osd_performance_position")) not in (None, ""):
+    if (position := config.get("pcsx2_osd_performance_position", "")) not in (None, ""):
         return str(position)
 
-    hud_level = config.get("hud_level")
-    if hud_level not in (None, "", "0", 0):
-        return _MANGOHUD_CORNER_TO_PCSX2_OSD.get(config.get("hud_corner", ""), "7")
-
-    if config.get("hud") == "perf":
+    if _pcsx2_osd_performance_level(config) > 0:
         return _MANGOHUD_CORNER_TO_PCSX2_OSD.get(config.get("hud_corner", ""), "7")
 
     return "0"
+
+
+def _configure_pcsx2_osd_performance(config: SystemConfig, pcsx2INIConfig: CaseSensitiveConfigParser) -> None:
+    enabled_keys = set(_PCSX2_OSD_LEVEL_KEYS.get(_pcsx2_osd_performance_level(config), ()))
+    for key in _PCSX2_OSD_PERFORMANCE_KEYS:
+        pcsx2INIConfig.set("EmuCore/GS", key, "true" if key in enabled_keys else "false")
 
 class Pcsx2Generator(Generator):
 
@@ -471,6 +516,7 @@ def configureINI(config_directory: Path, bios_directory: Path, system: Emulator,
 
     # OSD Performance Position
     pcsx2INIConfig.set("EmuCore/GS", "OsdPerformancePos", _pcsx2_osd_performance_position(system.config))
+    _configure_pcsx2_osd_performance(system.config, pcsx2INIConfig)
 
     # TV Shader
     pcsx2INIConfig.set("EmuCore", "TVShader", system.config.get("pcsx2_shaderset", "0"))

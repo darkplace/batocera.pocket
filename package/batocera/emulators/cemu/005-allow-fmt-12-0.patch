@@ -1,0 +1,22 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Wed, 24 Jun 2026 00:00:00 +0000
+Subject: [PATCH] cemu: accept fmt 12.0
+
+Buildroot currently ships fmt 12.0.0. The updated Cemu tree only needs
+the fmt 12 API surface here, so do not fail CMake configure solely on a
+12.1 minimum.
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 79aeb6bc..85a59916 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -164,7 +164,7 @@ endif()
+ find_package(OpenSSL COMPONENTS Crypto SSL REQUIRED)
+ 
+ find_package(glm REQUIRED)
+-find_package(fmt 12.1 REQUIRED)
++find_package(fmt 12.0 REQUIRED)
+ find_package(PNG REQUIRED)
+ 
+ # soundtouch is just a static library and only used internally
