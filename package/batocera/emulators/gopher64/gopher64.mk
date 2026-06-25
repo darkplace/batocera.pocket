@@ -4,7 +4,7 @@
 #
 ################################################################################
 
-GOPHER64_VERSION = ca4a20f52403bb14f819db53f1cb161d41894666
+GOPHER64_VERSION = a23ede433b46687b48cb13ae4305ce5a5857d616
 GOPHER64_SITE = https://github.com/gopher64/gopher64.git
 GOPHER64_SITE_METHOD = git
 GOPHER64_GIT_SUBMODULES = YES

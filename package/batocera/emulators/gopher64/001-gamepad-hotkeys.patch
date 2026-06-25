@@ -47,7 +47,7 @@ index c94550f..83023eb 100644
 +            display_fps = !display_fps;
 +            rdp_onscreen_message(
 +                display_fps ? "FPS display ON" : "FPS display OFF",
-+                false
++                MESSAGE_SHORT
 +            );
 +            return 1;
 +        }
@@ -57,7 +57,7 @@ index c94550f..83023eb 100644
 +        if (guide_held)
 +        {
 +            callback.reset_game = true;
-+            rdp_onscreen_message("Reset game", false);
++            rdp_onscreen_message("Reset game", MESSAGE_SHORT);
 +            return 1;
 +        }
 +        break;
@@ -100,7 +100,7 @@ index c94550f..83023eb 100644
 +            rdp_onscreen_message(
 +                fast_forward_toggled ? "Fast forward on"
 +                                     : "Fast forward off",
-+                false
++                MESSAGE_SHORT
 +            );
 +
 +            r2_held = true;
