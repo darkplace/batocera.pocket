@@ -22068,3 +22068,7 @@ aethersx2:
 armsx2:
   cores:
     'armsx2': *aethersx2_core_features
+
+armsx2-masies:
+  cores:
+    'armsx2-masies': *aethersx2_core_features

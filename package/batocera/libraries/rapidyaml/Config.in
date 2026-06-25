@@ -1,0 +1,6 @@
+config BR2_PACKAGE_RAPIDYAML
+    bool "rapidyaml"
+    help
+      Rapid YAML library and ryml CMake package.
+
+      https://github.com/biojppm/rapidyaml

@@ -49,6 +49,13 @@ ifeq ($(BR2_PACKAGE_ARMSX2),y)
   BATOCERA_DESKTOPAPPS_ICONS   += armsx2.png
 endif
 
+# armsx2-masies
+ifeq ($(BR2_PACKAGE_ARMSX2_MASIES),y)
+  BATOCERA_DESKTOPAPPS_SCRIPTS += batocera-config-armsx2-masies
+  BATOCERA_DESKTOPAPPS_APPS    += armsx2-masies-config.desktop
+  BATOCERA_DESKTOPAPPS_ICONS   += armsx2-masies.png
+endif
+
 # gopher64
 ifeq ($(BR2_PACKAGE_GOPHER64),y)
   BATOCERA_DESKTOPAPPS_SCRIPTS += batocera-config-gopher64

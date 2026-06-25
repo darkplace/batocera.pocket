@@ -16,6 +16,11 @@
     <image>./images/armsx2.png</image>
   </game>
   <game>
+    <path>./Configure_ARMSX2_MaSieS.sh</path>
+    <name>Configure ARMSX2 MaSieS</name>
+    <image>./images/armsx2-masies.png</image>
+  </game>
+  <game>
     <path>./Configure_Gopher64.sh</path>
     <name>Configure Gopher64</name>
     <image>./images/gopher64.png</image>
