@@ -4,26 +4,33 @@
 #
 ################################################################################
 
-GOPHER64_VERSION = acf5e08b97d8526e7f25578bdaa202557c42c200
+GOPHER64_VERSION = ca4a20f52403bb14f819db53f1cb161d41894666
 GOPHER64_SITE = https://github.com/gopher64/gopher64.git
 GOPHER64_SITE_METHOD = git
 GOPHER64_GIT_SUBMODULES = YES
 GOPHER64_LICENSE = GPL-3.0+
 GOPHER64_LICENSE_FILES = LICENSE
 GOPHER64_DEPENDENCIES = host-rustc host-rust-bin host-clang host-cmake host-ninja \
-	alsa-lib libdrm mesa3d vulkan-loader
+	alsa-lib libdrm mesa3d sdl3_ttf vulkan-loader
 
 GOPHER64_GCC_VERSION = $(notdir $(firstword $(wildcard $(HOST_DIR)/$(GNU_TARGET_NAME)/include/c++/*)))
 GOPHER64_BINDGEN_SYSROOT = $(HOST_DIR)/$(GNU_TARGET_NAME)/sysroot
 GOPHER64_BINDGEN_STDLIB = $(HOST_DIR)/$(GNU_TARGET_NAME)/include/c++/$(GOPHER64_GCC_VERSION)
 GOPHER64_BINDGEN_STDLIB_TARGET = $(GOPHER64_BINDGEN_STDLIB)/$(GNU_TARGET_NAME)
+GOPHER64_SKIA_TARGET_CPU = $(if $(BR2_aarch64),arm64,x64)
 
 GOPHER64_CARGO_ENV = \
 	BINDGEN_EXTRA_CLANG_ARGS="--sysroot=$(GOPHER64_BINDGEN_SYSROOT) --target=$(RUSTC_TARGET_NAME) -isystem $(GOPHER64_BINDGEN_STDLIB) -isystem $(GOPHER64_BINDGEN_STDLIB_TARGET)" \
 	FREETYPE2_INCLUDE_PATH="$(STAGING_DIR)/usr/include/freetype2" \
 	GOPHER64_GIT_HASH="$(GOPHER64_VERSION)" \
 	PKG_CONFIG_ALLOW_CROSS=1 \
-	RUSTFLAGS="-A unpredictable_function_pointer_comparisons -C link-arg=-ldrm -C link-arg=-lgbm -C link-arg=-lasound -C link-arg=-lvulkan"
+	RUSTFLAGS="-A unpredictable_function_pointer_comparisons -C link-arg=-ldrm -C link-arg=-lgbm -C link-arg=-lasound -C link-arg=-lvulkan -C link-arg=-lvolk -C link-arg=-lfreetype" \
+	SKIA_GN_ARGS='target_os="linux" target_cpu="$(GOPHER64_SKIA_TARGET_CPU)" cc="$(TARGET_CC)" cxx="$(TARGET_CXX)" skia_system_freetype2_include_path="$(STAGING_DIR)/usr/include/freetype2" extra_cflags=[] extra_asmflags=[]'
+
+ifeq ($(BR2_aarch64),y)
+GOPHER64_CARGO_ENV += \
+	SKIA_BINARIES_URL="https://github.com/rust-skia/skia-binaries/releases/download/0.90.0/skia-binaries-da4579b39b75fa2187c5-aarch64-unknown-linux-gnu-gl-pdf-textlayout-vulkan.tar.gz"
+endif
 
 GOPHER64_CARGO_MODE = $(if $(BR2_ENABLE_DEBUG),debug,release)
 GOPHER64_BIN_DIR = target/$(RUSTC_TARGET_NAME)/$(GOPHER64_CARGO_MODE)

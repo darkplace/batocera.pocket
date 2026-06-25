@@ -1,0 +1,3 @@
+#!/bin/bash
+
+emulatorlauncher -system n64 -emulator gopher64 -core gopher64 -rom config

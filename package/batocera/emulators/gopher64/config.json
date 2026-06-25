@@ -30,6 +30,18 @@
       false,
       false
     ],
+    "gb_rom_path": [
+      "",
+      "",
+      "",
+      ""
+    ],
+    "gb_ram_path": [
+      "",
+      "",
+      "",
+      ""
+    ],
     "transfer_pak": [
       false,
       false,
@@ -43,6 +55,7 @@
     "integer_scaling": false,
     "fullscreen": false,
     "widescreen": false,
+    "vsync": true,
     "crt": false
   },
   "emulation": {
@@ -50,5 +63,6 @@
     "disable_expansion_pak": false,
     "usb": false
   },
-  "rom_dir": "/userdata/roms/n64"
+  "rom_dir": "/userdata/roms/n64",
+  "recent_roms": []
 }

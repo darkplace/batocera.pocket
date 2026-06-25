@@ -49,6 +49,13 @@ ifeq ($(BR2_PACKAGE_ARMSX2),y)
   BATOCERA_DESKTOPAPPS_ICONS   += armsx2.png
 endif
 
+# gopher64
+ifeq ($(BR2_PACKAGE_GOPHER64),y)
+  BATOCERA_DESKTOPAPPS_SCRIPTS += batocera-config-gopher64
+  BATOCERA_DESKTOPAPPS_APPS    += gopher64-config.desktop
+  BATOCERA_DESKTOPAPPS_ICONS   += gopher64.png
+endif
+
 # dolphin
 ifeq ($(BR2_PACKAGE_DOLPHIN_EMU)$(BR2_PACKAGE_XORG7),yy)
   BATOCERA_DESKTOPAPPS_SCRIPTS += batocera-config-dolphin

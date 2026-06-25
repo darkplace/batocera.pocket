@@ -1439,7 +1439,11 @@ config BR2_PACKAGE_BATOCERA_CONSOLE_SYSTEMS
 	bool "batocera.linux console emulators/cores"
 
 	# Nintendo 64
-	# gopher64 is paused for now
+	select BR2_PACKAGE_GOPHER64		if BR2_PACKAGE_BATOCERA_TARGET_SM8X50 || \
+	                                           BR2_PACKAGE_BATOCERA_TARGET_SM8250 || \
+	                                           BR2_PACKAGE_BATOCERA_TARGET_QCS6490 || \
+	                                           BR2_PACKAGE_BATOCERA_TARGET_RK3588 || \
+	                                           BR2_PACKAGE_BATOCERA_TARGET_X86_64_ANY
 										
 	select BR2_PACKAGE_BATOCERA_MUPEN64		if !BR2_PACKAGE_BATOCERA_TARGET_BCM2835 # mupen64 (n64) runs too slow on these platforms
 
