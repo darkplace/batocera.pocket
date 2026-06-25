@@ -18882,6 +18882,70 @@ gopher64:
       choices:
         'Off (Default)': false
         'On': true
+yabasanshiro-sa:
+  features:
+  - padtokeyboard
+  shared:
+  - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
+  - gpu_performance_profile
+  - tdp
+  - videomode
+  - dual_screen_output
+  - hud
+  - hud_corner
+  cfeatures:
+    yabasanshiro_resolution:
+      prompt: RENDERING RESOLUTION
+      description: Increase the internal rendering resolution.
+      choices:
+        Native: 0
+        4x: 1
+        2x (Default): 2
+        Original: 3
+        720p: 4
+        1080p: 5
+    yabasanshiro_keep_aspect:
+      prompt: KEEP ASPECT RATIO
+      description: Preserve the original Saturn aspect ratio.
+      choices:
+        'On': true
+        'Off': false
+    yabasanshiro_frameskip:
+      prompt: AUTO FRAME SKIP
+      description: Let the emulator skip frames when needed.
+      choices:
+        'On': true
+        'Off': false
+    yabasanshiro_scsp_sync:
+      prompt: SOUND SYNC
+      description: Select the SCSP synchronization mode.
+      choices:
+        Real Time (Default): 1
+        Internal Timing: 2
+        Legacy: 3
+    yabasanshiro_bios:
+      prompt: SATURN BIOS
+      description: Select a BIOS file or use the emulator's built-in BIOS.
+      choices:
+        Emulated (Default): emulated
+        saturn_bios.bin: /userdata/bios/saturn_bios.bin
+        saturn.bin: /userdata/bios/saturn.bin
+        sega_101.bin: /userdata/bios/sega_101.bin
+        mpr-17933.bin: /userdata/bios/mpr-17933.bin
+    yabasanshiro_rotate_screen:
+      prompt: ROTATE SCREEN
+      description: Rotate the standalone Yaba Sanshiro display.
+      choices:
+        'Off': false
+        'On': true
+    yabasanshiro_compute_shader:
+      prompt: COMPUTE SHADER
+      description: Use the emulator compute shader path.
+      choices:
+        'Off': false
+        'On': true
 nanoboyadvance:
   features: []
   shared:

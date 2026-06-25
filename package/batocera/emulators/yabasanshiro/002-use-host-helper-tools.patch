@@ -1,0 +1,37 @@
+diff --git a/yabause/src/musashi/CMakeLists.txt b/yabause/src/musashi/CMakeLists.txt
+index d1df1b2..8224a10 100644
+--- a/yabause/src/musashi/CMakeLists.txt
++++ b/yabause/src/musashi/CMakeLists.txt
+@@ -8,8 +8,10 @@ if (MSVC)
+     add_definitions(-D_CRT_SECURE_NO_WARNINGS)
+ endif (MSVC)
+ 
++set(M68KMAKE_EXECUTABLE m68kmake CACHE FILEPATH "Host m68kmake executable")
++
+ add_custom_command(OUTPUT m68kops.h
+-                   COMMAND m68kmake ${CMAKE_CURRENT_BINARY_DIR}/ ${CMAKE_CURRENT_SOURCE_DIR}/m68k_in.c
++                   COMMAND ${M68KMAKE_EXECUTABLE} ${CMAKE_CURRENT_BINARY_DIR}/ ${CMAKE_CURRENT_SOURCE_DIR}/m68k_in.c
+                    DEPENDS m68kmake.c
+                    COMMENT "Generating musashi 68k core"
+                    VERBATIM)
+diff --git a/yabause/src/retro_arena/nanogui-sdl/CMakeLists.txt b/yabause/src/retro_arena/nanogui-sdl/CMakeLists.txt
+index 33b8e25..24f8311 100644
+--- a/yabause/src/retro_arena/nanogui-sdl/CMakeLists.txt
++++ b/yabause/src/retro_arena/nanogui-sdl/CMakeLists.txt
+@@ -118,6 +118,7 @@ include_directories(ext ext/eigen include ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CU
+ 
+ # Run simple C converter to put font files into the data segment
+ add_executable(bin2c resources/bin2c.c)
++set(BIN2C_EXECUTABLE ./bin2c CACHE FILEPATH "Host bin2c executable")
+ set(bin2c_cmdline nanogui_resources.cpp nanogui_resources.h)
+ file(GLOB resources "${CMAKE_CURRENT_SOURCE_DIR}/resources/*.ttf")
+ foreach(file ${resources})
+@@ -127,7 +128,7 @@ endforeach()
+ # Run bin2c on resource files
+ add_custom_command(
+   OUTPUT nanogui_resources.cpp nanogui_resources.h
+-  COMMAND ./bin2c ARGS ${bin2c_cmdline}
++  COMMAND ${BIN2C_EXECUTABLE} ARGS ${bin2c_cmdline}
+   DEPENDS bin2c ${resources}
+   COMMENT "Running bin2c"
+   PRE_BUILD VERBATIM)

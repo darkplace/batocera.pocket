@@ -2106,6 +2106,8 @@ saturn:
       yabasanshiro:  { requireAnyOf: [BR2_PACKAGE_LIBRETRO_YABASANSHIRO], incompatible_extensions: [m3u] }
     ymir:
       ymir: { requireAnyOf: [BR2_PACKAGE_YMIR] }
+    yabasanshiro-sa:
+      yabasanshiro: { requireAnyOf: [BR2_PACKAGE_YABASANSHIRO], incompatible_extensions: [m3u, zip] }
 
 jaguar:
   name: Jaguar

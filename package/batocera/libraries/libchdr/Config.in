@@ -1,0 +1,6 @@
+config BR2_PACKAGE_LIBCHDR
+	bool "libchdr"
+	help
+	  CHD decompression library used by emulators.
+
+	  https://github.com/devmiyax/libchdr

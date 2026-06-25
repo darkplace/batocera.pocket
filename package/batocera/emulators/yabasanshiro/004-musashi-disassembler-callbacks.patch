@@ -1,0 +1,26 @@
+diff --git a/yabause/src/m68kmusashi.c b/yabause/src/m68kmusashi.c
+index 594d636..c8a9d6d 100644
+--- a/yabause/src/m68kmusashi.c
++++ b/yabause/src/m68kmusashi.c
+@@ -136,6 +136,21 @@ unsigned int  m68k_read_memory_32(unsigned int address)
+    return (val1 << 16 | rw_funcs.r_16(address + 2));
+ }
+ 
++unsigned int m68k_read_disassembler_8(unsigned int address)
++{
++   return m68k_read_memory_8(address);
++}
++
++unsigned int m68k_read_disassembler_16(unsigned int address)
++{
++   return m68k_read_memory_16(address);
++}
++
++unsigned int m68k_read_disassembler_32(unsigned int address)
++{
++   return m68k_read_memory_32(address);
++}
++
+ void m68k_write_memory_8(unsigned int address, unsigned int value)
+ {
+    rw_funcs.w_8(address, value);

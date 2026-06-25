@@ -1,0 +1,58 @@
+diff --git a/yabause/src/retro_arena/InputManager.cpp b/yabause/src/retro_arena/InputManager.cpp
+index bd80673..613a1e2 100644
+--- a/yabause/src/retro_arena/InputManager.cpp
++++ b/yabause/src/retro_arena/InputManager.cpp
+@@ -213,7 +213,7 @@ int mapKeys( const json & configs ){
+ 
+   if( SDL_NumJoysticks() == 0 ){
+ 
+-    PADLOG("No joy stic is found force to keyboard\n");
++    PADLOG("No joystick is found force to keyboard\n");
+     padbits = PerPadAdd(&PORTDATA1);
+     if( configs.find("player1") == configs.end() ){
+       return setDefalutSettings(padbits);
+@@ -270,7 +270,7 @@ int mapKeys( const json & configs ){
+             SDL_JoystickID _joyId = SDL_JoystickInstanceID(joy);
+             SDL_JoystickGetGUIDString(SDL_JoystickGetGUID(joy), cguid, 65);
+             InputManager::genJoyString( joy_name_and_guid, _joyId, SDL_JoystickName(joy), cguid );
+-            if( name_guid == joy_name_and_guid ){
++            if( name_guid == joy_name_and_guid || (u_JoyName == SDL_JoystickName(joy) && u_JoyGuid == cguid) ){
+               PADLOG("Player1: %s(%d) is selected\n",joy_name_and_guid.c_str(), _joyId );            
+               joyId = _joyId;
+               break;
+@@ -346,7 +346,7 @@ int mapKeys( const json & configs ){
+             SDL_JoystickID _joyId = SDL_JoystickInstanceID(joy);
+             SDL_JoystickGetGUIDString(SDL_JoystickGetGUID(joy), cguid, 65);
+             InputManager::genJoyString( joy_name_and_guid, _joyId, SDL_JoystickName(joy), cguid );
+-            if( name_guid == joy_name_and_guid ){
++            if( name_guid == joy_name_and_guid || (u_JoyName == SDL_JoystickName(joy) && u_JoyGuid == cguid) ){
+               PADLOG("Player2: %s(%d) is selected\n",joy_name_and_guid.c_str(), _joyId );
+               joyId = _joyId;
+               break;
+@@ -460,22 +460,22 @@ int getPlayerJsonFromInputConfig( int joy, InputConfig * inputconfig, json & pla
+   }
+ 
+   Input result;
+-  inputconfig->getInputByName("a", &result);
++  inputconfig->getInputByName("y", &result);
+   player[guid]["a"] ={ { "type", input_types[result.type] },{ "id", result.id },{ "value", result.value } };
+ 
+   inputconfig->getInputByName("b", &result);
+   player[guid]["b"] = { { "type", input_types[result.type] },{ "id", result.id },{ "value", result.value } };
+ 
+-  inputconfig->getInputByName("rightshoulder", &result);
++  inputconfig->getInputByName("a", &result);
+   player[guid]["c"] = { { "type", input_types[result.type] },{ "id", result.id },{ "value", result.value } } ;
+ 
+   inputconfig->getInputByName("x", &result);
+   player[guid]["x"] = { { "type", input_types[result.type] },{ "id", result.id },{ "value", result.value } };
+ 
+-  inputconfig->getInputByName("y", &result);
++  inputconfig->getInputByName("leftshoulder", &result);
+   player[guid]["y"] = { { "type", input_types[result.type] },{ "id", result.id },{ "value", result.value } };
+ 
+-  inputconfig->getInputByName("leftshoulder", &result);
++  inputconfig->getInputByName("rightshoulder", &result);
+   player[guid]["z"] = { { "type", input_types[result.type] },{ "id", result.id },{ "value", result.value } };
+ 
+   inputconfig->getInputByName("lefttrigger", &result);

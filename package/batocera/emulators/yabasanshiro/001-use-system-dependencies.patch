@@ -1,0 +1,94 @@
+diff --git a/yabause/src/CMakeLists.txt b/yabause/src/CMakeLists.txt
+index 3cbafb7..e044283 100644
+--- a/yabause/src/CMakeLists.txt
++++ b/yabause/src/CMakeLists.txt
+@@ -1036,10 +1036,26 @@ endif(YAB_WANT_VULKAN)
+ 
+ #-----------------------------------------------------------------------
+ # libCHD
+-include( ${CMAKE_SOURCE_DIR}/CMake/Packages/external_libchdr.cmake )
+-include( ${CMAKE_SOURCE_DIR}/CMake/Packages/external_zlib.cmake )
++find_package(ZLIB REQUIRED)
++find_path(LIBCHDR_INCLUDE_DIR chd.h PATH_SUFFIXES libchdr REQUIRED)
++find_library(LIBCHDR_LIBRARY NAMES chdr-static chdr REQUIRED)
++find_library(LIBCHDR_CRYPTO_LIBRARY NAMES crypto-static REQUIRED)
++find_library(LIBCHDR_FLAC_LIBRARY NAMES flac-static REQUIRED)
++find_library(LIBCHDR_LZMA_LIBRARY NAMES lzma-static REQUIRED)
++set(LIBCHDR_LIBRARIES
++	${LIBCHDR_LIBRARY}
++	${LIBCHDR_CRYPTO_LIBRARY}
++	${LIBCHDR_FLAC_LIBRARY}
++	${LIBCHDR_LZMA_LIBRARY}
++	${ZLIB_LIBRARIES}
++)
++set(LIBCHDR_LIB_DIR "")
++set(zlib_INCLUDE_DIR ${ZLIB_INCLUDE_DIRS})
++set(zlib_STATIC_LIBRARIES ${ZLIB_LIBRARIES})
++include_directories(${LIBCHDR_INCLUDE_DIR})
++include_directories(${zlib_INCLUDE_DIR})
+ #include_directories(${zlib_INCLUDE_DIR})
+-add_dependencies(yabause libchdr)
++#add_dependencies(yabause libchdr)
+ #add_dependencies(yabause zlib)
+ 
+ if(WIN32)
+@@ -1111,4 +1127,3 @@ if (YAB_TESTS)
+ endif()
+ 
+ 
+-
+diff --git a/yabause/src/retro_arena/CMakeLists.txt b/yabause/src/retro_arena/CMakeLists.txt
+index 682f59f..f59c1c3 100644
+--- a/yabause/src/retro_arena/CMakeLists.txt
++++ b/yabause/src/retro_arena/CMakeLists.txt
+@@ -9,8 +9,8 @@ find_package(SDL2 COMPONENTS sdl)
+ find_package(SDL2 REQUIRED)
+ find_package(OpenGLES)
+ find_package(PkgConfig REQUIRED)
+ 
+-find_package(Boost REQUIRED COMPONENTS system filesystem date_time locale)
++find_package(Boost REQUIRED COMPONENTS filesystem date_time locale)
+ 
+ if (NOT OPENGLES2_FOUND)
+ 	return()
+@@ -22,24 +22,17 @@ add_subdirectory(pugixml)
+ add_subdirectory(nanogui-sdl)
+ 
+ #include( ../glfw/external_zlib.cmake )
+-include( ${CMAKE_SOURCE_DIR}/CMake/Packages/external_libpng.cmake )
++find_package(PNG REQUIRED)
++find_package(ZLIB REQUIRED)
+ 
+ #------------------------------------------------------------------------------
+ # nlohmann/json
+ #  * sets EXTERNAL_JSON_INCLUDE_DIR 
+ 
+-ExternalProject_Add(
+-     Json
+-     PREFIX ${CMAKE_CURRENT_BINARY_DIR}/Json
+-     URL https://github.com/nlohmann/json/archive/v3.2.0.zip
+-     #disable following
+-     CONFIGURE_COMMAND "" BUILD_COMMAND "" INSTALL_DIR "" INSTALL_COMMAND ""
+-     )
+-# set include directory
+-set(EXTERNAL_JSON_INCLUDE_DIR "${CMAKE_CURRENT_BINARY_DIR}/Json/src/Json/single_include")
++find_path(EXTERNAL_JSON_INCLUDE_DIR nlohmann/json.hpp REQUIRED)
+ 
+-set(PORT_INCLUDE_DIRS ${EXTERNAL_JSON_INCLUDE_DIR} ${SDL2_INCLUDE_DIR} ${png_INCLUDE_DIR} ${zlib_INCLUDE_DIR} )
+-set(PORT_LIBRARIES ${SDL2_LIBRARY} ${OPENGLES2_LIBRARIES} ${png_STATIC_LIBRARIES} ${zlib_STATIC_LIBRARIES} )
++set(PORT_INCLUDE_DIRS ${EXTERNAL_JSON_INCLUDE_DIR} ${SDL2_INCLUDE_DIR} ${PNG_INCLUDE_DIRS} ${ZLIB_INCLUDE_DIRS} )
++set(PORT_LIBRARIES ${SDL2_LIBRARY} ${OPENGLES2_LIBRARIES} ${PNG_LIBRARIES} ${ZLIB_LIBRARIES} )
+ 
+ message("Nlohmann/json dir =" ${EXTERNAL_JSON_INCLUDE_DIR})
+ 
+@@ -61,8 +54,8 @@ include_directories( ${PORT_INCLUDE_DIRS} ${Boost_INCLUDE_DIR} "nanogui-sdl/incl
+ add_executable(yabause-retro-arena ${yabause_ra_SOURCES})
+ target_link_libraries(yabause-retro-arena yabause  ${Boost_LIBRARIES} pugixml ${YABAUSE_LIBRARIES} ${PORT_LIBRARIES} nanogui stdc++fs  ${LIBCHDR_LIBRARIES} )
+ target_link_libraries( yabause-retro-arena ${LIBCHDR_LIBRARIES} )
+-target_link_libraries( yabause-retro-arena ${zlib_STATIC_LIBRARIES} )
+-add_dependencies(yabause-retro-arena Json png zlib libchd )
++target_link_libraries( yabause-retro-arena ${ZLIB_LIBRARIES} )
++add_dependencies(yabause-retro-arena yabause )
+ yab_port_success(yabause-retro-arena)
+ set_target_properties(yabause-retro-arena PROPERTIES OUTPUT_NAME yabasanshiro)
+ 

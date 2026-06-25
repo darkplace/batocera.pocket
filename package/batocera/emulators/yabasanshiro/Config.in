@@ -1,0 +1,21 @@
+config BR2_PACKAGE_YABASANSHIRO
+	bool "yabasanshiro"
+	depends on BR2_aarch64
+	depends on BR2_PACKAGE_BATOCERA_GLES3
+	select BR2_PACKAGE_BOOST
+	select BR2_PACKAGE_BOOST_DATE_TIME
+	select BR2_PACKAGE_BOOST_FILESYSTEM
+	select BR2_PACKAGE_BOOST_LOCALE
+	select BR2_PACKAGE_BOOST_SYSTEM
+	select BR2_PACKAGE_JSON_FOR_MODERN_CPP
+	select BR2_PACKAGE_LIBCHDR
+	select BR2_PACKAGE_LIBPNG
+	select BR2_PACKAGE_OPENAL
+	select BR2_PACKAGE_SDL2
+	select BR2_PACKAGE_SDL2_OPENGLES if BR2_PACKAGE_HAS_LIBGLES
+	select BR2_PACKAGE_ZLIB
+	help
+	  Standalone Yaba Sanshiro Sega Saturn emulator using the RetroArena
+	  frontend and DevMiyax SH2 dynarec.
+
+	  https://github.com/sydarn/yabause

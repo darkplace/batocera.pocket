@@ -72,6 +72,7 @@ _GENERATOR_MAP: Final[dict[str, tuple[str, str]]] = {
     'openjk': ('openjk.openjkGenerator', 'OpenJKGenerator'),
     'openmohaa': ('openmohaa.openmohaaGenerator', 'OpenMOHAAGenerator'),
     'ymir': ('ymir.ymirGenerator', 'YmirGenerator'),
+    'yabasanshiro-sa': ('yabasanshiro.yabasanshiroGenerator', 'YabaSanshiroGenerator'),
     'aethersx2': ('aethersx2.aethersx2Generator', 'AetherSX2Generator'),
     'armsx2': ('armsx2.armsx2Generator', 'Armsx2Generator'),
     'armsx2-masies': ('armsx2_masies.armsx2MasiesGenerator', 'Armsx2MasiesGenerator'),
