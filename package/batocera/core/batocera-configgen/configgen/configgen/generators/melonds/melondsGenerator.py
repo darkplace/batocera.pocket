@@ -19,6 +19,12 @@ _MELONDS_ROMS: Final = ROMS / "nds"
 _MELONDS_CHEATS: Final = CHEATS / "melonDS"
 _MELONDS_CONFIG: Final = CONFIGS / "melonDS"
 
+_QT_KEY_TAB: Final = 0x01000001
+_QT_KEY_PAUSE: Final = 0x01000008
+_QT_KEY_F2: Final = 0x01000031
+_QT_KEY_F5: Final = 0x01000034
+_QT_KEY_F7: Final = 0x01000036
+
 
 def _is_dual_screen_handheld() -> bool:
     try:
@@ -44,7 +50,14 @@ class MelonDSGenerator(Generator):
     def getHotkeysContext(self) -> HotkeysContext:
         return {
             "name": "melonds",
-            "keys": {"exit": ["KEY_LEFTALT", "KEY_F4"]}
+            "keys": {
+                "exit": ["KEY_LEFTALT", "KEY_F4"],
+                "pause": "KEY_PAUSE",
+                "save_state": "KEY_F5",
+                "restore_state": "KEY_F7",
+                "fastforward": "KEY_TAB",
+                "swap_screen": "KEY_F2"
+            }
         }
 
     def generate(self, system, rom, playersControllers, metadata, guns, wheels, gameResolution):
@@ -100,6 +113,13 @@ class MelonDSGenerator(Generator):
                 "ExternalBIOSEnable": True
             },
             "Instance0": {
+                "Keyboard": {
+                    "HK_Pause": _QT_KEY_PAUSE,
+                    "HK_FastForward": _QT_KEY_TAB,
+                    "HK_SwapScreens": _QT_KEY_F2,
+                    "HK_SaveState": _QT_KEY_F5,
+                    "HK_LoadState": _QT_KEY_F7
+                },
                 "Joystick": {},
                 "Window0": {
                     "Enabled": True,

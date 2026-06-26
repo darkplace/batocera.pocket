@@ -1,0 +1,23 @@
+diff --git a/apps/ymir-sdl3/src/app/ui/windows/about_window.cpp b/apps/ymir-sdl3/src/app/ui/windows/about_window.cpp
+index 73a7d6d..43e83ff 100644
+--- a/apps/ymir-sdl3/src/app/ui/windows/about_window.cpp
++++ b/apps/ymir-sdl3/src/app/ui/windows/about_window.cpp
+@@ -32,9 +32,6 @@
+ #include <zlib.h>
+ #include <zstd.h>
+
+-#define MINIZ_NO_ZLIB_COMPATIBLE_NAMES
+-#include <miniz/miniz.h>
+-
+ #define _STR_IMPL(x) #x
+ #define _STR(x) _STR_IMPL(x)
+ #define _SEMVER_STR(major, minor, patch) _STR(major.minor.patch)
+@@ -49,7 +46,7 @@
+ #define LZMA_VERSION "25.01"    // Private dependency of libchdr
+ #define LIBCHDR_VERSION "0.3.0" // Not exported
+ #define MIO_VERSION "1.1.0"     // Not exported
+-// #define MZ_VERSION "3.1.1"      // Private dependency of libchdr
++#define MZ_VERSION "3.1.1"      // Private dependency of libchdr
+ #define NLOHMANN_JSON_VERSION \
+     _SEMVER_STR(NLOHMANN_JSON_VERSION_MAJOR, NLOHMANN_JSON_VERSION_MINOR, NLOHMANN_JSON_VERSION_PATCH)
+ #define SDL_VERSION_STR _SEMVER_STR(SDL_MAJOR_VERSION, SDL_MINOR_VERSION, SDL_MICRO_VERSION)

@@ -242,7 +242,15 @@ class Gopher64Generator(Generator):
     def getHotkeysContext(self) -> HotkeysContext:
         return {
             "name": "gopher64",
-            "keys": {"exit": ["KEY_LEFTALT", "KEY_F4"]},
+            "keys": {
+                "exit": ["KEY_LEFTALT", "KEY_F4"],
+                "pause": ["KEY_LEFTALT", "KEY_P"],
+                "save_state": "KEY_F5",
+                "restore_state": "KEY_F7",
+                "rewind": "KEY_F6",
+                "fastforward": ["KEY_LEFTALT", "KEY_F"],
+                "reset": "KEY_F12",
+            },
         }
 
     def generate(self, system, rom, playersControllers, metadata, guns, wheels, gameResolution):

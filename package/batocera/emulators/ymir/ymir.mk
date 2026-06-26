@@ -17,7 +17,7 @@
 #
 ################################################################################
 
-YMIR_VERSION = v0.2.1
+YMIR_VERSION = v0.3.3
 YMIR_SITE = https://github.com/StrikerX3/Ymir
 YMIR_SITE_METHOD = git
 YMIR_GIT_SUBMODULES = ES
@@ -25,6 +25,7 @@ YMIR_LICENSE = GPLv2
 YMIR_LICENSE_FILE = LICENSE
 YMIR_DEPENDENCIES += catch2 cereal cxxopts date fmt host-clang json-for-modern-cpp
 YMIR_DEPENDENCIES += libcurl nghttp3 ngtcp2 openssl rtmidi sdl3 semver stb tomlplusplus
+YMIR_DEPENDENCIES += zlib zstd
 
 YMIR_SUPPORTS_IN_SOURCE_BUILD = NO
 

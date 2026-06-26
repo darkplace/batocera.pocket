@@ -126,7 +126,14 @@ class YabaSanshiroGenerator(Generator):
     def getHotkeysContext(self) -> HotkeysContext:
         return {
             "name": "yabasanshiro",
-            "keys": {"exit": "killall -9 yabasanshiro"},
+            "keys": {
+                "exit": "killall -9 yabasanshiro",
+                "menu": "KEY_ESC",
+                "save_state": "KEY_F5",
+                "previous_slot": "KEY_F6",
+                "restore_state": "KEY_F7",
+                "next_slot": "KEY_F8",
+            },
         }
 
     def generate(self, system, rom, playersControllers, metadata, guns, wheels, gameResolution):

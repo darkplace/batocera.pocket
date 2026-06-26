@@ -29,17 +29,9 @@ if [ ! -d "${output_abs}/host" ]; then
 fi
 
 patterns="$(mktemp)"
-sed_script="$(mktemp)"
+rewrites="$(mktemp)"
 files="$(mktemp)"
-trap 'rm -f "${patterns}" "${sed_script}" "${files}"' EXIT
-
-escape_sed_pattern() {
-    printf '%s' "$1" | sed -e 's/[.[\*^$\\]/\\&/g' -e 's/|/\\|/g'
-}
-
-escape_sed_replacement() {
-    printf '%s' "$1" | sed -e 's/[&\\]/\\&/g' -e 's/|/\\|/g'
-}
+trap 'rm -f "${patterns}" "${rewrites}" "${files}"' EXIT
 
 add_rewrite_path() {
     local from="${1%/}"
@@ -50,9 +42,7 @@ add_rewrite_path() {
     [ "${from}" != "${to}" ] || return 0
 
     printf '%s\n' "${from}" >> "${patterns}"
-    printf 's|%s|%s|g\n' \
-        "$(escape_sed_pattern "${from}")" \
-        "$(escape_sed_replacement "${to}")" >> "${sed_script}"
+    printf '%s\t%s\n' "${from}" "${to}" >> "${rewrites}"
 }
 
 add_rewrite_root() {
@@ -85,10 +75,98 @@ if [ -d "${output_abs}/per-package" ]; then
     scan_dirs+=("${output_abs}/per-package")
 fi
 
-if grep --binary-files=without-match -IlrZ -f "${patterns}" "${scan_dirs[@]}" > "${files}"; then
+if grep --binary-files=without-match -IlrZ -F -f "${patterns}" "${scan_dirs[@]}" > "${files}"; then
     if [ -s "${files}" ]; then
-        xargs -0 --no-run-if-empty sed -i -f "${sed_script}" < "${files}"
-        count="$(tr -cd '\0' < "${files}" | wc -c)"
-        echo "Relocated stale Buildroot output paths in ${count} files to ${builder_root}."
+        count="$(
+            python3 - "${rewrites}" "${files}" <<'PY'
+import os
+import sys
+
+rewrites_path, files_path = sys.argv[1], sys.argv[2]
+
+with open(rewrites_path, "rb") as rewrites_file:
+    rewrites = [
+        line.rstrip(b"\n").split(b"\t", 1)
+        for line in rewrites_file
+        if line.strip()
+    ]
+
+rewrites.sort(key=lambda rewrite: len(rewrite[0]), reverse=True)
+
+with open(files_path, "rb") as files_file:
+    files = [path for path in files_file.read().split(b"\0") if path]
+
+path_chars = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_./-"
+word_chars = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_.-"
+flag_prefixes = (b"-I", b"-L", b"-isystem", b"-idirafter", b"-iquote", b"--sysroot=")
+
+
+def starts_at_path_boundary(data, index):
+    if index == 0:
+        return True
+    if data[index - 1:index] not in path_chars:
+        return True
+    return any(data[:index].endswith(prefix) for prefix in flag_prefixes)
+
+
+def ends_at_path_boundary(data, index):
+    if index >= len(data):
+        return True
+    if data[index:index + 1] == b"/":
+        return True
+    return data[index:index + 1] not in word_chars
+
+
+def replace_guarded(data, old, new):
+    parts = []
+    start = 0
+    changed = False
+
+    while True:
+        index = data.find(old, start)
+        if index < 0:
+            break
+
+        end = index + len(old)
+        if starts_at_path_boundary(data, index) and ends_at_path_boundary(data, end):
+            parts.append(data[start:index])
+            parts.append(new)
+            start = end
+            changed = True
+        else:
+            parts.append(data[start:end])
+            start = end
+
+    if not changed:
+        return data
+
+    parts.append(data[start:])
+    return b"".join(parts)
+
+
+changed_files = 0
+for raw_path in files:
+    path = os.fsdecode(raw_path)
+    try:
+        with open(path, "rb") as input_file:
+            original = input_file.read()
+    except FileNotFoundError:
+        continue
+
+    updated = original
+    for old, new in rewrites:
+        updated = replace_guarded(updated, old, new)
+
+    if updated != original:
+        with open(path, "wb") as output_file:
+            output_file.write(updated)
+        changed_files += 1
+
+print(changed_files)
+PY
+        )"
+        if [ "${count}" -gt 0 ]; then
+            echo "Relocated stale Buildroot output paths in ${count} files to ${builder_root}."
+        fi
     fi
 fi

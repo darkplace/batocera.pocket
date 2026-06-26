@@ -40,6 +40,8 @@ define DRASTIC_INSTALL_TARGET_CMDS
 	install -m 0755 $(@D)/target/$(DRASTIC_BINARYFILE) $(TARGET_DIR)/usr/bin/drastic
 	install -m 0755 $(@D)/libdrastouch.so $(TARGET_DIR)/usr/lib/libdrastouch.so
 	cp -pr $(@D)/target/drastic $(TARGET_DIR)/usr/share/drastic
+	find $(TARGET_DIR)/usr/share/drastic -type d -exec chmod 0755 {} +
+	find $(TARGET_DIR)/usr/share/drastic -type f -exec chmod 0644 {} +
 
 	# evmap config
 	cp $(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/emulators/drastic/controllers/nds.drastic.keys $(TARGET_DIR)/usr/share/evmapy

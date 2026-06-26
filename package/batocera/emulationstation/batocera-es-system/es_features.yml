@@ -75,6 +75,15 @@ shared:
       prompt: VIDEO MODE
       description: Set the display's resolution. Does not affect the rendering resolution.
       preset: videomodes
+    dual_screen_output:
+      archs_include:
+      - sm8550
+      - sm8750
+      prompt: EMULATOR SCREEN
+      description: On vertical dual-screen handhelds, choose whether single-window emulators launch on the top or bottom panel.
+      choices:
+        Top Screen: primary
+        Bottom Screen: secondary
     ratio:
       prompt: GAME ASPECT RATIO
       description: Force the game to render in this aspect ratio. Not all systems

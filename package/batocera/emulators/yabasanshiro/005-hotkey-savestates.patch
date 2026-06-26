@@ -1,0 +1,65 @@
+--- a/yabause/src/retro_arena/main.cpp
++++ b/yabause/src/retro_arena/main.cpp
+@@ -490,11 +490,42 @@
+   //setpriority( PRIO_PROCESS, 0, -8);
+   int frame_cont = 0;
+   int event_count = 0;
++  int hotkey_state_slot = 0;
+   while(true) {
+     SDL_Event e;
+     event_count = 0;
+     while(SDL_PollEvent(&e)) {
+       event_count++;
++      if(!menu_show && e.type == SDL_KEYDOWN && !e.key.repeat) {
++        SDL_Event hotkey_event = {};
++
++        switch(e.key.keysym.sym) {
++        case SDLK_F5:
++          saveScreenshot(tmpfilename.c_str());
++          hotkey_event.type = evSaveState;
++          hotkey_event.user.code = hotkey_state_slot;
++          SDL_PushEvent(&hotkey_event);
++          continue;
++
++        case SDLK_F6:
++          hotkey_state_slot = hotkey_state_slot == 0 ? 4 : hotkey_state_slot - 1;
++          continue;
++
++        case SDLK_F7:
++          hotkey_event.type = evLoadState;
++          hotkey_event.user.code = hotkey_state_slot;
++          SDL_PushEvent(&hotkey_event);
++          continue;
++
++        case SDLK_F8:
++          hotkey_state_slot = (hotkey_state_slot + 1) % 5;
++          continue;
++
++        default:
++          break;
++        }
++      }
++
+       if(e.type == SDL_QUIT){
+         glClearColor(0.0,0.0,0.0,1.0);
+         glClear(GL_COLOR_BUFFER_BIT);
+@@ -603,7 +634,8 @@
+           snprintf(pngname,256,"%s/%s_%d.png", s_savepath, cdip->itemnum, e.user.code);
+           fs::copy(tmpfilename, pngname, fs::copy_options::overwrite_existing );
+         }
+-        hideMenuScreen();
++        if(menu_show)
++          hideMenuScreen();
+       }
+
+       else if(e.type == evLoadState ){
+@@ -630,7 +662,8 @@
+           YUI_LOG("Load State: Fail unkown");
+           break;
+         }
+-        hideMenuScreen();
++        if(menu_show)
++          hideMenuScreen();
+       }
+
+       inputmng->parseEvent(e);

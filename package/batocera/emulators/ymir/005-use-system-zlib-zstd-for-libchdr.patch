@@ -1,0 +1,22 @@
+diff --git a/vendor/libchdr/CMakeLists.txt b/vendor/libchdr/CMakeLists.txt
+index 15a9288..0d59a1f 100644
+--- a/vendor/libchdr/CMakeLists.txt
++++ b/vendor/libchdr/CMakeLists.txt
+@@ -2,7 +2,6 @@ if (Ymir_LIBRARY_ONLY)
+     add_subdirectory(libchdr/deps/miniz-3.1.1 EXCLUDE_FROM_ALL)
+     add_subdirectory(libchdr/deps/zstd-1.5.7 EXCLUDE_FROM_ALL)
+ else ()
+-    find_package(miniz CONFIG REQUIRED)
+     find_package(ZLIB REQUIRED)
+     find_package(zstd REQUIRED)
+ endif ()
+@@ -31,7 +30,8 @@ target_link_libraries(chdr-static PRIVATE chdr-lzma)
+ if (Ymir_LIBRARY_ONLY)
+     target_link_libraries(chdr-static PRIVATE zstd miniz)
+ else ()
+-    target_link_libraries(chdr-static PRIVATE zstd::libzstd_static ZLIB::ZLIB miniz::miniz)
++    target_compile_definitions(chdr-static PRIVATE CHDR_SYSTEM_ZLIB CHDR_SYSTEM_ZSTD)
++    target_link_libraries(chdr-static PRIVATE zstd::libzstd_static ZLIB::ZLIB)
+ endif ()
+ if (MSVC)
+     target_compile_definitions(chdr-static PRIVATE _CRT_SECURE_NO_WARNINGS)
