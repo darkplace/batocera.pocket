@@ -8675,6 +8675,87 @@ cannonball:
       choices:
         'Off': 0
         'On': 1
+    scanlines:
+      prompt: SCANLINES
+      description: Simulate vintage CRT scanlines (Requires scale factor 2x or higher).
+      choices:
+        'Off': 0
+        'On': 1
+    vsync:
+      prompt: VSYNC
+      description: Fix screen tearing.
+      choices:
+        'Off': 0
+        'On': 1
+    fps:
+      prompt: FRAME RATE (FPS)
+      description: Set the frame rate and rendering mode.
+      choices:
+        30 FPS: 0
+        30/60 FPS (Original Game): 1
+        60 FPS (Smooth): 2
+    gear_mode:
+      prompt: GEAR SHIFT MODE
+      description: Set the gear shift behavior.
+      choices:
+        Manual (Click to Shift): 0
+        Manual (Hold to Shift): 1
+        Manual (Separate Buttons): 2
+        Automatic: 3
+    car_colour:
+      prompt: FERRARI COLOUR
+      description: Customize the colour palette of your Ferrari.
+      choices:
+        Red: 0
+        Blue: 1
+        Yellow: 2
+        Green: 3
+        Cyan: 4
+    time_limit:
+      prompt: TIME DIFFICULTY
+      description: Adjust starting and checkpoint time limits.
+      choices:
+        Easy: 0
+        Normal: 1
+        Hard: 2
+        Very Hard: 3
+        Freeze Timer: 4
+    traffic_level:
+      prompt: TRAFFIC DENSITY
+      description: Adjust the amount of traffic on the road.
+      choices:
+        Easy: 0
+        Normal: 1
+        Hard: 2
+        Very Hard: 3
+        No Traffic: 4
+    fix_bugs:
+      prompt: FIX ARCADE BUGS
+      description: Address various minor engine bugs from the original Sega codebase.
+      choices:
+        'On': 1
+        'Off': 0
+    cheats_offroad:
+      submenu: CHEATS
+      prompt: OFF-ROAD TRACTION
+      description: Keep your top speed even when driving off-road.
+      choices:
+        'Off': 0
+        'On': 1
+    cheats_grippy_tyres:
+      submenu: CHEATS
+      prompt: GRIP STYLE
+      description: Prevent sliding on tight corners with extra-grippy tyres.
+      choices:
+        'Off': 0
+        'On': 1
+    cheats_turbo:
+      submenu: CHEATS
+      prompt: TURBO MODE
+      description: Boosts the car's top speed by 20%.
+      choices:
+        'Off': 0
+        'On': 1
 cemu:
   shared:
   - powermode
@@ -11516,25 +11597,25 @@ rpcs3:
             description: LLVM is fastest, use the Interpreter settings if there are issues.
             choices:
                 "LLVM Recompiler":     Recompiler (LLVM)
-                "Dynamic Interpreter": Interpreter (dynamic)
                 "Static Interpreter":  Interpreter (static)
         rpcs3_spudecoder:
             submenu: MANUAL GAME PROFILE
             prompt: SPU DECODER
-            description: If game crashes, try ASMJIT. If still crashing, try Fast Interpreter.
+            description: If game crashes, try ASMJIT. If still crashing, try Interpreter settings.
             choices:
                 "LLVM Recompiler":     Recompiler (LLVM)
                 "ASMJIT Recompiler":   Recompiler (ASMJIT)
-                "Fast Interpreter":    Interpreter (fast)
-                "Precise Interpreter": Interpreter (precise)
+                "Dynamic Interpreter": Interpreter (dynamic)
+                "Static Interpreter":  Interpreter (static)
         rpcs3_spuxfloataccuracy:
             submenu: MANUAL GAME PROFILE
             prompt: SPU XFloat Accuracy
             description: Can fix bugs in some games. Only relevant for dynamic or LLVM SPU decoder.
             choices:
-                "Accurate XFloat":    accurate
-                "Approximate XFloat": approximate
-                "Relaxed XFloat":     relaxed
+                "Accurate XFloat":    Accurate
+                "Approximate XFloat": Approximate
+                "Relaxed XFloat":     Relaxed
+                "Inaccurate XFloat":  Inaccurate
         rpcs3_sputhreads:
             submenu: CPU
             prompt: PREFERRED SPU THREADS
@@ -11664,15 +11745,15 @@ rpcs3:
             choices:
                 "Nearest":                     Nearest
                 "Bilinear (Default)":          Bilinear
-                "FidelityFX Super Resolution": FidelityFX Super Resolution
+                "FidelityFX Super Resolution": FidelityFX Super Resolution 1
         rpcs3_shadermode:
             submenu: MANUAL GAME PROFILE
             prompt: SHADER MODE
             description: Only Async (skip draw) avoids freezing while compiling shaders.
             choices:
-                "Legacy (single threaded)":        Shader Recompiler
-                "Async (multi threaded)(Default)": Async Shader Recompiler
-                "Async with Shader Interpreter":   Async with Shader Interpreter
+                "Legacy Recompiler (single-threaded)":                 Shader Recompiler
+                "Async Recompiler (multi-threaded)(Default)":          Async Shader Recompiler
+                "Async Recompiler with Shader Interpreter":            Async with Shader Interpreter
                 "Shader Interpreter only":         Shader Interpreter only
         rpcs3_num_compilers:
             submenu: RENDER
@@ -11735,8 +11816,9 @@ rpcs3:
             prompt: VSYNC
             description: Can fix screen tearing on unorthodox displays (most LCDs don't need this).
             choices:
-                "Off (Default)": False
-                "On":            True
+                "Disabled": Disabled
+                "Adaptive":  Adaptive
+                "Full":      Full
         rpcs3_stretchdisplay:
             submenu: VIDEO
             prompt: STRETCH TO DISPLAY AREA
@@ -11787,6 +11869,8 @@ rpcs3:
                 "Stereo":       Stereo
                 "Surround 5.1": Surround 5.1
                 "Surround 7.1": Surround 7.1
+                "Manual":       Manual
+                "Automatic":    Automatic
         rpcs3_audio_16bit:
             submenu: AUDIO
             prompt: CONVERT TO 16-BIT
@@ -12376,6 +12460,41 @@ supermodel:
         '130': 130
         '140': 140
         '150': 150
+    m3_outputs:
+      group: CABINET OUTPUTS
+      prompt: CABINET OUTPUTS
+      description: Send cabinet and lamp output signals via network to external tools
+        like MAME Hooker.
+      choices:
+        'Off': none
+        'On': net
+    m3_outputs_lf:
+      group: CABINET OUTPUTS
+      prompt: OUTPUTS USE LINE FEED
+      description: Terminate network message packets with a line feed (\n) character.
+      choices:
+        'Off': 0
+        'On': 1
+    m3_outputs_tcp:
+      group: CABINET OUTPUTS
+      prompt: OUTPUTS TCP PORT
+      description: The TCP port used to send network output packets. Leave at default
+        (0) to disable.
+      choices:
+        0 (Disabled): 0
+        '8000': 8000
+        '8001': 8001
+        '15124': 15124
+    m3_outputs_udp:
+      group: CABINET OUTPUTS
+      prompt: OUTPUTS UDP BROADCAST PORT
+      description: The UDP broadcast port used to send network output packets. Leave
+        at default (0) to disable.
+      choices:
+        0 (Disabled): 0
+        '8000': 8000
+        '8001': 8001
+        '15126': 15126
 cgenius:
   features:
   - padtokeyboard

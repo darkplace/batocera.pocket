@@ -1,0 +1,163 @@
+diff --git a/es-app/src/ApiSystem.cpp b/es-app/src/ApiSystem.cpp
+index 87f1c7ab..b6b3d4e4 100644
+--- a/es-app/src/ApiSystem.cpp
++++ b/es-app/src/ApiSystem.cpp
+@@ -1772,6 +1772,30 @@ bool ApiSystem::isLEDEnabled()
+ #endif
+ }
+ 
++void ApiSystem::setLEDMode(const std::string& mode)
++{
++#if WIN32
++    return;
++#else
++    SystemConf::getInstance()->set("led.mode", mode);
++    SystemConf::getInstance()->saveSystemConf();
++
++    executeScript("batocera-led-handheld unblock_color_changes");
++
++    if (mode == "rainbow") {
++        executeScript("batocera-led-handheld rainbow");
++    } else if (mode == "chroma") {
++        executeScript("batocera-led-handheld chroma");
++    } else if (mode == "pulse") {
++        executeScript("batocera-led-handheld pulse");
++    } else {
++        int r, g, b;
++        getLEDColours(r, g, b);
++        setLEDColours(r, g, b);
++    }
++#endif
++}
++
+ void ApiSystem::setLEDEnabled(bool enabled)
+ {
+ #if WIN32
+@@ -1788,15 +1812,20 @@ void ApiSystem::setLEDEnabled(bool enabled)
+ 	}
+ 	else
+ 	{
+-		std::string lastColorStr = SystemConf::getInstance()->get("led.colour");
+-		if (lastColorStr.empty())
+-			lastColorStr = "255 0 165";
+-
+-		std::stringstream ss(lastColorStr);
+-		int r, g, b;
+-		ss >> r >> g >> b;
+-
+-		setLEDColours(r, g, b);
++		std::string mode = SystemConf::getInstance()->get("led.mode");
++		if (mode == "rainbow" || mode == "chroma" || mode == "pulse") {
++			setLEDMode(mode);
++		} else {
++			std::string lastColorStr = SystemConf::getInstance()->get("led.colour");
++			if (lastColorStr.empty())
++				lastColorStr = "255 0 165";
++
++			std::stringstream ss(lastColorStr);
++			int r, g, b;
++			ss >> r >> g >> b;
++
++			setLEDColours(r, g, b);
++		}
+ 	}
+ 
+ 	SystemConf::getInstance()->saveSystemConf();
+diff --git a/es-app/src/ApiSystem.h b/es-app/src/ApiSystem.h
+index f66b8e37..13c9e2dc 100644
+--- a/es-app/src/ApiSystem.h
++++ b/es-app/src/ApiSystem.h
+@@ -328,6 +328,9 @@ public:
+ 	bool isLEDEnabled();
+ 	void setLEDEnabled(bool enabled);
+ 
++	// LED Mode
++	void setLEDMode(const std::string& mode);
++
+ 	// LED Brightness
+ 	bool getLEDBrightness(int& value);
+ 	void setLEDBrightness(int value);
+diff --git a/es-app/src/guis/GuiMenu.cpp b/es-app/src/guis/GuiMenu.cpp
+index d49b0324..e9c4489c 100644
+--- a/es-app/src/guis/GuiMenu.cpp
++++ b/es-app/src/guis/GuiMenu.cpp
+@@ -1987,6 +1987,20 @@ void GuiMenu::openSystemSettings()
+ 		{
+ 			ApiSystem::getInstance()->setLEDEnabled(led_enabled_switch->getState());
+ 		});
++
++		std::string currentMode = SystemConf::getInstance()->get("led.mode");
++		if (currentMode.empty())
++			currentMode = "static";
++
++		auto ledMode = std::make_shared<OptionListComponent<std::string>>(mWindow, _("LED MODE"), false);
++		ledMode->addRange({
++			{ _("STATIC"), "static" },
++			{ _("RAINBOW"), "rainbow" },
++			{ _("CHROMA"), "chroma" },
++			{ _("PULSE"), "pulse" }
++		}, currentMode);
++		s->addWithLabel(_("LED MODE"), ledMode);
++		auto sliderChanged = std::make_shared<bool>(false);
+ 		
+ 		std::string colourString = SystemConf::getInstance()->get("led.colour");
+ 		if (colourString.empty())
+@@ -2000,10 +2014,11 @@ void GuiMenu::openSystemSettings()
+ 		auto blueLEDComponent = std::make_shared<SliderComponent>(mWindow, 0.f, 255.f, 1.f);
+ 
+ 		redLEDComponent->setValue(red);
+-		redLEDComponent->setOnValueChanged([greenLEDComponent, blueLEDComponent](const float &newVal) {
++		redLEDComponent->setOnValueChanged([greenLEDComponent, blueLEDComponent, sliderChanged](const float &newVal) {
+ 			int redInt = static_cast<int>(newVal);
+ 			int greenInt = static_cast<int>(greenLEDComponent->getValue());
+ 			int blueInt = static_cast<int>(blueLEDComponent->getValue());
++			*sliderChanged = true;
+ 			ApiSystem::getInstance()->setLEDColours(redInt, greenInt, blueInt);
+ 			std::string colourString = std::to_string(redInt) + " " + std::to_string(greenInt) + " " + std::to_string(blueInt);
+ 			SystemConf::getInstance()->set("led.colour", colourString);
+@@ -2011,10 +2026,11 @@ void GuiMenu::openSystemSettings()
+ 		s->addWithLabel(_("RED"), redLEDComponent);
+ 
+ 		greenLEDComponent->setValue(green);
+-		greenLEDComponent->setOnValueChanged([redLEDComponent, blueLEDComponent](const float &newVal) {
++		greenLEDComponent->setOnValueChanged([redLEDComponent, blueLEDComponent, sliderChanged](const float &newVal) {
+ 			int redInt = static_cast<int>(redLEDComponent->getValue());
+ 			int greenInt = static_cast<int>(newVal);
+ 			int blueInt = static_cast<int>(blueLEDComponent->getValue());
++			*sliderChanged = true;
+ 			ApiSystem::getInstance()->setLEDColours(redInt, greenInt, blueInt);
+ 			std::string colourString = std::to_string(redInt) + " " + std::to_string(greenInt) + " " + std::to_string(blueInt);
+ 			SystemConf::getInstance()->set("led.colour", colourString);
+@@ -2022,23 +2038,29 @@ void GuiMenu::openSystemSettings()
+ 		s->addWithLabel(_("GREEN"), greenLEDComponent);
+ 
+ 		blueLEDComponent->setValue(blue);
+-		blueLEDComponent->setOnValueChanged([redLEDComponent, greenLEDComponent](const float &newVal) {
++		blueLEDComponent->setOnValueChanged([redLEDComponent, greenLEDComponent, sliderChanged](const float &newVal) {
+ 			int redInt = static_cast<int>(redLEDComponent->getValue());
+ 			int greenInt = static_cast<int>(greenLEDComponent->getValue());
+ 			int blueInt = static_cast<int>(newVal);
++			*sliderChanged = true;
+ 			ApiSystem::getInstance()->setLEDColours(redInt, greenInt, blueInt);
+ 			std::string colourString = std::to_string(redInt) + " " + std::to_string(greenInt) + " " + std::to_string(blueInt);
+ 			SystemConf::getInstance()->set("led.colour", colourString);
+ 		});
+ 		s->addWithLabel(_("BLUE"), blueLEDComponent);
+ 
+-		s->addSaveFunc([led_enabled_switch] {
++		s->addSaveFunc([led_enabled_switch, ledMode, sliderChanged] {
+ 			bool state = led_enabled_switch->getState();
+ 			if (state != (SystemConf::getInstance()->get("led.enabled") != "0")) {
+ 				ApiSystem::getInstance()->setLEDEnabled(state);
+ 			}
+-		});
+ 
++			std::string newMode = ledMode->getSelected();
++			if (*sliderChanged)
++				newMode = "static";
++			if (newMode != SystemConf::getInstance()->get("led.mode"))
++				ApiSystem::getInstance()->setLEDMode(newMode);
++		});
+ 	}
+ 	
+ 	// LED brightness

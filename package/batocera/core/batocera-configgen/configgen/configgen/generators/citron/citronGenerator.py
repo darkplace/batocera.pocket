@@ -96,6 +96,49 @@ _ONE_BASED_SDL_BUTTON_GUIDS = {
 _QLAUNCH_SUFFIX = ".qlaunch"
 
 
+def _set_shortcut(
+    parser: CaseSensitiveRawConfigParser,
+    action_name: str,
+    key_sequence: str,
+    *,
+    context: str = "1",
+) -> None:
+    prefix = f"Shortcuts\\Main%20Window\\{action_name}"
+    parser.set("UI", f"{prefix}\\Context", context)
+    parser.set("UI", f"{prefix}\\Context\\default", "false")
+    parser.set("UI", f"{prefix}\\KeySeq", key_sequence)
+    parser.set("UI", f"{prefix}\\KeySeq\\default", "false")
+    parser.set("UI", f"{prefix}\\Controller_KeySeq", "")
+    parser.set("UI", f"{prefix}\\Controller_KeySeq\\default", "false")
+    parser.set("UI", f"{prefix}\\Repeat", "false")
+    parser.set("UI", f"{prefix}\\Repeat\\default", "false")
+
+
+def _disable_shortcut(parser: CaseSensitiveRawConfigParser, action_name: str) -> None:
+    _set_shortcut(parser, action_name, "", context="3")
+
+
+_CITRON_CONTROLLER_SHORTCUTS = (
+    "Audio%20Mute\\Unmute",
+    "Audio%20Volume%20Down",
+    "Audio%20Volume%20Up",
+    "Capture%20Screenshot",
+    "Change%20Adapting%20Filter",
+    "Change%20Docked%20Mode",
+    "Change%20GPU%20Accuracy",
+    "Continue\\Pause%20Emulation",
+    "Exit%20Citron",
+    "Exit%20Fullscreen",
+    "Exit%20yuzu",
+    "Fullscreen",
+    "Load%20File",
+    "Load\\Remove%20Amiibo",
+    "Restart%20Emulation",
+    "Stop%20Emulation",
+    "Toggle%20Framerate%20Limit",
+)
+
+
 class CitronGenerator(Generator):
 
     def getHotkeysContext(self):
@@ -103,7 +146,12 @@ class CitronGenerator(Generator):
             "name": "citron",
             "keys": {
                 # Let the AppImage unwind cleanly first, then force-kill only if it ignores SIGTERM.
-                "exit": "pkill -TERM -f '/tmp/.mount_citro.*/bin/citron|/usr/share/citron/citron.AppImage'; sleep 2; pkill -KILL -f '/tmp/.mount_citro.*/bin/citron|/usr/share/citron/citron.AppImage|/userdata/system/configs/citron/citron-perf.sh'"
+                "exit": "pkill -TERM -f '/tmp/.mount_citro.*/bin/citron|/usr/share/citron/citron.AppImage'; sleep 2; pkill -KILL -f '/tmp/.mount_citro.*/bin/citron|/usr/share/citron/citron.AppImage|/userdata/system/configs/citron/citron-perf.sh'",
+                "menu": "KEY_F4",
+                "pause": "KEY_F4",
+                "reset": "KEY_F6",
+                "screenshot": ["KEY_LEFTCTRL", "KEY_P"],
+                "fastforward": ["KEY_LEFTCTRL", "KEY_U"],
             }
         }
 
@@ -320,6 +368,15 @@ exit $EXIT_CODE
         set_override("UI", "confirmClose", "false")
         set_override("UI", "confirmStop", "2")
         set_override("UI", "UIGameList\\cache_game_list", "false")
+        for shortcut in _CITRON_CONTROLLER_SHORTCUTS:
+            prefix = f"Shortcuts\\Main%20Window\\{shortcut}\\Controller_KeySeq"
+            c.set("UI", f"{prefix}\\default", "false")
+            c.set("UI", prefix, "")
+        _set_shortcut(c, "Capture%20Screenshot", "Ctrl+P", context="3")
+        _set_shortcut(c, "Continue\\Pause%20Emulation", "F4")
+        _set_shortcut(c, "Restart%20Emulation", "F6")
+        _set_shortcut(c, "Toggle%20Framerate%20Limit", "Ctrl+U")
+        _disable_shortcut(c, "Load\\Remove%20Amiibo")
 
         set_override("UI", "Paths\\gamedirs\\1\\path", "/userdata/roms/switch")
         set_override("UI", "Paths\\gamedirs\\size", "1")

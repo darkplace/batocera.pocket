@@ -125,6 +125,14 @@
     <windowRule identifier="pcmanfm">
       <action name="ToggleFullscreen" />
     </windowRule>
+    <windowRule identifier="CGeniusExe" title="Commander Genius">
+      <action name="ToggleFullscreen" />
+      <action name="serverDecoration" decoration="no" />
+    </windowRule>
+    <windowRule identifier="retrotrivia.pygame">
+      <action name="ToggleFullscreen" />
+      <action name="serverDecoration" decoration="no" />
+    </windowRule>
     <windowRule identifier="xterm" serverDecoration="yes" />
   </windowRules>
 </labwc_config>

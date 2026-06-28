@@ -49,7 +49,12 @@ class CemuGenerator(Generator):
     def getHotkeysContext(self) -> HotkeysContext:
         return {
             "name": "cemu",
-            "keys": { "exit": ["KEY_LEFTALT", "KEY_F4"], "swap_screen": ["KEY_LEFTCTRL", "KEY_TAB"] }
+            "keys": {
+                "exit": ["KEY_LEFTALT", "KEY_F4"],
+                "screenshot": "KEY_F12",
+                "fastforward": "KEY_TAB",
+                "swap_screen": ["KEY_LEFTCTRL", "KEY_TAB"],
+            }
         }
 
     def generate(self, system, rom, playersControllers, metadata, guns, wheels, gameResolution):
@@ -114,6 +119,17 @@ class CemuGenerator(Generator):
         CemuGenerator.setSectionConfig(config, xml_root, "fullscreen_menubar", "false")
         CemuGenerator.setSectionConfig(config, xml_root, "vk_warning", "false")
         CemuGenerator.setSectionConfig(config, xml_root, "fullscreen", "true")
+        CemuGenerator.setSectionConfig(config, xml_root, "save_screenshot", "true")
+
+        ## [HOTKEYS]
+        CemuGenerator.setSectionConfig(config, xml_root, "Hotkeys", "")
+        hotkeys_root = CemuGenerator.getRoot(config, "Hotkeys")
+        CemuGenerator.setSectionConfig(config, hotkeys_root, "ExitFullscreen", "27 -1")
+        CemuGenerator.setSectionConfig(config, hotkeys_root, "ToggleFullscreen", "350 -1")
+        CemuGenerator.setSectionConfig(config, hotkeys_root, "TakeScreenshot", "351 -1")
+        CemuGenerator.setSectionConfig(config, hotkeys_root, "ToggleFastForward", "9 -1")
+        CemuGenerator.setSectionConfig(config, hotkeys_root, "ExitApplication", "8535 -1")
+
         # Language
         if (console_language := system.config.get("cemu_console_language", "ui")) == "ui":
             lang = getLangFromEnvironment()

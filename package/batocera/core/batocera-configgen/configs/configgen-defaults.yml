@@ -180,6 +180,8 @@ catacomb:
 cannonball:
   emulator: cannonball
   core:     cannonball
+  options:
+    bezel: none
 cavestory:
   emulator: libretro
   core:     nxengine

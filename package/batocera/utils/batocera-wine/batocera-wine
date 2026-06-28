@@ -1150,7 +1150,7 @@ dxvk_install() {
             echo "Creating links using /usr/wine/dxvk/, Linux File System required !!!"
             dxvk_root="/usr/wine/dxvk"
         fi
-        dxvk_x64_dlls=(d3d11.dll d3d10core.dll d3d9.dll dxgi.dll nvapi64.dll)
+        dxvk_x64_dlls=(d3d11.dll d3d10core.dll d3d9.dll dxgi.dll nvapi64.dll nvofapi64.dll)
         dxvk_x32_dlls=(d3d8.dll d3d11.dll d3d10core.dll d3d9.dll dxgi.dll nvapi.dll)
         if [[ "${WINE_D3D12_BACKEND:-auto}" != "builtin" ]]; then
             dxvk_x64_dlls=(d3d12.dll d3d12core.dll "${dxvk_x64_dlls[@]}")

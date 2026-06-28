@@ -3,11 +3,11 @@
 # supermodel
 #
 ################################################################################
-# Version: Commits on Nov 13, 2025
-SUPERMODEL_VERSION = c995ce547756d6642bd44b5391e062a1140aef06
+SUPERMODEL_VERSION = v0.3a-20260528-git-77d28ee
 SUPERMODEL_SITE = $(call github,trzy,Supermodel,$(SUPERMODEL_VERSION))
 SUPERMODEL_DEPENDENCIES = sdl2 zlib libzip sdl2_net
 SUPERMODEL_LICENSE = GPLv3
+SUPERMODEL_EMULATOR_INFO = supermodel.supermodel.core.yml
 
 ifeq ($(BR2_PACKAGE_LIBGLEW),y)
 SUPERMODEL_DEPENDENCIES += libglew
@@ -23,8 +23,7 @@ define SUPERMODEL_BUILD_CMDS
 	$(SED) "s|CXX = g++|CXX = $(TARGET_CXX)|g" $(@D)/Makefile
 	$(SED) "s|LD = gcc|LD = $(TARGET_CC)|g" $(@D)/Makefile
 	$(SED) "s|sdl2-config|$(STAGING_DIR)/usr/bin/sdl2-config|g" $(@D)/Makefile
-	$(TARGET_CONFIGURE_OPTS) $(MAKE) -C $(@D) -f Makefile NET_BOARD=1 \
-	    VERBOSE=1 ARCH=$(BR2_TARGET_OPTIMIZATION)
+	$(TARGET_CONFIGURE_OPTS) $(MAKE) -C $(@D) -f Makefile ARCH=$(BR2_TARGET_OPTIMIZATION)
 endef
 
 define SUPERMODEL_INSTALL_TARGET_CMDS
@@ -58,3 +57,4 @@ SUPERMODEL_PRE_PATCH_HOOKS += SUPERMODEL_LINE_ENDINGS_FIXUP
 SUPERMODEL_POST_INSTALL_TARGET_HOOKS += SUPERMODEL_POST_PROCESS
 
 $(eval $(generic-package))
+$(eval $(emulator-info-package))

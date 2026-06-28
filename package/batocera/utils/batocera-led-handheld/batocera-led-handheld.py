@@ -19,7 +19,7 @@ default is:
   100=009900
 
 100 is when a charger is plugged in
-You can use PULSE, RAINBOW and OFF as rgb_color for special effects.
+You can use PULSE, RAINBOW, CHROMA and OFF as rgb_color for special effects.
 
 ESCOLOR is the default one set with sliders in EmulationStation
 
@@ -359,6 +359,24 @@ if PATH == None:
     exit()
 if len(sys.argv)>1:
     led = batoled.led()
+
+    if led:
+        original_set_color = led.set_color
+        def custom_set_color(rgb):
+            if rgb == "ESCOLOR":
+                mode = batoled.batoconf("led.mode") or "static"
+                if mode == "rainbow":
+                    original_set_color("RAINBOW")
+                    return
+                elif mode == "chroma":
+                    original_set_color("CHROMA")
+                    return
+                elif mode == "pulse":
+                    original_set_color("PULSE")
+                    return
+            original_set_color(rgb)
+        led.set_color = custom_set_color
+
     if sys.argv[1] == "start":
         try:
             led.set_brightness_conf()
@@ -372,12 +390,15 @@ if len(sys.argv)>1:
             led.turn_off_all()
         else:
             led.turn_off()
-    elif sys.argv[1] == "retroachievement" or sys.argv[1] == "blink":
+    elif sys.argv[1] == "retroachievement" or sys.argv[1] == "blink" or sys.argv[1] == "flash":
         if leds_runtime_enabled() and color_changes_allowed():
             led.blink_effect()
     elif sys.argv[1] == "rainbow":
         if leds_runtime_enabled() and color_changes_allowed():
             led.rainbow_effect()
+    elif sys.argv[1] == "chroma":
+        if leds_runtime_enabled() and color_changes_allowed():
+            led.chroma_effect()
     elif sys.argv[1] == "pulse":
         if leds_runtime_enabled() and color_changes_allowed():
             led.pulse_effect()

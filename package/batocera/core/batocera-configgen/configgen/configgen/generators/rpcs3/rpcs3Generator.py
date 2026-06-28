@@ -125,6 +125,17 @@ _RPCS3_DATABASE_PROFILE_TARGETS: Final[tuple[tuple[str, ...], ...]] = (
 _RPCS3_GT6_TITLE_IDS: Final = frozenset(("BCES01893", "BCJS37016", "BCUS98296"))
 _MISSING_DATABASE_VALUE: Final = object()
 
+def _normalise_rpcs3_vsync(value: Any) -> str:
+    if isinstance(value, bool):
+        return "Full" if value else "Disabled"
+    if isinstance(value, str):
+        match value.strip().lower():
+            case "true" | "on" | "1":
+                return "Full"
+            case "false" | "off" | "0":
+                return "Disabled"
+    return cast(str, value)
+
 def _cfg_get(system: Emulator, key: str, default: Any, *aliases: str) -> Any:
     if key in _RPCS3_DATABASE_KEYS and _rpcs3_database_profile_requested(system):
         return default
@@ -514,8 +525,8 @@ class Rpcs3Generator(Generator):
         rpcs3ymlconfig["Video"]["Shader Precision"] = _cfg_get(system, "rpcs3_shader", "High", "shader_quality")
         
         # Vsync
-        rpcs3ymlconfig["Video"]["VSync"] = _cfg_get_bool(system, "rpcs3_vsync", False, "vsync")
-        
+        rpcs3ymlconfig["Video"]["VSync"] = _normalise_rpcs3_vsync(_cfg_get(system, "rpcs3_vsync", "Full", "vsync"))
+
         # Stretch to display area
         rpcs3ymlconfig["Video"]["Stretch To Display Area"] = _cfg_get_bool(system, "rpcs3_stretchdisplay", False, "stretchtodisplay")
         

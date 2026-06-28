@@ -6054,9 +6054,13 @@ ps4:
 
     Copy the extracted game folder to /userdata/roms/ps4.
     Then in the game directory, create a file with a .ps4 extension so EmulationStation will see it.
-    i.e. /userdata/roms/ps4/CUSA03173/Bloodborne.ps4
+    Example: /userdata/roms/ps4/CUSA03173/Bloodborne.ps4
 
-    Afterwards you can launch the game from EmulationStation accordingly.
+    Alternatively you can rename the extracted folder to use the .ps4 extension.
+    Example: /userdata/roms/ps4/Bloodborne.ps4
+
+    This .ps4 extension acts as a launcher entry and allows the game to appear correctly in the frontend.
+    The game's eboot.bin launcher file should be in the root of the directory called .ps4 or alongside the .ps4 file.
 
     DLC content will be stored in: /userdata/roms/ps4/DLC
 
