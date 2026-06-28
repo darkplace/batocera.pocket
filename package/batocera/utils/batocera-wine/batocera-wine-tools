@@ -465,17 +465,29 @@ wine_ge_menu() {
 
 ge_proton_menu() {
     require_commands jq curl wget tar || return 1
-    local data filtered
+    local data filtered suffix arch_label
+    case "$(uname -m)" in
+        aarch64|arm64)
+            suffix="-aarch64.tar.gz"
+            arch_label="ARM64"
+            ;;
+        *)
+            suffix=".tar.gz"
+            arch_label="x86_64"
+            ;;
+    esac
+
     data=$(fetch_json "$PROTON_GE_RELEASES_URL") || {
         msg_box "Failed to fetch GE-Proton releases."
         return 1
     }
-    filtered=$(printf '%s' "$data" | jq -c '
+    filtered=$(printf '%s' "$data" | jq -c --arg suffix "$suffix" --arg arch_label "$arch_label" '
         [.[] as $r
          | $r.assets[]?
-         | select(.name | endswith(".tar.gz"))
+         | select((.name | startswith("GE-Proton")) and (.name | endswith($suffix)))
+         | select(($suffix == "-aarch64.tar.gz") or ((.name | contains("-aarch64")) | not))
          | {
-             label: (.name + " [" + $r.tag_name + "]"),
+             label: ("GE-Proton " + $arch_label + ": " + (.name | rtrimstr(".tar.gz")) + " [" + $r.tag_name + "]"),
              archive: .name,
              url: .browser_download_url
            }
@@ -483,14 +495,23 @@ ge_proton_menu() {
         msg_box "Failed to parse GE-Proton releases."
         return 1
     }
+    if [ "$(printf '%s' "$filtered" | jq 'length')" -eq 0 ]; then
+        msg_box "No GE-Proton ${arch_label} builds were found."
+        return 1
+    fi
     download_release_selection "GE-Proton" "Select GE-Proton builds to download:" "$filtered"
 }
 
 ge_proton_url_menu() {
     require_commands jq wget tar || return 1
-    local url filtered
+    local url filtered sample_url="$GE_PROTON_SAMPLE_URL"
+    case "$(uname -m)" in
+        aarch64|arm64)
+            sample_url="https://github.com/GloriousEggroll/proton-ge-custom/releases/download/GE-Proton11-1/GE-Proton11-1-aarch64.tar.gz"
+            ;;
+    esac
 
-    url="$(input_box "GE-Proton URL" "Enter a GE-Proton .tar.gz release URL.\n\nExample:" "$GE_PROTON_SAMPLE_URL")" || return 1
+    url="$(input_box "GE-Proton URL" "Enter a GE-Proton .tar.gz release URL.\n\nExample:" "$sample_url")" || return 1
     url="${url//[[:space:]]/}"
     filtered="$(ge_proton_json_from_url "$url")" || {
         msg_box "Unsupported GE-Proton URL:\n${url}\n\nExpected a GitHub release asset like:\n${GE_PROTON_SAMPLE_URL}"
@@ -759,12 +780,122 @@ download_steam_proton_ge_url() {
     msg_box "Installed ${version} for Steam.\n\nSteam will list it as a compatibility tool after restart. It is also written as the GE-Proton preflight install target."
 }
 
+download_steam_proton_ge_selection() {
+    local json="$1"
+    local selections idx archive url dirname version steam_root compat_dir tmpfile outdir
+    local default_version="" default_url="" installed=0 failed=0
+
+    selections=$(select_multiple_from_json \
+        "Steam GE-Proton" \
+        "Select one or more GE-Proton builds for Steam to download:" \
+        "$json") || return 1
+    [ -n "$selections" ] || return 1
+
+    steam_root="$(steam_root_dir)"
+    compat_dir="${steam_root}/compatibilitytools.d"
+    mkdir -p "$compat_dir" || return 1
+
+    for idx in $selections; do
+        idx=$((idx - 1))
+        archive=$(printf '%s' "$json" | jq -r ".[$idx].archive")
+        url=$(printf '%s' "$json" | jq -r ".[$idx].url")
+        dirname=$(archive_dir_name "$archive") || {
+            msg_box "Unsupported archive format: ${archive}"
+            failed=$((failed + 1))
+            continue
+        }
+        version="$dirname"
+        tmpfile="${compat_dir}/${archive}"
+        outdir="${compat_dir}/${dirname}"
+
+        if ! download_with_gauge "$url" "$tmpfile" "Downloading ${version} for Steam..."; then
+            msg_box "Download failed: ${archive}"
+            rm -f "$tmpfile"
+            failed=$((failed + 1))
+            continue
+        fi
+
+        rm -rf "$outdir"
+        mkdir -p "$outdir" || return 1
+        if ! extract_archive_with_gauge "$tmpfile" "$outdir" "Extracting ${version} for Steam..."; then
+            msg_box "Extraction failed: ${archive}"
+            rm -f "$tmpfile"
+            rm -rf "$outdir"
+            failed=$((failed + 1))
+            continue
+        fi
+        rm -f "$tmpfile"
+
+        prepare_steam_proton_ge_dir "$outdir" "$version"
+        if [ ! -x "$outdir/proton" ]; then
+            msg_box "${version} did not install a runnable proton script at:\n${outdir}/proton"
+            failed=$((failed + 1))
+            continue
+        fi
+
+        default_version="$version"
+        default_url="$url"
+        installed=$((installed + 1))
+    done
+
+    if [ "$installed" -eq 0 ]; then
+        msg_box "No GE-Proton builds for Steam were installed."
+        return 1
+    fi
+
+    write_steam_proton_ge_config "$default_version" "$default_url" || {
+        msg_box "Installed ${installed} build(s), but failed to write ${STEAM_PROTON_GE_CONFIG}."
+        return 1
+    }
+
+    msg_box "Installed ${installed} GE-Proton build(s) for Steam.\n\nSteam will list each build as a separate compatibility tool after restart. The last installed build, ${default_version}, is now the default preflight install target.\n\nFailed installs: ${failed}"
+}
+
 steam_proton_ge_url_menu() {
     local url
 
     url="$(input_box "Steam GE-Proton URL" "Enter a GE-Proton .tar.gz release URL to install as a Steam compatibility tool.\n\nExample:" "$GE_PROTON_SAMPLE_URL")" || return 1
     url="${url//[[:space:]]/}"
     download_steam_proton_ge_url "$url"
+}
+
+steam_proton_ge_menu() {
+    require_commands jq curl wget tar || return 1
+    local data filtered suffix arch_label
+    case "$(uname -m)" in
+        aarch64|arm64)
+            suffix="-aarch64.tar.gz"
+            arch_label="ARM64"
+            ;;
+        *)
+            suffix=".tar.gz"
+            arch_label="x86_64"
+            ;;
+    esac
+
+    data=$(fetch_json "$PROTON_GE_RELEASES_URL") || {
+        msg_box "Failed to fetch Steam GE-Proton releases."
+        return 1
+    }
+    filtered=$(printf '%s' "$data" | jq -c --arg suffix "$suffix" --arg arch_label "$arch_label" '
+        [.[] as $r
+         | $r.assets[]?
+         | select((.name | startswith("GE-Proton")) and (.name | endswith($suffix)))
+         | select(($suffix == "-aarch64.tar.gz") or ((.name | contains("-aarch64")) | not))
+         | {
+             label: ("GE-Proton for Steam " + $arch_label + ": " + (.name | rtrimstr(".tar.gz")) + " [" + $r.tag_name + "]"),
+             archive: .name,
+             url: .browser_download_url
+           }
+        ]') || {
+        msg_box "Failed to parse Steam GE-Proton releases."
+        return 1
+    }
+    if [ "$(printf '%s' "$filtered" | jq 'length')" -eq 0 ]; then
+        msg_box "No GE-Proton builds for Steam were found."
+        return 1
+    fi
+    download_steam_proton_ge_selection "$filtered"
 }
 
 steam_proton_cachyos_menu() {
@@ -809,6 +940,10 @@ translate_free_game_installer() {
         -e 's/Foclabroc Toolbox/Batocera Wine Tools/g' \
         -e 's/export LANG=fr_FR.UTF-8/export LANG=en_US.UTF-8/g' \
         -e 's/export LC_ALL=fr_FR.UTF-8/export LC_ALL=en_US.UTF-8/g' \
+        -e 's|^XMLSTARLET_DIR=.*|XMLSTARLET_DIR="/usr/bin"|g' \
+        -e 's|^XMLSTARLET_BIN=.*|XMLSTARLET_BIN="/usr/bin/xmlstarlet"|g' \
+        -e 's|^XMLSTARLET_SYMLINK=.*|XMLSTARLET_SYMLINK="/usr/bin/xmlstarlet"|g' \
+        -e 's|if \[ ! -f "$XMLSTARLET_BIN" \]; then|if false; then|g' \
         -e 's/Suppression ancien \$GAME_NAME si existant/Removing old \$GAME_NAME if present/g' \
         -e 's/echo -e "\\n\\n.*chargement de \$GAME_NAME\.\.\."/echo -e "\\n\\nDownloading $GAME_NAME..."/g' \
         -e 's/echo -e "\\nVitesse : ${SPEED_MO} Mo\/s .*"/echo -e "\\nSpeed: ${SPEED_MO} MB\/s | Downloaded: ${CURRENT_MB} \/ ${TOTAL_MB} MB"/g' \
@@ -819,10 +954,99 @@ translate_free_game_installer() {
         -e 's/--title "Edition du gamelist" --gauge "\\nAjout images et video au gamelist windows\.\.\."/--title "Editing gamelist" --gauge "\\nAdding images and videos to the Windows gamelist..."/g' \
         -e 's|dialog --backtitle "Batocera Wine Tools" --title "Installation .*|dialog --backtitle "Batocera Wine Tools" --title "Installation complete" --msgbox "\\n$GAME_NAME has been added to Windows.\\n\\nRefresh gamelists to make it appear in the menu.\\n$INFO_MESSAGE" 13 70 2>\&1 >/dev/tty|g' \
         "$script"
+    patch_free_game_xmlstarlet "$script"
+}
+
+patch_free_game_xmlstarlet() {
+    local script="$1"
+    local marker="# __BATOCERA_NATIVE_GAMELIST_XML__"
+    local stub tmp
+
+    grep -qF "$marker" "$script" && return 0
+    stub="$(mktemp)" || return 1
+    tmp="$(mktemp)" || {
+        rm -f "$stub"
+        return 1
+    }
+
+    cat > "$stub" <<'EOF'
+# __BATOCERA_NATIVE_GAMELIST_XML__
+xmlstarlet() {
+    if [ "${1:-}" != "ed" ]; then
+        echo "Unsupported xmlstarlet command in Batocera Wine Tools: $*" >&2
+        return 1
+    fi
+
+    python3 - "$GAMELIST_FILE" "$GAME_FILE_FINAL" "$GAME_NAME" "$DESC" "$GIT_NAME" "$DEV" "$PUBLISH" "$GENRE" "$LANG" "$REGION" <<'PY'
+import sys
+import xml.etree.ElementTree as ET
+from pathlib import Path
+
+gamelist, game_file, game_name, desc, git_name, dev, publish, genre, lang, region = sys.argv[1:11]
+path = Path(gamelist)
+path.parent.mkdir(parents=True, exist_ok=True)
+
+if path.exists() and path.stat().st_size > 0:
+    try:
+        tree = ET.parse(path)
+        root = tree.getroot()
+    except ET.ParseError:
+        root = ET.Element("gameList")
+        tree = ET.ElementTree(root)
+else:
+    root = ET.Element("gameList")
+    tree = ET.ElementTree(root)
+
+target_path = f"./{game_file}"
+for old in list(root.findall("game")):
+    node = old.find("path")
+    if node is not None and (node.text or "") == target_path:
+        root.remove(old)
+
+game = ET.SubElement(root, "game")
+fields = [
+    ("path", target_path),
+    ("name", game_name),
+    ("desc", desc),
+    ("image", f"./images/{git_name}-s.png"),
+    ("video", f"./videos/{git_name}-v.mp4"),
+    ("marquee", f"./images/{git_name}-w.png"),
+    ("thumbnail", f"./images/{git_name}-b.png"),
+    ("rating", "1.00"),
+    ("developer", dev),
+    ("publisher", publish),
+    ("genre", genre),
+    ("lang", lang),
+    ("region", region),
+]
+for key, value in fields:
+    ET.SubElement(game, key).text = value
+
+ET.indent(tree, space="  ")
+tree.write(path, encoding="UTF-8", xml_declaration=True)
+PY
+}
+EOF
+
+    awk -v stub="$stub" '
+        index($0, "# Fonction edit gamelist") && !inserted {
+            while ((getline line < stub) > 0) print line
+            close(stub)
+            inserted = 1
+        }
+        { print }
+        END {
+            if (!inserted) {
+                while ((getline line < stub) > 0) print line
+                close(stub)
+            }
+        }
+    ' "$script" > "$tmp" && mv "$tmp" "$script"
+    rm -f "$stub" "$tmp"
 }
 
 install_free_windows_games_menu() {
-    require_commands curl bash || return 1
+    require_commands curl bash python3 || return 1
     local games=(
         "Celeste 64|Madeline returns in 3D. (39.8 MB)|c64.sh"
         "Celeste Pico-8|Help Madeline survive her inner demons on Celeste Mountain. (14.8 MB)|celeste.sh"
@@ -1456,8 +1680,8 @@ main_menu() {
             11 "Add Windows game to Steam"
             12 "Install Decky PluginLoader for Steam"
             13 "Install free Windows games"
-            14 "Download GE-Proton runner from URL"
-            15 "Install GE-Proton Steam runner from URL"
+            14 "Download GE-Proton runner builds"
+            15 "Install GE-Proton Steam builds"
             99 "Exit"
         )
 
@@ -1491,8 +1715,8 @@ main_menu() {
             11) add_windows_game_to_steam_menu ;;
             12) install_decky_loader_menu ;;
             13) install_free_windows_games_menu ;;
-            14) ge_proton_url_menu ;;
-            15) steam_proton_ge_url_menu ;;
+            14) ge_proton_menu ;;
+            15) steam_proton_ge_menu ;;
             99) break ;;
         esac
     done

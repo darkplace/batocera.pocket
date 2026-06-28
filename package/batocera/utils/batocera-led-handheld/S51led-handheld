@@ -24,27 +24,31 @@ unregister_hook() {
 	rm -f "${HOOK_LINK}"
 }
 
+kill_daemons() {
+	if [ -f "$PID" ]; then
+		start-stop-daemon -K -q -p "$PID" --retry 3 >/dev/null 2>&1 || true
+		rm -f "$PID"
+	fi
+	# start-stop-daemon can leave stale Python instances behind if the script
+	# changed while running. Always make start idempotent.
+	pkill -f "python3 /usr/bin/batocera-led-handheld start" >/dev/null 2>&1 || true
+	pkill -f "/usr/bin/batocera-led-handheld start" >/dev/null 2>&1 || true
+	pkill -f "batocera-led-handheld[.]py start" >/dev/null 2>&1 || true
+}
+
 start() {
 	printf "Starting LED handheld daemon: "
 	register_hook
+	kill_daemons
 	start-stop-daemon -S -q -b -m -p "$PID" --exec "$PROCESS" -- start
 	[ $? = 0 ] && echo "OK" || echo "FAIL"
 }
 
 stop() {
 	printf "Stopping LED handheld daemon: "
-	RES=0
-	if [ -f "$PID" ]; then
-		start-stop-daemon -K -q -p "$PID" --retry 5
-		RES=$?
-		rm -f "$PID"
-	else
-		# Fallback when pidfile is missing/stale.
-		pkill -f "python3 /usr/bin/batocera-led-handheld start" >/dev/null 2>&1
-		RES=$?
-	fi
+	kill_daemons
 	unregister_hook
-	[ $RES = 0 ] && echo "OK" || echo "FAIL"
+	echo "OK"
 	/usr/bin/batocera-led-handheld stop
 }
 restart() {

@@ -11,9 +11,14 @@ BATOCERA_WINE_SOURCE=
 BATOCERA_WINE_SOURCE_PATH = \
     $(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/utils/batocera-wine
 
+BATOCERA_WINE_DEPENDENCIES = xmlstarlet
+
 define BATOCERA_WINE_INSTALL_TARGET_CMDS
 	mkdir -p $(TARGET_DIR)/usr/bin
 	mkdir -p $(TARGET_DIR)/etc/X11/xorg.conf.d
+	if [ -x $(TARGET_DIR)/usr/bin/xml ] && [ ! -e $(TARGET_DIR)/usr/bin/xmlstarlet ]; then \
+	    ln -sf xml $(TARGET_DIR)/usr/bin/xmlstarlet; \
+	fi
 	install -m 0755 $(BATOCERA_WINE_SOURCE_PATH)/batocera-wine \
 	    $(TARGET_DIR)/usr/bin/batocera-wine
 	install -m 0755 $(BATOCERA_WINE_SOURCE_PATH)/batocera-wine-runners \

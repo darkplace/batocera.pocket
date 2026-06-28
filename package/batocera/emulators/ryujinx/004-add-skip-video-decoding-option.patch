@@ -1,0 +1,266 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Sun, 28 Jun 2026 00:00:00 +0000
+Subject: [PATCH] add option to skip NVDEC video decoding
+
+Some games can hang or crash on video playback while the rest of the title is
+playable. Add a persistent skip_videos configuration option that routes through
+HLE into the GPU/NVDEC path and skips video frame decoding when enabled.
+
+Signed-off-by: suckbluefrog <suckbluefrog@proton.me>
+---
+ src/Ryujinx.Graphics.Gpu/GpuContext.cs                     |  8 +++++++-
+ src/Ryujinx.Graphics.Nvdec/NvdecDevice.cs                  | 13 ++++++++++++-
+ src/Ryujinx/Headless/HeadlessRyujinx.Init.cs               |  1 +
+ src/Ryujinx.HLE/HOS/Services/Nv/Host1xContext.cs           |  2 +-
+ src/Ryujinx.HLE/HleConfiguration.cs                        |  8 ++++++++
+ src/Ryujinx.HLE/Switch.cs                                  |  2 +-
+ src/Ryujinx/Systems/Configuration/ConfigurationFileFormat.cs |  5 +++++
+ src/Ryujinx/Systems/Configuration/ConfigurationState.Model.cs | 10 ++++++++++
+ src/Ryujinx/Systems/Configuration/ConfigurationState.Migration.cs |  3 ++-
+ src/Ryujinx/Systems/Configuration/ConfigurationState.cs    |  3 +++
+ 9 files changed, 50 insertions(+), 6 deletions(-)
+
+diff --git a/src/Ryujinx.Graphics.Gpu/GpuContext.cs b/src/Ryujinx.Graphics.Gpu/GpuContext.cs
+--- a/src/Ryujinx.Graphics.Gpu/GpuContext.cs
++++ b/src/Ryujinx.Graphics.Gpu/GpuContext.cs
+@@ -101,6 +101,11 @@ namespace Ryujinx.Graphics.Gpu
+         /// </summary>
+         internal DirtyHacks DirtyHacks { get; }
+
++        /// <summary>
++        /// Skip NVDEC video frame decoding.
++        /// </summary>
++        public bool SkipVideoDecoding { get; }
++
+
+         /// <summary>
+         /// Host hardware capabilities.
+@@ -121,8 +126,9 @@ namespace Ryujinx.Graphics.Gpu
+         /// Creates a new instance of the GPU emulation context.
+         /// </summary>
+         /// <param name="renderer">Host renderer</param>
+-        public GpuContext(IRenderer renderer, DirtyHacks hacks)
++        public GpuContext(IRenderer renderer, DirtyHacks hacks, bool skipVideoDecoding)
+         {
+             Renderer = renderer;
++            SkipVideoDecoding = skipVideoDecoding;
+
+             GPFifo = new GPFifoDevice(this);
+
+diff --git a/src/Ryujinx.Graphics.Nvdec/NvdecDevice.cs b/src/Ryujinx.Graphics.Nvdec/NvdecDevice.cs
+--- a/src/Ryujinx.Graphics.Nvdec/NvdecDevice.cs
++++ b/src/Ryujinx.Graphics.Nvdec/NvdecDevice.cs
+@@ -11,14 +11,17 @@ namespace Ryujinx.Graphics.Nvdec
+     {
+         private readonly ResourceManager _rm;
+         private readonly DeviceState<NvdecRegisters> _state;
++        private readonly bool _skipVideoDecoding;
+
+         private long _currentId;
+         private readonly ConcurrentDictionary<long, NvdecDecoderContext> _contexts;
+         private NvdecDecoderContext _currentContext;
++        private bool _reportedVideoSkip;
+
+-        public NvdecDevice(DeviceMemoryManager mm)
++        public NvdecDevice(DeviceMemoryManager mm, bool skipVideoDecoding)
+         {
+             _rm = new ResourceManager(mm, new SurfaceCache(mm));
++            _skipVideoDecoding = skipVideoDecoding;
+             _state = new DeviceState<NvdecRegisters>(new Dictionary<string, RwCallback>
+             {
+                 { nameof(NvdecRegisters.Execute), new RwCallback(Execute, null) },
+@@ -62,6 +66,13 @@ namespace Ryujinx.Graphics.Nvdec
+
+         private void Decode(ApplicationId applicationId)
+         {
++            if (_skipVideoDecoding)
++            {
++                LogVideoSkipOnce();
++
++                return;
++            }
++
+             switch (applicationId)
+             {
+                 case ApplicationId.H264:
+@@ -79,5 +90,14 @@ namespace Ryujinx.Graphics.Nvdec
+                     break;
+             }
+         }
++
++        private void LogVideoSkipOnce()
++        {
++            if (!_reportedVideoSkip)
++            {
++                Logger.Info?.Print(LogClass.Nvdec, "NVDEC video decoding is disabled. Skipping video frames.");
++                _reportedVideoSkip = true;
++            }
++        }
+     }
+ }
+diff --git a/src/Ryujinx.HLE/HOS/Services/Nv/Host1xContext.cs b/src/Ryujinx.HLE/HOS/Services/Nv/Host1xContext.cs
+--- a/src/Ryujinx.HLE/HOS/Services/Nv/Host1xContext.cs
++++ b/src/Ryujinx.HLE/HOS/Services/Nv/Host1xContext.cs
+@@ -18,7 +18,7 @@ namespace Ryujinx.HLE.HOS.Services.Nv
+             MemoryAllocator = new NvMemoryAllocator();
+             Host1x = new Host1xDevice(gpu.Synchronization);
+             Smmu = gpu.CreateDeviceMemoryManager(pid);
+-            NvdecDevice nvdec = new(Smmu);
++            NvdecDevice nvdec = new(Smmu, gpu.SkipVideoDecoding);
+             VicDevice vic = new(Smmu);
+             Host1x.RegisterDevice(ClassId.Nvdec, nvdec);
+             Host1x.RegisterDevice(ClassId.Vic, vic);
+diff --git a/src/Ryujinx.HLE/HleConfiguration.cs b/src/Ryujinx.HLE/HleConfiguration.cs
+--- a/src/Ryujinx.HLE/HleConfiguration.cs
++++ b/src/Ryujinx.HLE/HleConfiguration.cs
+@@ -165,6 +165,11 @@ namespace Ryujinx.HLE
+         /// </summary>
+         public float AudioVolume { get; set; }
+
++        /// <summary>
++        /// Skip NVDEC video frame decoding.
++        /// </summary>
++        internal readonly bool SkipVideoDecoding;
++
+         /// <summary>
+         /// Use Hypervisor over JIT if available.
+         /// </summary>
+@@ -235,6 +240,7 @@ namespace Ryujinx.HLE
+                                 bool ignoreMissingServices,
+                                 AspectRatio aspectRatio,
+                                 float audioVolume,
++                                bool skipVideoDecoding,
+                                 bool useHypervisor,
+                                 string multiplayerLanInterfaceId,
+                                 MultiplayerMode multiplayerMode,
+@@ -262,6 +268,7 @@ namespace Ryujinx.HLE
+             IgnoreMissingServices = ignoreMissingServices;
+             AspectRatio = aspectRatio;
+             AudioVolume = audioVolume;
++            SkipVideoDecoding = skipVideoDecoding;
+             UseHypervisor = useHypervisor;
+             MultiplayerLanInterfaceId = multiplayerLanInterfaceId;
+             MultiplayerMode = multiplayerMode;
+diff --git a/src/Ryujinx.HLE/Switch.cs b/src/Ryujinx.HLE/Switch.cs
+--- a/src/Ryujinx.HLE/Switch.cs
++++ b/src/Ryujinx.HLE/Switch.cs
+@@ -85,7 +85,7 @@ namespace Ryujinx.HLE
+             DirtyHacks        = new DirtyHacks(Configuration.Hacks);
+             AudioDeviceDriver = new CompatLayerHardwareDeviceDriver(Configuration.AudioDeviceDriver);
+             Memory            = new MemoryBlock(Configuration.MemoryConfiguration.ToDramSize(), memoryAllocationFlags);
+-            Gpu               = new GpuContext(Configuration.GpuRenderer, DirtyHacks);
++            Gpu               = new GpuContext(Configuration.GpuRenderer, DirtyHacks, Configuration.SkipVideoDecoding);
+             Debugger          = Configuration.EnableGdbStub ? new Debugger.Debugger(this, Configuration.GdbStubPort) : null;
+             System            = new HOS.Horizon(this);
+             Statistics        = new PerformanceStatistics(this);
+diff --git a/src/Ryujinx/Headless/HeadlessRyujinx.Init.cs b/src/Ryujinx/Headless/HeadlessRyujinx.Init.cs
+--- a/src/Ryujinx/Headless/HeadlessRyujinx.Init.cs
++++ b/src/Ryujinx/Headless/HeadlessRyujinx.Init.cs
+@@ -334,6 +334,7 @@ namespace Ryujinx.Headless
+                         options.IgnoreMissingServices,
+                         options.AspectRatio,
+                         options.AudioVolume,
++                        false,
+                         options.UseHypervisor ?? true,
+                         options.MultiplayerLanInterfaceId,
+                         Common.Configuration.Multiplayer.MultiplayerMode.Disabled,
+diff --git a/src/Ryujinx/Systems/Configuration/ConfigurationFileFormat.cs b/src/Ryujinx/Systems/Configuration/ConfigurationFileFormat.cs
+--- a/src/Ryujinx/Systems/Configuration/ConfigurationFileFormat.cs
++++ b/src/Ryujinx/Systems/Configuration/ConfigurationFileFormat.cs
+@@ -13,7 +13,7 @@ namespace Ryujinx.Ava.Systems.Configuration
+         /// <summary>
+         /// The current version of the file format
+         /// </summary>
+-        public const int CurrentVersion = 70;
++        public const int CurrentVersion = 71;
+
+         /// <summary>
+         /// Version of the configuration file format
+@@ -318,6 +318,11 @@ namespace Ryujinx.Ava.Systems.Configuration
+         /// </summary>
+         public float AudioVolume { get; set; }
+
++        /// <summary>
++        /// Skip NVDEC video frame decoding.
++        /// </summary>
++        public bool SkipVideos { get; set; }
++
+         /// <summary>
+         /// The selected memory manager mode
+         /// </summary>
+diff --git a/src/Ryujinx/Systems/Configuration/ConfigurationState.Model.cs b/src/Ryujinx/Systems/Configuration/ConfigurationState.Model.cs
+--- a/src/Ryujinx/Systems/Configuration/ConfigurationState.Model.cs
++++ b/src/Ryujinx/Systems/Configuration/ConfigurationState.Model.cs
+@@ -383,6 +383,11 @@ namespace Ryujinx.Ava.Systems.Configuration
+             /// </summary>
+             public ReactiveObject<float> AudioVolume { get; private set; }
+
++            /// <summary>
++            /// Skip NVDEC video frame decoding.
++            /// </summary>
++            public ReactiveObject<bool> SkipVideos { get; private set; }
++
+             /// <summary>
+             /// The selected memory manager mode
+             /// </summary>
+@@ -464,6 +469,8 @@ namespace Ryujinx.Ava.Systems.Configuration
+                 SkipUserProfilesManager.LogChangesToValue(nameof(SkipUserProfilesManager));
+                 AudioVolume = new ReactiveObject<float>();
+                 AudioVolume.LogChangesToValue(nameof(AudioVolume));
++                SkipVideos = new ReactiveObject<bool>();
++                SkipVideos.LogChangesToValue(nameof(SkipVideos));
+                 UseHypervisor = new ReactiveObject<bool>();
+                 UseHypervisor.LogChangesToValue(nameof(UseHypervisor));
+             }
+@@ -932,6 +939,7 @@ namespace Ryujinx.Ava.Systems.Configuration
+                 System.MemoryManagerMode,
+                 System.IgnoreMissingServices,
+                 Graphics.AspectRatio,
+                 System.AudioVolume,
++                System.SkipVideos,
+                 System.UseHypervisor,
+                 Multiplayer.LanInterfaceId,
+                 Multiplayer.Mode,
+diff --git a/src/Ryujinx/Systems/Configuration/ConfigurationState.Migration.cs b/src/Ryujinx/Systems/Configuration/ConfigurationState.Migration.cs
+--- a/src/Ryujinx/Systems/Configuration/ConfigurationState.Migration.cs
++++ b/src/Ryujinx/Systems/Configuration/ConfigurationState.Migration.cs
+@@ -103,6 +103,7 @@ namespace Ryujinx.Ava.Systems.Configuration
+             System.FsGlobalAccessLogMode.Value = cff.FsGlobalAccessLogMode;
+             System.AudioBackend.Value = cff.AudioBackend;
+             System.AudioVolume.Value = cff.AudioVolume;
++            System.SkipVideos.Value = cff.SkipVideos;
+             System.MemoryManagerMode.Value = cff.MemoryManagerMode;
+             System.DramSize.Value = cff.DramSize;
+             System.IgnoreMissingServices.Value = cff.IgnoreMissingServices;
+@@ -488,7 +489,8 @@ namespace Ryujinx.Ava.Systems.Configuration
+                     };
+                 }
+         ),
+-                (69, static cff => cff.SkipUserProfiles = false)
++                (69, static cff => cff.SkipUserProfiles = false),
++                (71, static cff => cff.SkipVideos = false)
+             );
+     }
+ }
+diff --git a/src/Ryujinx/Systems/Configuration/ConfigurationState.cs b/src/Ryujinx/Systems/Configuration/ConfigurationState.cs
+--- a/src/Ryujinx/Systems/Configuration/ConfigurationState.cs
++++ b/src/Ryujinx/Systems/Configuration/ConfigurationState.cs
+@@ -83,6 +83,7 @@ namespace Ryujinx.Ava.Systems.Configuration
+                 FsGlobalAccessLogMode = System.FsGlobalAccessLogMode,
+                 AudioBackend = System.AudioBackend,
+                 AudioVolume = System.AudioVolume,
++                SkipVideos = System.SkipVideos,
+                 MemoryManagerMode = System.MemoryManagerMode,
+                 DramSize = System.DramSize,
+                 IgnoreMissingServices = System.IgnoreMissingServices,
+@@ -211,6 +212,7 @@ namespace Ryujinx.Ava.Systems.Configuration
+             System.FsGlobalAccessLogMode.Value = 0;
+             System.AudioBackend.Value = AudioBackend.SDL2;
+             System.AudioVolume.Value = 1;
++            System.SkipVideos.Value = false;
+             System.MemoryManagerMode.Value = MemoryManagerMode.HostMappedUnsafe;
+             System.DramSize.Value = MemoryConfiguration.MemoryConfiguration4GiB;
+             System.IgnoreMissingServices.Value = false;
+--
+2.43.0

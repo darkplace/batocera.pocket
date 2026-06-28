@@ -32,15 +32,17 @@ import time
 import sys
 import glob
 import batoled
-from threading import Thread
 
 DEBUG = 0
 CHECK_INTERVAL  = 1  # seconds between two checks (kept low for responsive ES LED slider updates)
+ANIMATION_FRAME_INTERVAL = 0.05
 LED_CHANGE_TIME = 120 # seconds to prevent changes while entering the settings menu
 CONFIG_FILE='/userdata/system/configs/leds.conf'
 BLOCK_FILE='/var/run/led-handheld-block'
 CHARGE_LIMIT_SETTING='system.battery.charge_limit'
 CHARGE_TARGET_REACHED_COLOR='0000FF'
+ANIMATED_LED_MODES = ("rainbow", "chroma", "pulse")
+PID_FILE='/var/run/led-handheld.pid'
 
 def check_support():
     model = batoled.batocera_model()
@@ -221,6 +223,75 @@ def leds_runtime_enabled():
             return False
     return True
 
+def current_led_mode():
+    mode = batoled.batoconf("led.mode") or "static"
+    return mode.strip().lower()
+
+def is_animated_led_mode():
+    return current_led_mode() in ANIMATED_LED_MODES
+
+def animation_sleep_interval(led):
+    if not is_animated_led_mode():
+        return CHECK_INTERVAL
+    # Kernel-backed effects persist without userspace stepping.
+    if led.__class__.__name__ == "legiongosled":
+        return CHECK_INTERVAL
+    return ANIMATION_FRAME_INTERVAL
+
+def animated_led_frame_color(mode, frame):
+    step = frame % batoled.EFFECT_STEP
+    if mode == "pulse":
+        r, g, b = batoled.batoconf_color()
+        base = f'{batoled.dec_to_hex(r)}{batoled.dec_to_hex(g)}{batoled.dec_to_hex(b)}'
+        return batoled.getPulseRGB(step, batoled.EFFECT_STEP, base)
+
+    # Chroma is a uniform hue cycle on software-driven RGB LEDs.
+    return batoled.getRainbowRGB(float(step / batoled.EFFECT_STEP))
+
+def set_rgbled_dec_color(led, paths, rgb):
+    r, g, b = batoled.hex_to_dec(rgb[0:2]), batoled.hex_to_dec(rgb[2:4]), batoled.hex_to_dec(rgb[4:6])
+    led._set_paths_color(paths, f'{r} {g} {b}')
+
+def apply_animated_led_frame(led, frame):
+    mode = current_led_mode()
+    if mode not in ANIMATED_LED_MODES:
+        return frame
+
+    if led.__class__.__name__ == "legiongosled":
+        if mode == "pulse":
+            led.set_color("PULSE")
+        elif mode == "chroma":
+            led.set_color("CHROMA")
+        else:
+            led.set_color("RAINBOW")
+        return frame
+
+    # Thor/Odin-style RGB class LEDs have multiple addressable segments. Use them
+    # for rainbow so it is visually distinct from chroma's uniform hue cycle.
+    if mode == "rainbow" and hasattr(led, "accent_paths") and hasattr(led, "_set_paths_color"):
+        paths = getattr(led, "accent_paths", [])
+        if paths:
+            count = max(1, len(paths))
+            for idx, path in enumerate(paths):
+                offset_step = (frame + int((idx * batoled.EFFECT_STEP) / count)) % batoled.EFFECT_STEP
+                rgb = batoled.getRainbowRGB(float(offset_step / batoled.EFFECT_STEP))
+                set_rgbled_dec_color(led, [path], rgb)
+            return (frame + 1) % batoled.EFFECT_STEP
+
+    led.set_color(animated_led_frame_color(mode, frame))
+    return (frame + 1) % batoled.EFFECT_STEP
+
+def daemon_running():
+    try:
+        with open(PID_FILE, 'r') as f:
+            pid = int(f.readline().strip())
+        if pid == os.getpid():
+            return False
+        os.kill(pid, 0)
+        return True
+    except Exception:
+        return False
+
 # Check the current battery level and adjust led color
 def led_check(led):
     ledconfig = default_led_config_for(led)
@@ -233,6 +304,8 @@ def led_check(led):
     prev_enabled = None
     prev_es_color = batoled.batoconf("led.colour")
     prev_es_brightness = batoled.batoconf("led.brightness")
+    prev_led_mode = current_led_mode()
+    animation_frame = 0
     initialized = False
     while True:
         try:
@@ -240,8 +313,7 @@ def led_check(led):
             if enabled == "0":
                 # User explicitly disabled LEDs: always turn them off immediately,
                 # even if we're currently "blocking" color changes for the ES color picker.
-                if prev_enabled != "0":
-                    led.turn_off()
+                led.turn_off()
                 prev_enabled = "0"
                 initialized = False
                 time.sleep(CHECK_INTERVAL)
@@ -276,6 +348,10 @@ def led_check(led):
             # On discharging devices this reapplies ESCOLOR, on charging it keeps status color policy.
             cur_es_color = batoled.batoconf("led.colour")
             cur_es_brightness = batoled.batoconf("led.brightness")
+            cur_led_mode = current_led_mode()
+            if cur_led_mode != prev_led_mode:
+                animation_frame = 0
+                prev_led_mode = cur_led_mode
             if cur_es_color != prev_es_color or cur_es_brightness != prev_es_brightness:
                 try:
                     led.set_brightness_conf()
@@ -303,7 +379,30 @@ def led_check(led):
                     prevblock = block
                 except Exception as e:
                     print(f"Error: {e}")
-                time.sleep(CHECK_INTERVAL)
+                if not color_changes_allowed():
+                    time.sleep(animation_sleep_interval(led))
+                    continue
+                try:
+                    if is_animated_led_mode():
+                        animation_frame = apply_animated_led_frame(led, animation_frame)
+                    else:
+                        led.set_color("ESCOLOR")
+                except Exception as e:
+                    print(f"Error: {e}")
+                time.sleep(animation_sleep_interval(led))
+                continue
+
+            if not color_changes_allowed():
+                time.sleep(animation_sleep_interval(led))
+                continue
+
+            if is_animated_led_mode():
+                try:
+                    animation_frame = apply_animated_led_frame(led, animation_frame)
+                    prevblock = ""
+                except Exception as e:
+                    print(f"Error: {e}")
+                time.sleep(animation_sleep_interval(led))
                 continue
 
             # Keep ESCOLOR in sync continuously for non-split devices so the
@@ -360,31 +459,12 @@ if PATH == None:
 if len(sys.argv)>1:
     led = batoled.led()
 
-    if led:
-        original_set_color = led.set_color
-        def custom_set_color(rgb):
-            if rgb == "ESCOLOR":
-                mode = batoled.batoconf("led.mode") or "static"
-                if mode == "rainbow":
-                    original_set_color("RAINBOW")
-                    return
-                elif mode == "chroma":
-                    original_set_color("CHROMA")
-                    return
-                elif mode == "pulse":
-                    original_set_color("PULSE")
-                    return
-            original_set_color(rgb)
-        led.set_color = custom_set_color
-
     if sys.argv[1] == "start":
         try:
             led.set_brightness_conf()
-            t = Thread(target=led_check, args=(led,))
-            t.start()
+            led_check(led)
         except Exception as e:
             print (f"Could not launch daemon: {e}")
-            t.stop()
     elif sys.argv[1] == "stop" or sys.argv[1] == "off":
         if hasattr(led, "turn_off_all"):
             led.turn_off_all()
@@ -392,16 +472,17 @@ if len(sys.argv)>1:
             led.turn_off()
     elif sys.argv[1] == "retroachievement" or sys.argv[1] == "blink" or sys.argv[1] == "flash":
         if leds_runtime_enabled() and color_changes_allowed():
-            led.blink_effect()
+            block_color_changes(True)
+            try:
+                led.rainbow_effect()
+            finally:
+                block_color_changes(False)
     elif sys.argv[1] == "rainbow":
-        if leds_runtime_enabled() and color_changes_allowed():
-            led.rainbow_effect()
+        os.system("batocera-settings-set led.mode rainbow >/dev/null 2>&1")
     elif sys.argv[1] == "chroma":
-        if leds_runtime_enabled() and color_changes_allowed():
-            led.chroma_effect()
+        os.system("batocera-settings-set led.mode chroma >/dev/null 2>&1")
     elif sys.argv[1] == "pulse":
-        if leds_runtime_enabled() and color_changes_allowed():
-            led.pulse_effect()
+        os.system("batocera-settings-set led.mode pulse >/dev/null 2>&1")
     elif sys.argv[1] == "set_color" and sys.argv[2] != None:
         # Explicit color requests (ES sliders/tests) should apply immediately.
         # The block window is only meant to prevent daemon-driven battery/status overrides.

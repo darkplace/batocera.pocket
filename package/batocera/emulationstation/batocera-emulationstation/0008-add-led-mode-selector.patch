@@ -2,7 +2,7 @@ diff --git a/es-app/src/ApiSystem.cpp b/es-app/src/ApiSystem.cpp
 index 87f1c7ab..b6b3d4e4 100644
 --- a/es-app/src/ApiSystem.cpp
 +++ b/es-app/src/ApiSystem.cpp
-@@ -1772,6 +1772,30 @@ bool ApiSystem::isLEDEnabled()
+@@ -1772,6 +1772,24 @@ bool ApiSystem::isLEDEnabled()
  #endif
  }
  
@@ -16,13 +16,7 @@ index 87f1c7ab..b6b3d4e4 100644
 +
 +    executeScript("batocera-led-handheld unblock_color_changes");
 +
-+    if (mode == "rainbow") {
-+        executeScript("batocera-led-handheld rainbow");
-+    } else if (mode == "chroma") {
-+        executeScript("batocera-led-handheld chroma");
-+    } else if (mode == "pulse") {
-+        executeScript("batocera-led-handheld pulse");
-+    } else {
++    if (mode == "static") {
 +        int r, g, b;
 +        getLEDColours(r, g, b);
 +        setLEDColours(r, g, b);

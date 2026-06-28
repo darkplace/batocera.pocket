@@ -840,6 +840,7 @@ global:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - ratio
   - shaderset
   - smooth
@@ -906,6 +907,7 @@ libretro:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - ratio
   - shaderset
   - smooth
@@ -8577,6 +8579,7 @@ amiberry:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - ratio
   - bezel
   - bezel_stretch
@@ -8661,6 +8664,7 @@ cannonball:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   cfeatures:
     ratio:
       prompt: ASPECT RATIO
@@ -8764,6 +8768,7 @@ cemu:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - gamescope
   - gamescope_output_resolution
   - gamescope_nested_resolution
@@ -8937,6 +8942,7 @@ hypseus-singe:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - use_guns
   cfeatures:
     hypseus_api:
@@ -9056,6 +9062,7 @@ devilutionx:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - bezel
   - bezel_stretch
   - hud
@@ -9080,6 +9087,7 @@ dolphin:
       - cpu_limit_target_fps
       - tdp
       - videomode
+      - dual_screen_output
       - bezel
       - bezel_stretch
       - bezel.tattoo
@@ -9581,6 +9589,7 @@ dosbox:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - gamescope_xwayland_count
   - gamescope_xwayland_count_custom
   - gamescope_prefer_vk_device
@@ -9639,6 +9648,7 @@ dosbox_staging:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - gamescope
   - gamescope_output_resolution
   - gamescope_nested_resolution
@@ -9687,6 +9697,7 @@ dosbox-x:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - gamescope
   - gamescope_output_resolution
   - gamescope_nested_resolution
@@ -9733,6 +9744,7 @@ duckstation:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - bezel
   - bezel_stretch
   - hud
@@ -10082,6 +10094,7 @@ flycast:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - bezel
   - bezel_stretch
   - hud
@@ -10280,6 +10293,7 @@ fsuae:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - ratio
   - bezel
   - bezel_stretch
@@ -10299,6 +10313,7 @@ hatari:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - bezel
   - bezel_stretch
   - hud
@@ -10366,6 +10381,7 @@ melonds:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - bezel
   - bezel_stretch
   - hud
@@ -10504,6 +10520,7 @@ moonlight:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - ratio
   cfeatures:
     moonlight_codec:
@@ -10582,6 +10599,7 @@ mupen64plus:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - bezel
   - bezel_stretch
   - hud
@@ -10854,6 +10872,7 @@ openbor:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   cfeatures:
     openbor_ratio:
       prompt: SCREEN RATIO
@@ -10907,6 +10926,7 @@ pcsx2:
       - cpu_limit_target_fps
       - tdp
       - videomode
+      - dual_screen_output
       - bezel
       - bezel_stretch
       - hud
@@ -11263,6 +11283,7 @@ ppsspp:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - hud
   - hud_corner
   - bezel.tattoo
@@ -11555,6 +11576,7 @@ pygame:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - bezel
   - bezel_stretch
   - hud
@@ -11572,6 +11594,7 @@ reicast:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - ratio
   - bezel
   - bezel_stretch
@@ -11582,7 +11605,7 @@ reicast:
   - bezel.tattoo_file
   - bezel.resize_tattoo
 rpcs3:
-  shared: [powermode, cpu_max_freq, cpu_limit_target_fps, tdp, videomode, bezel, bezel_stretch, hud, hud_corner, bezel.tattoo, bezel.tattoo_corner, bezel.tattoo_file, bezel.resize_tattoo, use_guns, use_wheels, wheel_rotation, wheel_deadzone, wheel_midzone]
+  shared: [powermode, cpu_max_freq, cpu_limit_target_fps, tdp, videomode, dual_screen_output, bezel, bezel_stretch, hud, hud_corner, bezel.tattoo, bezel.tattoo_corner, bezel.tattoo_file, bezel.resize_tattoo, use_guns, use_wheels, wheel_rotation, wheel_deadzone, wheel_midzone]
   cfeatures:
         rpcs3_game_profile:
             submenu: GAME PROFILE
@@ -12054,6 +12077,7 @@ scummvm:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - bezel
   - bezel_stretch
   - hud
@@ -12130,6 +12154,7 @@ opengoal:
   - cpu_limit_target_fps
   - tdp
   - videomode
+  - dual_screen_output
   - hud
   features:
   - padtokeyboard
@@ -12216,6 +12241,7 @@ easyrpg:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - bezel
   - bezel_stretch
   - hud
@@ -12254,6 +12280,7 @@ redream:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - bezel
   - bezel_stretch
   - hud
@@ -12342,6 +12369,7 @@ sdlpop:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - ratio
   - hud
 superbroswar:
@@ -12353,6 +12381,7 @@ superbroswar:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - ratio
   - bezel
   - bezel_stretch
@@ -12372,6 +12401,7 @@ supermodel:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - bezel
   - bezel_stretch
   - hud
@@ -12505,6 +12535,7 @@ cgenius:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - bezel
   - bezel_stretch
   - hud
@@ -12562,6 +12593,7 @@ vice:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - ratio
   - bezel
   - bezel_stretch
@@ -12589,6 +12621,7 @@ tsugaru:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - bezel
   - bezel_stretch
   - hud
@@ -12624,6 +12657,7 @@ mame:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - bezel
   - bezel_stretch
   - hud
@@ -13880,6 +13914,7 @@ wine:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - gamescope
   - gamescope_output_resolution
   - gamescope_nested_resolution
@@ -14310,6 +14345,7 @@ solarus:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - bezel
   - bezel_stretch
   - hud
@@ -14336,6 +14372,7 @@ mugen:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   cfeatures:
     esync:
       group: ADVANCED OPTIONS
@@ -14368,6 +14405,7 @@ ikemen:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - bezel
   - bezel_stretch
   - hud
@@ -14386,6 +14424,7 @@ ruffle:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
 lightspark:
   features:
   - padtokeyboard
@@ -14396,6 +14435,7 @@ lightspark:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - bezel
   - bezel_stretch
   - hud
@@ -14412,6 +14452,7 @@ drastic:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - bezel
   - bezel_stretch
   - hud
@@ -14510,6 +14551,7 @@ xemu:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - bezel
   - bezel_stretch
   - hud
@@ -14609,6 +14651,7 @@ lexaloffle:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - bezel
   - bezel_stretch
   - hud
@@ -14627,6 +14670,7 @@ ecwolf:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - bezel
   - bezel_stretch
   - hud
@@ -14645,6 +14689,7 @@ sonic2013:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - bezel
   - bezel_stretch
   - hud
@@ -14714,6 +14759,7 @@ soniccd:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - bezel
   - bezel_stretch
   - hud
@@ -14781,6 +14827,7 @@ model2emu:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   cfeatures:
     model2_renderRes:
       prompt: RENDERING RESOLUTION
@@ -14907,6 +14954,7 @@ gsplus:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - bezel
   - bezel_stretch
   - hud
@@ -14934,6 +14982,7 @@ applewin:
   - cpu_limit_target_fps
   - tdp
   - videomode
+  - dual_screen_output
   cfeatures:
     applewin_media:
       group: ADVANCED OPTIONS
@@ -15033,6 +15082,7 @@ play:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - bezel
   - bezel_stretch
   - hud
@@ -15112,6 +15162,7 @@ flatpak:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   cfeatures:
     flatpak_no_sandbox:
       prompt: NO SANDBOX MODE
@@ -15302,6 +15353,7 @@ apps:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - gamescope
   - gamescope_output_resolution
   - gamescope_nested_resolution
@@ -15352,6 +15404,7 @@ waydroid:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - gamescope
   - gamescope_output_resolution
   - gamescope_nested_resolution
@@ -15405,6 +15458,7 @@ ios:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - gamescope
   - gamescope_output_resolution
   - gamescope_nested_resolution
@@ -15444,6 +15498,7 @@ steam:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   cores:
     steamos:
       shared:
@@ -15643,6 +15698,7 @@ heroic:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - gamescope
   - gamescope_output_resolution
   - gamescope_nested_resolution
@@ -15687,6 +15743,7 @@ lutris:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - gamescope
   - gamescope_output_resolution
   - gamescope_nested_resolution
@@ -15731,6 +15788,7 @@ n64recomp:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - gamescope
   - gamescope_output_resolution
   - gamescope_nested_resolution
@@ -15775,6 +15833,7 @@ citron:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - bezel
   - bezel_stretch
   - hud
@@ -16169,6 +16228,7 @@ eden:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - bezel
   - bezel_stretch
   - hud
@@ -16497,6 +16557,7 @@ yuzu:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - bezel
   - bezel_stretch
   - hud
@@ -16805,6 +16866,7 @@ ryujinx:
   - cpu_limit_target_fps
   - tdp
   - videomode
+  - dual_screen_output
   - bezel
   - bezel_stretch
   - hud
@@ -17118,6 +17180,14 @@ ryujinx:
       choices:
         Off (Default): 'false'
         'On': 'true'
+    ryujinx_skipvideos:
+      submenu: SYSTEM
+      prompt: SKIP VIDEO DECODING
+      description: Skip NVDEC video playback. This can avoid hangs or crashes in
+        games that fail during cutscenes, but videos will be blank.
+      choices:
+        Off (Default): 'false'
+        'On': 'true'
     ryujinx_audio_backend:
       submenu: AUDIO
       prompt: AUDIO BACKEND
@@ -17308,6 +17378,7 @@ samcoupe:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - bezel
   - bezel_stretch
   - hud
@@ -17326,6 +17397,7 @@ hcl:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - hud
   - hud_corner
 hurrican:
@@ -17338,6 +17410,7 @@ hurrican:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - hud
   - hud_corner
 tyrian:
@@ -17350,6 +17423,7 @@ tyrian:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - hud
   - hud_corner
 openjazz:
@@ -17362,6 +17436,7 @@ openjazz:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - bezel
   - bezel_stretch
   - hud
@@ -17402,6 +17477,7 @@ abuse:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - bezel
   - bezel_stretch
   - hud
@@ -17420,6 +17496,7 @@ cdogs:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - bezel
   - bezel_stretch
   - hud
@@ -17438,6 +17515,7 @@ openmsx:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - bezel
   - bezel_stretch
   - hud
@@ -17469,6 +17547,7 @@ sh:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - gamescope
   - gamescope_output_resolution
   - gamescope_nested_resolution
@@ -17515,6 +17594,7 @@ xenia:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - hud
   - hud_corner
   cfeatures:
@@ -17890,6 +17970,7 @@ xenia-canary:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - hud
   - hud_corner
   - gamescope
@@ -18406,6 +18487,7 @@ xenia-edge:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - hud
   - hud_corner
   cfeatures:
@@ -18986,6 +19068,7 @@ freej2me:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - gamescope
   - gamescope_output_resolution
   - gamescope_nested_resolution
@@ -19056,6 +19139,7 @@ gopher64:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - hud
   - hud_corner
   cfeatures:
@@ -19182,6 +19266,7 @@ nanoboyadvance:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   cfeatures:
     nanoboyadvance_scale:
       prompt: WINDOW SCALE
@@ -19242,6 +19327,7 @@ ares:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - bezel
   - bezel_stretch
   - hud
@@ -19269,6 +19355,7 @@ skyemu:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - gamescope
   cfeatures:
     skyemu_integer_scaling:
@@ -19298,6 +19385,7 @@ eka2l1:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - bezel
   - bezel_stretch
   - hud
@@ -19315,6 +19403,7 @@ odcommander:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - ratio
   - hud
 gzdoom:
@@ -19325,6 +19414,7 @@ gzdoom:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - bezel
   - bezel_stretch
   - hud
@@ -19357,6 +19447,7 @@ corsixth:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   features:
   - padtokeyboard
   cfeatures:
@@ -19387,6 +19478,7 @@ stella:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   features:
   - padtokeyboard
 eduke32:
@@ -19397,6 +19489,7 @@ eduke32:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - bezel
   - bezel_stretch
   - hud
@@ -19420,6 +19513,7 @@ fury:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - bezel
   - bezel_stretch
   - hud
@@ -19443,6 +19537,7 @@ raze:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - bezel
   - bezel_stretch
   - hud
@@ -19474,6 +19569,7 @@ vita3k:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   features: []
   cfeatures:
     vita3k_gfxbackend:
@@ -19533,6 +19629,7 @@ bigpemu:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - bezel
   - bezel_stretch
   - hud
@@ -19643,6 +19740,7 @@ pyxel:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - bezel
   - bezel_stretch
   - hud
@@ -19659,6 +19757,7 @@ ioquake3:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - bezel
   - bezel_stretch
   - hud
@@ -19690,6 +19789,7 @@ thextech:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - hud
   - hud_corner
   cfeatures:
@@ -19716,6 +19816,7 @@ vpinball:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - bezel
   - bezel_stretch
   - hud
@@ -19968,7 +20069,7 @@ vpinball:
 
 fpinball:
   features: [padtokeyboard]
-  shared: [powermode, cpu_max_freq, cpu_limit_target_fps, tdp, videomode, ratio, bezel, bezel_stretch, hud, hud_corner, bezel.tattoo, bezel.tattoo_corner, bezel.tattoo_file, bezel.resize_tattoo]
+  shared: [powermode, cpu_max_freq, cpu_limit_target_fps, tdp, videomode, dual_screen_output, ratio, bezel, bezel_stretch, hud, hud_corner, bezel.tattoo, bezel.tattoo_corner, bezel.tattoo_file, bezel.resize_tattoo]
   cfeatures:
     fpcontroller:
       prompt: CONTROLLER CONFIGURATION
@@ -19987,6 +20088,7 @@ theforceengine:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - bezel
   - bezel_stretch
   - hud
@@ -20152,6 +20254,7 @@ iortcw:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - bezel
   - bezel_stretch
   - hud
@@ -20229,6 +20332,7 @@ fallout1-ce:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - bezel
   - bezel_stretch
   - hud
@@ -20284,6 +20388,7 @@ fallout2-ce:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - bezel
   - bezel_stretch
   - hud
@@ -20339,6 +20444,7 @@ dxx-rebirth:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - bezel
   - bezel_stretch
   - hud
@@ -20382,6 +20488,7 @@ etlegacy:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - bezel
   - bezel_stretch
   - hud
@@ -20431,6 +20538,7 @@ etlegacy:
 sonic3-air:
   shared:
   - videomode
+  - dual_screen_output
   - bezel
   - bezel_stretch
   - hud
@@ -20444,6 +20552,7 @@ sonic3-air:
 sonic-mania:
   shared:
   - videomode
+  - dual_screen_output
   - bezel
   - bezel_stretch
   - hud
@@ -20483,6 +20592,7 @@ sonic-mania:
 fba2x:
   shared:
   - videomode
+  - dual_screen_output
   - use_wheels
   - wheel_rotation
   - wheel_deadzone
@@ -20497,6 +20607,7 @@ taradino:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - bezel
   - bezel_stretch
   - hud
@@ -20515,6 +20626,7 @@ x16emu:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - bezel
   - bezel_stretch
   - hud
@@ -20555,6 +20667,7 @@ shadps4:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - gamescope
   - gamescope_output_resolution
   - gamescope_nested_resolution
@@ -20675,6 +20788,7 @@ dhewm3:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - bezel
   - bezel_stretch
   - hud
@@ -20719,6 +20833,7 @@ jazz2-native:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - bezel
   - bezel_stretch
   - hud
@@ -20737,6 +20852,7 @@ catacombgl:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - bezel
   - bezel_stretch
   - hud
@@ -20755,6 +20871,7 @@ lindbergh-loader:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - bezel
   - bezel_stretch
   - hud
@@ -20898,6 +21015,7 @@ vkquake:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - bezel
   - bezel_stretch
   - hud
@@ -20916,6 +21034,7 @@ vkquake2:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - bezel
   - bezel_stretch
   - hud
@@ -20932,6 +21051,7 @@ vkquake3:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - bezel
   - bezel_stretch
   - hud
@@ -20967,6 +21087,7 @@ tr1x:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - bezel
   - bezel_stretch
   - hud
@@ -20994,6 +21115,7 @@ tr2x:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - bezel
   - bezel_stretch
   - hud
@@ -21012,6 +21134,7 @@ bstone:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - bezel
   - bezel_stretch
   - hud
@@ -21050,6 +21173,7 @@ openjkdf2:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - bezel
   - bezel_stretch
   - hud
@@ -21294,6 +21418,7 @@ openjk:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - bezel
   - bezel_stretch
   - hud
@@ -21467,6 +21592,7 @@ azahar:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - bezel
   - bezel_stretch
   - hud
@@ -21601,6 +21727,7 @@ citra:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - bezel
   - bezel_stretch
   - hud
@@ -21699,6 +21826,7 @@ openmohaa:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - bezel
   - bezel_stretch
   - hud
@@ -21867,6 +21995,7 @@ ymir:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - bezel
   - bezel_stretch
   - hud
@@ -21914,6 +22043,7 @@ clk:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - bezel
   - bezel_stretch
   - hud
@@ -21932,6 +22062,7 @@ yquake2:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
 xroar:
   features:
   - padtokeyboard
@@ -21942,6 +22073,7 @@ xroar:
   - gpu_performance_profile
   - tdp
   - videomode
+  - dual_screen_output
   - bezel
   - bezel_stretch
   - hud
@@ -21993,6 +22125,7 @@ aethersx2:
       - cpu_limit_target_fps
       - tdp
       - videomode
+      - dual_screen_output
       - bezel
       - bezel_stretch
       - hud

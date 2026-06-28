@@ -40,7 +40,7 @@ ryujinxProfilesFile: Final = ryujinxConf / "system" / "Profiles.json"
 # 819 = ~80% utilization floor, forces scheduler to use big cores
 UCLAMP_MIN = 819
 UCLAMP_MAX = 1024
-RYUJINX_CONFIG_VERSION = 70
+RYUJINX_CONFIG_VERSION = 71
 RYUJINX_DEFAULT_USER_ID = "00000000000000010000000000000000"
 _ONE_BASED_SDL_BUTTON_GUIDS: Final = {
     "03000000202000000130000001000000",
@@ -83,6 +83,7 @@ RYUJINX_CONFIG_DEFAULTS: Final[dict[str, Any]] = {
     "show_confirm_exit": True,
     "ignore_applet": False,
     "skip_user_profiles": False,
+    "skip_videos": False,
     "remember_window_state": True,
     "show_title_bar": True,
     "enable_hardware_acceleration": True,
@@ -435,6 +436,7 @@ class RyujinxGenerator(Generator):
         conf["check_updates_on_start"] = False
         conf["show_confirm_exit"] = False
         conf["skip_user_profiles"] = system.config.get_bool("ryujinx_skip_user_profiles", True)
+        conf["skip_videos"] = system.config.get_bool("ryujinx_skipvideos", False)
         conf["hide_cursor"] = _hide_cursor_mode(system.config.get("ryujinx_hide_cursor", "OnIdle"))
         conf["game_dirs"] = [str(ROMS / "switch")]
         conf["start_fullscreen"] = True

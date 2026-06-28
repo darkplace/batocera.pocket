@@ -472,24 +472,30 @@ class rgbled(object):
             out = f'{r} {g} {b}'
             return (out)
 
-    def rainbow_effect(self):
+    def rainbow_effect(self, restore=True):
         prev = self.get_color()
         for i in range (0, EFFECT_STEP):
             o = getRainbowRGB(float (i/EFFECT_STEP))
             self.set_color(o)
             time.sleep(EFFECT_DURATION/EFFECT_STEP)
-        self.set_color(prev)
+        if restore:
+            self.set_color(prev)
 
-    def chroma_effect(self):
-        self.rainbow_effect()
+    def chroma_effect(self, restore=True):
+        self.rainbow_effect(restore)
 
-    def pulse_effect(self):
+    def pulse_effect(self, restore=True):
         prev = self.get_color()
+        base = prev
+        if not restore:
+            r, g, b = batoconf_color()
+            base = f'{dec_to_hex(r)}{dec_to_hex(g)}{dec_to_hex(b)}'
         for i in range (0, EFFECT_STEP):
-            o = getPulseRGB(i, EFFECT_STEP, prev)
+            o = getPulseRGB(i, EFFECT_STEP, base)
             self.set_color(o)
             time.sleep(PULSE_DURATION/EFFECT_STEP)
-        self.set_color(prev)
+        if restore:
+            self.set_color(prev)
 
     def blink_effect(self):
         prev = self.get_color()
@@ -673,24 +679,30 @@ class pwmled(object):
         out = f'{pwm_to_dec(r, self.period)} {pwm_to_dec(g, self.period)} {pwm_to_dec(b, self.period)}'
         return(out)
 
-    def rainbow_effect(self):
+    def rainbow_effect(self, restore=True):
         prev = self.get_color()
         for i in range (0, EFFECT_STEP):
             o = getRainbowRGB(float (i/EFFECT_STEP))
             self.set_color(o)
             time.sleep(EFFECT_DURATION/EFFECT_STEP)
-        self.set_color(prev)
+        if restore:
+            self.set_color(prev)
 
-    def chroma_effect(self):
-        self.rainbow_effect()
+    def chroma_effect(self, restore=True):
+        self.rainbow_effect(restore)
 
-    def pulse_effect(self):
+    def pulse_effect(self, restore=True):
         prev = self.get_color()
+        base = prev
+        if not restore:
+            r, g, b = batoconf_color()
+            base = f'{dec_to_hex(r)}{dec_to_hex(g)}{dec_to_hex(b)}'
         for i in range (0, EFFECT_STEP):
-            o = getPulseRGB(i, EFFECT_STEP, prev)
+            o = getPulseRGB(i, EFFECT_STEP, base)
             self.set_color(o)
             time.sleep(PULSE_DURATION/EFFECT_STEP)
-        self.set_color(prev)
+        if restore:
+            self.set_color(prev)
 
     def blink_effect(self):
         prev = self.get_color()
