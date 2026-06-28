@@ -48,18 +48,20 @@ Extra libraries (e.g. `libcups`) included for better AppImage compatibility
 ## Qualcomm Builds (SM8550, CQ8725S, QCS6490)
 Includes additional emulators where supported:
 - AetherSX2  
-- ARMSX2
+- ARMSX2 (+Masies fork with newer aarch64 JIT engine)
 - RPCS3
-- Vita3K  
-- Cemu
+- Vita3K
+- Cemu (now upstream)
 - Xenia
   <img width="661" height="881" alt="image" src="https://github.com/user-attachments/assets/ce658ce6-7753-47fd-a56e-caaeddf29c67" />
 - SkyEmu  
 - NanoBoy Advance
+- Gopher 64
+- Yaba Sanshiro Standlone
 - And more emulators
 - Dusk Port Engine
 - Opeangoal Engine
-- Steam aarch64 (aarch64 client) (with gamescope working on sm8550/sm8750) (h/t tipoex/mashy)
+- Steam aarch64 (aarch64 client) (with drm/kms gamescope working on sm8550/sm8750)
 - DXVK (DX11 support)
 - Fex-Emu support on Wine runners
 - LSFG-VK (requires Losless.dll - can be bought on steam)
@@ -125,7 +127,7 @@ These SoCs are limited by:
 #### RK3566/8
 - Light DX9 titles possible  
 - Shader-heavy games will struggle
-- Vulkan enabled in libmali mode -- helps especially with PPSSPP, Azahar, Flycast (Thanks Sysdarn)
+- Vulkan enabled in libmali mode -- helps especially with PPSSPP, Azahar, Flycast (Thanks Sydarn)
 - Azahar enabled - don't expect fullspeed, usually
 - Dolphin working with light gamecube titles on RG-DS
 
