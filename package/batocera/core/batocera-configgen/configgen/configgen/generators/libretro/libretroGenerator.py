@@ -41,7 +41,9 @@ _logger = logging.getLogger(__name__)
 class LibretroGenerator(Generator):
 
     def getMouseMode(self, config, rom):
-        return config.core in {"citra", "azahar"} and config.get_bool("citra_mouse_touchscreen", True)
+        if config.core == "azahar":
+            return config.get_bool("citra_enable_mouse_touchscreen", config.get_bool("citra_mouse_touchscreen", True))
+        return config.core == "citra" and config.get_bool("citra_mouse_touchscreen", True)
 
     def supportsInternalBezels(self):
         return True
@@ -96,6 +98,13 @@ class LibretroGenerator(Generator):
             # If the shader filename contains noBezel, activate Shader Bezel mode.
             if "noBezel" in video_shader.name:
                 shaderBezel = True
+
+        if libretroConfig.should_thor_dual_screen_libretro(system):
+            if libretroConfig.should_dual_screen_3ds_libretro(system):
+                video_shader = None
+            else:
+                video_shader = BATOCERA_SHADERS / "thor" / "dual-screen-bottom-1240.slangp"
+            shaderBezel = False
 
         # Settings batocera default config file if no user defined one
         if 'configfile' not in system.config:
@@ -403,25 +412,47 @@ class LibretroGenerator(Generator):
             # a link would work, but on fat32, we need to copy
             commandArray.extend(["-e", state_slot])
 
-        return Command.Command(array=commandArray, env={"XDG_CONFIG_HOME":CONFIGS})
+        env = {"XDG_CONFIG_HOME": CONFIGS}
+        if libretroConfig.should_dual_screen_libretro(system):
+            env["SDL_VIDEO_WAYLAND_WMCLASS"] = "retroarch-dualscreen"
+            env["BATOCERA_WAYLAND_APP_ID"] = "retroarch-dualscreen"
+        if libretroConfig.should_thor_dual_screen_libretro(system) and libretroConfig.should_dual_screen_3ds_libretro(system):
+            env["BATOCERA_THOR_DUAL_SCREEN_3DS"] = "1"
+
+        return Command.Command(array=commandArray, env=env)
 
 def getGFXBackend(system: Emulator) -> str:
         # Start with the selected option
         # Pick glcore or gl based on drivers if not selected
-        backend = system.config.get("gfxbackend")
-        if backend:
-            setManually = True
-        else:
-            setManually = False
-            # glvendor check first, to avoid a 2nd testing on intel boards
-            if videoMode.getGLVendor() in ["nvidia", "amd"] and videoMode.getGLVersion() >= 3.1:
-                backend = "glcore"
-            else:
+        core_graphics_api = system.config.get("citra_graphics_api") if system.config.core in {"citra", "azahar"} else None
+        match core_graphics_api:
+            case "Vulkan":
+                backend = "vulkan"
+                setManually = True
+            case "OpenGL":
                 backend = "gl"
+                setManually = False
+            case _:
+                backend = system.config.get("gfxbackend")
+                if backend:
+                    setManually = True
+                else:
+                    setManually = False
+                    # glvendor check first, to avoid a 2nd testing on intel boards
+                    if videoMode.getGLVendor() in ["nvidia", "amd"] and videoMode.getGLVersion() >= 3.1:
+                        backend = "glcore"
+                    else:
+                        backend = "gl"
+
+        if backend:
+            backend = str(backend)
 
         # Retroarch has flipped between using opengl or gl, correct the setting here if needed.
         if backend == "opengl":
             backend = "gl"
+
+        if backend == "gl" and libretroConfig.should_thor_dual_screen_libretro(system):
+            backend = "glcore"
 
         # Don't change based on core if manually selected.
         if not setManually:

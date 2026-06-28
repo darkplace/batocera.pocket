@@ -208,7 +208,47 @@ write_app_routing_file() {
             write_app_route "$app"
         done
         IFS=$old_ifs
+
+        write_emulator_dual_screen_route
     } > "$SWAY_APP_ROUTING_FILE"
+}
+
+write_dual_screen_route_for_match() {
+    match="$1"
+
+    echo "for_window [${match}] fullscreen disable"
+    echo "for_window [${match}] floating enable"
+    echo "for_window [${match}] border none"
+    echo "for_window [${match}] resize set width ${dual_screen_canvas_width} px height ${dual_screen_canvas_height} px"
+    echo "for_window [${match}] move absolute position 0px 0px"
+    echo "for_window [${match}] focus"
+}
+
+write_emulator_dual_screen_route() {
+    [ "$model" = "AYN_Thor" ] || return 0
+    [ "$display_position" = "top-bottom" ] || return 0
+    [ -n "$secondary_display" ] || return 0
+    is_number "$primary_width" || return 0
+    is_number "$primary_height" || return 0
+    is_number "$secondary_height" || return 0
+
+    dual_screen_canvas_width="$primary_width"
+    dual_screen_canvas_height=$((primary_height + secondary_height))
+
+    echo
+    echo "# AYN Thor: DraStic must span the stacked outputs; the generic fullscreen rule is single-output."
+    write_dual_screen_route_for_match 'app_id="drastic"'
+    write_dual_screen_route_for_match 'class="drastic"'
+    write_dual_screen_route_for_match 'title="DraStic"'
+    write_dual_screen_route_for_match 'title=".*DraStic.*"'
+
+    echo
+    echo "# AYN Thor: dual-screen RetroArch cores must span the stacked outputs; RetroArch keeps its generic app id."
+    write_dual_screen_route_for_match 'app_id="retroarch-dualscreen"'
+    write_dual_screen_route_for_match 'class="retroarch-dualscreen"'
+    write_dual_screen_route_for_match 'title="RetroArch melonDS.*"'
+    write_dual_screen_route_for_match 'title="RetroArch Azahar.*"'
+    write_dual_screen_route_for_match 'title="RetroArch azahar.*"'
 }
 
 thor_panel_toggle() {
@@ -324,6 +364,7 @@ else
                 secondary_resolution=$(settings_get es.resolution2)
                 secondary_transform=$(display_rotation "$secondary_display" secondary)
                 secondary_width=$(resolution_effective_width "$secondary_resolution" "$secondary_transform")
+                secondary_height=$(resolution_effective_height "$secondary_resolution" "$secondary_transform")
                 if ! is_number "$primary_width" && [ "$model" = "AYN_Thor" ] && [ "$preferred_display" = "DSI-2" ] && [ "$secondary_display" = "DSI-1" ]; then
                     primary_width=1920
                 fi
@@ -333,11 +374,17 @@ else
                 if ! is_number "$secondary_width" && [ "$model" = "AYN_Thor" ] && [ "$preferred_display" = "DSI-2" ] && [ "$secondary_display" = "DSI-1" ]; then
                     secondary_width=1240
                 fi
+                if ! is_number "$secondary_height" && [ "$model" = "AYN_Thor" ] && [ "$preferred_display" = "DSI-2" ] && [ "$secondary_display" = "DSI-1" ]; then
+                    secondary_height=1080
+                fi
                 if ! is_number "$primary_width"; then
                     primary_width=0
                 fi
                 if ! is_number "$primary_height"; then
                     primary_height=0
+                fi
+                if ! is_number "$secondary_height"; then
+                    secondary_height=0
                 fi
                 if is_number "$secondary_width" && [ "$primary_width" -gt "$secondary_width" ]; then
                     secondary_x=$(( (primary_width - secondary_width) / 2 ))

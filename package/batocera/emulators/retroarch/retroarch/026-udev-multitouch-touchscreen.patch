@@ -1,0 +1,240 @@
+--- a/input/drivers/udev_input.c
++++ b/input/drivers/udev_input.c
+@@ -30,6 +30,7 @@
+
+ #include <stdint.h>
+ #include <string.h>
++#include <stdio.h>
+
+ #include <fcntl.h>
+ #include <unistd.h>
+@@ -60,6 +61,10 @@
+ #include "../../config.h"
+ #endif
+
++#if defined(HAVE_UDEV) && defined(__linux__) && !defined(UDEV_TOUCH_SUPPORT)
++#define UDEV_TOUCH_SUPPORT
++#endif
++
+ #ifdef HAVE_X11
+ #include <X11/Xlib.h>
+ #endif
+@@ -521,6 +526,8 @@
+    /* Flag used to run the state update. */
+    bool run_state_update;
+    /* Touch panel properties */
++   bool calibration_enabled;
++   float calibration_matrix[6];
+    bool is_touch_device;
+ } udev_input_touch_t;
+
+@@ -1340,6 +1347,47 @@
+    limits->resolution = info->resolution;
+ }
+
++static void udev_touch_set_identity_calibration(udev_input_touch_t *touch)
++{
++   touch->calibration_enabled   = false;
++   touch->calibration_matrix[0] = 1.0f;
++   touch->calibration_matrix[1] = 0.0f;
++   touch->calibration_matrix[2] = 0.0f;
++   touch->calibration_matrix[3] = 0.0f;
++   touch->calibration_matrix[4] = 1.0f;
++   touch->calibration_matrix[5] = 0.0f;
++}
++
++static void udev_touch_read_calibration(struct udev *udev,
++      udev_input_touch_t *touch, dev_t devnum)
++{
++   struct udev_device *udev_dev = NULL;
++   const char *matrix           = NULL;
++   float values[6];
++
++   udev_touch_set_identity_calibration(touch);
++
++   if (!udev)
++      return;
++
++   udev_dev = udev_device_new_from_devnum(udev, 'c', devnum);
++   if (!udev_dev)
++      return;
++
++   matrix = udev_device_get_property_value(
++         udev_dev, "LIBINPUT_CALIBRATION_MATRIX");
++   if (matrix && sscanf(matrix, "%f %f %f %f %f %f",
++            &values[0], &values[1], &values[2],
++            &values[3], &values[4], &values[5]) == 6)
++   {
++      memcpy(touch->calibration_matrix, values, sizeof(values));
++      touch->calibration_enabled = true;
++      RARCH_DBG("[udev] Touch calibration matrix: %s\n", matrix);
++   }
++
++   udev_device_unref(udev_dev);
++}
++
+ /**
+  * Dump information about the provided device. Works even
+  * for non-touch devices.
+@@ -1873,14 +1921,53 @@
+         int16_t *pointer_scr_pos_x, int16_t *pointer_scr_pos_y,
+         int16_t *pointer_vp_pos_x, int16_t *pointer_vp_pos_y)
+ {
+-   /* Touch panel -> Main panel */
+-   /*
+-    * TODO - This keeps the precision, but might result in +-1 pixel difference
+-    *   One way to fix this is to add or remove 0.5, but this needs floating
+-    *   point operations which might not be desirable.
+-    */
+-   int32_t ma_pos_x   = (((((pointer_pos_x + src_touch->info_x_limits.min) * 0x7fff) / src_touch->info_x_limits.range) * target_vp->full_width) / 0x7fff);
+-   int32_t ma_pos_y   = (((((pointer_pos_y + src_touch->info_y_limits.min) * 0x7fff) / src_touch->info_y_limits.range) * target_vp->full_height) / 0x7fff);
++   float norm_x;
++   float norm_y;
++   float ma_norm_x;
++   float ma_norm_y;
++   int32_t ma_pos_x;
++   int32_t ma_pos_y;
++
++   if (src_touch->info_x_limits.range <= 0 || src_touch->info_y_limits.range <= 0)
++      return false;
++
++   norm_x = (float)(pointer_pos_x - src_touch->info_x_limits.min) /
++         (float)src_touch->info_x_limits.range;
++   norm_y = (float)(pointer_pos_y - src_touch->info_y_limits.min) /
++         (float)src_touch->info_y_limits.range;
++
++   if (src_touch->calibration_enabled)
++   {
++      ma_norm_x = src_touch->calibration_matrix[0] * norm_x +
++            src_touch->calibration_matrix[1] * norm_y +
++            src_touch->calibration_matrix[2];
++      ma_norm_y = src_touch->calibration_matrix[3] * norm_x +
++            src_touch->calibration_matrix[4] * norm_y +
++            src_touch->calibration_matrix[5];
++   }
++   else
++   {
++      ma_norm_x = norm_x;
++      ma_norm_y = norm_y;
++   }
++
++   if (ma_norm_x < 0.0f)
++      ma_norm_x = 0.0f;
++   else if (ma_norm_x > 1.0f)
++      ma_norm_x = 1.0f;
++
++   if (ma_norm_y < 0.0f)
++      ma_norm_y = 0.0f;
++   else if (ma_norm_y > 1.0f)
++      ma_norm_y = 1.0f;
++
++   ma_pos_x = (int32_t)(ma_norm_x * target_vp->full_width);
++   ma_pos_y = (int32_t)(ma_norm_y * target_vp->full_height);
++
++   if (ma_pos_x >= (int32_t)target_vp->full_width)
++      ma_pos_x = (int32_t)target_vp->full_width - 1;
++   if (ma_pos_y >= (int32_t)target_vp->full_height)
++      ma_pos_y = (int32_t)target_vp->full_height - 1;
+
+    /* Calculate relative offsets. */
+    *pointer_ma_rel_x += ma_pos_x - *pointer_ma_pos_x;
+@@ -2365,8 +2452,7 @@
+
+             /* Pointer section */
+             /* Simulated pointer */
+-            if (touch->pointer_enabled)
+-               touch->pointer_btn_pp = true;
++            touch->pointer_btn_pp = true;
+
+             /* Mouse section */
+             if (touch->mouse_enabled)
+@@ -2429,7 +2515,6 @@
+             /* Simulated pointer */
+             /* Release the pointer only after all contacts are released */
+-            if (touch->pointer_enabled)
+-               touch->pointer_btn_pp = (touch->staging_active == 0);
++            touch->pointer_btn_pp = (touch->staging_active > 0);
+
+             /* Mouse section */
+             if (touch->mouse_enabled)
+@@ -3108,8 +3195,7 @@
+
+       case RETRO_DEVICE_POINTER:
+       case RARCH_DEVICE_POINTER_SCREEN:
+-         screen = (device == RARCH_DEVICE_MOUSE_SCREEN);
+-         break;
++         screen = (device == RARCH_DEVICE_POINTER_SCREEN);
+          switch (id)
+          {
+             case RETRO_DEVICE_ID_POINTER_X:
+@@ -3216,10 +3302,14 @@
+    {
+       bool mouse = 0;
+       bool touch = 0;
++      bool has_abs_xy = false;
++      bool has_abs_mt_xy = false;
+       if (type == UDEV_INPUT_MOUSE) {
+          mouse = 1; // if it's a mouse, it is a mouse ; otherwise, guessing the mouse index to configure is a hell. (case of configurable keyboard which can have left/right mouse button settable)
+       }
+
++      ioctl(fd, EVIOCGBIT(EV_KEY, sizeof(keycaps)), keycaps);
++
+       if (ioctl(fd, EVIOCGBIT(EV_REL, sizeof (relcaps)), relcaps) != -1)
+       {
+          if ( (test_bit(relcaps, REL_X)) && (test_bit(relcaps, REL_Y)) )
+@@ -3234,15 +3324,18 @@
+       if (ioctl(fd, EVIOCGBIT(EV_ABS, sizeof (abscaps)), abscaps) != -1)
+       {
+ #ifdef UDEV_TOUCH_SUPPORT
+-         if ( ( test_bit(abscaps, ABS_X) && test_bit(abscaps, ABS_Y) ) || ( test_bit(abscaps, ABS_MT_POSITION_X) && test_bit(abscaps, ABS_MT_POSITION_Y) ) )
++         has_abs_xy = test_bit(abscaps, ABS_X) && test_bit(abscaps, ABS_Y);
++         has_abs_mt_xy = test_bit(abscaps, ABS_MT_POSITION_X) && test_bit(abscaps, ABS_MT_POSITION_Y);
++         if (has_abs_xy || has_abs_mt_xy)
+ #else
+-         if ( (test_bit(abscaps, ABS_X)) && (test_bit(abscaps, ABS_Y)) )
++         has_abs_xy = test_bit(abscaps, ABS_X) && test_bit(abscaps, ABS_Y);
++         if (has_abs_xy)
+ #endif
+          {
+             mouse = 1;
+
+             /* check for abs touch devices... */
+-            if (test_bit(keycaps, BTN_TOUCH))
++            if (type == UDEV_INPUT_TOUCHSCREEN || test_bit(keycaps, BTN_TOUCH))
+             {
+                touch             = 1;
+                device->mouse.abs = 1;
+@@ -3263,18 +3356,21 @@
+
+       if (device->mouse.abs)
+       {
+-         if (ioctl(fd, EVIOCGABS(ABS_X), &absinfo) == -1)
++         int x_axis = has_abs_xy ? ABS_X : ABS_MT_POSITION_X;
++         int y_axis = has_abs_xy ? ABS_Y : ABS_MT_POSITION_Y;
++
++         if (ioctl(fd, EVIOCGABS(x_axis), &absinfo) == -1)
+          {
+-            RARCH_DBG("[udev] ABS pointer device (%s) Failed to get ABS_X parameters.\n",device->ident);
++            RARCH_DBG("[udev] ABS pointer device (%s) Failed to get X parameters.\n",device->ident);
+             goto end;
+          }
+
+          device->mouse.x_min = absinfo.minimum;
+          device->mouse.x_max = absinfo.maximum;
+
+-         if (ioctl(fd, EVIOCGABS(ABS_Y), &absinfo) == -1)
++         if (ioctl(fd, EVIOCGABS(y_axis), &absinfo) == -1)
+          {
+-            RARCH_DBG("[udev] ABS pointer device (%s) Failed to get ABS_Y parameters.\n",device->ident);
++            RARCH_DBG("[udev] ABS pointer device (%s) Failed to get Y parameters.\n",device->ident);
+             goto end;
+          }
+          device->mouse.y_min = absinfo.minimum;
+@@ -3284,6 +3380,7 @@
+       if (touch)
+       {
+ #ifdef UDEV_TOUCH_SUPPORT
++          udev_touch_read_calibration(udev->udev, &device->touch, st.st_rdev);
+           udev_init_touch_dev(device);
+           udev_sync_touch(device);
+ #endif

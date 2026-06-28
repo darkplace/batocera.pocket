@@ -17,6 +17,7 @@ export PROTON11_ARM64_APPID="${BATOCERA_STEAM_PROTON11_ARM64_APPID:-4628740}"
 export PROTON11_ARM64_DIR_NAME="Proton 11.0 (ARM64)"
 export PROTON11_ARM64_INSTALL_URI="steam://install/${PROTON11_ARM64_APPID}"
 export BATOCERA_STEAM_PROTON_CACHYOS_CONFIG="${BATOCERA_STEAM_PROTON_CACHYOS_CONFIG:-/userdata/system/configs/steam/proton-cachyos.conf}"
+export BATOCERA_STEAM_PROTON_GE_CONFIG="${BATOCERA_STEAM_PROTON_GE_CONFIG:-/userdata/system/configs/steam/proton-ge.conf}"
 
 load_proton_cachyos_config() {
     local key
@@ -57,12 +58,56 @@ load_proton_cachyos_config() {
     done < "${BATOCERA_STEAM_PROTON_CACHYOS_CONFIG}"
 }
 
+load_proton_ge_config() {
+    local key
+    local value
+
+    [[ -r "${BATOCERA_STEAM_PROTON_GE_CONFIG}" ]] || return 0
+
+    while IFS='=' read -r key value || [[ -n "${key:-}" ]]; do
+        case "${key}" in
+            ''|\#*)
+                continue
+                ;;
+        esac
+
+        value="${value%$'\r'}"
+        value="${value%\"}"
+        value="${value#\"}"
+
+        case "${key}" in
+            BATOCERA_STEAM_PROTON_GE)
+                case "${value}" in
+                    0|1|true|false|TRUE|FALSE|True|False|yes|no|YES|NO|Yes|No|on|off|ON|OFF|On|Off)
+                        export BATOCERA_STEAM_PROTON_GE="${value}"
+                        ;;
+                esac
+                ;;
+            BATOCERA_STEAM_PROTON_GE_VERSION)
+                if [[ "${value}" =~ ^GE-Proton[A-Za-z0-9._-]+$ ]]; then
+                    export BATOCERA_STEAM_PROTON_GE_VERSION="${value}"
+                fi
+                ;;
+            BATOCERA_STEAM_PROTON_GE_URL)
+                if [[ "${value}" =~ ^https://github\.com/GloriousEggroll/proton-ge-custom/releases/download/[A-Za-z0-9._-]+/GE-Proton[A-Za-z0-9._-]+\.tar\.gz$ ]]; then
+                    export BATOCERA_STEAM_PROTON_GE_URL="${value}"
+                fi
+                ;;
+        esac
+    done < "${BATOCERA_STEAM_PROTON_GE_CONFIG}"
+}
+
 load_proton_cachyos_config
+load_proton_ge_config
 
 export PROTON_CACHYOS_VERSION_FULL="${BATOCERA_STEAM_PROTON_CACHYOS_VERSION:-11.0-20260602-slr}"
 export PROTON_CACHYOS_TAR="proton-cachyos-${PROTON_CACHYOS_VERSION_FULL}-arm64.tar.xz"
 export PROTON_CACHYOS_DIR="proton-cachyos-${PROTON_CACHYOS_VERSION_FULL}-arm64"
 export PROTON_CACHYOS_URL="${BATOCERA_STEAM_PROTON_CACHYOS_URL:-https://github.com/CachyOS/proton-cachyos/releases/download/cachyos-${PROTON_CACHYOS_VERSION_FULL}/${PROTON_CACHYOS_TAR}}"
+export PROTON_GE_VERSION_FULL="${BATOCERA_STEAM_PROTON_GE_VERSION:-}"
+export PROTON_GE_TAR="${PROTON_GE_VERSION_FULL:+${PROTON_GE_VERSION_FULL}.tar.gz}"
+export PROTON_GE_DIR="${PROTON_GE_VERSION_FULL}"
+export PROTON_GE_URL="${BATOCERA_STEAM_PROTON_GE_URL:-}"
 export BATOCERA_STEAM_FEX_ROOTFS_NAME="${BATOCERA_STEAM_FEX_ROOTFS_NAME:-Fedora_43.sqsh}"
 export BATOCERA_STEAM_FEX_ROOTFS_URL="${BATOCERA_STEAM_FEX_ROOTFS_URL:-https://rootfs.fex-emu.gg/Fedora_43/2026-01-20/Fedora_43.sqsh}"
 export PROTON_USE_ARM64="${PROTON_USE_ARM64:-1}"
@@ -93,13 +138,34 @@ apply_steam_launch_environment() {
 }
 
 proton_cachyos_enabled() {
-    case "${BATOCERA_STEAM_PROTON_CACHYOS:-1}" in
+    case "${BATOCERA_STEAM_PROTON_CACHYOS:-}" in
+        0|false|FALSE|False|no|NO|No|off|OFF|Off)
+            return 1
+            ;;
+        1|true|TRUE|True|yes|YES|Yes|on|ON|On)
+            return 0
+            ;;
+    esac
+
+    proton_ge_enabled && return 1
+    return 0
+}
+
+proton_ge_enabled() {
+    local archive
+
+    case "${BATOCERA_STEAM_PROTON_GE:-0}" in
         0|false|FALSE|False|no|NO|No|off|OFF|Off)
             return 1
             ;;
     esac
 
-    return 0
+    [[ -n "${PROTON_GE_VERSION_FULL}" && -n "${PROTON_GE_URL}" ]] || return 1
+
+    archive="${PROTON_GE_URL%%\?*}"
+    archive="${archive%%\#*}"
+    archive="${archive##*/}"
+    [[ "${archive}" == "${PROTON_GE_TAR}" ]]
 }
 
 proton_cachyos_any_payload_exists() {
@@ -112,12 +178,30 @@ proton_cachyos_any_payload_exists() {
     return 1
 }
 
+proton_ge_any_payload_exists() {
+    local proton_dir
+
+    for proton_dir in "${STEAM_ROOT}/compatibilitytools.d"/GE-Proton*; do
+        [[ -x "${proton_dir}/proton" ]] && return 0
+    done
+
+    return 1
+}
+
 proton11_arm64_payload_exists() {
     if proton_cachyos_enabled && [[ -x "${STEAM_ROOT}/compatibilitytools.d/${PROTON_CACHYOS_DIR}/proton" ]]; then
         return 0
     fi
 
     if proton_cachyos_enabled && proton_cachyos_any_payload_exists; then
+        return 0
+    fi
+
+    if proton_ge_enabled && [[ -x "${STEAM_ROOT}/compatibilitytools.d/${PROTON_GE_DIR}/proton" ]]; then
+        return 0
+    fi
+
+    if proton_ge_enabled && proton_ge_any_payload_exists; then
         return 0
     fi
 
@@ -1226,6 +1310,37 @@ install_proton_cachyos() {
     log_msg "Installed Proton-CachyOS ${PROTON_CACHYOS_VERSION_FULL}."
 }
 
+install_proton_ge() {
+    local dest_dir="${STEAM_ROOT}/compatibilitytools.d"
+    local tar_path="${dest_dir}/${PROTON_GE_TAR}"
+    local extracted_dir="${dest_dir}/${PROTON_GE_DIR}"
+
+    proton_ge_enabled || return 0
+
+    command -v tar >/dev/null 2>&1 || die "tar is required to install GE-Proton."
+    mkdir -p "${dest_dir}"
+
+    if [[ -x "${extracted_dir}/proton" ]]; then
+        repair_proton_ge_dir "${extracted_dir}"
+        log_msg "GE-Proton ${PROTON_GE_VERSION_FULL} already installed."
+        return 0
+    fi
+
+    if [[ -d "${extracted_dir}" ]]; then
+        log_msg "Removing incomplete GE-Proton install: ${PROTON_GE_DIR}"
+        rm -rf "${extracted_dir}"
+    fi
+
+    log_msg "Downloading GE-Proton ${PROTON_GE_VERSION_FULL} from ${PROTON_GE_URL}"
+    download_file "${PROTON_GE_URL}" "${tar_path}" "GE-Proton ${PROTON_GE_VERSION_FULL}" || die "Failed to download GE-Proton ${PROTON_GE_VERSION_FULL}."
+    tar -xzf "${tar_path}" -C "${dest_dir}" >> "${log}" 2>&1 || die "Failed to extract GE-Proton ${PROTON_GE_VERSION_FULL}."
+    rm -f "${tar_path}"
+
+    [[ -x "${extracted_dir}/proton" ]] || die "GE-Proton did not install to ${extracted_dir}/proton."
+    repair_proton_ge_dir "${extracted_dir}"
+    log_msg "Installed GE-Proton ${PROTON_GE_VERSION_FULL}."
+}
+
 prepare_arm64_steam_layout() {
     local helper
 
@@ -1305,7 +1420,27 @@ proton_cachyos_version_from_dir() {
     printf '%s\n' "${version}"
 }
 
+proton_ge_version_from_dir() {
+    local proton_dir="${1%/}"
+    printf '%s\n' "${proton_dir##*/}"
+}
+
 write_proton_cachyos_toolmanifest_vdf() {
+    local target="$1"
+
+    cat > "${target}" <<'EOF'
+"manifest"
+{
+  "version" "2"
+  "commandline" "/proton %verb%"
+  "use_sessions" "1"
+  "compatmanager_layer_name" "proton"
+}
+EOF
+    chmod 0644 "${target}" 2>/dev/null || true
+}
+
+write_proton_ge_toolmanifest_vdf() {
     local target="$1"
 
     cat > "${target}" <<'EOF'
@@ -1344,6 +1479,30 @@ EOF
     chmod 0644 "${target}" 2>/dev/null || true
 }
 
+write_proton_ge_compatibilitytool_vdf() {
+    local proton_dir="$1"
+    local version="$2"
+    local tool_id="ge-proton-${version#GE-Proton}"
+    local target="${proton_dir}/compatibilitytool.vdf"
+
+    cat > "${target}" <<EOF
+"compatibilitytools"
+{
+  "compat_tools"
+  {
+    "${tool_id}"
+    {
+      "install_path" "."
+      "display_name" "${version}"
+      "from_oslist" "windows"
+      "to_oslist" "linux"
+    }
+  }
+}
+EOF
+    chmod 0644 "${target}" 2>/dev/null || true
+}
+
 repair_proton_cachyos_dir() {
     local proton_dir="$1"
     local version
@@ -1371,6 +1530,29 @@ repair_proton_cachyos_dir() {
     chmod +x "${proton_dir}/proton" 2>/dev/null || true
 }
 
+repair_proton_ge_dir() {
+    local proton_dir="$1"
+    local version
+    local manifest
+
+    [[ -d "${proton_dir}" ]] || return 1
+
+    version="$(proton_ge_version_from_dir "${proton_dir}")"
+    manifest="${proton_dir}/toolmanifest.vdf"
+
+    if [[ -f "${manifest}" ]]; then
+        sed -i '/require_tool_appid/d' "${manifest}" 2>/dev/null || true
+    fi
+
+    if [[ ! -f "${manifest}" ]] || ! grep -q '"commandline" "/proton %verb%"' "${manifest}" 2>/dev/null; then
+        write_proton_ge_toolmanifest_vdf "${manifest}"
+    fi
+    chmod 0644 "${manifest}" 2>/dev/null || true
+
+    write_proton_ge_compatibilitytool_vdf "${proton_dir}" "${version}"
+    chmod +x "${proton_dir}/proton" 2>/dev/null || true
+}
+
 register_proton_cachyos_versions() {
     local proton_dir
     local version
@@ -1394,6 +1576,29 @@ register_proton_cachyos_versions() {
     fi
 }
 
+register_proton_ge_versions() {
+    local proton_dir
+    local version
+    local registered=0
+
+    for proton_dir in "${STEAM_ROOT}/compatibilitytools.d"/GE-Proton*; do
+        [[ -d "${proton_dir}" ]] || continue
+
+        version="$(proton_ge_version_from_dir "${proton_dir}")"
+        if [[ -x "${proton_dir}/proton" ]]; then
+            repair_proton_ge_dir "${proton_dir}" || true
+            registered=$((registered + 1))
+            log_msg "Registered ${version} as a Steam compatibility tool."
+        else
+            log_msg "Ignoring incomplete ${version}: missing executable proton script."
+        fi
+    done
+
+    if (( registered > 1 )); then
+        log_msg "Registered ${registered} GE-Proton compatibility-tool variants."
+    fi
+}
+
 register_proton11_arm64() {
     local proton_dir="${STEAM_ROOT}/steamapps/common/${PROTON11_ARM64_DIR_NAME}"
     local compat_dir="${STEAM_ROOT}/compatibilitytools.d"
@@ -1403,9 +1608,12 @@ register_proton11_arm64() {
     write_compatibilitytool_vdf "${compat_dir}/compatibilitytool.vdf"
     write_toolmanifest_vdf "${proton_dir}/toolmanifest.vdf"
     register_proton_cachyos_versions
+    register_proton_ge_versions
 
-    if [[ -x "${STEAM_ROOT}/compatibilitytools.d/${PROTON_CACHYOS_DIR}/proton" ]]; then
+    if proton_cachyos_enabled && [[ -x "${STEAM_ROOT}/compatibilitytools.d/${PROTON_CACHYOS_DIR}/proton" ]]; then
         log_msg "Selected Proton-CachyOS ${PROTON_CACHYOS_VERSION_FULL} is available."
+    elif proton_ge_enabled && [[ -x "${STEAM_ROOT}/compatibilitytools.d/${PROTON_GE_DIR}/proton" ]]; then
+        log_msg "Selected GE-Proton ${PROTON_GE_VERSION_FULL} is available."
     elif [[ -e "${proton_dir}/proton" ]]; then
         chmod +x "${proton_dir}/proton" 2>/dev/null || true
         log_msg "Registered installed Proton 11.0 (ARM64) as compatibility tool proton11_arm64."
@@ -1546,6 +1754,11 @@ steam_setup_state() {
         return 0
     fi
 
+    if proton_ge_enabled && [[ ! -x "${STEAM_ROOT}/compatibilitytools.d/${PROTON_GE_DIR}/proton" ]] && ! proton_ge_any_payload_exists; then
+        printf 'support\n'
+        return 0
+    fi
+
     if ! proton11_arm64_payload_exists; then
         printf 'support\n'
         return 0
@@ -1583,6 +1796,8 @@ ensure_network_for_steam_setup() {
     fi
     if proton_cachyos_enabled; then
         flash_msg 9 "Select Proton-CachyOS as the Steam compatibility runner." 16
+    elif proton_ge_enabled; then
+        flash_msg 9 "Select GE-Proton as the Steam compatibility runner." 16
     else
         flash_msg 9 "Select Proton 11.0 (ARM64) as the Steam compatibility runner." 16
     fi
@@ -1768,6 +1983,7 @@ ensure_network_for_steam_setup
 ensure_native_steam_client
 prepare_arm64_steam_layout
 install_proton_cachyos
+install_proton_ge
 register_proton11_arm64
 apply_steam_user_selection "${BATOCERA_STEAM_USER:-auto}"
 ensure_fex_rootfs

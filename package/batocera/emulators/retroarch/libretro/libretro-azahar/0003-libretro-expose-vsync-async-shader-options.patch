@@ -1,0 +1,61 @@
+--- a/src/citra_libretro/core_settings.cpp
++++ b/src/citra_libretro/core_settings.cpp
+@@ -58,6 +58,8 @@ static constexpr const char* use_shader_jit = citra_setting(BaseKeys::use_shader
+ static constexpr const char* shaders_accurate_mul = citra_setting(BaseKeys::shaders_accurate_mul);
+ static constexpr const char* use_disk_shader_cache = citra_setting(BaseKeys::use_disk_shader_cache);
+ static constexpr const char* resolution_factor = citra_setting(BaseKeys::resolution_factor);
++static constexpr const char* use_vsync = citra_setting(BaseKeys::use_vsync);
++static constexpr const char* async_shader_compilation = citra_setting(BaseKeys::async_shader_compilation);
+ static constexpr const char* texture_filter = citra_setting(BaseKeys::texture_filter);
+ static constexpr const char* texture_sampling = citra_setting(BaseKeys::texture_sampling);
+ static constexpr const char* custom_textures = citra_setting(BaseKeys::custom_textures);
+@@ -344,6 +346,36 @@ static constexpr retro_core_option_v2_definition option_definitions[] = {
+         },
+         config::enabled
+     },
++    {
++        config::graphics::use_vsync,
++        "Enable V-Sync",
++        "V-Sync",
++        "Synchronize presentation to the display refresh. "
++        "Can reduce tearing but may add input latency.",
++        nullptr,
++        config::category::graphics,
++        {
++            { config::enabled, "Enabled" },
++            { config::disabled, "Disabled" },
++            { nullptr, nullptr }
++        },
++        config::enabled
++    },
++    {
++        config::graphics::async_shader_compilation,
++        "Enable Asynchronous Shader Compilation",
++        "Async Shaders",
++        "Compile Vulkan shaders in the background to reduce stutter. "
++        "May cause temporary graphical glitches.",
++        nullptr,
++        config::category::graphics,
++        {
++            { config::disabled, "Disabled" },
++            { config::enabled, "Enabled" },
++            { nullptr, nullptr }
++        },
++        config::disabled
++    },
+     {
+         config::graphics::resolution_factor,
+         "Internal Resolution",
+@@ -923,6 +951,13 @@ static void ParseGraphicsOptions(void) {
+         LibRetro::FetchVariable(config::graphics::use_disk_shader_cache, config::enabled) ==
+         config::enabled;
+
++    Settings::values.use_vsync =
++        LibRetro::FetchVariable(config::graphics::use_vsync, config::enabled) == config::enabled;
++
++    Settings::values.async_shader_compilation =
++        LibRetro::FetchVariable(config::graphics::async_shader_compilation, config::disabled) ==
++        config::enabled;
++
+     auto resolution = LibRetro::FetchVariable(config::graphics::resolution_factor, "1");
+     Settings::values.resolution_factor = std::stoi(resolution);

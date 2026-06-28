@@ -33,6 +33,8 @@ static int panel_fill_mode = 0;
 static int configured_touch_device_index = 0;
 static int selected_touch_device = 0;
 static SDL_TouchID selected_touch_id = 0;
+static const char* configured_top_output_name = NULL;
+static const char* configured_bottom_output_name = NULL;
 
 static SDL_Texture* screens[4];
 static SDL_Texture* stylus_tex[2];
@@ -217,12 +219,25 @@ static int should_split_thor_screens(const SDL_Rect* dstrect) {
     return dstrect &&
         has_dual_panel_ds_screens() &&
         num_displays >= 2 &&
-        bottom_display_bounds.y > top_display_bounds.y &&
+        top_display_bounds.h > 0 &&
+        bottom_display_bounds.h > 0 &&
         phys_height > top_display_bounds.h;
 }
 
 static int should_use_thor_touch_mode(void) {
-    return num_displays >= 2 && has_dual_panel_ds_screens() && phys_height > top_display_bounds.h;
+    return num_displays >= 2 &&
+        has_dual_panel_ds_screens() &&
+        top_display_bounds.h > 0 &&
+        bottom_display_bounds.h > 0 &&
+        phys_height > top_display_bounds.h;
+}
+
+static int dual_panel_logical_width(void) {
+    return ds_screen_width;
+}
+
+static int dual_panel_logical_height(void) {
+    return ds_screen_height * 2;
 }
 
 static void discover_touch_device(void) {
@@ -254,6 +269,22 @@ static void discover_touch_device(void) {
     }
 }
 
+static int output_name_matches(const char* display_name, const char* configured_name) {
+    return display_name &&
+        configured_name &&
+        configured_name[0] != '\0' &&
+        strcmp(display_name, configured_name) == 0;
+}
+
+static void normalize_rect_to_canvas(SDL_Rect* rect, int min_x, int min_y) {
+    if (!rect) {
+        return;
+    }
+
+    rect->x -= min_x;
+    rect->y -= min_y;
+}
+
 static void force_thor_full_scale(SDL_Renderer* renderer) {
     if (!renderer || !real_SDL_RenderSetScale || !real_SDL_RenderSetViewport) {
         return;
@@ -263,20 +294,29 @@ static void force_thor_full_scale(SDL_Renderer* renderer) {
         return;
     }
 
-    logical_width = ds_screen_width * 2;
-    logical_height = ds_screen_height;
+    logical_width = dual_panel_logical_width();
+    logical_height = dual_panel_logical_height();
     real_SDL_RenderSetViewport(renderer, NULL);
     real_SDL_RenderSetScale(renderer, (float)phys_width / (float)logical_width, (float)phys_height / (float)logical_height);
 }
 
 SDL_Window* SDL_CreateWindow(const char* title, int x, int y, int w, int h, Uint32 flags) {
     int sdl_num_displays = SDL_GetNumVideoDisplays();
-    int total_width = 0;
-    int total_height = 0;
     int last_width = 0;
     int last_height = 0;
+    int have_bounds = 0;
+    int min_x = 0;
+    int min_y = 0;
+    int max_x = 0;
+    int max_y = 0;
     int top_idx = -1;
     int bottom_idx = -1;
+    SDL_Rect top_by_position = {0};
+    SDL_Rect bottom_by_position = {0};
+    SDL_Rect top_by_name = {0};
+    SDL_Rect bottom_by_name = {0};
+    int top_name_idx = -1;
+    int bottom_name_idx = -1;
 
     // Change window to total screen size
     // Prevents empty spacing on dual displays
@@ -284,33 +324,55 @@ SDL_Window* SDL_CreateWindow(const char* title, int x, int y, int w, int h, Uint
     for (int i = 0; i < sdl_num_displays; ++i) {
         SDL_Rect bounds;
         if (SDL_GetDisplayBounds(i, &bounds) == 0) {
-            if (i < 4) {
-                // Reuse the existing rect storage type without adding another array.
-                if (i == 0) {
-                    top_display_bounds = bounds;
-                    bottom_display_bounds = bounds;
-                }
+            const char* display_name = SDL_GetDisplayName(i);
+
+            if (!have_bounds) {
+                min_x = bounds.x;
+                min_y = bounds.y;
+                max_x = bounds.x + bounds.w;
+                max_y = bounds.y + bounds.h;
+                top_by_position = bounds;
+                bottom_by_position = bounds;
+                have_bounds = 1;
+            } else {
+                if (bounds.x < min_x) min_x = bounds.x;
+                if (bounds.y < min_y) min_y = bounds.y;
+                if (bounds.x + bounds.w > max_x) max_x = bounds.x + bounds.w;
+                if (bounds.y + bounds.h > max_y) max_y = bounds.y + bounds.h;
             }
+
             last_width = bounds.w;
             last_height = bounds.h;
-            if (bounds.w + bounds.x > total_width)
-                total_width += bounds.w;
-            if (bounds.h + bounds.y > total_height)
-                total_height += bounds.h;
-            if (top_idx < 0 || bounds.y < top_display_bounds.y) {
-                top_display_bounds = bounds;
+            if (top_idx < 0 || bounds.y < top_by_position.y) {
+                top_by_position = bounds;
                 top_idx = i;
             }
-            if (bottom_idx < 0 || bounds.y > bottom_display_bounds.y) {
-                bottom_display_bounds = bounds;
+            if (bottom_idx < 0 || bounds.y > bottom_by_position.y) {
+                bottom_by_position = bounds;
                 bottom_idx = i;
+            }
+            if (output_name_matches(display_name, configured_top_output_name)) {
+                top_by_name = bounds;
+                top_name_idx = i;
+            }
+            if (output_name_matches(display_name, configured_bottom_output_name)) {
+                bottom_by_name = bounds;
+                bottom_name_idx = i;
             }
         }
     }
 
     // Record screen size for rect tracking/conversion
-    phys_width = total_width;
-    phys_height = total_height;
+    if (have_bounds) {
+        phys_width = max_x - min_x;
+        phys_height = max_y - min_y;
+
+        top_display_bounds = (top_name_idx >= 0) ? top_by_name : top_by_position;
+        bottom_display_bounds = (bottom_name_idx >= 0) ? bottom_by_name : bottom_by_position;
+
+        normalize_rect_to_canvas(&top_display_bounds, min_x, min_y);
+        normalize_rect_to_canvas(&bottom_display_bounds, min_x, min_y);
+    }
 
     // DraStic starts in the center of the native virtual screen
     last_x = 128;
@@ -403,10 +465,8 @@ int SDL_RenderSetScale(SDL_Renderer* renderer, float scaleX, float scaleY) {
         SDL_GetRendererOutputSize(renderer, &output_w, &output_h);
 
         if (output_w > 0 && output_h == phys_height && ds_screen_width > 0 && ds_screen_height > 0) {
-            if (logical_width <= 0 || logical_height <= 0) {
-                logical_width = ds_screen_width * 2;
-                logical_height = ds_screen_height;
-            }
+            logical_width = dual_panel_logical_width();
+            logical_height = dual_panel_logical_height();
             return real_SDL_RenderSetScale(
                 renderer,
                 (float)output_w / (float)logical_width,
@@ -725,6 +785,8 @@ static void init(void) {
     const char* debug_touch_str = getenv("DSHOOK_DEBUG_TOUCH");
     const char* fill_str = getenv("DSHOOK_PANEL_FILL");
     const char* touch_index_str = getenv("DSHOOK_TOUCH_DEVICE_INDEX");
+    configured_top_output_name = getenv("DSHOOK_TOP_OUTPUT");
+    configured_bottom_output_name = getenv("DSHOOK_BOTTOM_OUTPUT");
     if (debug_str && *debug_str) {
         debug_render_logs_remaining = atoi(debug_str);
         if (debug_render_logs_remaining <= 0) {

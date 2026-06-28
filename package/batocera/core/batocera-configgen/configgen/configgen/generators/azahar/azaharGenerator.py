@@ -68,7 +68,7 @@ class AzaharGenerator(Generator):
     def getHotkeysContext(self) -> HotkeysContext:
         return {
             "name": "azahar",
-            "keys": { "exit": ["KEY_LEFTALT", "KEY_F4"], "menu": "KEY_F4", "reset": "KEY_F6", "screen_layout": "KEY_F10", "swap_screen": "KEY_F9" }
+            "keys": { "exit": ["KEY_LEFTCTRL", "KEY_Q"], "menu": "KEY_F4", "reset": "KEY_F6", "save_state": ["KEY_LEFTALT", "KEY_S"], "restore_state": ["KEY_LEFTALT", "KEY_L"], "screen_layout": "KEY_F10", "swap_screen": "KEY_F9" }
         }
 
     # Main entry of the module
@@ -179,6 +179,22 @@ class AzaharGenerator(Generator):
         # Close without confirmation
         azaharConfig.set("UI", "confirmClose", "false")
         azaharConfig.set("UI", r"confirmClose\default", "false")
+
+        azaharShortcuts = {
+            r"Exit%20Azahar": "Ctrl+Q",
+            r"Continue\Pause%20Emulation": "F4",
+            r"Restart%20Emulation": "F6",
+            r"Quick%20Save": "Alt+S",
+            r"Quick%20Load": "Alt+L",
+            r"Swap%20Screens": "F9",
+            r"Toggle%20Screen%20Layout": "F10",
+        }
+        for shortcut, key_sequence in azaharShortcuts.items():
+            shortcut_prefix = rf"Shortcuts\Main%20Window\{shortcut}"
+            azaharConfig.set("UI", rf"{shortcut_prefix}\Context", "1")
+            azaharConfig.set("UI", rf"{shortcut_prefix}\Context\default", "false")
+            azaharConfig.set("UI", rf"{shortcut_prefix}\KeySeq", key_sequence)
+            azaharConfig.set("UI", rf"{shortcut_prefix}\KeySeq\default", "false")
 
         # screenshots
         azaharConfig.set("UI", r"Paths\screenshotPath", "/userdata/screenshots")

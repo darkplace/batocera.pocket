@@ -1,0 +1,4 @@
+shaders = 1
+
+shader0 = shaders/dual-screen-bottom-1240.slang
+filter_linear0 = true

@@ -4,8 +4,8 @@
 #
 ################################################################################
 
-ARMSX2_MASIES_VERSION = fca6bcb43c889f305bbb742b275e590bcf7a2868
-ARMSX2_MASIES_SITE = https://github.com/MaSieS4Fun/ARMSX2.git
+ARMSX2_MASIES_VERSION = batocera-linux-arm64
+ARMSX2_MASIES_SITE = https://github.com/suckbluefrog/ARMSX2-MASIES.git
 ARMSX2_MASIES_SITE_METHOD = git
 ARMSX2_MASIES_GIT_SUBMODULES = YES
 ARMSX2_MASIES_LICENSE = GPL-3.0-or-later

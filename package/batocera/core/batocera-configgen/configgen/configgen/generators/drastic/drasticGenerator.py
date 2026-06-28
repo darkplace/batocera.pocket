@@ -22,26 +22,28 @@ _DRASTIC_NEAREST_SCALING = b"0\x00\x00\x00\x00\x00"
 _DRASTIC_SCALING_SUFFIX = b"\x00\x00SDL_RENDER_SCALE_QUALITY"
 
 
-def _is_dual_screen_top_bottom() -> bool:
+def _read_batocera_setting(setting: str) -> str:
     try:
-        display_position = subprocess.run(
-            ["/usr/bin/batocera-settings-get-master", "display.position"],
+        return subprocess.run(
+            ["/usr/bin/batocera-settings-get-master", setting],
             check=False,
             capture_output=True,
             text=True,
         ).stdout.strip()
+    except Exception:
+        return ""
+
+
+def _is_dual_screen_top_bottom() -> bool:
+    try:
+        display_position = _read_batocera_setting("display.position")
         model = subprocess.run(
             ["/usr/bin/batocera-model"],
             check=False,
             capture_output=True,
             text=True,
         ).stdout.strip()
-        secondary_output = subprocess.run(
-            ["/usr/bin/batocera-settings-get-master", "global.videooutput2"],
-            check=False,
-            capture_output=True,
-            text=True,
-        ).stdout.strip()
+        secondary_output = _read_batocera_setting("global.videooutput2")
     except Exception:
         return False
 
@@ -70,7 +72,7 @@ class DrasticGenerator(Generator):
     def getHotkeysContext(self) -> HotkeysContext:
         return {
             "name": "drastic",
-            "keys": { "exit": "KEY_ESC", "save_state": "KEY_F5", "restore_state": "KEY_F7", "menu": "KEY_F1", "fastforward": "KEY_TAB", "swap_screen": "KEY_F2" }
+            "keys": { "exit": "KEY_ESC", "save_state": "KEY_F5", "restore_state": "KEY_F7", "menu": "KEY_F1", "pause": "KEY_F1", "fastforward": "KEY_TAB", "swap_screen": "KEY_F2", "screen_layout": "KEY_F3" }
         }
 
     def getMouseMode(self, config, rom):
@@ -166,7 +168,14 @@ class DrasticGenerator(Generator):
             'SDL_TOUCH_MOUSE_EVENTS': '0',
             'SDL_VIDEO_WAYLAND_ALLOW_LIBDECOR': '0',
             'SDL_VIDEO_WAYLAND_PREFER_LIBDECOR': '0',
+            'SDL_VIDEO_WAYLAND_WMCLASS': 'drastic',
         }
+
+        if is_dual_screen:
+            if top_output := _read_batocera_setting("global.videooutput"):
+                env["DSHOOK_TOP_OUTPUT"] = top_output
+            if bottom_output := _read_batocera_setting("global.videooutput2"):
+                env["DSHOOK_BOTTOM_OUTPUT"] = bottom_output
 
         panel_fill = system.config.get("drastic_panel_fill")
         if panel_fill is system.config.MISSING and is_dual_screen:

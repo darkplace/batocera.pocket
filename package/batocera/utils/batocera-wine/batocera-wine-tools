@@ -11,8 +11,10 @@ KRON4EK_RELEASES_URL="https://api.github.com/repos/Kron4ek/Wine-Builds/releases?
 WINE_GE_RELEASES_URL="https://api.github.com/repos/GloriousEggroll/wine-ge-custom/releases?per_page=100"
 PROTON_GE_RELEASES_URL="https://api.github.com/repos/GloriousEggroll/proton-ge-custom/releases?per_page=100"
 CACHYOS_PROTON_RELEASES_URL="https://api.github.com/repos/CachyOS/proton-cachyos/releases?per_page=100"
+GE_PROTON_SAMPLE_URL="https://github.com/GloriousEggroll/proton-ge-custom/releases/download/GE-Proton10-34/GE-Proton10-34.tar.gz"
 FREE_WINDOWS_GAMES_BASE_URL="https://raw.githubusercontent.com/foclabroc/toolbox/refs/heads/main/windows"
 STEAM_PROTON_CACHYOS_CONFIG="/userdata/system/configs/steam/proton-cachyos.conf"
+STEAM_PROTON_GE_CONFIG="/userdata/system/configs/steam/proton-ge.conf"
 
 clear_screen() {
     clear >/dev/null 2>&1 || true
@@ -175,6 +177,20 @@ select_radiolist() {
     return "$rc"
 }
 
+input_box() {
+    local title="$1"
+    local prompt="$2"
+    local initial="${3:-}"
+    local value
+
+    value=$(dialog --clear --title "$title" --inputbox "$prompt" 12 110 "$initial" 2>&1 >/dev/tty) || {
+        clear_screen
+        return 1
+    }
+    clear_screen
+    printf '%s\n' "$value"
+}
+
 fetch_json() {
     curl -fsSL "$1"
 }
@@ -308,6 +324,28 @@ archive_dir_name() {
     esac
 }
 
+basename_from_url() {
+    local url="$1"
+    local path="${url%%\?*}"
+    path="${path%%\#*}"
+    printf '%s\n' "${path##*/}"
+}
+
+is_ge_proton_url() {
+    [[ "$1" =~ ^https://github\.com/GloriousEggroll/proton-ge-custom/releases/download/[A-Za-z0-9._-]+/GE-Proton[A-Za-z0-9._-]+\.tar\.gz$ ]]
+}
+
+ge_proton_json_from_url() {
+    local url="$1"
+    local archive dirname
+
+    is_ge_proton_url "$url" || return 1
+    archive="$(basename_from_url "$url")"
+    dirname="$(archive_dir_name "$archive")" || return 1
+    jq -cn --arg archive "$archive" --arg url "$url" --arg dirname "$dirname" \
+        '[{label: ("GE-Proton runner: " + $dirname), archive: $archive, url: $url}]'
+}
+
 download_release_selection() {
     local title="$1"
     local prompt="$2"
@@ -426,11 +464,6 @@ wine_ge_menu() {
 }
 
 ge_proton_menu() {
-    if [[ "$(uname -m)" != "x86_64" ]]; then
-        msg_box "GE-Proton downloads are only enabled on x86_64 builds."
-        return 1
-    fi
-
     require_commands jq curl wget tar || return 1
     local data filtered
     data=$(fetch_json "$PROTON_GE_RELEASES_URL") || {
@@ -451,6 +484,20 @@ ge_proton_menu() {
         return 1
     }
     download_release_selection "GE-Proton" "Select GE-Proton builds to download:" "$filtered"
+}
+
+ge_proton_url_menu() {
+    require_commands jq wget tar || return 1
+    local url filtered
+
+    url="$(input_box "GE-Proton URL" "Enter a GE-Proton .tar.gz release URL.\n\nExample:" "$GE_PROTON_SAMPLE_URL")" || return 1
+    url="${url//[[:space:]]/}"
+    filtered="$(ge_proton_json_from_url "$url")" || {
+        msg_box "Unsupported GE-Proton URL:\n${url}\n\nExpected a GitHub release asset like:\n${GE_PROTON_SAMPLE_URL}"
+        return 1
+    }
+
+    download_release_selection "GE-Proton URL" "Install this GE-Proton archive as a Wine runner:" "$filtered"
 }
 
 steam_root_dir() {
@@ -476,6 +523,20 @@ write_steam_proton_cachyos_config() {
         printf '%s\n' "BATOCERA_STEAM_PROTON_CACHYOS_URL=${url}"
     } > "$STEAM_PROTON_CACHYOS_CONFIG"
     chmod 0644 "$STEAM_PROTON_CACHYOS_CONFIG" 2>/dev/null || true
+}
+
+write_steam_proton_ge_config() {
+    local version="$1"
+    local url="$2"
+
+    mkdir -p "$(dirname "$STEAM_PROTON_GE_CONFIG")" || return 1
+    {
+        printf '%s\n' "# Batocera Steam GE-Proton selection"
+        printf '%s\n' "BATOCERA_STEAM_PROTON_GE=1"
+        printf '%s\n' "BATOCERA_STEAM_PROTON_GE_VERSION=${version}"
+        printf '%s\n' "BATOCERA_STEAM_PROTON_GE_URL=${url}"
+    } > "$STEAM_PROTON_GE_CONFIG"
+    chmod 0644 "$STEAM_PROTON_GE_CONFIG" 2>/dev/null || true
 }
 
 write_steam_proton_toolmanifest_vdf() {
@@ -514,6 +575,28 @@ write_steam_proton_cachyos_compatibilitytool_vdf() {
 EOF
 }
 
+write_steam_proton_ge_compatibilitytool_vdf() {
+    local outdir="$1"
+    local version="$2"
+    local tool_id="ge-proton-${version#GE-Proton}"
+
+    cat > "${outdir}/compatibilitytool.vdf" <<EOF
+"compatibilitytools"
+{
+  "compat_tools"
+  {
+    "${tool_id}"
+    {
+      "install_path" "."
+      "display_name" "${version}"
+      "from_oslist" "windows"
+      "to_oslist" "linux"
+    }
+  }
+}
+EOF
+}
+
 prepare_steam_proton_cachyos_dir() {
     local outdir="$1"
     local version="$2"
@@ -531,6 +614,22 @@ prepare_steam_proton_cachyos_dir() {
     fi
 
     write_steam_proton_cachyos_compatibilitytool_vdf "$outdir" "$version"
+    chmod +x "$outdir/proton" 2>/dev/null || true
+}
+
+prepare_steam_proton_ge_dir() {
+    local outdir="$1"
+    local version="$2"
+    local manifest="${outdir}/toolmanifest.vdf"
+
+    if [ -f "$manifest" ]; then
+        sed -i '/require_tool_appid/d' "$manifest" 2>/dev/null || true
+    fi
+    if [ ! -f "$manifest" ] || ! grep -q '"commandline"[[:space:]]*"/proton %verb%"' "$manifest" 2>/dev/null; then
+        write_steam_proton_toolmanifest_vdf "$manifest"
+    fi
+
+    write_steam_proton_ge_compatibilitytool_vdf "$outdir" "$version"
     chmod +x "$outdir/proton" 2>/dev/null || true
 }
 
@@ -604,6 +703,68 @@ download_steam_proton_cachyos_selection() {
     }
 
     msg_box "Installed ${installed} Proton-CachyOS build(s) for Steam.\n\nSteam will list each build as a separate compatibility tool after restart. The last installed build, ${default_version}, is now the default preflight install target.\n\nFailed installs: ${failed}"
+}
+
+download_steam_proton_ge_url() {
+    local url="$1"
+    local archive dirname version steam_root compat_dir tmpfile outdir
+
+    is_ge_proton_url "$url" || {
+        msg_box "Unsupported GE-Proton URL:\n${url}\n\nExpected a GitHub release asset like:\n${GE_PROTON_SAMPLE_URL}"
+        return 1
+    }
+
+    require_commands wget tar || return 1
+
+    archive="$(basename_from_url "$url")"
+    dirname="$(archive_dir_name "$archive")" || {
+        msg_box "Unsupported archive format: ${archive}"
+        return 1
+    }
+    version="$dirname"
+    steam_root="$(steam_root_dir)"
+    compat_dir="${steam_root}/compatibilitytools.d"
+    tmpfile="${compat_dir}/${archive}"
+    outdir="${compat_dir}/${dirname}"
+
+    mkdir -p "$compat_dir" || return 1
+
+    if ! download_with_gauge "$url" "$tmpfile" "Downloading ${version} for Steam..."; then
+        msg_box "Download failed: ${archive}"
+        rm -f "$tmpfile"
+        return 1
+    fi
+
+    rm -rf "$outdir"
+    mkdir -p "$outdir" || return 1
+    if ! extract_archive_with_gauge "$tmpfile" "$outdir" "Extracting ${version} for Steam..."; then
+        msg_box "Extraction failed: ${archive}"
+        rm -f "$tmpfile"
+        rm -rf "$outdir"
+        return 1
+    fi
+    rm -f "$tmpfile"
+
+    prepare_steam_proton_ge_dir "$outdir" "$version"
+    if [ ! -x "$outdir/proton" ]; then
+        msg_box "${version} did not install a runnable proton script at:\n${outdir}/proton"
+        return 1
+    fi
+
+    write_steam_proton_ge_config "$version" "$url" || {
+        msg_box "Installed ${version}, but failed to write ${STEAM_PROTON_GE_CONFIG}."
+        return 1
+    }
+
+    msg_box "Installed ${version} for Steam.\n\nSteam will list it as a compatibility tool after restart. It is also written as the GE-Proton preflight install target."
+}
+
+steam_proton_ge_url_menu() {
+    local url
+
+    url="$(input_box "Steam GE-Proton URL" "Enter a GE-Proton .tar.gz release URL to install as a Steam compatibility tool.\n\nExample:" "$GE_PROTON_SAMPLE_URL")" || return 1
+    url="${url//[[:space:]]/}"
+    download_steam_proton_ge_url "$url"
 }
 
 steam_proton_cachyos_menu() {
@@ -1295,6 +1456,8 @@ main_menu() {
             11 "Add Windows game to Steam"
             12 "Install Decky PluginLoader for Steam"
             13 "Install free Windows games"
+            14 "Download GE-Proton runner from URL"
+            15 "Install GE-Proton Steam runner from URL"
             99 "Exit"
         )
 
@@ -1328,6 +1491,8 @@ main_menu() {
             11) add_windows_game_to_steam_menu ;;
             12) install_decky_loader_menu ;;
             13) install_free_windows_games_menu ;;
+            14) ge_proton_url_menu ;;
+            15) steam_proton_ge_url_menu ;;
             99) break ;;
         esac
     done

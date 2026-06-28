@@ -29,50 +29,71 @@ custom_features:
       Top: Top
       Bottom: Bottom
   citra_resolution_factor:
+    submenu: GRAPHICS
     prompt: RENDERING RESOLUTION
     description: Enhancement. Increase the rendering resolution. Makes 3D objects clearer.
     choices:
-      1x (Native): 1x (Native)
-      2x: 2x
-      3x: 3x
-      4x: 4x
-      5x: 5x
-      6x: 6x
-      7x: 7x
-      8x: 8x
-      9x: 9x
-      10x: 10x
-  citra_mouse_touchscreen:
+      1x (Native): 1
+      2x: 2
+      3x: 3
+      4x: 4
+      5x: 5
+      6x: 6
+      7x: 7
+      8x: 8
+      9x: 9
+      10x: 10
+  citra_enable_mouse_touchscreen:
+    submenu: CONTROLS
     prompt: MOUSE TO TOUCHSCREEN
     description: Enable mouse or touchpad pointer input to drive the emulated touch screen.
     choices:
       'On': enabled
       'Off': disabled
-  citra_touch_touchscreen:
+  citra_enable_touch_touchscreen:
+    submenu: CONTROLS
     prompt: TOUCH TO TOUCHSCREEN
     description: Enable native touchscreen pointer input for the emulated touch screen.
     choices:
       'On': enabled
       'Off': disabled
-  citra_render_touchscreen:
-    prompt: SHOW TOUCH POINTER
-    description: Draw the simulated touch contact on screen when using mouse or touchscreen input.
+  citra_enable_touch_pointer_timeout:
+    submenu: CONTROLS
+    prompt: TOUCH POINTER TIMEOUT
+    description: Hide the touch pointer after inactivity.
     choices:
       'On': enabled
       'Off': disabled
-  citra_use_hw_shaders:
+  citra_use_hw_shader:
+    submenu: GRAPHICS
     prompt: HARDWARE SHADERS
     description: Disable for compatibility in games that misbehave with hardware shaders.
     choices:
       'On': enabled
       'Off': disabled
-  citra_use_hw_shader_cache:
+  citra_use_vsync:
+    submenu: GRAPHICS
+    prompt: VSYNC
+    description: Synchronize presentation to the display refresh. Can reduce tearing but may add input latency.
+    choices:
+      'On': enabled
+      'Off': disabled
+  citra_use_disk_shader_cache:
+    submenu: GRAPHICS
     prompt: DISK SHADER CACHE
     description: Save hardware shader cache to disk to reduce stutter on subsequent runs.
     choices:
       'On': enabled
       'Off': disabled
+  citra_async_shader_compilation:
+    submenu: GRAPHICS
+    prompt: ASYNC SHADER COMPILATION
+    description: Compile Vulkan shaders in the background to reduce stutter. May cause temporary graphical glitches.
+    choices:
+      'Off': disabled
+      'On': enabled
   citra_custom_textures:
+    submenu: GRAPHICS
     prompt: LOAD CUSTOM TEXTURES
     description: Load replacement textures from the texture pack directory.
     choices:

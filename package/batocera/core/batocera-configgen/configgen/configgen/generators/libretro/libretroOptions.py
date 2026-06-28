@@ -589,20 +589,33 @@ def _dolphin_options(
 def _citra_options(
     coreSettings: UnixSettings, system: Emulator, rom: Path, guns: Guns, wheels: DeviceInfoMapping, /,
 ) -> None:
+    is_azahar = system.config.core == 'azahar'
+
     if graphics_api := system.config.get('citra_graphics_api'):
         _set(coreSettings, 'citra_graphics_api', graphics_api)
     else:
         _set(coreSettings, 'citra_graphics_api', 'Vulkan' if system.config.get('gfxbackend') == 'vulkan' else 'OpenGL')
     _set_from_system(coreSettings, 'citra_layout_option', system, default='Default Top-Bottom Screen')
     _set_from_system(coreSettings, 'citra_swap_screen', system, default='Top')
-    _set_from_system(coreSettings, 'citra_resolution_factor', system, default='1x (Native)')
-    _set_from_system(coreSettings, 'citra_use_hw_shaders', system, default='enabled')
-    _set_from_system(coreSettings, 'citra_use_hw_shader_cache', system, default='enabled')
+    _set_from_system(coreSettings, 'citra_resolution_factor', system, default='1' if is_azahar else '1x (Native)')
+    if is_azahar:
+        _set_from_system(coreSettings, 'citra_use_hw_shader', system, default='enabled')
+        _set_from_system(coreSettings, 'citra_use_disk_shader_cache', system, default='enabled')
+        _set_from_system(coreSettings, 'citra_use_vsync', system, default='enabled')
+        _set_from_system(coreSettings, 'citra_async_shader_compilation', system, default='disabled')
+    else:
+        _set_from_system(coreSettings, 'citra_use_hw_shaders', system, default='enabled')
+        _set_from_system(coreSettings, 'citra_use_hw_shader_cache', system, default='enabled')
     _set_from_system(coreSettings, 'citra_custom_textures', system, default='disabled')
     _set_from_system(coreSettings, 'citra_is_new_3ds', system, default='Old 3DS')
-    _set_from_system(coreSettings, 'citra_mouse_touchscreen', system, default='enabled')
-    _set_from_system(coreSettings, 'citra_touch_touchscreen', system, default='enabled')
-    _set_from_system(coreSettings, 'citra_render_touchscreen', system, default='enabled')
+    if is_azahar:
+        _set_from_system(coreSettings, 'citra_enable_mouse_touchscreen', system, default='enabled')
+        _set_from_system(coreSettings, 'citra_enable_touch_touchscreen', system, default='enabled')
+        _set_from_system(coreSettings, 'citra_enable_touch_pointer_timeout', system, default='enabled')
+    else:
+        _set_from_system(coreSettings, 'citra_mouse_touchscreen', system, default='enabled')
+        _set_from_system(coreSettings, 'citra_touch_touchscreen', system, default='enabled')
+        _set_from_system(coreSettings, 'citra_render_touchscreen', system, default='enabled')
 
 
 # Magnavox - Odyssey2 / Phillips Videopac+
@@ -1128,6 +1141,8 @@ def _melonds_options(
 
     # Boot game directly
     _set_from_system(coreSettings, 'melonds_boot_directly', system, 'melonds_boot_directly', default='enabled')
+
+    _set(coreSettings, 'melonds_swapscreen_mode', 'Toggle')
 
     # Screen Layout + Hybrid Ratio
     hybrid_ratio = '2'

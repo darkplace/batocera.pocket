@@ -118,6 +118,140 @@ systemNetplayModes = {'host', 'client', 'spectator'}
 coreForceSlangShaders = { 'mupen64plus-next' }
 rgdsVerticalArcadeCores = { 'fbneo', 'fbalpha', 'mame', 'mame078plus', 'mame0139', 'mame0160', 'mamevirtual', 'imame4all' }
 rgdsVerticalModeFile = Path('/var/run/rgds-vertical-mode')
+dualScreenNdsLibretroCores = { 'melonds', 'melondsds' }
+dualScreen3dsLibretroCores = { 'azahar' }
+
+def _setting_value(setting: str, /) -> str:
+    for command in ("batocera-settings-get-master", "batocera-settings-get"):
+        try:
+            value = subprocess.run(
+                [f"/usr/bin/{command}", setting],
+                check=False,
+                capture_output=True,
+                text=True,
+            ).stdout.strip()
+        except Exception:
+            value = ""
+
+        if value:
+            return value
+
+    return ""
+
+
+def _model_name() -> str:
+    try:
+        return subprocess.run(
+            ["/usr/bin/batocera-model"],
+            check=False,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+    except Exception:
+        return ""
+
+
+def _compatible_contains(*compatibles: bytes) -> bool:
+    try:
+        with open("/sys/firmware/devicetree/base/compatible", "rb") as compat:
+            current = compat.read().split(b"\0")
+    except OSError:
+        return False
+
+    return any(compatible in current for compatible in compatibles)
+
+
+def is_dual_screen_top_bottom() -> bool:
+    if _setting_value("display.position") != "top-bottom":
+        return False
+
+    if _setting_value("global.videooutput2"):
+        return True
+
+    if _model_name() in {"Anbernic_RG_DS", "AYN_Thor"}:
+        return True
+
+    return _compatible_contains(b"anbernic,rg-ds", b"ayn,thor")
+
+
+def is_ayn_thor() -> bool:
+    return _model_name() == "AYN_Thor" or _compatible_contains(b"ayn,thor")
+
+
+def should_dual_screen_nds_libretro(system: Emulator, /) -> bool:
+    return (
+        system.name == "nds"
+        and system.config.core in dualScreenNdsLibretroCores
+        and is_dual_screen_top_bottom()
+    )
+
+
+def should_dual_screen_3ds_libretro(system: Emulator, /) -> bool:
+    return (
+        system.name in { "3ds", "n3ds" }
+        and system.config.core in dualScreen3dsLibretroCores
+        and is_dual_screen_top_bottom()
+    )
+
+
+def should_dual_screen_libretro(system: Emulator, /) -> bool:
+    return should_dual_screen_nds_libretro(system) or should_dual_screen_3ds_libretro(system)
+
+
+def should_thor_dual_screen_libretro(system: Emulator, /) -> bool:
+    return should_dual_screen_libretro(system) and is_ayn_thor()
+
+
+def _resolution_dimensions(resolution: str, /) -> tuple[int, int] | None:
+    try:
+        width, height = resolution.split(".", 1)[0].split("x", 1)
+        return int(width), int(height)
+    except ValueError:
+        return None
+
+
+def _rotation_to_transform(rotation: str, /) -> str:
+    return {
+        "1": "90",
+        "2": "180",
+        "3": "270",
+    }.get(rotation, "normal")
+
+
+def _display_transform(output: str, role: str, /) -> str:
+    rotation = ""
+    if role == "secondary":
+        rotation = _setting_value(f"display.rotate2.{output}")
+    if not rotation:
+        rotation = _setting_value(f"display.rotate.{output}")
+    if not rotation:
+        rotation = _setting_value("display.rotate")
+
+    return _rotation_to_transform(rotation)
+
+
+def _resolution_effective_height(resolution: str, transform: str, /) -> int | None:
+    dimensions = _resolution_dimensions(resolution)
+    if dimensions is None:
+        return None
+
+    width, height = dimensions
+    if transform in {"90", "270"}:
+        return width
+    return height
+
+
+def dual_screen_top_bottom_resolution(gameResolution: Resolution, /) -> tuple[int, int]:
+    width = int(gameResolution["width"])
+    primary_height = int(gameResolution["height"])
+    secondary_height = primary_height
+
+    resolution2 = _setting_value("es.resolution2")
+    if resolution2:
+        secondary_transform = _display_transform(_setting_value("global.videooutput2"), "secondary")
+        secondary_height = _resolution_effective_height(resolution2, secondary_transform) or primary_height
+
+    return width, primary_height + secondary_height
 
 def connected_to_internet() -> bool:
     # Try Cloudflare one.one.one.one first
@@ -263,6 +397,10 @@ def createLibretroConfig(
         RETROARCH_CORE_CUSTOM.unlink()
         coreSettings = UnixSettings(RETROARCH_CORE_CUSTOM, separator=' ')
 
+    if should_thor_dual_screen_libretro(system):
+        if should_dual_screen_nds_libretro(system) and system.config.core == 'melonds':
+            system.config['melonds_touch_mode'] = 'Touch'
+
     # Create/update retroarch-core-options.cfg
     libretroOptions.generateCoreSettings(coreSettings, system, rom, guns, wheels)
     write_rgds_vertical_mode(system)
@@ -292,7 +430,7 @@ def createLibretroConfig(
 
     retroarchConfig['video_driver'] = f'"{gfxBackend}"'  # needed for the ozone menu
     # Set Vulkan
-    if system.config.get("gfxbackend") == "vulkan" and vulkan.is_available():
+    if gfxBackend == "vulkan" and vulkan.is_available():
         _logger.debug("Vulkan driver is available on the system.")
         if vulkan.has_discrete_gpu():
             _logger.debug("A discrete GPU is available on the system. We will use that for performance")
@@ -376,6 +514,11 @@ def createLibretroConfig(
     # Input configuration
     retroarchConfig['input_joypad_driver'] = 'udev'
     retroarchConfig['input_driver'] = 'udev'                    # driver for mouse/keyboard. udev required for guns.
+    if should_thor_dual_screen_libretro(system):
+        # Thor exposes a virtual hotkey mouse before its lower touchscreen.
+        retroarchConfig['input_player1_mouse_index'] = '1'
+        retroarchConfig['input_touch_vmouse_pointer'] = 'true'
+        retroarchConfig['input_touch_vmouse_touchpad'] = 'false'
     retroarchConfig['input_max_users'] = "16"                   # Allow up to 16 players
 
     retroarchConfig['input_libretro_device_p1'] = '1'           # Default devices choices
@@ -687,6 +830,9 @@ def createLibretroConfig(
     else:
         retroarchConfig['video_shader_enable'] = 'false'
 
+    if should_thor_dual_screen_libretro(system):
+        retroarchConfig['video_shader_enable'] = 'true'
+
      # Ratio option
     retroarchConfig['aspect_ratio_index'] = ''              # reset in case config was changed (or for overlays)
     if ratio := system.config.get_str('ratio'):
@@ -825,6 +971,24 @@ def createLibretroConfig(
         retroarchConfig['custom_viewport_height'] = height
         retroarchConfig['width'] = width
         retroarchConfig['height'] = height
+    elif should_dual_screen_libretro(system):
+        width, height = dual_screen_top_bottom_resolution(gameResolution)
+        bezel = None
+        retroarchConfig['video_fullscreen'] = 'false'
+        retroarchConfig['video_windowed_fullscreen'] = 'false'
+        retroarchConfig['video_window_width'] = width
+        retroarchConfig['video_window_height'] = height
+        retroarchConfig['video_fullscreen_x'] = width
+        retroarchConfig['video_fullscreen_y'] = height
+        retroarchConfig['video_scale_integer'] = 'false'
+        retroarchConfig['video_aspect_ratio_auto'] = 'false'
+        retroarchConfig['aspect_ratio_index'] = str(ratioIndexes.index("full"))
+        retroarchConfig['custom_viewport_x'] = 0
+        retroarchConfig['custom_viewport_y'] = 0
+        retroarchConfig['custom_viewport_width'] = width
+        retroarchConfig['custom_viewport_height'] = height
+        retroarchConfig['width'] = width
+        retroarchConfig['height'] = height
 
     # Netplay management
     if (netplay_mode := system.config.get('netplay.mode')) in systemNetplayModes:
@@ -892,6 +1056,8 @@ def createLibretroConfig(
     if should_rgds_stretch_arcade(system, rom):
         retroarchConfig['width'] = int(gameResolution["width"])
         retroarchConfig['height'] = int(gameResolution["height"]) * 2
+    elif should_dual_screen_libretro(system):
+        retroarchConfig['width'], retroarchConfig['height'] = dual_screen_top_bottom_resolution(gameResolution)
     # force the assets directory while it was wrong in some beta versions
     retroarchConfig['assets_directory'] = '/usr/share/libretro/assets'
 

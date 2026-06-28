@@ -1,0 +1,74 @@
+--- a/src/citra_libretro/emu_window/libretro_window.cpp
++++ b/src/citra_libretro/emu_window/libretro_window.cpp
+@@ -5,6 +5,7 @@
+ #ifdef ENABLE_OPENGL
+ #include <glad/glad.h>
+ #endif
++#include <cstdlib>
+ #include <libretro.h>
+
+ #include "audio_core/audio_types.h"
+@@ -58,6 +59,37 @@
+ }
+ #endif
+
++namespace {
++
++constexpr unsigned BATOCERA_THOR_DUAL_SCREEN_WIDTH = 1920;
++constexpr unsigned BATOCERA_THOR_DUAL_SCREEN_HEIGHT = 2160;
++constexpr unsigned BATOCERA_THOR_TOP_SCREEN_HEIGHT = 1080;
++constexpr unsigned BATOCERA_THOR_BOTTOM_SCREEN_LEFT = 400;
++constexpr unsigned BATOCERA_THOR_BOTTOM_SCREEN_TOP = 1200;
++constexpr unsigned BATOCERA_THOR_BOTTOM_SCREEN_WIDTH = 1120;
++constexpr unsigned BATOCERA_THOR_BOTTOM_SCREEN_HEIGHT = 840;
++
++bool UseBatoceraThorDualScreen3dsLayout() {
++    const char* value = std::getenv("BATOCERA_THOR_DUAL_SCREEN_3DS");
++    return value != nullptr && value[0] != '\0' && value[0] != '0';
++}
++
++Layout::FramebufferLayout BatoceraThorDualScreen3dsLayout() {
++    return {
++        BATOCERA_THOR_DUAL_SCREEN_WIDTH,
++        BATOCERA_THOR_DUAL_SCREEN_HEIGHT,
++        true,
++        true,
++        {0, 0, BATOCERA_THOR_DUAL_SCREEN_WIDTH, BATOCERA_THOR_TOP_SCREEN_HEIGHT},
++        {BATOCERA_THOR_BOTTOM_SCREEN_LEFT, BATOCERA_THOR_BOTTOM_SCREEN_TOP,
++         BATOCERA_THOR_BOTTOM_SCREEN_LEFT + BATOCERA_THOR_BOTTOM_SCREEN_WIDTH,
++         BATOCERA_THOR_BOTTOM_SCREEN_TOP + BATOCERA_THOR_BOTTOM_SCREEN_HEIGHT},
++        true,
++    };
++}
++
++} // namespace
++
+ EmuWindow_LibRetro::EmuWindow_LibRetro() {
+     strict_context_required = true;
+     window_info.type = Frontend::WindowSystemType::LibRetro;
+@@ -235,6 +267,10 @@
+ void EmuWindow_LibRetro::OnMinimalClientAreaChangeRequest(std::pair<u32, u32> _minimal_size) {}
+
+ LayoutGeometry ComputeLayoutGeometry() {
++    if (UseBatoceraThorDualScreen3dsLayout()) {
++        return {BATOCERA_THOR_DUAL_SCREEN_WIDTH, BATOCERA_THOR_DUAL_SCREEN_HEIGHT, true};
++    }
++
+     unsigned baseX;
+     unsigned baseY;
+     bool emulated_pointer = true;
+@@ -314,7 +350,13 @@
+     width = baseX;
+     height = baseY;
+
+-    UpdateCurrentFramebufferLayout(baseX, baseY);
++    if (UseBatoceraThorDualScreen3dsLayout()) {
++        auto layout = BatoceraThorDualScreen3dsLayout();
++        layout.render_3d_mode = get3DMode();
++        NotifyFramebufferLayoutChanged(layout);
++    } else {
++        UpdateCurrentFramebufferLayout(baseX, baseY);
++    }
+
+     doCleanFrame = true;
+ }

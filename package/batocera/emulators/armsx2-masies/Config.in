@@ -46,7 +46,7 @@ config BR2_PACKAGE_ARMSX2_MASIES
     select BR2_PACKAGE_ZLIB
     select BR2_PACKAGE_ZSTD
     help
-      MaSieS4Fun's Linux ARM64 desktop ARMSX2 branch with macrec ARM64 JIT
+      Linux ARM64 desktop ARMSX2 branch with macrec ARM64 JIT
       work and GLES fixes.
 
-      https://github.com/MaSieS4Fun/ARMSX2
+      https://github.com/suckbluefrog/ARMSX2-MASIES

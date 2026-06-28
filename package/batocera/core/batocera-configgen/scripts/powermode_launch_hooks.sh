@@ -351,7 +351,7 @@ is_dual_screen_emulator() {
     local GAME_PATH="$4"
 
     case "${SYSTEM_NAME}:${EMULATOR_NAME}:${CORE_NAME}" in
-        nds:drastic:drastic|nds:melonds:melonds|3ds:azahar:azahar|n3ds:azahar:azahar|wiiu:cemu:cemu)
+        nds:drastic:drastic|nds:melonds:melonds|nds:libretro:melonds|nds:libretro:melondsds|3ds:azahar:azahar|n3ds:azahar:azahar|3ds:libretro:azahar|n3ds:libretro:azahar|wiiu:cemu:cemu)
             return 0
             ;;
     esac

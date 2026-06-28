@@ -3,6 +3,7 @@
 STATE_FILE="/var/run/batocera-dual-screen-backglass.cmd"
 FLYCAST_VMU_STATE_FILE="/var/run/batocera-flycast-vmu-backglass.params"
 GAME_CONTROLS_STATE_FILE="/var/run/batocera-game-controls-backglass.params"
+THOR_REFRESH_STATE_FILE="/var/run/batocera-thor-dual-screen-refresh.mode"
 PIDFILE="/var/run/batocera-backglass.pid"
 PARAMSFILE="/var/run/batocera-backglass.params"
 
@@ -15,7 +16,7 @@ is_dual_screen_handheld() {
 
 is_dual_screen_emulator() {
     case "$2:$3:$4" in
-        nds:drastic:drastic|nds:melonds:melonds|3ds:azahar:azahar|n3ds:azahar:azahar|wiiu:cemu:cemu)
+        nds:drastic:drastic|nds:melonds:melonds|nds:libretro:melonds|nds:libretro:melondsds|3ds:azahar:azahar|n3ds:azahar:azahar|3ds:libretro:azahar|n3ds:libretro:azahar|wiiu:cemu:cemu)
             return 0
             ;;
     esac
@@ -109,6 +110,55 @@ setup_sway_env() {
     export XDG_CURRENT_DESKTOP=sway
     export SWAYSOCK="${SWAYSOCK:-${XDG_RUNTIME_DIR}/sway-ipc.0.sock}"
     export I3SOCK="${I3SOCK:-$SWAYSOCK}"
+}
+
+is_ayn_thor_top_bottom() {
+    [ "$(batocera-model 2>/dev/null)" = "AYN_Thor" ] || return 1
+    [ "$(/usr/bin/batocera-settings-get-master display.position 2>/dev/null)" = "top-bottom" ] || return 1
+    [ "$(/usr/bin/batocera-settings-get-master global.videooutput 2>/dev/null)" = "DSI-2" ] || return 1
+    [ "$(/usr/bin/batocera-settings-get-master global.videooutput2 2>/dev/null)" = "DSI-1" ] || return 1
+}
+
+set_thor_dual_screen_refresh() {
+    local refresh saved_mode
+
+    is_ayn_thor_top_bottom || return 0
+    command -v swaymsg >/dev/null 2>&1 || return 0
+    command -v jq >/dev/null 2>&1 || return 0
+
+    setup_sway_env
+    if [ ! -f "$THOR_REFRESH_STATE_FILE" ]; then
+        refresh="$(swaymsg -t get_outputs 2>/dev/null | jq -r '.[] | select(.name == "DSI-2") | .current_mode.refresh' 2>/dev/null | head -n1)"
+        case "$refresh" in
+            60000)
+                saved_mode="1080x1920@60Hz"
+                ;;
+            *)
+                saved_mode="1080x1920@120Hz"
+                ;;
+        esac
+        echo "$saved_mode" > "$THOR_REFRESH_STATE_FILE"
+    fi
+
+    swaymsg output DSI-2 mode 1080x1920@60Hz >/dev/null 2>&1 || true
+}
+
+restore_thor_dual_screen_refresh() {
+    local saved_mode
+
+    [ -f "$THOR_REFRESH_STATE_FILE" ] || return 0
+    is_ayn_thor_top_bottom || {
+        rm -f "$THOR_REFRESH_STATE_FILE"
+        return 0
+    }
+    command -v swaymsg >/dev/null 2>&1 || return 0
+
+    read saved_mode < "$THOR_REFRESH_STATE_FILE"
+    rm -f "$THOR_REFRESH_STATE_FILE"
+    [ -n "$saved_mode" ] || return 0
+
+    setup_sway_env
+    swaymsg output DSI-2 mode "$saved_mode" >/dev/null 2>&1 || true
 }
 
 restore_emulator_touch_matrix() {
@@ -314,6 +364,7 @@ restore_game_controls_backglass() {
 case "$1" in
     gameStart)
         if is_dual_screen_handheld && is_dual_screen_emulator "$@"; then
+            set_thor_dual_screen_refresh
             restore_emulator_touch_matrix
             stop_backglass
         elif is_dual_screen_handheld && is_flycast_vmu_bottom_launch "$2" "$3" "$4" "$5"; then
@@ -325,6 +376,7 @@ case "$1" in
         fi
         ;;
     gameStop)
+        restore_thor_dual_screen_refresh
         restore_flycast_vmu_backglass || restore_game_controls_backglass || restore_backglass
         ;;
 esac

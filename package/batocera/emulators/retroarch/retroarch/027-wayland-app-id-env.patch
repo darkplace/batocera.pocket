@@ -1,0 +1,50 @@
+--- a/gfx/common/wayland_common.c
++++ b/gfx/common/wayland_common.c
+@@ -22,6 +22,7 @@
+ #include <sys/mman.h>
+ #include <sys/syscall.h>
+ #include <poll.h>
++#include <stdlib.h>
+ #include <unistd.h>
+
+ #include "wayland_common.h"
+@@ -35,6 +36,12 @@
+
+ #define WINDOW_TITLE "RetroArch"
+
++static const char *wl_app_id(void)
++{
++   const char *app_id = getenv("BATOCERA_WAYLAND_APP_ID");
++   return (app_id && app_id[0]) ? app_id : WAYLAND_APP_ID;
++}
++
+ #ifdef HAVE_LIBDECOR_H
+ #include <libdecor.h>
+ #endif
+@@ -596,7 +603,7 @@ static bool wl_create_toplevel_icon(gfx_ctx_wayland_data_t *wl, struct xdg_toplevel *toplevel)
+ {
+    struct xdg_toplevel_icon_v1 *icon = xdg_toplevel_icon_manager_v1_create_icon(
+       wl->xdg_toplevel_icon_manager);
+-   xdg_toplevel_icon_v1_set_name(icon, WAYLAND_APP_ID);
++   xdg_toplevel_icon_v1_set_name(icon, wl_app_id());
+
+    const int icon_size = wl->buffer_scale > 1 ? 128 : 64;
+    shm_buffer_t *icon_buffer = create_shm_buffer(wl,
+@@ -870,7 +877,7 @@ bool gfx_ctx_wl_create_window_common(
+          wl_create_toplevel_icon(wl, xdg_toplevel);
+       }
+
+-      wl->libdecor_frame_set_app_id(wl->libdecor_frame, WAYLAND_APP_ID);
++      wl->libdecor_frame_set_app_id(wl->libdecor_frame, wl_app_id());
+       wl->libdecor_frame_set_title(wl->libdecor_frame, WINDOW_TITLE);
+       wl->libdecor_frame_map(wl->libdecor_frame);
+
+@@ -896,7 +903,7 @@ bool gfx_ctx_wl_create_window_common(
+       wl->xdg_toplevel = xdg_surface_get_toplevel(wl->xdg_surface);
+       xdg_toplevel_add_listener(wl->xdg_toplevel, &toplevel_listener->xdg_toplevel_listener, wl);
+
+-      xdg_toplevel_set_app_id(wl->xdg_toplevel, WAYLAND_APP_ID);
++      xdg_toplevel_set_app_id(wl->xdg_toplevel, wl_app_id());
+       xdg_toplevel_set_title(wl->xdg_toplevel, WINDOW_TITLE);
+
+       if (wl->deco_manager)

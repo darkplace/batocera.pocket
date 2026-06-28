@@ -60,6 +60,9 @@ define BATOCERA_SHADERS_INSTALL_TARGET_CMDS
     mkdir -p $(TARGET_DIR)/usr/share/batocera/shaders/bezel/Mega_Bezel/Presets
 	cp -R $(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/emulators/retroarch/shaders/batocera-shaders/presets-batocera/* \
 	    $(TARGET_DIR)/usr/share/batocera/shaders/bezel/Mega_Bezel/Presets
+	mkdir -p $(TARGET_DIR)/usr/share/batocera/shaders/thor
+	cp -R $(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/emulators/retroarch/shaders/batocera-shaders/thor/* \
+	    $(TARGET_DIR)/usr/share/batocera/shaders/thor
 
 	# general
     mkdir -p $(TARGET_DIR)/usr/share/batocera/shaders/configs
