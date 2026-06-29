@@ -42,6 +42,7 @@ _AXIS_RIGHT = 15
 _AXIS_UP = 16
 _AXIS_DOWN = 17
 _HOTKEY = 18
+_EVDEV_BTN_SOUTH = 304
 
 
 def _int(value: str | int | None, default: int = 0) -> int:
@@ -138,6 +139,33 @@ def _clear_joystick_profile(profile: dict[str, Any]) -> None:
     profile["joystick_axis"] = [_axis_entry(False, 0, 0) for _ in range(_GOPHER64_PROFILE_SIZE)]
 
 
+def _sdl3_joystick_button_offset(pad: Controller) -> int:
+    try:
+        import evdev
+    except ImportError:
+        return 0
+
+    try:
+        key_codes = evdev.InputDevice(pad.device_path).capabilities().get(evdev.ecodes.EV_KEY, [])
+    except OSError:
+        return 0
+
+    # Gopher64 reads dinput profiles through SDL3's joystick API. SDL3 does not
+    # expose pre-gamepad evdev keys such as BTN_BACK as joystick buttons, while
+    # Batocera's controller ids may include them in the button order.
+    return sum(1 for code in key_codes if code < _EVDEV_BTN_SOUTH)
+
+
+def _adjust_sdl3_joystick_buttons(profile: dict[str, Any], pad: Controller) -> None:
+    button_offset = _sdl3_joystick_button_offset(pad)
+    if button_offset == 0:
+        return
+
+    for binding in profile["joystick_buttons"]:
+        if binding["enabled"]:
+            binding["id"] = max(0, _int(binding["id"]) - button_offset)
+
+
 def _add_joystick_binding(
     profile: dict[str, Any],
     gopher_index: int,
@@ -202,6 +230,7 @@ def _batocera_profile(pad: Controller) -> dict[str, Any]:
     _add_named_binding(profile, _AXIS_UP, pad, "joystick1up")
     _add_axis_binding(profile, _AXIS_DOWN, pad, "joystick1down", "joystick1up")
     _add_named_binding(profile, _HOTKEY, pad, "hotkey", "select")
+    _adjust_sdl3_joystick_buttons(profile, pad)
 
     return profile
 
