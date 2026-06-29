@@ -81,7 +81,7 @@ class DrasticGenerator(Generator):
     def generate(self, system, rom, playersControllers, metadata, guns, wheels, gameResolution):
 
         drastic_root = CONFIGS / "drastic"
-        drastic_bin = drastic_root / "drastic"
+        drastic_bin = drastic_root / "drastic.batocera"
         drastic_conf = drastic_root / "config" / "drastic.cfg"
 
         if not drastic_root.exists():
@@ -100,14 +100,17 @@ class DrasticGenerator(Generator):
         set_drastic_scaling(drastic_bin, system.config.get("drastic_scaling") == 'nearest')
 
         is_dual_screen = _is_dual_screen_top_bottom()
-        dual_screen_default_screen_orientation = 0
-        dual_screen_default_screen_scaling = 1 if is_dual_screen else 0
+        dual_screen_default_screen_orientation = 0 if is_dual_screen else 1
+        dual_screen_default_screen_scaling = 1
         dual_screen_default_edge_marking = 0 if is_dual_screen else 1
 
         esvaluedrastichires = system.config.get_int("drastic_hires", 0)
         esvaluedrasticthreaded = system.config.get_int("drastic_threaded", 0)
         esvaluedrasticfix2d = system.config.get_int("drastic_fix2d", 0)
-        esvaluedrasticscreenorientation = system.config.get_int("drastic_screen_orientation", dual_screen_default_screen_orientation)
+        if is_dual_screen:
+            esvaluedrasticscreenorientation = dual_screen_default_screen_orientation
+        else:
+            esvaluedrasticscreenorientation = system.config.get_int("drastic_screen_orientation", dual_screen_default_screen_orientation)
         esvaluedrasticmirrortouch = system.config.get_int("drastic_mirror_touch", 0)
         esvaluedrasticlanguage = getDrasticLang(system.config)
 
@@ -176,12 +179,15 @@ class DrasticGenerator(Generator):
                 env["DSHOOK_TOP_OUTPUT"] = top_output
             if bottom_output := _read_batocera_setting("global.videooutput2"):
                 env["DSHOOK_BOTTOM_OUTPUT"] = bottom_output
+        else:
+            env["DSHOOK_SINGLE_ORIENTATION"] = str(esvaluedrasticscreenorientation)
 
-        panel_fill = system.config.get("drastic_panel_fill")
-        if panel_fill is system.config.MISSING and is_dual_screen:
-            panel_fill = "stretch"
-        if panel_fill is not system.config.MISSING:
-            env["DSHOOK_PANEL_FILL"] = panel_fill
+        if is_dual_screen:
+            env["DSHOOK_PANEL_FILL"] = "stretch"
+        else:
+            panel_fill = system.config.get("drastic_panel_fill")
+            if panel_fill is not system.config.MISSING:
+                env["DSHOOK_PANEL_FILL"] = panel_fill
 
         if touch_index := system.config.get("drastic_touch_device_index"):
             env["DSHOOK_TOUCH_DEVICE_INDEX"] = touch_index

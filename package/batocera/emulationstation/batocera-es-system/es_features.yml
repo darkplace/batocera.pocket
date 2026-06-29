@@ -14508,11 +14508,20 @@ drastic:
         'On': 1
     drastic_screen_orientation:
       prompt: SCREEN LAYOUT
-      description: Arrange the dual screen layout.
+      description: Arrange the DS screens on single-panel devices. Dual-panel devices
+        keep their top and bottom output mapping.
       choices:
-        Vertical: 0
-        Horizontal: 1
-        Single: 3
+        Top/Bottom: 0
+        Side by Side: 1
+        Single Screen: 3
+    drastic_panel_fill:
+      prompt: SCREEN FILL MODE
+      description: Controls how DraStic scales the DS screen layout on single-panel
+        devices.
+      choices:
+        Aspect Fit: fit
+        Crop to Fill: cover
+        Stretch: stretch
     drastic_language:
       submenu: EMULATION
       prompt: FIRMWARE LANGUAGE

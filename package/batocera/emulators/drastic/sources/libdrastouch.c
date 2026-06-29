@@ -32,6 +32,7 @@ static int debug_touch_logs_remaining = 0;
 static int panel_fill_mode = 0;
 static int configured_touch_device_index = 0;
 static int selected_touch_device = 0;
+static int single_panel_orientation = -1;
 static SDL_TouchID selected_touch_id = 0;
 static const char* configured_top_output_name = NULL;
 static const char* configured_bottom_output_name = NULL;
@@ -238,6 +239,97 @@ static int dual_panel_logical_width(void) {
 
 static int dual_panel_logical_height(void) {
     return ds_screen_height * 2;
+}
+
+static int single_panel_layout_width(const SDL_Rect* dstrect) {
+    int screen_w = (dstrect && dstrect->w > 0) ? dstrect->w : ds_screen_width;
+
+    if (single_panel_orientation == 1) {
+        return screen_w * 2;
+    }
+    if (single_panel_orientation == 0) {
+        return screen_w;
+    }
+    if (single_panel_orientation == 3) {
+        return screen_w;
+    }
+
+    if (dstrect && dstrect->x + dstrect->w > screen_w) {
+        return screen_w * 2;
+    }
+    if (logical_width > screen_w) {
+        return logical_width;
+    }
+    return screen_w;
+}
+
+static int single_panel_layout_height(const SDL_Rect* dstrect) {
+    int screen_h = (dstrect && dstrect->h > 0) ? dstrect->h : ds_screen_height;
+
+    if (single_panel_orientation == 1) {
+        return screen_h;
+    }
+    if (single_panel_orientation == 0) {
+        return screen_h * 2;
+    }
+    if (single_panel_orientation == 3) {
+        return screen_h;
+    }
+
+    if (dstrect && dstrect->y + dstrect->h > screen_h) {
+        return screen_h * 2;
+    }
+    if (logical_height > screen_h) {
+        return logical_height;
+    }
+    return screen_h * 2;
+}
+
+static int should_scale_single_panel_screens(const SDL_Rect* dstrect) {
+    return dstrect &&
+        num_displays == 1 &&
+        has_dual_panel_ds_screens() &&
+        phys_width > ds_screen_width &&
+        phys_height > ds_screen_height &&
+        top_display_bounds.w > 0 &&
+        top_display_bounds.h > 0;
+}
+
+static SDL_Rect scale_single_panel_rect(SDL_Renderer* renderer, const SDL_Rect* dstrect) {
+    int layout_w = single_panel_layout_width(dstrect);
+    int layout_h = single_panel_layout_height(dstrect);
+    int output_w = 0;
+    int output_h = 0;
+
+    if (renderer) {
+        SDL_GetRendererOutputSize(renderer, &output_w, &output_h);
+    }
+    if (output_w <= 0 || output_h <= 0) {
+        output_w = phys_width;
+        output_h = phys_height;
+    }
+
+    SDL_Rect panel_bounds = {0, 0, output_w, output_h};
+    SDL_Rect canvas;
+
+    if (panel_fill_mode == 2) {
+        canvas = stretch_rect_in_bounds(panel_bounds);
+    } else if (panel_fill_mode == 1) {
+        canvas = cover_rect_in_bounds(panel_bounds, layout_w, layout_h);
+    } else {
+        canvas = fit_rect_in_bounds(panel_bounds, layout_w, layout_h);
+    }
+
+    float scale_x = (float)canvas.w / (float)layout_w;
+    float scale_y = (float)canvas.h / (float)layout_h;
+
+    SDL_Rect dst = {
+        .x = canvas.x + (int)lroundf((float)dstrect->x * scale_x),
+        .y = canvas.y + (int)lroundf((float)dstrect->y * scale_y),
+        .w = (int)lroundf((float)dstrect->w * scale_x),
+        .h = (int)lroundf((float)dstrect->h * scale_y),
+    };
+    return dst;
 }
 
 static void discover_touch_device(void) {
@@ -540,6 +632,10 @@ int SDL_RenderCopy(SDL_Renderer *renderer, SDL_Texture *texture, const SDL_Rect 
                 effective_dstrect = &remapped_dstrect_storage;
             }
         }
+    } else if ((texture == screens[0] || texture == screens[1] || texture == screens[2] || texture == screens[3]) &&
+        should_scale_single_panel_screens(dstrect)) {
+        remapped_dstrect_storage = scale_single_panel_rect(renderer, dstrect);
+        effective_dstrect = &remapped_dstrect_storage;
     }
 
     if (texture == screens[0] || texture == screens[1] || texture == screens[2] || texture == screens[3]) {
@@ -785,6 +881,7 @@ static void init(void) {
     const char* debug_touch_str = getenv("DSHOOK_DEBUG_TOUCH");
     const char* fill_str = getenv("DSHOOK_PANEL_FILL");
     const char* touch_index_str = getenv("DSHOOK_TOUCH_DEVICE_INDEX");
+    const char* single_orientation_str = getenv("DSHOOK_SINGLE_ORIENTATION");
     configured_top_output_name = getenv("DSHOOK_TOP_OUTPUT");
     configured_bottom_output_name = getenv("DSHOOK_BOTTOM_OUTPUT");
     if (debug_str && *debug_str) {
@@ -814,6 +911,10 @@ static void init(void) {
         if (configured_touch_device_index < 0) {
             configured_touch_device_index = 0;
         }
+    }
+
+    if (single_orientation_str && *single_orientation_str) {
+        single_panel_orientation = atoi(single_orientation_str);
     }
 
     if (threshold_str) {
