@@ -117,6 +117,7 @@ declare -a REGISTERED_BINFMT=()
 declare -a ENABLED_BINFMT=()
 PROTON11_TOOLMANIFEST_WATCHER_PID=""
 STEAM_GPU_PROFILE_STATE=""
+STEAM_LAUNCH_OFFLINE=0
 
 log_msg() {
     printf '%s\n' "$*" >> "${log}"
@@ -781,6 +782,10 @@ build_steam_args() {
 
     append_steam_startup_args out_args
 
+    if [[ "${STEAM_LAUNCH_OFFLINE:-0}" == "1" ]]; then
+        out_args+=(-offline)
+    fi
+
     if [[ -n "${BATOCERA_STEAM_EXTRA_ARGS:-}" ]]; then
         read -r -a extra_args <<< "${BATOCERA_STEAM_EXTRA_ARGS}"
         out_args+=("${extra_args[@]}")
@@ -1255,8 +1260,12 @@ ensure_native_steam_client() {
 
     ensure_arm64_steam_runtime
 
-    if [[ -x "${STEAM_ROOT}/steamrtarm64/steam" ]]; then
+    if [[ -x "${STEAM_ROOT}/steamrtarm64/steam" ]] && steam_client_dependencies_ready; then
         return
+    fi
+
+    if [[ -x "${STEAM_ROOT}/steamrtarm64/steam" ]]; then
+        log_msg "ARM64 Steam client install is incomplete; reinstalling client."
     fi
 
     command -v unzip >/dev/null 2>&1 || die "unzip is required to install the ARM64 Steam client."
@@ -1739,7 +1748,7 @@ fex_rootfs_configured() {
 }
 
 steam_setup_state() {
-    if [[ ! -x "${STEAM_ROOT}/steamrtarm64/steam" ]]; then
+    if [[ ! -x "${STEAM_ROOT}/steamrtarm64/steam" ]] || ! steam_client_dependencies_ready; then
         printf 'client\n'
         return 0
     fi
@@ -1767,12 +1776,25 @@ steam_setup_state() {
     printf 'none\n'
 }
 
+steam_setup_incomplete_without_network() {
+    local setup_state="$1"
+
+    log_msg "ARM64 Steam bootstrap is incomplete (${setup_state}) and no network is available."
+    flash_msg 8 "ARM Steam setup is incomplete." 22
+    flash_msg 8 "Connect to the internet and launch Steam again." 18
+    die "ARM Steam bootstrap is incomplete. Connect to the internet and launch Steam again."
+}
+
 ensure_network_for_steam_setup() {
     local setup_state
 
     setup_state="$(steam_setup_state)"
     if [[ "${setup_state}" == "none" ]]; then
         return 0
+    fi
+
+    if ! has_network; then
+        steam_setup_incomplete_without_network "${setup_state}"
     fi
 
     log_msg "Steam/Proton/FEX setup is incomplete; preparing setup."
@@ -1802,18 +1824,22 @@ ensure_network_for_steam_setup() {
         flash_msg 9 "Select Proton 11.0 (ARM64) as the Steam compatibility runner." 16
     fi
 
+    log_msg "Network is available for Steam setup."
+}
+
+prepare_steam_network_mode() {
+    STEAM_LAUNCH_OFFLINE=0
+    export BATOCERA_STEAM_LAUNCH_OFFLINE=0
+
     if has_network; then
-        log_msg "Network is available for Steam setup."
+        log_msg "Network is available for Steam launch."
         return 0
     fi
 
-    if activate_wifi_for_steam; then
-        return 0
-    fi
-
-    flash_msg 7 "No internet connection for Steam setup." 22
-    flash_msg 7 "Connect Wi-Fi and launch Steam again." 20
-    die "Steam setup requires an internet connection."
+    STEAM_LAUNCH_OFFLINE=1
+    export BATOCERA_STEAM_LAUNCH_OFFLINE=1
+    log_msg "Network is unavailable; launching Steam in offline mode."
+    flash_msg 5 "No network. Launching Steam offline." 20
 }
 
 ensure_fex_rootfs() {
@@ -1970,6 +1996,18 @@ launch_steam_deck_session() {
     done
 }
 
+steam_deck_session_enabled() {
+    [[ "${MODE}" == "steamos" ]] || return 1
+
+    case "${BATOCERA_STEAM_USE_GAMESCOPE:-1}" in
+        0|false|FALSE|False|no|NO|No|off|OFF|Off)
+            return 1
+            ;;
+    esac
+
+    return 0
+}
+
 trap cleanup EXIT
 apply_sm8550_gpu_profile
 apply_steam_launch_environment
@@ -1991,9 +2029,10 @@ if [[ "${BATOCERA_STEAM_BOOTSTRAP_ONLY:-0}" == "1" ]]; then
     log_msg "ARM64 Steam bootstrap completed."
     exit 0
 fi
+prepare_steam_network_mode
 start_proton11_toolmanifest_watcher
 prepare_steam_binfmt
-if [[ "${MODE}" == "steamos" ]]; then
+if steam_deck_session_enabled; then
     launch_steam_deck_session
 else
     launch_native_steam

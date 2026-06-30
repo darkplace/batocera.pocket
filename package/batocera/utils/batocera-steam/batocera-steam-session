@@ -440,12 +440,40 @@ has_network() {
     return 0
 }
 
+steam_offline_launch_requested() {
+    local arg
+
+    case "${BATOCERA_STEAM_LAUNCH_OFFLINE:-0}" in
+        1|true|TRUE|True|yes|YES|Yes|on|ON|On)
+            return 0
+            ;;
+    esac
+
+    for arg in "$@"; do
+        [[ "${arg}" == "-offline" ]] && return 0
+    done
+
+    return 1
+}
+
+STEAM_OFFLINE_LAUNCH=0
+if steam_offline_launch_requested "$@"; then
+    STEAM_OFFLINE_LAUNCH=1
+fi
+
+if [[ "${STEAM_OFFLINE_LAUNCH}" == "1" ]] && [[ "${BATOCERA_STEAM_SETUP_PENDING:-0}" != "1" ]] && [[ "${BATOCERA_STEAM_FIRST_RUN:-0}" != "1" ]] && [[ -f "${STEAM_FIRST_RUN_WIFI_STAMP}" ]]; then
+    rm -f "${STEAM_FIRST_RUN_WIFI_STAMP}"
+    STEAM_FIRST_RUN_PENDING=0
+    STEAM_SETUP_KIND=""
+    echo "Ignoring stale Steam first-run Wi-Fi stamp for explicit offline launch" >> "${log}"
+fi
+
 STEAM_HAS_NETWORK=0
 if has_network; then
     STEAM_HAS_NETWORK=1
 fi
 
-if [[ "${BATOCERA_STEAM_REQUIRE_NETWORK:-1}" == "1" ]] && [[ "${STEAM_HAS_NETWORK}" != "1" ]]; then
+if [[ "${BATOCERA_STEAM_REQUIRE_NETWORK:-1}" == "1" ]] && [[ "${STEAM_HAS_NETWORK}" != "1" ]] && [[ "${STEAM_OFFLINE_LAUNCH}" != "1" ]]; then
     echo "No internet connection detected; aborting Steam launch" >> "${log}"
 
     if [[ "${STEAM_FIRST_RUN_PENDING}" == "1" ]]; then
@@ -469,6 +497,10 @@ if [[ "${BATOCERA_STEAM_REQUIRE_NETWORK:-1}" == "1" ]] && [[ "${STEAM_HAS_NETWOR
     fi
 
     exit 1
+fi
+
+if [[ "${STEAM_HAS_NETWORK}" != "1" ]] && [[ "${STEAM_OFFLINE_LAUNCH}" == "1" ]]; then
+    echo "No internet connection detected; continuing with Steam offline launch" >> "${log}"
 fi
 
 ensure_runtime_dir() {

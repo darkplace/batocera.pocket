@@ -20,6 +20,20 @@ log() {
     echo "steam-update-preflight: $*" >> "${LOG}"
 }
 
+has_network() {
+    if command -v ip >/dev/null 2>&1; then
+        ip route get 1.1.1.1 >/dev/null 2>&1
+        return $?
+    fi
+
+    if command -v ping >/dev/null 2>&1; then
+        timeout 2 ping -c 1 -W 1 1.1.1.1 >/dev/null 2>&1
+        return $?
+    fi
+
+    return 0
+}
+
 mark_preflight_active() {
     printf '%s\n' "$$" > "${PREFLIGHT_SESSION_FLAG}" 2>/dev/null || true
     PREFLIGHT_FLAG_ACTIVE=1
@@ -88,7 +102,7 @@ status_lines() {
 
 setup_status_lines() {
     new_file_lines "${STEAM_LOG}" "${1:-0}" | tr -d '\r' | \
-        grep -E 'Steam/Proton/FEX setup|Steam first launch setup|Steam support setup|Network is available|Steam setup needs network|Downloading ARM64 Steam runtime|Downloading ARM64 Steam client|Downloading FEX rootfs|Steam runtime:|Steam client:|FEX rootfs:|download complete|Configured FEX rootfs|Registered installed Proton|Prepared Proton|ARM64 Steam bootstrap completed|ERROR:|Failed' || true
+        grep -E 'Steam/Proton/FEX setup|Steam first launch setup|Steam support setup|ARM64 Steam bootstrap is incomplete|Network is available|Network is unavailable|Steam setup needs network|Downloading ARM64 Steam runtime|Downloading ARM64 Steam client|Downloading FEX rootfs|Steam runtime:|Steam client:|FEX rootfs:|download complete|Configured FEX rootfs|Registered installed Proton|Prepared Proton|ARM64 Steam bootstrap completed|ERROR:|Failed' || true
 }
 
 latest_status() {
@@ -598,7 +612,7 @@ run_bootstrap_setup() {
 
     if [[ "${status}" != "0" ]]; then
         log "ARM64 Steam bootstrap setup failed with status ${status}"
-        draw_status "$(line_count)" "Steam bootstrap setup failed. Check network and retry." "${setup_baseline}"
+        draw_status "$(line_count)" "ARM Steam bootstrap is incomplete. Connect and retry." "${setup_baseline}"
         sleep 7
         return "${status}"
     fi
@@ -668,6 +682,10 @@ run_external_steam_updater() {
     local -a extra_args=()
 
     steam_updater_external_preflight_enabled || return 0
+    if ! has_network; then
+        log "network unavailable; skipping external Steam updater preflight"
+        return 0
+    fi
 
     display="$(resolve_display || true)"
     if [[ -z "${display}" ]]; then
@@ -793,7 +811,15 @@ run_in_terminal() {
     prepare_user_env
     prepare_steam_client_env
     seed_steam_updater_resources
-    run_bootstrap_setup || return 0
+    if ! run_bootstrap_setup; then
+        return 1
+    fi
+    if ! has_network; then
+        log "network unavailable; skipping visible Steam updater preflight"
+        draw_status "$(line_count)" "No network. Starting Steam offline next..."
+        sleep 3
+        return 0
+    fi
     if ! steam_updater_preflight_enabled; then
         draw_status "$(line_count)" "Bootstrap complete. Starting gamescope for Steam updater..."
         sleep 3
@@ -905,10 +931,13 @@ launch_terminal() {
     batocera-mouse show >/dev/null 2>&1 || true
     MOUSE_SHOWN=1
     start_preflight_window_placer_once
-    /usr/bin/xterm -fs 14 -fg white -bg black -fa "Monospace" -en UTF-8 -sb -rightbar \
+    if ! /usr/bin/xterm -fs 14 -fg white -bg black -fa "Monospace" -en UTF-8 -sb -rightbar \
         -geometry "${geometry}" \
         -T "Steam Update" \
-        -e /usr/bin/batocera-steam-update-preflight run "${baseline}" || true
+        -e /usr/bin/batocera-steam-update-preflight run "${baseline}"; then
+        log "visible Steam preflight failed; skipping external Steam updater preflight"
+        return 0
+    fi
 
     run_external_steam_updater
 }

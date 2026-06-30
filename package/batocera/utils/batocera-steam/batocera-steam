@@ -625,6 +625,16 @@ launch_steamos() {
     BATOCERA_STEAM_FIRST_RUN="${FIRST_RUN}" /usr/bin/batocera-steam-session "${STEAM_SH}" "${steam_args[@]}"
 }
 
+steam_deck_session_enabled() {
+    case "${BATOCERA_STEAM_USE_GAMESCOPE:-1}" in
+        0|false|FALSE|False|no|NO|No|off|OFF|Off)
+            return 1
+            ;;
+    esac
+
+    return 0
+}
+
 seed_steam_tree
 patch_root_guard
 ensure_local_share_steam_compat
@@ -644,8 +654,13 @@ case "${MODE}" in
         launch_gamepadui "${GAME_TARGET}"
         ;;
     steamos|gamescope|gamemode)
-        echo "Launching Steam in SteamOS-like mode" >> "$log"
-        launch_steamos "${GAME_TARGET}"
+        if steam_deck_session_enabled; then
+            echo "Launching Steam in SteamOS-like mode" >> "$log"
+            launch_steamos "${GAME_TARGET}"
+        else
+            echo "Launching Steam in SteamOS-like mode without gamescope" >> "$log"
+            launch_gamepadui "${GAME_TARGET}"
+        fi
         ;;
     *)
         echo "Unknown steam mode '${MODE}', falling back to SteamOS-like mode" >> "$log"
