@@ -276,6 +276,25 @@ resume_led_daemon() {
     fi
 }
 
+set_suspend_status_led() {
+    if [ -x "/usr/bin/batocera-led-handheld" ]; then
+        echo "INFO: Setting suspend status LED."
+        /usr/bin/batocera-led-handheld suspend_status >/dev/null 2>&1 || true
+    fi
+}
+
+do_pm_sleep() {
+    local support_arg="$1"
+    local pm_command="$2"
+
+    if pm-is-supported "${support_arg}"; then
+        suspend_led_daemon
+        set_suspend_status_led
+        "${pm_command}"
+        resume_led_daemon
+    fi
+}
+
 # --- CPU/GPU Power Saving Functions ---
 _get_gpu_governor_path() {
     find -L /sys/class/devfreq/ \( -name "governor" -o -name "scaling_governor" \) -print -quit
@@ -553,6 +572,7 @@ do_fake_suspend() {
 	block_input
 	stop_other_services
 	suspend_led_daemon
+	set_suspend_status_led
 	disable_wifi
 	disable_bluetooth
 	set_low_power_governor
@@ -598,13 +618,13 @@ SETACTION=$1 # 1 for press, 0 for release & gui from, well the GUI :-)
 if [ "${SETACTION}" = "gui" ]; then
     case "${SUSPEND_MODE}" in
         "suspend")
-            pm-is-supported --suspend && pm-suspend
+            do_pm_sleep --suspend pm-suspend
             ;;
         "hybrid")
-            pm-is-supported --suspend-hybrid && pm-suspend-hybrid
+            do_pm_sleep --suspend-hybrid pm-suspend-hybrid
             ;;
         "hibernate")
-            pm-is-supported --hibernate && pm-hibernate
+            do_pm_sleep --hibernate pm-hibernate
             ;;
         "fake")
             if [ "$(get_battery_level)" -le 10 ]; then
@@ -707,13 +727,13 @@ else
 		# shutdown / suspend
 		case "${SUSPEND_MODE}" in
 			"suspend")
-				pm-is-supported --suspend && pm-suspend
+				do_pm_sleep --suspend pm-suspend
 				;;
 			"hybrid")
-				pm-is-supported --suspend-hybrid && pm-suspend-hybrid
+				do_pm_sleep --suspend-hybrid pm-suspend-hybrid
 				;;
 			"hibernate")
-				pm-is-supported --hibernate && pm-hibernate
+				do_pm_sleep --hibernate pm-hibernate
 				;;
 			*)
 				/sbin/shutdown -h now

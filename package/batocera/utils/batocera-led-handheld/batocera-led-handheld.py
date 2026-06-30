@@ -64,6 +64,17 @@ def check_support():
         print("Device unsupported.")
         return None
 
+def device_compatible_values():
+    try:
+        with open('/proc/device-tree/compatible', 'rb') as f:
+            return [value.decode(errors='ignore') for value in f.read().split(b'\0') if value]
+    except Exception:
+        return []
+
+def is_odin_sleep_status_device():
+    values = device_compatible_values()
+    return 'ayn,odin2' in values or 'ayn,odin3' in values
+
 # Read color from the config file
 def read_color(tempval, configlist):
     for curconfig in configlist:
@@ -477,6 +488,9 @@ if len(sys.argv)>1:
                 led.rainbow_effect()
             finally:
                 block_color_changes(False)
+    elif sys.argv[1] == "suspend_status":
+        if is_odin_sleep_status_device() and hasattr(led, "set_status_sleep_amber"):
+            led.set_status_sleep_amber()
     elif sys.argv[1] == "rainbow":
         os.system("batocera-settings-set led.mode rainbow >/dev/null 2>&1")
     elif sys.argv[1] == "chroma":

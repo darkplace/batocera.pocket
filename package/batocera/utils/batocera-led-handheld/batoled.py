@@ -283,6 +283,7 @@ class rgbled(object):
 
     def _set_paths_color(self, targets, out):
         for p in targets:
+            self._set_path_trigger(p, 'none')
             # Some handheld LEDs (for example ROG Ally rings) expose more than
             # 3 channels and require full-length writes to multi_intensity.
             expanded = self._expand_color_for_path(p, out)
@@ -367,12 +368,54 @@ class rgbled(object):
             with open(p + 'brightness', 'w') as f:
                 f.write(str(b))
 
+    def _set_path_trigger(self, p, trigger):
+        trigger_file = p + 'trigger'
+        try:
+            with open(trigger_file, 'r') as f:
+                available = f.read().replace('[', '').replace(']', '').split()
+            if trigger not in available:
+                return False
+            with open(trigger_file, 'w') as f:
+                f.write(trigger)
+            return True
+        except Exception:
+            return False
+
+    def _set_path_pattern_pulse(self, p, brightness):
+        if not self._set_path_trigger(p, 'pattern'):
+            return False
+        try:
+            with open(p + 'repeat', 'w') as f:
+                f.write('-1')
+            with open(p + 'pattern', 'w') as f:
+                f.write(f'0 2500 {brightness} 2500')
+            return True
+        except Exception:
+            self._set_path_trigger(p, 'none')
+            return False
+
     def _path_max_brightness(self, p, default=255):
         try:
             with open(p + 'max_brightness', 'r') as m:
                 return int(m.readline().strip())
         except Exception:
             return default
+
+    def _raw_color_for_path(self, p, r, g, b):
+        ordered = {
+            "red": r,
+            "green": g,
+            "blue": b,
+            "white": max(r, g, b),
+        }
+
+        channels = self._path_channels(p)
+        if len(channels) <= 3:
+            return " ".join(str(ordered.get(channel.lower(), 0)) for channel in channels)
+
+        values = [r, g, b]
+        repeat = (len(channels) + 2) // 3
+        return " ".join(str(value) for value in (values * repeat)[:len(channels)])
 
     def _set_paths_brightness_conf(self, targets):
         # Multicolor groups on some handhelds behave like on/off brightness gates;
@@ -405,6 +448,20 @@ class rgbled(object):
         r, g, b = rgb[0:2], rgb[2:4], rgb[4:6]
         out = f'{hex_to_dec(r)} {hex_to_dec(g)} {hex_to_dec(b)}'
         self._set_paths_color(self.status_paths, out)
+
+    def set_status_sleep_amber(self, pulse=True):
+        for p in self.status_paths:
+            self._set_path_trigger(p, 'none')
+            with open(p + 'multi_intensity', 'w') as f:
+                f.write(self._raw_color_for_path(p, 255, 96, 0))
+            max_brightness = self._path_max_brightness(p)
+            brightness = max(1, int(max_brightness * 0.08))
+            self._set_paths_brightness([p], brightness)
+            # The generic timer trigger is not color-stable on the Odin2/Odin3
+            # PMIC multicolor power LED. Use pattern when the kernel exposes it;
+            # otherwise keep the LED static amber.
+            if pulse:
+                self._set_path_pattern_pulse(p, brightness)
 
     def set_color (self, rgb):
         if len(rgb) != 6 and rgb not in [ "PULSE", "RAINBOW", "CHROMA", "OFF", "ESCOLOR" ]:

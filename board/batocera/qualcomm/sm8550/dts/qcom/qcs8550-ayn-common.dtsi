@@ -546,6 +546,8 @@
 		regulator-max-microvolt = <3300000>;
 
 		gpio = <&tlmm 99 GPIO_ACTIVE_HIGH>;
+		regulator-boot-on;
+		startup-delay-us = <10000>;
 		enable-active-high;
 
 		pinctrl-names = "default";
