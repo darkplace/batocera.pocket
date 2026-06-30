@@ -1,0 +1,113 @@
+#!/bin/sh
+
+SETTING="system.lidaction"
+DEFAULT_MODE="fake"
+FAKE_SUSPEND_FLAG="/var/run/batocera-fake-suspend.flag"
+LOCK_DIR="/var/run/ayn-thor-lid-action.lock"
+
+is_thor() {
+    tr '\0' '\n' < /proc/device-tree/compatible 2>/dev/null | grep -qx "ayn,thor"
+}
+
+read_setting() {
+    value=""
+
+    if command -v batocera-settings-get-master >/dev/null 2>&1; then
+        value="$(batocera-settings-get-master "${SETTING}" 2>/dev/null || true)"
+    fi
+    if [ -z "${value}" ] && command -v batocera-settings-get >/dev/null 2>&1; then
+        value="$(batocera-settings-get "${SETTING}" 2>/dev/null || true)"
+    fi
+
+    normalize_mode "${value}"
+}
+
+normalize_mode() {
+    case "$1" in
+        suspend|mem|native|s2ram|suspend-to-ram)
+            printf '%s\n' "suspend"
+            ;;
+        fake|fake-suspend|fakesuspend)
+            printf '%s\n' "fake"
+            ;;
+        poweroff|power-off|shutdown|off)
+            printf '%s\n' "poweroff"
+            ;;
+        nothing|none|ignore|disabled)
+            printf '%s\n' "nothing"
+            ;;
+        *)
+            printf '%s\n' "${DEFAULT_MODE}"
+            ;;
+    esac
+}
+
+save_setting() {
+    mode="$(normalize_mode "$1")"
+    command -v batocera-settings-set >/dev/null 2>&1 || exit 1
+    batocera-settings-set "${SETTING}" "${mode}"
+}
+
+with_lock() {
+    if ! mkdir "${LOCK_DIR}" 2>/dev/null; then
+        exit 0
+    fi
+    trap 'rmdir "${LOCK_DIR}" 2>/dev/null || true' EXIT INT TERM
+}
+
+lid_close() {
+    mode="$(read_setting)"
+
+    case "${mode}" in
+        suspend)
+            BATOCERA_SHUTDOWN_MODE=suspend batocera-shutdown gui
+            ;;
+        fake)
+            [ -e "${FAKE_SUSPEND_FLAG}" ] && exit 0
+            BATOCERA_SHUTDOWN_MODE=fake batocera-shutdown gui
+            ;;
+        poweroff)
+            /sbin/shutdown -h now
+            ;;
+        nothing)
+            exit 0
+            ;;
+    esac
+}
+
+lid_open() {
+    mode="$(read_setting)"
+
+    if [ "${mode}" = "fake" ] && [ -e "${FAKE_SUSPEND_FLAG}" ]; then
+        BATOCERA_SHUTDOWN_MODE=fake batocera-shutdown 1
+    fi
+}
+
+case "$1" in
+    --available)
+        is_thor
+        ;;
+    --options|options)
+        printf '%s\n' "suspend fake poweroff nothing"
+        ;;
+    --saved|saved)
+        read_setting
+        ;;
+    set)
+        save_setting "$2"
+        ;;
+    close)
+        is_thor || exit 0
+        with_lock
+        lid_close
+        ;;
+    open)
+        is_thor || exit 0
+        with_lock
+        lid_open
+        ;;
+    *)
+        echo "usage: $0 --available|--options|--saved|set <mode>|close|open" >&2
+        exit 1
+        ;;
+esac

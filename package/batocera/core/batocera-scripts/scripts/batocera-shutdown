@@ -31,7 +31,8 @@ INPUT_WHITELIST_PATTERNS=(
     "Power"      # Matches "Power Button"
     "power"      # Matches "powerkey"
     "pwr"        # Matches "rk805 pwrkey", "pmic_pwrkey" (odin2)
-    "gpio-keys"  # AYN Thor lid
+    "gpio-keys"
+    "thor-lid-switch" # AYN Thor lid
 )
 
 # --- Backlight Control Functions ---
@@ -590,7 +591,7 @@ do_fake_resume() {
 # MAIN SCRIPT LOGIC
 ################################################################################
 
-SUSPEND_MODE="$(/usr/bin/batocera-settings-get-master system.suspendmode)"
+SUSPEND_MODE="${BATOCERA_SHUTDOWN_MODE:-$(/usr/bin/batocera-settings-get-master system.suspendmode)}"
 SETACTION=$1 # 1 for press, 0 for release & gui from, well the GUI :-)
 
 # --- Handle Direct Action Mode for the GUI ---

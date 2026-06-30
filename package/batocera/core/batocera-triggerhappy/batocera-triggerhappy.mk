@@ -14,11 +14,14 @@ BATOCERA_TRIGGERHAPPY_SOURCE_PATH = \
 
 define BATOCERA_TRIGGERHAPPY_INSTALL_CONFIG
 	mkdir -p $(TARGET_DIR)/etc/triggerhappy/triggers.d
+	mkdir -p $(TARGET_DIR)/etc/pm/sleep.d
 	mkdir -p $(BINARIES_DIR)/batocera-target/etc/init.d
 	cp $(BATOCERA_TRIGGERHAPPY_SOURCE_PATH)/conf/multimedia_keys.conf \
 	    $(TARGET_DIR)/etc/triggerhappy/triggers.d
 	cp $(BATOCERA_TRIGGERHAPPY_SOURCE_PATH)/conf/multimedia_keys_disabled.conf \
 	    $(TARGET_DIR)/etc/triggerhappy/triggers.d
+	install -m 0755 $(BATOCERA_TRIGGERHAPPY_SOURCE_PATH)/99triggerhappy-resume \
+	    $(TARGET_DIR)/etc/pm/sleep.d/99triggerhappy-resume
 	install -m 0755 $(BATOCERA_TRIGGERHAPPY_SOURCE_PATH)/triggerhappy.service \
 	    $(BINARIES_DIR)/batocera-target/etc/init.d/S50triggerhappy
 endef

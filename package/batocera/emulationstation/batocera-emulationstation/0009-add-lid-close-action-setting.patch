@@ -1,0 +1,82 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Mon, 29 Jun 2026 00:00:00 +0000
+Subject: [PATCH] Add lid close action setting
+
+---
+ es-app/src/guis/GuiMenu.cpp | 63 +++++++++++++++++++++++++++++++++++++
+ 1 file changed, 63 insertions(+)
+
+diff --git a/es-app/src/guis/GuiMenu.cpp b/es-app/src/guis/GuiMenu.cpp
+--- a/es-app/src/guis/GuiMenu.cpp
++++ b/es-app/src/guis/GuiMenu.cpp
+@@ -1581,6 +1581,69 @@ void GuiMenu::openSystemSettings()
+ 	}
+ #endif
+ 
++#if !WIN32
++	const std::string lidActionScript = "/usr/bin/ayn-thor-lid-action";
++	if (Utils::FileSystem::exists(lidActionScript) &&
++		system((lidActionScript + " --available >/dev/null 2>&1").c_str()) == 0)
++	{
++		auto getLidActionOutput = [](const std::string& command) -> std::string
++		{
++			std::array<char, 128> buffer;
++			std::string result;
++			std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(command.c_str(), "r"), pclose);
++
++			if (!pipe)
++				return "";
++
++			while (fgets(buffer.data(), buffer.size(), pipe.get()) != nullptr)
++				result += buffer.data();
++
++			return Utils::String::trim(result);
++		};
++
++		auto lidActionLabel = [](const std::string& action) -> std::string
++		{
++			if (action == "suspend")
++				return _("SUSPEND TO RAM (BETA)");
++			if (action == "fake")
++				return _("FAKE SUSPEND");
++			if (action == "poweroff")
++				return _("POWER OFF");
++			return _("DO NOTHING");
++		};
++
++		auto optionsLidAction = std::make_shared<OptionListComponent<std::string>>(mWindow, _("LID CLOSE ACTION"), false);
++		std::string selectedLidAction = getLidActionOutput(lidActionScript + " --saved");
++		if (selectedLidAction.empty())
++			selectedLidAction = "fake";
++
++		bool hasLidActionOptions = false;
++		std::string lidActionOption;
++		for (std::stringstream ss(getLidActionOutput(lidActionScript + " --options")); ss >> lidActionOption; )
++		{
++			lidActionOption = Utils::String::trim(lidActionOption);
++			if (!lidActionOption.empty())
++			{
++				optionsLidAction->add(lidActionLabel(lidActionOption), lidActionOption, lidActionOption == selectedLidAction);
++				hasLidActionOptions = true;
++			}
++		}
++
++		if (!hasLidActionOptions)
++			optionsLidAction->add(_("FAKE SUSPEND"), "fake", true);
++
++		s->addWithDescription(
++			_("LID CLOSE ACTION"),
++			_("Controls what AYN Thor does when the lid is closed."),
++			optionsLidAction);
++		s->addSaveFunc([lidActionScript, optionsLidAction]
++		{
++			if (optionsLidAction->changed())
++				Utils::Platform::ProcessStartInfo(lidActionScript + " set " + optionsLidAction->getSelected()).run();
++		});
++	}
++#endif
++
+ #if !WIN32
+ 	const std::string cpuLimitScript = "/usr/bin/batocera-cpu-limit";
+ 	if (Utils::FileSystem::exists(cpuLimitScript) &&

@@ -23,6 +23,11 @@
 			linux,code = <KEY_F24>;
 			linux,can-disable;
 		};
+	};
+
+	thor-lid-switch {
+		compatible = "gpio-keys";
+		label = "thor-lid-switch";
 
 		hall-lid-sensor {
 			label = "Hall Lid Sensor";
