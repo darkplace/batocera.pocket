@@ -28,6 +28,12 @@ ifeq ($(BR2_PACKAGE_BATOCERA_WAYLAND_LABWC),y)
   BATOCERA_SCRIPTS_POST_INSTALL_TARGET_HOOKS += BATOCERA_SCRIPTS_INSTALL_MOUSE
 endif
 
+ifeq ($(BR2_PACKAGE_WAYLAND),y)
+  BATOCERA_SCRIPTS_DEPENDENCIES += wayland host-wayland
+  BATOCERA_SCRIPTS_POST_BUILD_HOOKS += BATOCERA_SCRIPTS_BUILD_NIGHTMODE
+  BATOCERA_SCRIPTS_POST_INSTALL_TARGET_HOOKS += BATOCERA_SCRIPTS_INSTALL_NIGHTMODE
+endif
+
 ###
 
 ifeq ($(BR2_PACKAGE_BATOCERA_TARGET_SM8250)$(BR2_PACKAGE_BATOCERA_TARGET_SM8X50),y)
@@ -94,6 +100,7 @@ define BATOCERA_SCRIPTS_INSTALL_TARGET_CMDS
     install -m 0755 $(BATOCERA_SCRIPTS_PATH)/scripts/batocera-power-mode                $(TARGET_DIR)/usr/bin/
     install -m 0755 $(BATOCERA_SCRIPTS_PATH)/scripts/batocera-cpu-limit                 $(TARGET_DIR)/usr/bin/
     install -m 0755 $(BATOCERA_SCRIPTS_PATH)/scripts/batocera-gpu-profile               $(TARGET_DIR)/usr/bin/
+    install -m 0755 $(BATOCERA_SCRIPTS_PATH)/scripts/batocera-nightmode                 $(TARGET_DIR)/usr/bin/
     install -m 0755 $(BATOCERA_SCRIPTS_PATH)/scripts/batocera-es-web-notifier           $(TARGET_DIR)/usr/bin/
     install -m 0755 $(BATOCERA_SCRIPTS_PATH)/scripts/batocera-docker-containers         $(TARGET_DIR)/usr/bin/
     install -m 0755 $(BATOCERA_SCRIPTS_PATH)/scripts/batocera-xtract                    $(TARGET_DIR)/usr/bin/
@@ -115,6 +122,47 @@ endef
 
 define BATOCERA_SCRIPTS_INSTALL_QCOM
     install -m 0755 $(BATOCERA_SCRIPTS_PATH)/scripts/qcom-fan                           $(TARGET_DIR)/usr/bin/
+endef
+
+define BATOCERA_SCRIPTS_BUILD_NIGHTMODE
+    mkdir -p $(@D)/nightmode
+    $(HOST_DIR)/bin/wayland-scanner client-header \
+        $(BATOCERA_SCRIPTS_PATH)/protocols/wlr-gamma-control-unstable-v1.xml \
+        $(@D)/nightmode/wlr-gamma-control-unstable-v1-client-protocol.h
+    $(HOST_DIR)/bin/wayland-scanner private-code \
+        $(BATOCERA_SCRIPTS_PATH)/protocols/wlr-gamma-control-unstable-v1.xml \
+        $(@D)/nightmode/wlr-gamma-control-unstable-v1-client-protocol.c
+    $(HOST_DIR)/bin/wayland-scanner client-header \
+        $(BATOCERA_SCRIPTS_PATH)/protocols/wlr-layer-shell-unstable-v1.xml \
+        $(@D)/nightmode/wlr-layer-shell-unstable-v1-client-protocol.h
+    $(HOST_DIR)/bin/wayland-scanner private-code \
+        $(BATOCERA_SCRIPTS_PATH)/protocols/wlr-layer-shell-unstable-v1.xml \
+        $(@D)/nightmode/wlr-layer-shell-unstable-v1-client-protocol.c
+    $(HOST_DIR)/bin/wayland-scanner client-header \
+        $(BATOCERA_SCRIPTS_PATH)/protocols/xdg-shell.xml \
+        $(@D)/nightmode/xdg-shell-client-protocol.h
+    $(HOST_DIR)/bin/wayland-scanner private-code \
+        $(BATOCERA_SCRIPTS_PATH)/protocols/xdg-shell.xml \
+        $(@D)/nightmode/xdg-shell-client-protocol.c
+    $(TARGET_CC) $(TARGET_CFLAGS) -Wall -Wextra -Werror \
+        -I$(@D)/nightmode \
+        -o $(@D)/batocera-nightmode-gamma \
+        $(BATOCERA_SCRIPTS_PATH)/src/batocera-nightmode-gamma.c \
+        $(@D)/nightmode/wlr-gamma-control-unstable-v1-client-protocol.c \
+        $(TARGET_LDFLAGS) -lwayland-client
+    $(TARGET_CC) $(TARGET_CFLAGS) -Wall -Wextra -Werror \
+        -I$(@D)/nightmode \
+        -o $(@D)/batocera-nightmode-overlay \
+        $(BATOCERA_SCRIPTS_PATH)/src/batocera-nightmode-overlay.c \
+        $(@D)/nightmode/wlr-layer-shell-unstable-v1-client-protocol.c \
+        $(@D)/nightmode/xdg-shell-client-protocol.c \
+        $(TARGET_LDFLAGS) -lwayland-client
+endef
+
+define BATOCERA_SCRIPTS_INSTALL_NIGHTMODE
+    install -D -m 0755 $(@D)/batocera-nightmode-gamma $(TARGET_DIR)/usr/bin/batocera-nightmode-gamma
+    install -D -m 0755 $(@D)/batocera-nightmode-overlay $(TARGET_DIR)/usr/bin/batocera-nightmode-overlay
+    install -D -m 0755 $(BATOCERA_SCRIPTS_PATH)/S32nightmode $(TARGET_DIR)/etc/init.d/S32nightmode
 endef
 
 define BATOCERA_SCRIPTS_INSTALL_ROCKCHIP

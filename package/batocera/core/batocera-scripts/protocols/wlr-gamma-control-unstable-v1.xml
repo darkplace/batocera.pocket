@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<protocol name="wlr_gamma_control_unstable_v1">
+  <copyright>
+    Copyright © 2015 Giulio Camuffo
+    Copyright © 2018 Drew DeVault
+
+    Permission to use, copy, modify, distribute, and sell this software and its
+    documentation for any purpose is hereby granted without fee, provided that
+    the above copyright notice appear in all copies and that both that copyright
+    notice and this permission notice appear in supporting documentation, and
+    that the name of the copyright holders not be used in advertising or
+    publicity pertaining to distribution of the software without specific,
+    written prior permission. The copyright holders make no representations
+    about the suitability of this software for any purpose. It is provided "as
+    is" without express or implied warranty.
+  </copyright>
+
+  <interface name="zwlr_gamma_control_manager_v1" version="1">
+    <description summary="manager to create per-output gamma controls">
+      This interface is used to create gamma controls for outputs.
+    </description>
+
+    <request name="get_gamma_control">
+      <description summary="get a gamma control for an output">
+        Create a gamma control object for the supplied output.
+      </description>
+      <arg name="id" type="new_id" interface="zwlr_gamma_control_v1"/>
+      <arg name="output" type="object" interface="wl_output"/>
+    </request>
+
+    <request name="destroy" type="destructor">
+      <description summary="destroy the manager"/>
+    </request>
+  </interface>
+
+  <interface name="zwlr_gamma_control_v1" version="1">
+    <description summary="adjust gamma tables for an output">
+      This interface adjusts the gamma tables for one output.
+    </description>
+
+    <event name="gamma_size">
+      <description summary="size of gamma ramps">
+        The size of the gamma ramps for this output.
+      </description>
+      <arg name="size" type="uint"/>
+    </event>
+
+    <request name="set_gamma">
+      <description summary="set the gamma table">
+        Set the gamma table. The file descriptor must contain three unsigned
+        16-bit integer arrays of gamma_size length: red, green, and blue.
+      </description>
+      <arg name="fd" type="fd"/>
+    </request>
+
+    <request name="destroy" type="destructor">
+      <description summary="destroy the gamma control"/>
+    </request>
+
+    <event name="failed">
+      <description summary="gamma control failed">
+        The compositor can no longer honor this gamma control.
+      </description>
+    </event>
+  </interface>
+</protocol>

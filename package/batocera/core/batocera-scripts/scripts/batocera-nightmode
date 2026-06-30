@@ -1,0 +1,365 @@
+#!/bin/bash
+set -u
+
+STATE_DIR="/var/run/batocera-nightmode"
+STATE_FILE="${STATE_DIR}/state"
+LOG="/userdata/system/logs/batocera-nightmode.log"
+DEFAULT_ON="21:00"
+DEFAULT_OFF="07:00"
+DEFAULT_INTENSITY="55"
+INTERVAL="${BATOCERA_NIGHTMODE_INTERVAL:-30}"
+
+mkdir -p "${STATE_DIR}" "$(dirname "${LOG}")" 2>/dev/null || true
+
+log() {
+    echo "nightmode: $*" >> "${LOG}"
+}
+
+settings_get() {
+    batocera-settings-get "$1" 2>/dev/null || true
+}
+
+valid_time() {
+    [[ "${1:-}" =~ ^([01][0-9]|2[0-3]):[0-5][0-9]$ ]]
+}
+
+setting_time() {
+    local key="$1"
+    local fallback="$2"
+    local value
+
+    value="$(settings_get "${key}")"
+    if valid_time "${value}"; then
+        printf '%s\n' "${value}"
+    else
+        printf '%s\n' "${fallback}"
+    fi
+}
+
+time_to_minutes() {
+    local value="$1"
+    printf '%d\n' "$((10#${value:0:2} * 60 + 10#${value:3:2}))"
+}
+
+nightmode_intensity() {
+    local value
+
+    value="$(settings_get display.nightmode.intensity)"
+    [[ "${value}" =~ ^[0-9]+$ ]] || value="${DEFAULT_INTENSITY}"
+    (( value < 0 )) && value=0
+    (( value > 100 )) && value=100
+    printf '%s\n' "${value}"
+}
+
+scheduled_active() {
+    local on_time off_time now on_min off_min now_min
+
+    on_time="$(setting_time display.nightmode.on "${DEFAULT_ON}")"
+    off_time="$(setting_time display.nightmode.off "${DEFAULT_OFF}")"
+    now="$(date +%H:%M)"
+
+    on_min="$(time_to_minutes "${on_time}")"
+    off_min="$(time_to_minutes "${off_time}")"
+    now_min="$(time_to_minutes "${now}")"
+
+    if (( on_min == off_min )); then
+        return 1
+    fi
+
+    if (( on_min < off_min )); then
+        (( now_min >= on_min && now_min < off_min ))
+    else
+        (( now_min >= on_min || now_min < off_min ))
+    fi
+}
+
+nightmode_active() {
+    case "$(settings_get display.nightmode)" in
+        1|on|enabled|true|True)
+            return 0
+            ;;
+        scheduled|schedule|auto)
+            scheduled_active
+            return $?
+            ;;
+    esac
+
+    return 1
+}
+
+runtime_dirs() {
+    local uid dir
+
+    uid="$(id -u)"
+    for dir in "${XDG_RUNTIME_DIR:-}" "/run/user/${uid}" /run/user/0 /run; do
+        [ -n "${dir}" ] && [ -d "${dir}" ] && (cd "${dir}" 2>/dev/null && pwd -P)
+    done | awk '!seen[$0]++'
+}
+
+gamma_pid_file() {
+    local runtime_dir="$1"
+    local display="$2"
+    local safe
+
+    safe="$(printf '%s-%s' "${runtime_dir}" "${display}" | tr '/ ' '__')"
+    printf '%s/gamma-%s.pid\n' "${STATE_DIR}" "${safe}"
+}
+
+overlay_pid_file() {
+    local runtime_dir="$1"
+    local display="$2"
+    local safe
+
+    safe="$(printf '%s-%s' "${runtime_dir}" "${display}" | tr '/ ' '__')"
+    printf '%s/overlay-%s.pid\n' "${STATE_DIR}" "${safe}"
+}
+
+pid_alive() {
+    [ -n "${1:-}" ] && kill -0 "$1" 2>/dev/null
+}
+
+stop_gamma() {
+    local pidfile pid
+
+    for pidfile in "${STATE_DIR}"/gamma-*.pid; do
+        [ -f "${pidfile}" ] || continue
+        pid="$(cat "${pidfile}" 2>/dev/null || true)"
+        if pid_alive "${pid}"; then
+            kill "${pid}" 2>/dev/null || true
+        fi
+        rm -f "${pidfile}"
+    done
+}
+
+stop_overlay() {
+    local pidfile pid
+
+    for pidfile in "${STATE_DIR}"/overlay-*.pid; do
+        [ -f "${pidfile}" ] || continue
+        pid="$(cat "${pidfile}" 2>/dev/null || true)"
+        if pid_alive "${pid}"; then
+            kill "${pid}" 2>/dev/null || true
+        fi
+        rm -f "${pidfile}"
+    done
+}
+
+overlay_running() {
+    local pidfile pid
+
+    for pidfile in "${STATE_DIR}"/overlay-*.pid; do
+        [ -f "${pidfile}" ] || continue
+        pid="$(cat "${pidfile}" 2>/dev/null || true)"
+        if pid_alive "${pid}"; then
+            return 0
+        fi
+    done
+
+    return 1
+}
+
+start_gamma_for() {
+    local runtime_dir="$1"
+    local display="$2"
+    local intensity="$3"
+    local pidfile pid
+
+    command -v batocera-nightmode-gamma >/dev/null 2>&1 || return 1
+
+    pidfile="$(gamma_pid_file "${runtime_dir}" "${display}")"
+    pid="$(cat "${pidfile}" 2>/dev/null || true)"
+    if pid_alive "${pid}"; then
+        return 0
+    fi
+
+    XDG_RUNTIME_DIR="${runtime_dir}" WAYLAND_DISPLAY="${display}" \
+        batocera-nightmode-gamma "${intensity}" >/dev/null 2>&1 &
+    pid="$!"
+    echo "${pid}" > "${pidfile}"
+    sleep 0.2
+    if ! pid_alive "${pid}"; then
+        wait "${pid}" 2>/dev/null || true
+        rm -f "${pidfile}"
+        log "gamma helper exited on ${runtime_dir}/${display}; will try overlay"
+        return 1
+    fi
+    log "started gamma helper ${pid} on ${runtime_dir}/${display} intensity ${intensity}"
+    return 0
+}
+
+start_gamma() {
+    local intensity="$1"
+    local runtime_dir socket display
+    local started=1
+
+    while IFS= read -r runtime_dir; do
+        for socket in "${runtime_dir}"/wayland-*; do
+            [ -S "${socket}" ] || continue
+            display="$(basename "${socket}")"
+            if start_gamma_for "${runtime_dir}" "${display}" "${intensity}"; then
+                started=0
+            fi
+        done
+    done < <(runtime_dirs)
+
+    return "${started}"
+}
+
+start_overlay_for() {
+    local runtime_dir="$1"
+    local display="$2"
+    local intensity="$3"
+    local pidfile pid
+
+    command -v batocera-nightmode-overlay >/dev/null 2>&1 || return 1
+
+    pidfile="$(overlay_pid_file "${runtime_dir}" "${display}")"
+    pid="$(cat "${pidfile}" 2>/dev/null || true)"
+    if pid_alive "${pid}"; then
+        return 0
+    fi
+
+    XDG_RUNTIME_DIR="${runtime_dir}" WAYLAND_DISPLAY="${display}" \
+        batocera-nightmode-overlay "${intensity}" >/dev/null 2>&1 &
+    pid="$!"
+    echo "${pid}" > "${pidfile}"
+    sleep 0.2
+    if ! pid_alive "${pid}"; then
+        wait "${pid}" 2>/dev/null || true
+        rm -f "${pidfile}"
+        log "overlay helper exited on ${runtime_dir}/${display}"
+        return 1
+    fi
+    log "started overlay helper ${pid} on ${runtime_dir}/${display} intensity ${intensity}"
+    return 0
+}
+
+start_overlay() {
+    local intensity="$1"
+    local runtime_dir socket display
+    local started=1
+
+    while IFS= read -r runtime_dir; do
+        for socket in "${runtime_dir}"/wayland-*; do
+            [ -S "${socket}" ] || continue
+            display="$(basename "${socket}")"
+            if start_overlay_for "${runtime_dir}" "${display}" "${intensity}"; then
+                started=0
+            fi
+        done
+    done < <(runtime_dirs)
+
+    return "${started}"
+}
+
+write_cube() {
+    local intensity="$1"
+    local output="$2"
+
+    awk -v intensity="${intensity}" '
+        BEGIN {
+            g = 1.0 - (0.06 * intensity / 100.0);
+            b = 1.0 - (0.18 * intensity / 100.0);
+            print "TITLE \"Batocera Night Mode\"";
+            print "LUT_3D_SIZE 2";
+            print "DOMAIN_MIN 0.0 0.0 0.0";
+            print "DOMAIN_MAX 1.0 1.0 1.0";
+            printf "0.0 0.0 0.0\n";
+            printf "1.0 0.0 0.0\n";
+            printf "0.0 %.6f 0.0\n", g;
+            printf "1.0 %.6f 0.0\n", g;
+            printf "0.0 0.0 %.6f\n", b;
+            printf "1.0 0.0 %.6f\n", b;
+            printf "0.0 %.6f %.6f\n", g, b;
+            printf "1.0 %.6f %.6f\n", g, b;
+        }
+    ' > "${output}"
+}
+
+apply_gamescope() {
+    local active="$1"
+    local intensity="${2:-0}"
+    local runtime_dir socket display cube
+
+    command -v gamescopectl >/dev/null 2>&1 || return 0
+
+    while IFS= read -r runtime_dir; do
+        for socket in "${runtime_dir}"/gamescope-*; do
+            [ -S "${socket}" ] || continue
+            display="$(basename "${socket}")"
+
+            if [ "${active}" = "1" ]; then
+                cube="${STATE_DIR}/night-mode-${intensity}.cube"
+                [ -f "${cube}" ] || write_cube "${intensity}" "${cube}"
+                XDG_RUNTIME_DIR="${runtime_dir}" GAMESCOPE_WAYLAND_DISPLAY="${display}" \
+                    gamescopectl composite_force 1 >/dev/null 2>&1 || true
+                XDG_RUNTIME_DIR="${runtime_dir}" GAMESCOPE_WAYLAND_DISPLAY="${display}" \
+                    gamescopectl set_look "${cube}" "${cube}" >/dev/null 2>&1 || true
+            else
+                XDG_RUNTIME_DIR="${runtime_dir}" GAMESCOPE_WAYLAND_DISPLAY="${display}" \
+                    gamescopectl set_look >/dev/null 2>&1 || true
+                XDG_RUNTIME_DIR="${runtime_dir}" GAMESCOPE_WAYLAND_DISPLAY="${display}" \
+                    gamescopectl composite_force 0 >/dev/null 2>&1 || true
+            fi
+        done
+    done < <(runtime_dirs)
+}
+
+apply_nightmode() {
+    local intensity key previous
+
+    intensity="$(nightmode_intensity)"
+
+    if nightmode_active; then
+        key="night:${intensity}"
+        previous="$(cat "${STATE_FILE}" 2>/dev/null || true)"
+        if [ "${previous}" != "${key}" ]; then
+            stop_gamma
+            stop_overlay
+        fi
+        if [ "${previous}" = "${key}" ] && overlay_running; then
+            start_overlay "${intensity}" || true
+        elif start_gamma "${intensity}"; then
+            stop_overlay
+        else
+            start_overlay "${intensity}" || true
+        fi
+        apply_gamescope 1 "${intensity}"
+    else
+        key="off"
+        stop_gamma
+        stop_overlay
+        apply_gamescope 0
+    fi
+
+    echo "${key}" > "${STATE_FILE}"
+}
+
+watch_nightmode() {
+    while true; do
+        apply_nightmode
+        sleep "${INTERVAL}"
+    done
+}
+
+case "${1:-apply}" in
+    apply)
+        apply_nightmode
+        ;;
+    watch)
+        watch_nightmode
+        ;;
+    stop)
+        stop_gamma
+        stop_overlay
+        apply_gamescope 0
+        echo "off" > "${STATE_FILE}"
+        ;;
+    status)
+        cat "${STATE_FILE}" 2>/dev/null || echo "unknown"
+        ;;
+    *)
+        echo "Usage: $0 {apply|watch|stop|status}"
+        exit 1
+        ;;
+esac

@@ -1,0 +1,126 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Tue, 30 Jun 2026 00:00:00 +0000
+Subject: [PATCH] Add system night mode settings
+
+---
+ es-app/src/guis/GuiMenu.cpp | 108 ++++++++++++++++++++++++++++++++++++
+ 1 file changed, 108 insertions(+)
+
+diff --git a/es-app/src/guis/GuiMenu.cpp b/es-app/src/guis/GuiMenu.cpp
+--- a/es-app/src/guis/GuiMenu.cpp
++++ b/es-app/src/guis/GuiMenu.cpp
+@@ -1581,5 +1581,113 @@ void GuiMenu::openSystemSettings()
+ 	});
+ 
++#ifdef BATOCERA_NIGHTMODE
++	auto nightModeLabel = [](const std::string& mode) -> std::string
++	{
++		if (mode == "on")
++			return _("ON");
++		if (mode == "scheduled")
++			return _("SCHEDULED");
++		return _("OFF");
++	};
++
++	auto sanitizeNightModeTime = [](const std::string& value, const std::string& fallback) -> std::string
++	{
++		std::string trimmed = Utils::String::trim(value);
++
++		if (trimmed.length() != 5 || trimmed[2] != ':')
++			return fallback;
++
++		for (int i = 0; i < 5; i++)
++		{
++			if (i == 2)
++				continue;
++			if (trimmed[i] < '0' || trimmed[i] > '9')
++				return fallback;
++		}
++
++		int hour = ((trimmed[0] - '0') * 10) + (trimmed[1] - '0');
++		int minute = ((trimmed[3] - '0') * 10) + (trimmed[4] - '0');
++		if (hour > 23 || minute > 59)
++			return fallback;
++
++		return trimmed;
++	};
++
++	s->addEntry(_("NIGHT MODE"), true, [this, nightModeLabel, sanitizeNightModeTime]
++	{
++		const std::string nightModeScript = "/usr/bin/batocera-nightmode";
++		auto nightGui = new GuiSettings(mWindow, _("NIGHT MODE"));
++
++		std::string selectedNightMode = SystemConf::getInstance()->get("display.nightmode");
++		if (selectedNightMode != "on" && selectedNightMode != "scheduled")
++			selectedNightMode = "off";
++
++		auto optionsNightMode = std::make_shared<OptionListComponent<std::string>>(mWindow, _("NIGHT MODE"), false);
++		optionsNightMode->add(nightModeLabel("off"), "off", selectedNightMode == "off");
++		optionsNightMode->add(nightModeLabel("on"), "on", selectedNightMode == "on");
++		optionsNightMode->add(nightModeLabel("scheduled"), "scheduled", selectedNightMode == "scheduled");
++		nightGui->addWithDescription(
++			_("MODE"),
++			_("Controls the system-wide warm display tint."),
++			optionsNightMode);
++
++		std::string selectedIntensity = SystemConf::getInstance()->get("display.nightmode.intensity");
++		int intensityValue = 55;
++		if (!selectedIntensity.empty())
++		{
++			try
++			{
++				intensityValue = std::stoi(selectedIntensity);
++			}
++			catch (...)
++			{
++				intensityValue = 55;
++			}
++		}
++		if (intensityValue < 0)
++			intensityValue = 0;
++		if (intensityValue > 100)
++			intensityValue = 100;
++
++		auto intensity = std::make_shared<SliderComponent>(mWindow, 0.f, 100.f, 5.f, "%");
++		intensity->setValue(intensityValue);
++		nightGui->addWithDescription(
++			_("INTENSITY"),
++			_("Sets how warm the tint is when night mode is active."),
++			intensity);
++
++		auto onTime = std::make_shared<std::string>(
++			sanitizeNightModeTime(SystemConf::getInstance()->get("display.nightmode.on"), "21:00"));
++		auto offTime = std::make_shared<std::string>(
++			sanitizeNightModeTime(SystemConf::getInstance()->get("display.nightmode.off"), "07:00"));
++
++		nightGui->addInputTextRow(_("ON TIME"), *onTime, false, nullptr,
++			[onTime, sanitizeNightModeTime](const std::string& value)
++			{
++				*onTime = sanitizeNightModeTime(value, "21:00");
++			});
++		nightGui->addInputTextRow(_("OFF TIME"), *offTime, false, nullptr,
++			[offTime, sanitizeNightModeTime](const std::string& value)
++			{
++				*offTime = sanitizeNightModeTime(value, "07:00");
++			});
++
++		nightGui->addSaveFunc([optionsNightMode, intensity, onTime, offTime, nightModeScript]
++		{
++			SystemConf::getInstance()->set("display.nightmode", optionsNightMode->getSelected());
++			SystemConf::getInstance()->set("display.nightmode.intensity", std::to_string((int)Math::round(intensity->getValue())));
++			SystemConf::getInstance()->set("display.nightmode.on", *onTime);
++			SystemConf::getInstance()->set("display.nightmode.off", *offTime);
++			SystemConf::getInstance()->saveSystemConf();
++
++			if (Utils::FileSystem::exists(nightModeScript))
++				Utils::Platform::ProcessStartInfo(nightModeScript + " apply").run();
++		});
++
++		mWindow->pushGui(nightGui);
++	});
++#endif
++
+ #if !WIN32
+ 	const std::string qcomChargeLimitScript = "/usr/bin/qcom-charge-limit";
+ 	if (Utils::FileSystem::exists(qcomChargeLimitScript) &&
