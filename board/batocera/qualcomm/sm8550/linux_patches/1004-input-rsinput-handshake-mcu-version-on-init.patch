@@ -1,0 +1,143 @@
+From: jaewun <jaewun@users.noreply.github.com>
+Subject: [PATCH] input: rsinput: handshake MCU version before init params
+
+After resume the MCU boot time varies. A fixed delay can send the framed-report
+parameter command before firmware is ready, leaving the MCU in its default
+streaming mode and overflowing rsinput RX. Wait for the asynchronous version
+reply before sending params, with bounded retries.
+
+--- a/drivers/input/joystick/rsinput.c
++++ b/drivers/input/joystick/rsinput.c
+@@ -7,9 +7,11 @@
+  *
+  */
+ 
++#include <linux/completion.h>
+ #include <linux/errno.h>
+ #include <linux/gpio/consumer.h>
+ #include <linux/init.h>
++#include <linux/jiffies.h>
+ #include <linux/input.h>
+ #include <linux/kernel.h>
+ #include <linux/module.h>
+@@ -125,6 +127,9 @@
+ 
+ #define MCU_VERSION_MAX_LEN       64
+ 
++#define MCU_VERSION_ACK_TIMEOUT_MS  500
++#define MCU_INIT_MAX_ATTEMPTS       3
++
+ struct rsinput_driver {
+     struct serdev_device *serdev;
+     struct input_dev *input;
+@@ -139,6 +144,8 @@
+     bool invert_ry;
+     uint8_t rx_buf[1024];
+     uint8_t sequence_number;
++    struct completion version_ack;
++    bool version_ack_pending;
+ };
+ 
+ static bool rumble_enable = true;
+@@ -190,9 +197,7 @@
+     return serdev_device_write_buf(drv->serdev, frame, frame_len);
+ }
+ 
+-static int rsinput_init_commands(struct rsinput_driver *drv) {
+-    int error;
+-
++static void rsinput_power_on_mcu(struct rsinput_driver *drv) {
+     if (drv->boot_gpio)
+         gpiod_set_value_cansleep(drv->boot_gpio, 0);
+ 
+@@ -206,22 +211,59 @@
+ 
+     if (drv->reset_gpio)
+         gpiod_set_value_cansleep(drv->reset_gpio, 1);
++}
+ 
+-    msleep(100);
+-    uint8_t version_request[] = {DATA_COMMOD_VERSION};
+-    error = rsinput_send_command(drv, CMD_COMMOD, version_request, sizeof(version_request));
+-    if (error < 0) {
+-        dev_err(&drv->serdev->dev, "Failed to request MCU version: %d\n", error);
+-        return error;
+-    }
+-
+-    msleep(100);
+-    uint8_t mcu_params[] = {
++static int rsinput_init_commands(struct rsinput_driver *drv) {
++    static const uint8_t version_request[] = {DATA_COMMOD_VERSION};
++    static const uint8_t mcu_params[] = {
+         DATA_COMMOD_SET_PAR,
+         0x01,
+         0x00, 0x00, 0x00, 0x28,
+         0x00, 0x00, 0x00, 0x07
+     };
++    unsigned long timeout = msecs_to_jiffies(MCU_VERSION_ACK_TIMEOUT_MS);
++    int attempt;
++    int error;
++
++    for (attempt = 1; attempt <= MCU_INIT_MAX_ATTEMPTS; attempt++) {
++        rsinput_power_on_mcu(drv);
++
++        /*
++         * Arm the ack window before sending the request so a fast reply cannot
++         * land between the write and the wait. The MCU version reply does not
++         * echo the request sequence, so any in-window version reply means the
++         * firmware is awake enough for the params command.
++         */
++        reinit_completion(&drv->version_ack);
++        drv->version_ack_pending = true;
++        smp_wmb();
++
++        error = rsinput_send_command(drv, CMD_COMMOD, version_request,
++                                     sizeof(version_request));
++        if (error < 0) {
++            drv->version_ack_pending = false;
++            dev_err(&drv->serdev->dev,
++                    "Failed to request MCU version: %d\n", error);
++            return error;
++        }
++
++        if (wait_for_completion_timeout(&drv->version_ack, timeout)) {
++            drv->version_ack_pending = false;
++            break;
++        }
++
++        drv->version_ack_pending = false;
++        dev_warn(&drv->serdev->dev,
++                 "MCU version handshake timed out (attempt %d/%d)\n",
++                 attempt, MCU_INIT_MAX_ATTEMPTS);
++    }
++
++    if (attempt > MCU_INIT_MAX_ATTEMPTS) {
++        dev_err(&drv->serdev->dev,
++                "MCU did not acknowledge version request; not sending params\n");
++        return -ETIMEDOUT;
++    }
++
+     error = rsinput_send_command(drv, CMD_COMMOD, mcu_params, sizeof(mcu_params));
+     if (error < 0) {
+         dev_err(&drv->serdev->dev, "Failed to set MCU parameters: %d\n", error);
+@@ -246,6 +288,12 @@
+             } else {
+                 dev_err(&drv->serdev->dev, "Invalid MCU version response length\n");
+             }
++            smp_rmb();
++            if (READ_ONCE(drv->version_ack_pending))
++                complete(&drv->version_ack);
++            else
++                dev_dbg(&drv->serdev->dev,
++                        "Ignoring unsolicited MCU version reply\n");
+             break;
+         case DATA_COMMOD_SET_PAR:
+             dev_info(&drv->serdev->dev, "MCU parameters set successfully\n");
+@@ -532,6 +580,7 @@
+ 
+     drv->serdev = serdev;
+     drv->sequence_number = 0;
++    init_completion(&drv->version_ack);
+ 
+     serdev_device_set_drvdata(serdev, drv);
+ 
