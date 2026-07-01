@@ -75,7 +75,7 @@ if [ ! -f "${DATA_ROOT}/game_controller_db.txt" ]; then
 fi
 
 ODIN2_GUID="03000000202000000130000001000000"
-ODIN2_MAPPING="${ODIN2_GUID},AYN Odin2 Gamepad,a:b1,b:b2,x:b4,y:b3,back:b7,guide:b9,start:b8,leftstick:b10,rightstick:b11,leftshoulder:b5,rightshoulder:b6,dpup:b12,dpdown:b13,dpleft:b14,dpright:b15,leftx:a0,lefty:a1,rightx:a3,righty:a4,lefttrigger:a2,righttrigger:a5,platform:Linux,"
+ODIN2_MAPPING="${ODIN2_GUID},AYN Odin2 Gamepad,a:b1,b:b2,x:b4,y:b3,back:b7,guide:b9,start:b8,leftstick:b10,rightstick:b11,leftshoulder:b5,rightshoulder:b6,dpup:h0.1,dpdown:h0.4,dpleft:h0.8,dpright:h0.2,leftx:a0,lefty:a1,rightx:a3,righty:a4,lefttrigger:a2,righttrigger:a5,platform:Linux,"
 if ! grep -qxF "${ODIN2_MAPPING}" "${DATA_ROOT}/game_controller_db.txt"; then
 	tmp_db="${DATA_ROOT}/game_controller_db.txt.tmp"
 	grep -v "^${ODIN2_GUID}," "${DATA_ROOT}/game_controller_db.txt" > "${tmp_db}" || true

@@ -4,7 +4,7 @@
 #
 ################################################################################
 
-ARMSX2_MASIES_VERSION = batocera-linux-arm64
+ARMSX2_MASIES_VERSION = c4b5cda6a81c6ce66122c86724e3f14925635ccc
 ARMSX2_MASIES_SITE = https://github.com/suckbluefrog/ARMSX2-MASIES.git
 ARMSX2_MASIES_SITE_METHOD = git
 ARMSX2_MASIES_GIT_SUBMODULES = YES
