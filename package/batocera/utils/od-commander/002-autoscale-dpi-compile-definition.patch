@@ -1,0 +1,12 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 254eb5c..1c0bdaf 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -238,6 +238,7 @@ foreach(
+   PPU_X
+   PPU_Y
+   AUTOSCALE
++  AUTOSCALE_DPI
+   RES_DIR
+   FONTS
+   LOW_DPI_FONTS

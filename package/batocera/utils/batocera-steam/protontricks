@@ -1,0 +1,214 @@
+#!/bin/bash
+set -u -o pipefail
+
+WINETRICKS="${WINETRICKS:-/usr/wine/winetricks}"
+
+usage() {
+    cat <<'EOF'
+Usage:
+  protontricks <appid> [winetricks-args...]
+  protontricks --prefix <appid>
+  protontricks --help
+
+Batocera wrapper for running winetricks against a Steam Proton compatdata prefix.
+EOF
+}
+
+steam_roots() {
+    local root
+    local seen=":"
+
+    for root in "${BATOCERA_STEAM_ROOT:-}" "${BATOCERA_STEAM_HOME:-}" \
+        /userdata/system/.local/share/Steam /userdata/system/steam /userdata/system/.steam/steam; do
+        [ -n "$root" ] || continue
+        case "$seen" in
+            *":$root:"*) continue ;;
+        esac
+        seen="${seen}${root}:"
+        printf '%s\n' "$root"
+    done
+}
+
+prefix_for_appid() {
+    local appid="$1"
+    local root candidate
+
+    if [ -n "${STEAM_COMPAT_DATA_PATH:-}" ]; then
+        candidate="$STEAM_COMPAT_DATA_PATH"
+        [ -d "$candidate/pfx" ] && {
+            printf '%s\n' "$candidate/pfx"
+            return 0
+        }
+        [ -d "$candidate" ] && {
+            printf '%s\n' "$candidate"
+            return 0
+        }
+    fi
+
+    while IFS= read -r root; do
+        for candidate in \
+            "$root/steamapps/compatdata/$appid/pfx" \
+            "$root/compatdata/$appid/pfx"; do
+            [ -d "$candidate" ] || continue
+            printf '%s\n' "$candidate"
+            return 0
+        done
+    done < <(steam_roots)
+
+    return 1
+}
+
+steam_root_for_prefix() {
+    local prefix="$1"
+    local root
+
+    while IFS= read -r root; do
+        case "$prefix" in
+            "$root"/*)
+                printf '%s\n' "$root"
+                return 0
+                ;;
+        esac
+    done < <(steam_roots)
+
+    return 1
+}
+
+set_wine_from_root() {
+    local root="$1"
+    local candidate wine_dir
+
+    for candidate in \
+        "$root/bin/wine" \
+        "$root/bin-arm64/wine" \
+        "$root/files/bin/wine" \
+        "$root/files/bin-arm64/wine" \
+        "$root/dist/bin/wine"; do
+        [ -x "$candidate" ] || continue
+        export WINE="$candidate"
+        wine_dir="${candidate%/wine}"
+        [ -x "$wine_dir/wineserver" ] && export WINESERVER="$wine_dir/wineserver"
+        return 0
+    done
+
+    return 1
+}
+
+maybe_set_wine_from_config_info() {
+    local prefix="$1"
+    local line root
+
+    [ -n "${WINE:-}" ] && return 0
+    [ -f "$prefix/config_info" ] || return 1
+
+    while IFS= read -r line; do
+        line="${line%/}"
+        case "$line" in
+            */files/lib|*/files/lib64)
+                root="${line%/lib}"
+                root="${root%/lib64}"
+                set_wine_from_root "$root" && return 0
+                ;;
+            */files/share/default_pfx*)
+                root="${line%%/share/default_pfx*}"
+                set_wine_from_root "$root" && return 0
+                ;;
+            */files)
+                set_wine_from_root "$line" && return 0
+                ;;
+            */files/*)
+                root="${line%%/files/*}/files"
+                set_wine_from_root "$root" && return 0
+                ;;
+        esac
+    done < "$prefix/config_info"
+
+    return 1
+}
+
+maybe_set_fallback_wine() {
+    local root candidate wine_dir
+
+    [ -n "${WINE:-}" ] && return 0
+
+    while IFS= read -r root; do
+        for candidate in \
+            "$root"/compatibilitytools.d/*/files/bin/wine \
+            "$root"/compatibilitytools.d/*/files/bin-arm64/wine \
+            "$root"/compatibilitytools.d/*/bin/wine \
+            "$root"/steamapps/common/Proton*/files/bin/wine \
+            "$root"/steamapps/common/Proton*/files/bin-arm64/wine \
+            "$root"/steamapps/common/Proton*/bin/wine; do
+            [ -x "$candidate" ] || continue
+            export WINE="$candidate"
+            wine_dir="${candidate%/wine}"
+            [ -x "$wine_dir/wineserver" ] && export WINESERVER="$wine_dir/wineserver"
+            return 0
+        done
+    done < <(steam_roots)
+
+    for candidate in /usr/wine/wine-tkg/bin/wine /usr/wine/wine-proton/bin/wine; do
+        [ -x "$candidate" ] || continue
+        export WINE="$candidate"
+        wine_dir="${candidate%/wine}"
+        [ -x "$wine_dir/wineserver" ] && export WINESERVER="$wine_dir/wineserver"
+        return 0
+    done
+
+    return 1
+}
+
+main() {
+    local mode="run"
+    local appid prefix steam_root
+
+    case "${1:-}" in
+        -h|--help|"")
+            usage
+            return 0
+            ;;
+        --prefix)
+            mode="prefix"
+            shift
+            ;;
+    esac
+
+    appid="${1:-}"
+    [ -n "$appid" ] || {
+        usage >&2
+        return 2
+    }
+    shift || true
+
+    command -v "$WINETRICKS" >/dev/null 2>&1 || [ -x "$WINETRICKS" ] || {
+        echo "protontricks: winetricks not found at $WINETRICKS" >&2
+        return 1
+    }
+
+    prefix="$(prefix_for_appid "$appid")" || {
+        echo "protontricks: Steam compatdata prefix not found for AppID $appid" >&2
+        return 1
+    }
+
+    if [ "$mode" = "prefix" ]; then
+        printf '%s\n' "$prefix"
+        return 0
+    fi
+
+    steam_root="$(steam_root_for_prefix "$prefix" || true)"
+    export WINEPREFIX="$prefix"
+    export STEAM_COMPAT_DATA_PATH="${prefix%/pfx}"
+    [ -n "$steam_root" ] && export STEAM_COMPAT_CLIENT_INSTALL_PATH="$steam_root"
+    export WINETRICKS_LATEST_VERSION_CHECK="${WINETRICKS_LATEST_VERSION_CHECK:-disabled}"
+    export WINEDEBUG="${WINEDEBUG:--all}"
+
+    maybe_set_wine_from_config_info "$prefix" || true
+    maybe_set_fallback_wine || true
+    if [ -n "${WINE:-}" ]; then
+        export PATH="${WINE%/wine}:$PATH"
+    fi
+
+    exec "$WINETRICKS" "$@"
+}
+
+main "$@"

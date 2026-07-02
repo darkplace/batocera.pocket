@@ -15,6 +15,13 @@ GE_PROTON_SAMPLE_URL="https://github.com/GloriousEggroll/proton-ge-custom/releas
 FREE_WINDOWS_GAMES_BASE_URL="https://raw.githubusercontent.com/foclabroc/toolbox/refs/heads/main/windows"
 STEAM_PROTON_CACHYOS_CONFIG="/userdata/system/configs/steam/proton-cachyos.conf"
 STEAM_PROTON_GE_CONFIG="/userdata/system/configs/steam/proton-ge.conf"
+STEAM_PROTON11_ARM64_APPID="${BATOCERA_STEAM_PROTON11_ARM64_APPID:-4628740}"
+STEAM_PROTON11_ARM64_DIR_NAME="Proton 11.0 (ARM64)"
+TOOL_NAME="$(basename "$0")"
+
+steam_tools_mode() {
+    [[ "$TOOL_NAME" == *steam-tools* ]]
+}
 
 clear_screen() {
     clear >/dev/null 2>&1 || true
@@ -560,6 +567,19 @@ write_steam_proton_ge_config() {
     chmod 0644 "$STEAM_PROTON_GE_CONFIG" 2>/dev/null || true
 }
 
+write_steam_proton11_arm64_config() {
+    mkdir -p "$(dirname "$STEAM_PROTON_CACHYOS_CONFIG")" || return 1
+    {
+        printf '%s\n' "# Batocera Steam Proton-CachyOS ARM64 selection"
+        printf '%s\n' "BATOCERA_STEAM_PROTON_CACHYOS=0"
+    } > "$STEAM_PROTON_CACHYOS_CONFIG"
+    {
+        printf '%s\n' "# Batocera Steam GE-Proton selection"
+        printf '%s\n' "BATOCERA_STEAM_PROTON_GE=0"
+    } > "$STEAM_PROTON_GE_CONFIG"
+    chmod 0644 "$STEAM_PROTON_CACHYOS_CONFIG" "$STEAM_PROTON_GE_CONFIG" 2>/dev/null || true
+}
+
 write_steam_proton_toolmanifest_vdf() {
     local target="$1"
 
@@ -570,6 +590,27 @@ write_steam_proton_toolmanifest_vdf() {
   "commandline" "/proton %verb%"
   "use_sessions" "1"
   "compatmanager_layer_name" "proton"
+}
+EOF
+}
+
+write_steam_proton11_arm64_compatibilitytool_vdf() {
+    local target="$1"
+
+    cat > "$target" <<EOF
+"compatibilitytools"
+{
+  "compat_tools"
+  {
+    "proton11_arm64"
+    {
+      "appid" "${STEAM_PROTON11_ARM64_APPID}"
+      "install_path" "Proton11ARM"
+      "display_name" "Proton 11.0 (ARM64)"
+      "from_oslist" "windows"
+      "to_oslist" "linux"
+    }
+  }
 }
 EOF
 }
@@ -652,6 +693,46 @@ prepare_steam_proton_ge_dir() {
 
     write_steam_proton_ge_compatibilitytool_vdf "$outdir" "$version"
     chmod +x "$outdir/proton" 2>/dev/null || true
+}
+
+prepare_steam_proton11_arm64_dir() {
+    local steam_root
+    local compat_dir
+    local proton_dir
+
+    steam_root="$(steam_root_dir)"
+    compat_dir="${steam_root}/compatibilitytools.d"
+    proton_dir="${steam_root}/steamapps/common/${STEAM_PROTON11_ARM64_DIR_NAME}"
+
+    mkdir -p "$compat_dir" "$proton_dir" || return 1
+    ln -sfn "$proton_dir" "${compat_dir}/Proton11ARM"
+    write_steam_proton11_arm64_compatibilitytool_vdf "${compat_dir}/compatibilitytool.vdf"
+    write_steam_proton_toolmanifest_vdf "${proton_dir}/toolmanifest.vdf"
+    chmod 0644 "${compat_dir}/compatibilitytool.vdf" "${proton_dir}/toolmanifest.vdf" 2>/dev/null || true
+    chmod +x "${proton_dir}/proton" 2>/dev/null || true
+}
+
+steam_proton11_arm64_menu() {
+    case "$(uname -m)" in
+        aarch64|arm64) ;;
+        *)
+            msg_box "Official Steam Proton 11.0 ARM64 registration is only available on ARM64 builds."
+            return 1
+            ;;
+    esac
+
+    yes_no "Select official Proton 11.0 (ARM64) as the Steam compatibility runner?\n\nThis disables the CachyOS/GE preflight runner selections, registers Proton 11.0 (ARM64) as a Steam compatibility tool, and lets the Steam launcher request AppID ${STEAM_PROTON11_ARM64_APPID} on the next Steam launch if the payload is missing." || return 1
+
+    write_steam_proton11_arm64_config || {
+        msg_box "Failed to write Steam Proton 11.0 (ARM64) runner selection."
+        return 1
+    }
+    prepare_steam_proton11_arm64_dir || {
+        msg_box "Failed to prepare Steam Proton 11.0 (ARM64) compatibility-tool files."
+        return 1
+    }
+
+    msg_box "Steam is set to use official Proton 11.0 (ARM64).\n\nIf the payload is not installed yet, launch Steam while online. Batocera will ask Steam to install AppID ${STEAM_PROTON11_ARM64_APPID} and then repair the toolmanifest for ARM use."
 }
 
 download_steam_proton_cachyos_selection() {
@@ -1215,6 +1296,68 @@ select_prefix() {
     select_single "Select Wineprefix" "Choose a Wineprefix:" "${prefixes[@]}"
 }
 
+steam_roots_all() {
+    local root
+    local seen=":"
+
+    for root in "$(steam_root_dir)" "${BATOCERA_STEAM_ROOT:-}" "${BATOCERA_STEAM_HOME:-}" \
+        /userdata/system/.local/share/Steam /userdata/system/steam /userdata/system/.steam/steam; do
+        [ -n "$root" ] || continue
+        case "$seen" in
+            *":$root:"*) continue ;;
+        esac
+        seen="${seen}${root}:"
+        printf '%s\n' "$root"
+    done
+}
+
+collect_steam_compat_prefixes() {
+    local root compat appid prefix key
+    local seen=$'\n'
+
+    while IFS= read -r root; do
+        [ -d "$root" ] || continue
+        for compat in "$root"/steamapps/compatdata/* "$root"/compatdata/*; do
+            [ -d "$compat" ] || continue
+            appid="$(basename "$compat")"
+            prefix="${compat}/pfx"
+            [ -d "$prefix" ] || continue
+            key="${appid}|${prefix}"
+            [[ "$seen" == *$'\n'"$key"$'\n'* ]] && continue
+            seen+="${key}"$'\n'
+            printf '%s\n' "$key"
+        done
+    done < <(steam_roots_all)
+}
+
+select_steam_prefix() {
+    local prefixes=()
+    local options=()
+    local line idx choice appid prefix
+
+    while IFS= read -r line; do
+        [ -n "$line" ] && prefixes+=("$line")
+    done < <(collect_steam_compat_prefixes)
+
+    if [ "${#prefixes[@]}" -eq 0 ]; then
+        msg_box "No Steam Proton prefixes found.\n\nLaunch the game through Steam once so Steam creates steamapps/compatdata/<appid>/pfx, then run Steam Tools again."
+        return 1
+    fi
+
+    for idx in "${!prefixes[@]}"; do
+        appid="${prefixes[$idx]%%|*}"
+        prefix="${prefixes[$idx]#*|}"
+        options+=("$((idx + 1))" "${appid} - ${prefix}")
+    done
+
+    choice=$(dialog --clear --title "Select Steam Prefix" --menu "Choose a Steam Proton prefix:" 22 110 12 "${options[@]}" 2>&1 >/dev/tty) || {
+        clear_screen
+        return 1
+    }
+    clear_screen
+    printf '%s\n' "${prefixes[$((choice - 1))]}"
+}
+
 collect_windows_games_for_steam() {
     local path
 
@@ -1487,6 +1630,167 @@ run_easy_winetricks() {
     done
 }
 
+append_unique_verb() {
+    local -n target="$1"
+    local verb="$2"
+    local existing
+
+    for existing in "${target[@]}"; do
+        [ "$existing" = "$verb" ] && return 0
+    done
+    target+=("$verb")
+}
+
+expand_protontricks_tag() {
+    local tag="$1"
+
+    case "$tag" in
+        common_vc_dx9)
+            printf '%s\n' vcrun2008 vcrun2010 vcrun2012 vcrun2013 vcrun2022 d3dx9 d3dx9_43 d3dcompiler_47 xact
+            ;;
+        common_dx9)
+            printf '%s\n' d3dx9 d3dx9_43 d3dcompiler_47 xact directplay
+            ;;
+        *)
+            printf '%s\n' "$tag"
+            ;;
+    esac
+}
+
+select_common_protontricks_verbs() {
+    local selected tag verb
+    local verbs=()
+
+    selected=$(dialog_capture_stdout --separate-output --checklist "Select Steam Proton runtime components to inject:" 27 100 16 \
+        common_vc_dx9 "Common VC++ 2008-2022 + DX9/XAudio bundle" off \
+        common_dx9 "DirectX 9/XAudio/DirectPlay bundle" off \
+        vcrun2008 "Visual C++ 2008" off \
+        vcrun2010 "Visual C++ 2010" off \
+        vcrun2012 "Visual C++ 2012" off \
+        vcrun2013 "Visual C++ 2013" off \
+        vcrun2022 "Visual C++ 2015-2022" off \
+        d3dx9 "DirectX 9 redistributable" off \
+        d3dx9_43 "DirectX 9 d3dx9_43" off \
+        d3dcompiler_47 "D3D compiler 47" off \
+        xact "XAudio/XACT" off \
+        directplay "DirectPlay" off) || {
+        clear_screen
+        return 1
+    }
+    clear_screen
+    [ -n "$selected" ] || return 1
+
+    while IFS= read -r tag; do
+        [ -n "$tag" ] || continue
+        while IFS= read -r verb; do
+            [ -n "$verb" ] && append_unique_verb verbs "$verb"
+        done < <(expand_protontricks_tag "$tag")
+    done <<<"$selected"
+
+    printf '%s\n' "${verbs[@]}"
+}
+
+select_official_protontricks_verb() {
+    require_commands curl || return 1
+    local temp_file parsed pkg line tag desc
+    local options=()
+
+    temp_file=$(mktemp)
+    parsed=$(mktemp)
+    if curl -fsSL "$WINETRICKS_ALL_URL" -o "$temp_file"; then
+        grep -v '^=====' "$temp_file" | grep -v '^[[:space:]]*$' > "$parsed"
+        while IFS= read -r line; do
+            tag=$(awk '{print $1}' <<<"$line")
+            desc=$(cut -d' ' -f2- <<<"$line")
+            options+=("$tag" "$desc" off)
+        done < "$parsed"
+        pkg=$(dialog_capture_stdout --title "Protontricks Packages" --radiolist "Select one additional Winetricks package for this Steam prefix:" 30 100 14 "${options[@]}") || true
+        clear_screen
+    else
+        msg_box "Failed to fetch the Winetricks package list."
+    fi
+    rm -f "$temp_file" "$parsed"
+
+    [ -n "${pkg:-}" ] || return 1
+    printf '%s\n' "$pkg"
+}
+
+protontricks_stamp_name() {
+    printf '%s' "$1" | tr -c 'A-Za-z0-9_.-' '_'
+}
+
+inject_protontricks_verb() {
+    local appid="$1"
+    local prefix="$2"
+    local verb="$3"
+    local stamp_dir="${prefix}/.batocera-runtime-stamps"
+    local stamp="${stamp_dir}/$(protontricks_stamp_name "$verb")"
+    local output rc summary
+
+    if [ -f "$stamp" ] && ! yes_no "${verb} already has a Batocera runtime stamp in this Steam prefix.\n\nRun it again anyway?"; then
+        return 0
+    fi
+
+    msg_box "Check the main display for any installer prompts.\n\nApplying ${verb} to Steam AppID ${appid}:\n${prefix}"
+    export DISPLAY="${DISPLAY:-:0.0}"
+    command -v unclutter-remote >/dev/null 2>&1 && unclutter-remote -s || true
+    output=$(protontricks "$appid" -q "$verb" 2>&1)
+    rc=$?
+    command -v unclutter-remote >/dev/null 2>&1 && unclutter-remote -h || true
+    clear_screen
+
+    if [ "$rc" -eq 0 ]; then
+        mkdir -p "$stamp_dir" || true
+        : > "$stamp" 2>/dev/null || true
+        return 0
+    fi
+
+    summary="$(printf '%s\n' "$output" | tail -n 18)"
+    msg_box "Protontricks failed while applying ${verb} to AppID ${appid}.\n\n${summary}"
+    return "$rc"
+}
+
+run_easy_protontricks() {
+    require_commands protontricks || return 1
+    local selected appid prefix action verb
+    local verbs=()
+
+    while true; do
+        selected=$(select_steam_prefix) || return 1
+        appid="${selected%%|*}"
+        prefix="${selected#*|}"
+
+        while true; do
+            verbs=()
+            action=$(select_radiolist "Easy Protontricks" "Choose what to inject into Steam AppID ${appid}:" \
+                common "Common VC++ / DX9 components" on \
+                official "One package from the official Winetricks list" off) || break
+
+            case "$action" in
+                common)
+                    while IFS= read -r verb; do
+                        [ -n "$verb" ] && verbs+=("$verb")
+                    done < <(select_common_protontricks_verbs || true)
+                    ;;
+                official)
+                    verb="$(select_official_protontricks_verb || true)"
+                    [ -n "$verb" ] && verbs+=("$verb")
+                    ;;
+            esac
+
+            [ "${#verbs[@]}" -gt 0 ] || break
+            for verb in "${verbs[@]}"; do
+                inject_protontricks_verb "$appid" "$prefix" "$verb" || break
+            done
+            msg_box "Protontricks processing complete for Steam AppID ${appid}."
+
+            yes_no "Apply another Protontricks package to the same Steam prefix?" || break
+        done
+
+        yes_no "Do you want to process another Steam Proton prefix?" || break
+    done
+}
+
 choose_compression_method() {
     select_radiolist "Compression Type" "Choose compression method:" \
         wsquashfs "SquashFS - best for larger games with small writes" off \
@@ -1662,26 +1966,14 @@ main_menu() {
             1 "Download Wine builds (vanilla)"
             2 "Download Wine-TKG-Staging builds"
             3 "Download Wine-GE Custom builds"
-        )
-
-        if [[ "$(uname -m)" == "x86_64" ]]; then
-            menu_options+=(4 "Download GE-Proton builds")
-        elif [[ "$(uname -m)" == "aarch64" || "$(uname -m)" == "arm64" ]]; then
-            menu_options+=(4 "Download Steam Proton-CachyOS ARM64 builds")
-        fi
-
-        menu_options+=(
+            4 "Download GE-Proton runner builds"
             5 "Prepare VC++ / DX9 installers for next run"
             6 "Easy Batocera Winetricks"
             7 "Easy autorun.cmd creator"
             8 "Convert .pc folder to .wine folder"
             9 "Compress .wine folder to .wsquashfs or .wtgz"
             10 "Decompress .wsquashfs / .wtgz back to .wine"
-            11 "Add Windows game to Steam"
-            12 "Install Decky PluginLoader for Steam"
-            13 "Install free Windows games"
-            14 "Download GE-Proton runner builds"
-            15 "Install GE-Proton Steam builds"
+            11 "Install free Windows games"
             99 "Exit"
         )
 
@@ -1700,27 +1992,70 @@ main_menu() {
             1) wine_vanilla_menu ;;
             2) wine_tkg_menu ;;
             3) wine_ge_menu ;;
-            4)
-                case "$(uname -m)" in
-                    x86_64) ge_proton_menu ;;
-                    aarch64|arm64) steam_proton_cachyos_menu ;;
-                esac
-                ;;
+            4) ge_proton_menu ;;
             5) prepare_dependency_installers ;;
             6) run_easy_winetricks ;;
             7) create_autorun_cmd_menu ;;
             8) convert_pc_to_wine ;;
             9) compress_wine_folder ;;
             10) decompress_wine_archive ;;
-            11) add_windows_game_to_steam_menu ;;
-            12) install_decky_loader_menu ;;
-            13) install_free_windows_games_menu ;;
-            14) ge_proton_menu ;;
-            15) steam_proton_ge_menu ;;
+            11) install_free_windows_games_menu ;;
+            99) break ;;
+        esac
+    done
+}
+
+steam_tools_menu() {
+    local choice
+    while true; do
+        local menu_options=(
+            1 "Add Windows game to Steam"
+        )
+
+        case "$(uname -m)" in
+            aarch64|arm64)
+                menu_options+=(
+                    2 "Select official Proton 11.0 (ARM64)"
+                    3 "Install Proton-CachyOS ARM64 builds"
+                )
+                ;;
+        esac
+
+        menu_options+=(
+            4 "Install GE-Proton Steam builds"
+            5 "Install GE-Proton Steam build from URL"
+            6 "Easy Protontricks (VC++ / DX9)"
+            7 "Install Decky PluginLoader for Steam"
+            99 "Exit"
+        )
+
+        choice=$(dialog --clear --backtitle "Batocera Steam Tools" \
+            --title "batocera-steam-tools" \
+            --menu "Choose a Steam management action:" \
+            22 96 12 \
+            "${menu_options[@]}" \
+            2>&1 >/dev/tty) || {
+                clear_screen
+                break
+            }
+        clear_screen
+
+        case "$choice" in
+            1) add_windows_game_to_steam_menu ;;
+            2) steam_proton11_arm64_menu ;;
+            3) steam_proton_cachyos_menu ;;
+            4) steam_proton_ge_menu ;;
+            5) steam_proton_ge_url_menu ;;
+            6) run_easy_protontricks ;;
+            7) install_decky_loader_menu ;;
             99) break ;;
         esac
     done
 }
 
 require_dialog
-main_menu
+if steam_tools_mode; then
+    steam_tools_menu
+else
+    main_menu
+fi

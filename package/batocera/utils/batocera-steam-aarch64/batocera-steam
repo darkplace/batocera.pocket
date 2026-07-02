@@ -118,6 +118,8 @@ declare -a ENABLED_BINFMT=()
 PROTON11_TOOLMANIFEST_WATCHER_PID=""
 STEAM_GPU_PROFILE_STATE=""
 STEAM_LAUNCH_OFFLINE=0
+STEAM_SESSION_DBUS_PID=""
+STEAM_PORTAL_PIDS=()
 
 log_msg() {
     printf '%s\n' "$*" >> "${log}"
@@ -517,6 +519,121 @@ ensure_system_bus_address() {
 
     if [[ -n "${DBUS_SESSION_BUS_ADDRESS:-}" ]]; then
         export DBUS_SYSTEM_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS}"
+    fi
+}
+
+session_bus_is_system_bus() {
+    [[ "${DBUS_SESSION_BUS_ADDRESS:-}" == *"/run/dbus/system_bus_socket"* ]] || \
+    [[ "${DBUS_SESSION_BUS_ADDRESS:-}" == *"/var/run/dbus/system_bus_socket"* ]]
+}
+
+session_bus_responds() {
+    command -v dbus-send >/dev/null 2>&1 || return 0
+    timeout 2 dbus-send --session --type=method_call \
+        --dest=org.freedesktop.DBus / org.freedesktop.DBus.ListNames >/dev/null 2>&1
+}
+
+ensure_steam_session_bus() {
+    local dbus_out
+    local address
+    local pid
+
+    ensure_runtime_dir
+
+    if [[ -n "${DBUS_SESSION_BUS_ADDRESS:-}" ]] && ! session_bus_is_system_bus && session_bus_responds; then
+        return
+    fi
+
+    if ! command -v dbus-daemon >/dev/null 2>&1; then
+        log_msg "Steam portal setup: dbus-daemon missing, keeping DBUS_SESSION_BUS_ADDRESS=${DBUS_SESSION_BUS_ADDRESS:-unset}"
+        return
+    fi
+
+    dbus_out="$(dbus-daemon --session --fork --print-address=1 --print-pid=1 2>> "${log}" || true)"
+    address="$(printf '%s\n' "${dbus_out}" | sed -n '1p')"
+    pid="$(printf '%s\n' "${dbus_out}" | sed -n '2p')"
+    if [[ -z "${address}" ]]; then
+        log_msg "Steam portal setup: failed to create session bus"
+        return
+    fi
+
+    export DBUS_SESSION_BUS_ADDRESS="${address}"
+    if [[ "${pid}" =~ ^[0-9]+$ ]]; then
+        STEAM_SESSION_DBUS_PID="${pid}"
+    fi
+    log_msg "Steam portal setup: started private session bus pid=${STEAM_SESSION_DBUS_PID:-unknown}"
+}
+
+portal_binary() {
+    local name="$1"
+
+    if [[ -x "/usr/libexec/${name}" ]]; then
+        printf '%s\n' "/usr/libexec/${name}"
+        return
+    fi
+
+    command -v "${name}" 2>/dev/null || true
+}
+
+portal_filechooser_available() {
+    command -v gdbus >/dev/null 2>&1 || return 1
+    timeout 2 gdbus introspect --session \
+        --dest org.freedesktop.portal.Desktop \
+        --object-path /org/freedesktop/portal/desktop 2>/dev/null | \
+        grep -q "org.freedesktop.portal.FileChooser"
+}
+
+start_steam_portals() {
+    local portal_desktop="${BATOCERA_STEAM_PORTAL_DESKTOP:-${XDG_CURRENT_DESKTOP:-sway}}"
+    local portal
+    local portal_gtk
+
+    [[ "${BATOCERA_STEAM_START_PORTALS:-1}" != "0" ]] || return
+
+    if portal_filechooser_available; then
+        log_msg "Steam portal setup: FileChooser already available"
+        return
+    fi
+
+    portal="$(portal_binary xdg-desktop-portal)"
+    portal_gtk="$(portal_binary xdg-desktop-portal-gtk)"
+    if [[ -z "${portal}" || -z "${portal_gtk}" ]]; then
+        log_msg "Steam portal setup: portal binaries missing"
+        return
+    fi
+
+    XDG_CURRENT_DESKTOP="${portal_desktop}" "${portal_gtk}" -r >> "${log}" 2>&1 &
+    STEAM_PORTAL_PIDS+=("$!")
+    sleep 0.1
+    XDG_CURRENT_DESKTOP="${portal_desktop}" "${portal}" -r >> "${log}" 2>&1 &
+    STEAM_PORTAL_PIDS+=("$!")
+
+    sleep 0.8
+    if portal_filechooser_available; then
+        log_msg "Steam portal setup: FileChooser available on session bus using ${portal_desktop}"
+    else
+        log_msg "Steam portal setup: FileChooser still unavailable after portal start"
+    fi
+}
+
+prepare_steam_portal_session() {
+    ensure_steam_session_bus
+    start_steam_portals
+}
+
+cleanup_steam_portal_session() {
+    local pid
+
+    for pid in "${STEAM_PORTAL_PIDS[@]}"; do
+        kill "${pid}" >/dev/null 2>&1 || true
+        wait "${pid}" >/dev/null 2>&1 || true
+    done
+    STEAM_PORTAL_PIDS=()
+
+    if [[ -n "${STEAM_SESSION_DBUS_PID}" ]]; then
+        kill "${STEAM_SESSION_DBUS_PID}" >/dev/null 2>&1 || true
+        wait "${STEAM_SESSION_DBUS_PID}" >/dev/null 2>&1 || true
+        STEAM_SESSION_DBUS_PID=""
     fi
 }
 
@@ -1903,6 +2020,7 @@ cleanup() {
         PROTON11_TOOLMANIFEST_WATCHER_PID=""
     fi
     restore_host_binfmt
+    cleanup_steam_portal_session
     cleanup_steam_session_leftovers
     restore_sm8550_gpu_profile
 }
@@ -1939,6 +2057,7 @@ launch_native_steam() {
 
         log_msg "Launching native ARM64 Steam in ${MODE} mode (attempt ${attempt}/${max_attempts}): ${STEAM_ROOT}/steamrtarm64/steam ${steam_args[*]:-}"
         ensure_frontend_session_env
+        prepare_steam_portal_session
         batocera-mouse show
         set +e
         (cd "${STEAM_ROOT}" && "${STEAM_ROOT}/steamrtarm64/steam" "${steam_args[@]}")

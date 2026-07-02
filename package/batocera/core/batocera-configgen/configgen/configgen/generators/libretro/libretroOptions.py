@@ -29,6 +29,10 @@ def _set_from_system_bool(settings: UnixSettings, settings_name: str, system: Em
     _set(settings, settings_name, system.config.get_bool(option_name or settings_name, default, return_values=values))
 
 
+def _cfg_has(config: Any, key: str) -> bool:
+    return config.get(key) is not config.MISSING
+
+
 # Amstrad CPC / GX4000
 def _cap32_options(
     coreSettings: UnixSettings, system: Emulator, rom: Path, guns: Guns, wheels: DeviceInfoMapping, /,
@@ -957,6 +961,67 @@ def _pcfx_options(
     _set_from_system(coreSettings, 'pcfx_nospritelimit', system, 'pcfx_nospritelimit', default='enabled')
 
 # Nintendo 64
+_N64_43_UPSCALE = {
+    1: '320x240',
+    2: '640x480',
+    3: '960x720',
+    4: '1280x960',
+    5: '1600x1200',
+    6: '1920x1440',
+    7: '2240x1680',
+    8: '2560x1920',
+    10: '3200x2400',
+    11: '3520x2640',
+    12: '3840x2880',
+}
+_N64_169_UPSCALE = {
+    1: '640x360',
+    2: '960x540',
+    3: '1280x720',
+    4: '1920x1080',
+    6: '2560x1440',
+    8: '3840x2160',
+}
+_N64_PARALLEL_RDP_UPSCALE = {
+    1: '1x',
+    2: '2x',
+    4: '4x',
+    8: '8x',
+}
+_N64_43_UPSCALE_BY_RESOLUTION = {value: scale for scale, value in _N64_43_UPSCALE.items()}
+_N64_169_UPSCALE_BY_RESOLUTION = {value: scale for scale, value in _N64_169_UPSCALE.items()}
+
+
+def _n64_parallel_rdp_upscale(upscale: int) -> str:
+    # ParaLLEl-RDP only accepts powers of two. Do not exceed the user-selected
+    # scale unless they explicitly select the ParaLLEl-RDP option.
+    for supported in (8, 4, 2):
+        if upscale >= supported:
+            return _N64_PARALLEL_RDP_UPSCALE[supported]
+
+    return _N64_PARALLEL_RDP_UPSCALE[1]
+
+
+def _n64_mupen64plus_upscale(system: Emulator) -> int:
+    upscales: list[int] = []
+
+    upscale = system.config.get_int('upscale', 0)
+    if upscale > 0:
+        upscales.append(upscale)
+
+    screensize_43 = system.config.get('mupen64plus-43screensize')
+    if screensize_43 is not system.config.MISSING:
+        if (screensize_upscale := _N64_43_UPSCALE_BY_RESOLUTION.get(screensize_43)) is not None:
+            upscales.append(screensize_upscale)
+
+    screensize_169 = system.config.get('mupen64plus-169screensize')
+    if screensize_169 is not system.config.MISSING:
+        if (screensize_upscale := _N64_169_UPSCALE_BY_RESOLUTION.get(screensize_169)) is not None:
+            upscales.append(screensize_upscale)
+
+    return max(upscales, default=0)
+
+
 def _mupen64plus_next_options(
     coreSettings: UnixSettings, system: Emulator, rom: Path, guns: Guns, wheels: DeviceInfoMapping, /,
 ) -> None:
@@ -967,11 +1032,19 @@ def _mupen64plus_next_options(
     # .htc files must be placed in 'Mupen64plus/cache'
     _set(coreSettings, 'mupen64plus-txHiresEnable', 'True')
 
+    upscale = _n64_mupen64plus_upscale(system)
+
     # Video 4:3 Resolution
-    _set_from_system(coreSettings, 'mupen64plus-43screensize', system, default='320x240')
+    if upscale in _N64_43_UPSCALE and not _cfg_has(system.config, 'mupen64plus-43screensize'):
+        _set(coreSettings, 'mupen64plus-43screensize', _N64_43_UPSCALE[upscale])
+    else:
+        _set_from_system(coreSettings, 'mupen64plus-43screensize', system, default='320x240')
 
     # Video 16:9 Resolution
-    _set_from_system(coreSettings, 'mupen64plus-169screensize', system, default='640x360')
+    if upscale in _N64_169_UPSCALE and not _cfg_has(system.config, 'mupen64plus-169screensize'):
+        _set(coreSettings, 'mupen64plus-169screensize', _N64_169_UPSCALE[upscale])
+    else:
+        _set_from_system(coreSettings, 'mupen64plus-169screensize', system, default='640x360')
 
     # Widescreen Hack
     # Increases from 4:3 to 16:9 in 3D games (bad for 2D)
@@ -1026,7 +1099,10 @@ def _mupen64plus_next_options(
     _set_from_system(coreSettings, 'mupen64plus-Framerate', system, 'mupen64plus-Framerate', default='Original')
 
     # Parallel-RDP Upscaling
-    _set_from_system(coreSettings, 'mupen64plus-parallel-rdp-upscaling', system, 'mupen64plus-parallel-rdp-upscaling', default='1x')
+    if upscale > 0 and not _cfg_has(system.config, 'mupen64plus-parallel-rdp-upscaling'):
+        _set(coreSettings, 'mupen64plus-parallel-rdp-upscaling', _n64_parallel_rdp_upscale(upscale))
+    else:
+        _set_from_system(coreSettings, 'mupen64plus-parallel-rdp-upscaling', system, 'mupen64plus-parallel-rdp-upscaling', default='1x')
 
     # Joystick deadzone
     _set_from_system(coreSettings, 'mupen64plus-astick-deadzone', system, 'mupen64plus-deadzone', default='0' if system.config.use_wheels and wheels else '15')

@@ -267,6 +267,20 @@ def _set_nested(mapping: dict[str, Any], *keys: str, value: Any) -> None:
     current[keys[-1]] = value
 
 
+def _get_int_option(config: Any, primary: str, default: int, *fallbacks: str) -> int:
+    for key in (primary, *fallbacks):
+        if config.get(key) is not config.MISSING:
+            return config.get_int(key, default)
+    return default
+
+
+def _get_bool_option(config: Any, primary: str, default: bool, *fallbacks: str) -> bool:
+    for key in (primary, *fallbacks):
+        if config.get(key) is not config.MISSING:
+            return config.get_bool(key, default)
+    return default
+
+
 class Gopher64Generator(Generator):
     def getHotkeysContext(self) -> HotkeysContext:
         return {
@@ -288,8 +302,8 @@ class Gopher64Generator(Generator):
         with _GOPHER64_CONFIG_FILE.open(encoding="utf-8") as config_file:
             config: dict[str, Any] = json.load(config_file)
 
-        _set_nested(config, "video", "upscale", value=system.config.get_int("gopher64_upscale", 1))
-        _set_nested(config, "video", "integer_scaling", value=system.config.get_bool("gopher64_integer_scaling", False))
+        _set_nested(config, "video", "upscale", value=_get_int_option(system.config, "gopher64_upscale", 1, "upscale"))
+        _set_nested(config, "video", "integer_scaling", value=_get_bool_option(system.config, "gopher64_integer_scaling", False, "integer_scaling", "integerscale"))
         _set_nested(config, "video", "widescreen", value=system.config.get_bool("gopher64_widescreen", False))
         _set_nested(config, "video", "crt", value=system.config.get_bool("gopher64_crt", False))
         _set_nested(config, "video", "fullscreen", value=not configure_emulator(rom))

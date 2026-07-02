@@ -90,6 +90,15 @@ define BATOCERA_STEAM_AARCH64_INSTALL_TARGET_CMDS
 		$(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/utils/batocera-steam/batocera-steam-shortcuts \
 		$(TARGET_DIR)/usr/bin/batocera-steam-shortcuts
 	install -D -m 0755 \
+		$(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/utils/batocera-wine/batocera-wine-tools \
+		$(TARGET_DIR)/usr/bin/batocera-steam-tools
+	install -D -m 0755 \
+		$(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/utils/batocera-steam/batocera-steam-tools-launcher \
+		$(TARGET_DIR)/usr/bin/batocera-steam-tools-launcher
+	install -D -m 0755 \
+		$(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/utils/batocera-steam/protontricks \
+		$(TARGET_DIR)/usr/bin/protontricks
+	install -D -m 0755 \
 		$(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/utils/batocera-steam/xdg-user-dir \
 		$(TARGET_DIR)/usr/bin/xdg-user-dir
 

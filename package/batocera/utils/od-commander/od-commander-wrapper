@@ -1,7 +1,22 @@
 #!/bin/sh
 
+sm8x50_odcommander=0
+
+sm8x50_focus_odcommander() {
+    command -v swaymsg >/dev/null 2>&1 || return 0
+
+    i=0
+    while [ "$i" -lt 20 ]; do
+        swaymsg '[app_id="od-commander.real"] focus' >/dev/null 2>&1
+        swaymsg '[app_id="od-commander.real"] fullscreen enable' >/dev/null 2>&1
+        sleep 0.1
+        i=$((i + 1))
+    done
+}
+
 case "$(cat /usr/share/batocera/batocera.arch 2>/dev/null)" in
 sm8550|sm8750)
+    sm8x50_odcommander=1
     export DISPLAY=
     export SDL_VIDEODRIVER=wayland
     unset SDL_RENDER_DRIVER
@@ -9,7 +24,27 @@ sm8550|sm8750)
     export MESA_LOADER_DRIVER_OVERRIDE=zink
     export DISABLE_MANGOHUD=1
     export DISABLE_LSFG=1
+    odcommander_sm8x50_cfg=/tmp/odcommander-sm8x50.cfg
+    cat > "$odcommander_sm8x50_cfg" <<'EOF'
+disp_autoscale_dpi=false
+disp_ppu_x=5.0
+disp_ppu_y=5.0
+EOF
+    set -- --config-prelude "$odcommander_sm8x50_cfg" "$@"
     ;;
 esac
+
+if [ "$sm8x50_odcommander" = "1" ]; then
+    /usr/bin/od-commander.real "$@" &
+    odcommander_pid=$!
+    sm8x50_focus_odcommander &
+    focus_pid=$!
+    trap 'kill "$odcommander_pid" "$focus_pid" 2>/dev/null' INT TERM
+    wait "$odcommander_pid"
+    status=$?
+    kill "$focus_pid" 2>/dev/null
+    wait "$focus_pid" 2>/dev/null
+    exit "$status"
+fi
 
 exec /usr/bin/od-commander.real "$@"

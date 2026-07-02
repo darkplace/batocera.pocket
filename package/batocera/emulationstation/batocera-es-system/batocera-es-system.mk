@@ -38,6 +38,31 @@ define BATOCERA_ES_SYSTEM_INSTALL_WINE_TOOLS
 endef
 endif
 
+ifneq ($(filter y,$(BR2_PACKAGE_BATOCERA_STEAM) $(BR2_PACKAGE_BATOCERA_STEAM_AARCH64)),)
+define BATOCERA_ES_SYSTEM_INSTALL_STEAM_TOOLS
+	$(INSTALL) -D -m 0755 \
+		$(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/utils/batocera-steam/datainit/roms/emulator/Steam_Tools.sh \
+		$(TARGET_DIR)/usr/share/batocera/datainit/roms/emulator/Steam_Tools.sh
+	$(INSTALL) -D -m 0644 \
+		$(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/utils/batocera-steam/datainit/roms/emulator/Steam_Tools.sh.keys \
+		$(TARGET_DIR)/usr/share/batocera/datainit/roms/emulator/Steam_Tools.sh.keys
+	$(INSTALL) -D -m 0644 \
+		$(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/core/batocera-desktopapps/icons/steam.png \
+		$(TARGET_DIR)/usr/share/batocera/datainit/roms/emulator/images/steam.png
+	gamelist="$(TARGET_DIR)/usr/share/batocera/datainit/roms/emulator/gamelist.xml"; \
+	if [ -f "$${gamelist}" ] && ! grep -q './Steam_Tools.sh' "$${gamelist}"; then \
+		awk '/<\/gameList>/ { \
+			print "  <game>"; \
+			print "    <path>./Steam_Tools.sh</path>"; \
+			print "    <name>Steam Tools</name>"; \
+			print "    <image>./images/steam.png</image>"; \
+			print "  </game>"; \
+		} { print }' "$${gamelist}" > "$${gamelist}.tmp" && \
+		mv "$${gamelist}.tmp" "$${gamelist}"; \
+	fi
+endef
+endif
+
 ifeq ($(BR2_PACKAGE_GAMEPADCALIBRATION),y)
 define BATOCERA_ES_SYSTEM_INSTALL_GAMEPAD_CALIBRATION_TOOL
 	$(INSTALL) -D -m 0755 \
@@ -102,6 +127,7 @@ define BATOCERA_ES_SYSTEM_INSTALL_TARGET_CMDS
 	rm -rf $(TARGET_DIR)/usr/share/batocera/datainit/roms/steam
 	cp -pr $(@D)/roms $(TARGET_DIR)/usr/share/batocera/datainit/
 	$(BATOCERA_ES_SYSTEM_INSTALL_WINE_TOOLS)
+	$(BATOCERA_ES_SYSTEM_INSTALL_STEAM_TOOLS)
 	$(BATOCERA_ES_SYSTEM_INSTALL_GAMEPAD_CALIBRATION_TOOL)
 endef
 
