@@ -4,8 +4,8 @@
 #
 ################################################################################
 
-ARMSX2_MASIES_VERSION = c4b5cda6a81c6ce66122c86724e3f14925635ccc
-ARMSX2_MASIES_SITE = https://github.com/suckbluefrog/ARMSX2-MASIES.git
+ARMSX2_MASIES_VERSION = ca759e069bfdcbef857f57e0a26202187ce5b468
+ARMSX2_MASIES_SITE = https://github.com/suckbluefrog/ARMSX2-LINUX-FOR-BATOCERA.git
 ARMSX2_MASIES_SITE_METHOD = git
 ARMSX2_MASIES_GIT_SUBMODULES = YES
 ARMSX2_MASIES_LICENSE = GPL-3.0-or-later

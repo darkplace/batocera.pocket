@@ -39,4 +39,4 @@ config BR2_PACKAGE_PCSX2
     help
       PCSX2 is a free and open-source PlayStation 2 (PS2) emulator.
 
-      https://git.sr.ht/~bmdhacks/pcsx2
+      https://github.com/yaps2/yaps2

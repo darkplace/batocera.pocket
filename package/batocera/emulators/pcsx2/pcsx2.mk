@@ -4,10 +4,9 @@
 #
 ################################################################################
 
-PCSX2_VERSION = 13873a50bd5e1c955f92b305254cb02b803c806c
-PCSX2_SITE = https://git.sr.ht/~bmdhacks/pcsx2/archive
-PCSX2_SITE_METHOD = wget
-PCSX2_SOURCE = $(PCSX2_VERSION).tar.gz
+PCSX2_VERSION = b3407777c2265250c06504b241ff510529861c91
+PCSX2_SITE = https://github.com/yaps2/yaps2.git
+PCSX2_SITE_METHOD = git
 PCSX2_LICENSE = GPLv3
 PCSX2_LICENSE_FILE = COPYING.GPLv3
 PCSX2_EMULATOR_INFO = pcsx2.emulator.yml
@@ -64,7 +63,7 @@ endif
 PCSX2_BUILD_OPTS = -- -j4
 
 define PCSX2_INSTALL_TARGET_CMDS
-	$(INSTALL) -m 0755 -D $(@D)/buildroot-build/bin/pcsx2-qt \
+	$(INSTALL) -m 0755 -D $(@D)/buildroot-build/bin/yaps2-qt \
         $(TARGET_DIR)/usr/pcsx2/bin/pcsx2-qt
 	cp -pr  $(@D)/bin/resources $(TARGET_DIR)/usr/pcsx2/bin/
     if [ -d $(@D)/buildroot-build/bin/translations ]; then \

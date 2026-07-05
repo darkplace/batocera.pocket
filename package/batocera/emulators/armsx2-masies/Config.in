@@ -49,4 +49,4 @@ config BR2_PACKAGE_ARMSX2_MASIES
       Linux ARM64 desktop ARMSX2 branch with macrec ARM64 JIT
       work and GLES fixes.
 
-      https://github.com/suckbluefrog/ARMSX2-MASIES
+      https://github.com/suckbluefrog/ARMSX2-LINUX-FOR-BATOCERA/tree/v34-integration
