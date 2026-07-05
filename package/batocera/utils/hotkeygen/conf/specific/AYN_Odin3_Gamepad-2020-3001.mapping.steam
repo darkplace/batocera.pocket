@@ -1,3 +1,4 @@
 {
-    "BTN_BACK": "steam_chord"
+    "BTN_BACK": "steam_chord",
+    "BTN_MODE+BTN_START+BTN_SELECT": "mousemode"
 }

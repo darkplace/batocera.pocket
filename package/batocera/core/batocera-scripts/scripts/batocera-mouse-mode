@@ -28,7 +28,7 @@ CONFIG_FILE = Path("/userdata/system/configs/batocera-mouse-mode.json")
 
 DEVICE_NAME = "batocera mouse mode"
 IGNORE_NAMES = {DEVICE_NAME, "batocera hotkeys", "evmapy"}
-TOGGLE_CODES = {ecodes.BTN_MODE, ecodes.BTN_THUMBL, ecodes.BTN_THUMBR}
+TOGGLE_CODES = {ecodes.BTN_MODE, ecodes.BTN_START, ecodes.BTN_SELECT}
 
 DEFAULT_CONFIG = {
     "deadzone": 0.10,

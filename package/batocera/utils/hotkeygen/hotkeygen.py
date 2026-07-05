@@ -167,28 +167,36 @@ def get_device_config_filename(device: evdev.InputDevice) -> str:
     name = re.sub('[^a-zA-Z0-9_]', '', device.name.replace(' ', '_'))
     return f"{name}-{device.info.vendor:02x}-{device.info.product:02x}.mapping"
 
-def get_mapping_full_path(device: evdev.InputDevice) -> Path | None:
-    fullpath = None
+def get_mapping_full_paths(device: evdev.InputDevice) -> list[Path]:
+    fullpaths = []
     fname = get_device_config_filename(device)
     if gdebug:
         print(f"...looking for {GUSER_DIR}/{fname}, {GSYSTEM_DIR}/{fname}")
+    if (GSYSTEM_DIR / fname).exists():
+        fullpaths.append(GSYSTEM_DIR / fname)
     if (GUSER_DIR / fname).exists():
-        fullpath = GUSER_DIR / fname
-    elif (GSYSTEM_DIR / fname).exists():
-        fullpath = GSYSTEM_DIR / fname
-    return fullpath
+        fullpaths.append(GUSER_DIR / fname)
+    return fullpaths
+
+def get_mapping_full_path(device: evdev.InputDevice) -> Path | None:
+    fullpaths = get_mapping_full_paths(device)
+    if fullpaths:
+        return fullpaths[-1]
+    return None
 
 def get_mapping(device: evdev.InputDevice) -> dict[int | tuple[int, ...], str]:
     if device is None:
-        fullpath = None
+        fullpaths = []
     else:
-        fullpath = get_mapping_full_path(device)
+        fullpaths = get_mapping_full_paths(device)
 
-    if fullpath is not None:
+    if fullpaths:
         if gdebug:
-            print(f"using mapping {fullpath}")
-        with fullpath.open() as fd:
-            data = json.load(fd)
+            print(f"using mapping {' + '.join(str(path) for path in fullpaths)}")
+        data = {}
+        for fullpath in fullpaths:
+            with fullpath.open() as fd:
+                data |= json.load(fd)
         return load_mapping(data)
     else:
         data = {}
