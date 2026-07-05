@@ -666,6 +666,21 @@ steam_updater_external_preflight_enabled() {
     return 1
 }
 
+steam_public_beta_selected() {
+    [[ -f "${STEAM_ROOT}/package/beta" ]] && grep -qx 'publicbeta' "${STEAM_ROOT}/package/beta" 2>/dev/null
+}
+
+steam_preflight_args() {
+    local -n args="$1"
+
+    args=()
+    if steam_public_beta_selected; then
+        args+=(-gamepadui)
+    else
+        args+=(-steamdeck -steamos3 -gamepadui)
+    fi
+}
+
 run_external_steam_updater() {
     local baseline
     local no_update_secs="${BATOCERA_STEAM_PREFLIGHT_NO_UPDATE_SECS:-15}"
@@ -678,7 +693,7 @@ run_external_steam_updater() {
     local display=""
     local status_xterm_pid=""
     local child_ui_suppressor_pid=""
-    local -a steam_args=(-steamdeck -steamos3 -gamepadui)
+    local -a steam_args=()
     local -a extra_args=()
 
     steam_updater_external_preflight_enabled || return 0
@@ -698,6 +713,7 @@ run_external_steam_updater() {
     prepare_user_env
     prepare_steam_client_env
     seed_steam_updater_resources
+    steam_preflight_args steam_args
     export DISPLAY="${display}"
     steam_launcher="$(resolve_steam_launcher || true)"
     if [[ -z "${steam_launcher}" ]]; then
@@ -802,7 +818,7 @@ run_in_terminal() {
     local waited=0
     local steam_pid=""
     local steam_launcher=""
-    local -a steam_args=(-steamdeck -steamos3 -gamepadui)
+    local -a steam_args=()
     local -a extra_args=()
 
     mark_preflight_active
@@ -811,6 +827,7 @@ run_in_terminal() {
     prepare_user_env
     prepare_steam_client_env
     seed_steam_updater_resources
+    steam_preflight_args steam_args
     if ! run_bootstrap_setup; then
         return 1
     fi

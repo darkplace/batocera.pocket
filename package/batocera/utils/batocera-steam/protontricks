@@ -14,18 +14,32 @@ Batocera wrapper for running winetricks against a Steam Proton compatdata prefix
 EOF
 }
 
+canonical_path() {
+    local path="$1"
+    local resolved
+
+    path="${path%/}"
+    [ -n "$path" ] || return 1
+
+    resolved="$(readlink -f "$path" 2>/dev/null || true)"
+    if [ -n "$resolved" ]; then
+        printf '%s\n' "$resolved"
+    else
+        printf '%s\n' "$path"
+    fi
+}
+
 steam_roots() {
-    local root
-    local seen=":"
+    local root canonical
+    local seen=$'\n'
 
     for root in "${BATOCERA_STEAM_ROOT:-}" "${BATOCERA_STEAM_HOME:-}" \
         /userdata/system/.local/share/Steam /userdata/system/steam /userdata/system/.steam/steam; do
         [ -n "$root" ] || continue
-        case "$seen" in
-            *":$root:"*) continue ;;
-        esac
-        seen="${seen}${root}:"
-        printf '%s\n' "$root"
+        canonical="$(canonical_path "$root")" || continue
+        [[ "$seen" == *$'\n'"$canonical"$'\n'* ]] && continue
+        seen+="${canonical}"$'\n'
+        printf '%s\n' "$canonical"
     done
 }
 
@@ -61,9 +75,12 @@ prefix_for_appid() {
 steam_root_for_prefix() {
     local prefix="$1"
     local root
+    local prefix_real
+
+    prefix_real="$(canonical_path "$prefix")" || prefix_real="$prefix"
 
     while IFS= read -r root; do
-        case "$prefix" in
+        case "$prefix_real" in
             "$root"/*)
                 printf '%s\n' "$root"
                 return 0

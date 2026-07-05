@@ -539,6 +539,21 @@ steam_root_dir() {
     esac
 }
 
+canonical_path() {
+    local path="$1"
+    local resolved
+
+    path="${path%/}"
+    [ -n "$path" ] || return 1
+
+    resolved="$(readlink -f "$path" 2>/dev/null || true)"
+    if [ -n "$resolved" ]; then
+        printf '%s\n' "$resolved"
+    else
+        printf '%s\n' "$path"
+    fi
+}
+
 write_steam_proton_cachyos_config() {
     local version="$1"
     local url="$2"
@@ -1297,22 +1312,21 @@ select_prefix() {
 }
 
 steam_roots_all() {
-    local root
-    local seen=":"
+    local root canonical
+    local seen=$'\n'
 
     for root in "$(steam_root_dir)" "${BATOCERA_STEAM_ROOT:-}" "${BATOCERA_STEAM_HOME:-}" \
         /userdata/system/.local/share/Steam /userdata/system/steam /userdata/system/.steam/steam; do
         [ -n "$root" ] || continue
-        case "$seen" in
-            *":$root:"*) continue ;;
-        esac
-        seen="${seen}${root}:"
-        printf '%s\n' "$root"
+        canonical="$(canonical_path "$root")" || continue
+        [[ "$seen" == *$'\n'"$canonical"$'\n'* ]] && continue
+        seen+="${canonical}"$'\n'
+        printf '%s\n' "$canonical"
     done
 }
 
 collect_steam_compat_prefixes() {
-    local root compat appid prefix key
+    local root compat appid prefix prefix_real key
     local seen=$'\n'
 
     while IFS= read -r root; do
@@ -1322,7 +1336,8 @@ collect_steam_compat_prefixes() {
             appid="$(basename "$compat")"
             prefix="${compat}/pfx"
             [ -d "$prefix" ] || continue
-            key="${appid}|${prefix}"
+            prefix_real="$(canonical_path "$prefix")" || prefix_real="$prefix"
+            key="${appid}|${prefix_real}"
             [[ "$seen" == *$'\n'"$key"$'\n'* ]] && continue
             seen+="${key}"$'\n'
             printf '%s\n' "$key"

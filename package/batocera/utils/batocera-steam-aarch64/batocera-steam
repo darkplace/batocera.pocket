@@ -13,6 +13,7 @@ export XDG_DATA_HOME="${HOME}/.local/share"
 export XDG_CONFIG_HOME="${HOME}/.config"
 export XDG_CACHE_HOME="${HOME}/.cache"
 export STEAM_ROOT="${BATOCERA_STEAM_ROOT:-${XDG_DATA_HOME}/Steam}"
+export BATOCERA_STEAM_CLIENT_BRANCH="${BATOCERA_STEAM_CLIENT_BRANCH:-auto}"
 export PROTON11_ARM64_APPID="${BATOCERA_STEAM_PROTON11_ARM64_APPID:-4628740}"
 export PROTON11_ARM64_DIR_NAME="Proton 11.0 (ARM64)"
 export PROTON11_ARM64_INSTALL_URI="steam://install/${PROTON11_ARM64_APPID}"
@@ -1373,7 +1374,29 @@ ensure_native_steam_client() {
     local manifest
     local target_file
     local archive="${STEAM_ROOT}/linuxarm64.zip"
-    local manifest_url="https://client-update.fastly.steamstatic.com/steam_client_publicbeta_linuxarm64"
+    local manifest_url="https://client-update.fastly.steamstatic.com/steam_client_steamdeck_stable_linuxarm64"
+    local branch="${BATOCERA_STEAM_CLIENT_BRANCH}"
+
+    if [[ "${branch}" == "auto" || -z "${branch}" ]]; then
+        if [[ -f "${STEAM_ROOT}/package/beta" ]] && grep -qx 'publicbeta' "${STEAM_ROOT}/package/beta" 2>/dev/null; then
+            branch="publicbeta"
+        else
+            branch="steamdeck_stable"
+        fi
+    fi
+
+    case "${branch}" in
+        publicbeta)
+            manifest_url="https://client-update.fastly.steamstatic.com/steam_client_publicbeta_linuxarm64"
+            ;;
+        steamdeck_stable|stable|"")
+            manifest_url="https://client-update.fastly.steamstatic.com/steam_client_steamdeck_stable_linuxarm64"
+            ;;
+        *)
+            log_msg "Unknown Steam client branch '${branch}', using steamdeck_stable."
+            manifest_url="https://client-update.fastly.steamstatic.com/steam_client_steamdeck_stable_linuxarm64"
+            ;;
+    esac
 
     ensure_arm64_steam_runtime
 
@@ -1471,7 +1494,14 @@ prepare_arm64_steam_layout() {
     local helper
 
     mkdir -p "${STEAM_ROOT}/package"
-    printf '%s\n' "publicbeta" > "${STEAM_ROOT}/package/beta"
+    case "${BATOCERA_STEAM_CLIENT_BRANCH}" in
+        publicbeta)
+            printf '%s\n' "publicbeta" > "${STEAM_ROOT}/package/beta"
+            ;;
+        stable|steamdeck_stable)
+            rm -f "${STEAM_ROOT}/package/beta"
+            ;;
+    esac
     : > "${STEAM_ROOT}/.steam-enable-steamrt64-client"
     ensure_steam_taskset_shim
 

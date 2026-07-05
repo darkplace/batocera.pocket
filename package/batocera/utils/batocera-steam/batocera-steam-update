@@ -244,25 +244,61 @@ read_acf_value() {
     sed -n -E "s/^[[:space:]]*\"${key}\"[[:space:]]*\"(.*)\"[[:space:]]*$/\1/p" "${file}" | head -n 1
 }
 
+canonical_path() {
+    local path="$1"
+    local resolved
+
+    path="${path%/}"
+    [ -n "$path" ] || return 1
+
+    resolved="$(readlink -f "$path" 2>/dev/null || true)"
+    if [ -n "$resolved" ]; then
+        printf '%s\n' "$resolved"
+    else
+        printf '%s\n' "$path"
+    fi
+}
+
 discover_libraries() {
     local -a libraries=()
     local -a libraryfolders_files=()
     local -a steam_roots=()
+    local -a steam_root_candidates=()
     local path=""
     local line
+    local root root_real library_real file_real
+    local seen_roots=$'\n'
+    local seen_libraries=$'\n'
+    local seen_libraryfolders=$'\n'
 
-    steam_roots+=("${steam_home}")
-    steam_roots+=("/userdata/system/steam")
-    steam_roots+=("/userdata/system/.steam/steam")
-    steam_roots+=("/userdata/system/.local/share/Steam")
+    steam_root_candidates+=("${steam_home}")
+    steam_root_candidates+=("/userdata/system/steam")
+    steam_root_candidates+=("/userdata/system/.steam/steam")
+    steam_root_candidates+=("/userdata/system/.local/share/Steam")
+
+    for root in "${steam_root_candidates[@]}"; do
+        [ -n "$root" ] || continue
+        root_real="$(canonical_path "$root")" || continue
+        [[ "$seen_roots" == *$'\n'"$root_real"$'\n'* ]] && continue
+        seen_roots+="${root_real}"$'\n'
+        steam_roots+=("${root_real}")
+    done
 
     for root in "${steam_roots[@]}"; do
         if [[ -d "${root}/steamapps" ]]; then
-            libraries+=("${root}/steamapps")
+            library_real="$(canonical_path "${root}/steamapps")" || library_real="${root}/steamapps"
+            if [[ "$seen_libraries" != *$'\n'"$library_real"$'\n'* ]]; then
+                seen_libraries+="${library_real}"$'\n'
+                libraries+=("${library_real}")
+            fi
         fi
 
         if [[ -f "${root}/steamapps/libraryfolders.vdf" ]]; then
-            libraryfolders_files+=("${root}/steamapps/libraryfolders.vdf")
+            file_real="$(canonical_path "${root}/steamapps/libraryfolders.vdf")" || file_real="${root}/steamapps/libraryfolders.vdf"
+            if [[ "$seen_libraryfolders" != *$'\n'"$file_real"$'\n'* ]]; then
+                seen_libraryfolders+="${file_real}"$'\n'
+                libraryfolders_files+=("${file_real}")
+            fi
         fi
     done
 
@@ -281,9 +317,17 @@ discover_libraries() {
             path="${path%/}"
 
             if [[ -d "${path}/steamapps" ]]; then
-                libraries+=("${path}/steamapps")
+                library_real="$(canonical_path "${path}/steamapps")" || library_real="${path}/steamapps"
+                if [[ "$seen_libraries" != *$'\n'"$library_real"$'\n'* ]]; then
+                    seen_libraries+="${library_real}"$'\n'
+                    libraries+=("${library_real}")
+                fi
             elif [[ -d "${path}" ]]; then
-                libraries+=("${path}")
+                library_real="$(canonical_path "${path}")" || library_real="${path}"
+                if [[ "$seen_libraries" != *$'\n'"$library_real"$'\n'* ]]; then
+                    seen_libraries+="${library_real}"$'\n'
+                    libraries+=("${library_real}")
+                fi
             fi
         done < "${libraryfolders_file}"
     done
@@ -389,6 +433,19 @@ roots = [
     Path("/userdata/system/.steam/steam"),
     Path("/userdata/system/.local/share/Steam"),
 ]
+
+deduped_roots = []
+seen_roots = set()
+for root in roots:
+    try:
+        key = str(root.resolve())
+    except Exception:
+        key = str(root)
+    if key in seen_roots:
+        continue
+    seen_roots.add(key)
+    deduped_roots.append(Path(key))
+roots = deduped_roots
 
 
 def read_cstring(data: bytes, pos: int) -> tuple[str, int]:
