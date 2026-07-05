@@ -4,7 +4,7 @@
 #
 ################################################################################
 
-PCSX2_VERSION = 9e71f836a003bea564523abf1b38c4f5ef54a137
+PCSX2_VERSION = 13873a50bd5e1c955f92b305254cb02b803c806c
 PCSX2_SITE = https://git.sr.ht/~bmdhacks/pcsx2/archive
 PCSX2_SITE_METHOD = wget
 PCSX2_SOURCE = $(PCSX2_VERSION).tar.gz

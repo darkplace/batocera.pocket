@@ -29,7 +29,10 @@ HOST_HEIMDAL_CONF_OPTS = \
 	--disable-heimdal-documentation
 
 # Don't use compile_et from e2fsprogs as it raises a build failure with samba4
-HOST_HEIMDAL_CONF_ENV = ac_cv_prog_COMPILE_ET=no MAKEINFO=true
+HOST_HEIMDAL_CONF_ENV = \
+	ac_cv_prog_COMPILE_ET=no \
+	MAKEINFO=true \
+	ac_cv_funclib_crypt=-lcrypt
 # batocera - add the -fPIC flag.
 HOST_HEIMDAL_CONF_ENV += CFLAGS="$(HOST_CFLAGS) -fPIC"
 

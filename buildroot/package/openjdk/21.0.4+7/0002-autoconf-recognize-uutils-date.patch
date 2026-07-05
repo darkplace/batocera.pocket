@@ -1,0 +1,27 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Thu, 2 Jul 2026 00:00:00 +0000
+Subject: [PATCH] autoconf: recognize uutils date as GNU-compatible
+
+The Batocera build image now provides uutils coreutils date. It supports
+the GNU-style --date=@TIMESTAMP form that OpenJDK needs, but its
+--version output does not contain the string GNU. OpenJDK therefore
+misclassifies it as BSD date and later emits empty SOURCE_DATE_ISO_8601
+and COPYRIGHT_YEAR values.
+
+Recognize uutils coreutils as GNU-compatible so configure keeps using the
+working --date path.
+
+Upstream: not submitted
+---
+--- a/make/autoconf/basic_tools.m4
++++ b/make/autoconf/basic_tools.m4
+@@ -378,7 +378,7 @@
+
+   # Check if it's a GNU date compatible version
+   AC_MSG_CHECKING([if date is a GNU compatible version])
+-  check_date=`$DATE --version 2>&1 | $GREP "GNU\|BusyBox"`
++  check_date=`$DATE --version 2>&1 | $GREP "GNU\|BusyBox\|uutils coreutils"`
+   if test "x$check_date" != x; then
+     AC_MSG_RESULT([yes])
+     IS_GNU_DATE=yes

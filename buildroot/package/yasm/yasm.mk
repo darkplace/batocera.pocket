@@ -10,6 +10,9 @@ YASM_LICENSE = BSD-2-Clause, BSD-3-Clause, Artistic, GPL-2.0, LGPL-2.0
 YASM_LICENSE_FILES = COPYING BSD.txt Artistic.txt GNU_GPL-2.0 GNU_LGPL-2.0
 YASM_CPE_ID_VENDOR = tortall
 
+YASM_CONF_ENV += CFLAGS="$(TARGET_CFLAGS) -std=gnu17"
+HOST_YASM_CONF_ENV += CFLAGS="$(HOST_CFLAGS) -std=gnu17"
+
 # This sed prevents it compiling 2 programs (vsyasm and ytasm)
 # that are only of use on Microsoft Windows.
 define YASM_PRE_CONFIGURE_FIXUP

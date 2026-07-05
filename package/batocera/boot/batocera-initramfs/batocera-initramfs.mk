@@ -113,7 +113,7 @@ define BATOCERA_INITRAMFS_INSTALL_TARGET_CMDS
 	    $(INITRAMFS_DIR)/init
 	$(BATOCERA_INITRAMFS_MAKE_ENV) $(MAKE) $(BATOCERA_INITRAMFS_MAKE_OPTS) -C $(@D) install
 	(cd $(INITRAMFS_DIR) && find . | cpio -H newc -o > $(BINARIES_DIR)/initrd)
-	(cd $(BINARIES_DIR) && mkimage -A $(BATOCERA_INITRAMFS_INITRDA) \
+	(cd $(BINARIES_DIR) && $(MKIMAGE) -A $(BATOCERA_INITRAMFS_INITRDA) \
 	    -O linux -T ramdisk -C none -a 0 -e 0 -n initrd -d ./initrd ./uInitrd)
 	$(COMPRESSION_TYPE_COMMAND)
 endef

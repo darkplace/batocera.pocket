@@ -24,6 +24,7 @@ else
 LIBTIRPC_CONF_OPTS += --disable-gssapi
 endif
 HOST_LIBTIRPC_CONF_OPTS = --disable-gssapi
+HOST_LIBTIRPC_CONF_ENV = CFLAGS="$(HOST_CFLAGS) -std=gnu17"
 
 $(eval $(autotools-package))
 $(eval $(host-autotools-package))

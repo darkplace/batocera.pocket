@@ -8,7 +8,7 @@ LIBRETRO_HATARIB_VERSION = 0.3
 LIBRETRO_HATARIB_SITE = https://github.com/bbbradsmith/hatariB
 LIBRETRO_HATARIB_SITE_METHOD=git
 LIBRETRO_HATARIB_LICENSE = GPLv2
-LIBRETRO_HATARIB_DEPENDENCIES = libcapsimage libpng libzlib sdl2 retroarch
+LIBRETRO_HATARIB_DEPENDENCIES = host-cmake libcapsimage libpng libzlib sdl2 retroarch
 
 LIBRETRO_HATARIB_CONF_ENV += \
     SHORTHASH='"$(shell echo $(LIBRETRO_HATARIB_VERSION) | cut -c 1-7)"' \
@@ -20,7 +20,7 @@ LIBRETRO_HATARIB_CONF_ENV += \
 	ZLIB_LINK="$(STAGING_DIR)/usr/lib/libz.so"
 
 define LIBRETRO_HATARIB_BUILD_CMDS
-	cd $(@D) && $(MAKE) CC=$(TARGET_CC) -f makefile \
+	$(TARGET_MAKE_ENV) $(MAKE) -C $(@D) CC=$(TARGET_CC) -f makefile \
 	$(LIBRETRO_HATARIB_CONF_ENV)
 endef
 

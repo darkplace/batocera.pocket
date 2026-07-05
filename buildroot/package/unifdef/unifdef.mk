@@ -18,11 +18,15 @@ define UNIFDEF_INSTALL_TARGET_CMDS
 endef
 
 define HOST_UNIFDEF_BUILD_CMDS
-	$(HOST_CONFIGURE_OPTS) $(MAKE) -C $(@D)
+	$(HOST_CONFIGURE_OPTS) $(MAKE) -C $(@D) \
+		CFLAGS="$(HOST_CFLAGS) -std=gnu17" \
+		LDFLAGS="$(HOST_LDFLAGS)"
 endef
 
 define HOST_UNIFDEF_INSTALL_CMDS
-	$(HOST_CONFIGURE_OPTS) $(MAKE) -C $(@D) prefix=$(HOST_DIR) install
+	$(HOST_CONFIGURE_OPTS) $(MAKE) -C $(@D) prefix=$(HOST_DIR) install \
+		CFLAGS="$(HOST_CFLAGS) -std=gnu17" \
+		LDFLAGS="$(HOST_LDFLAGS)"
 endef
 
 $(eval $(generic-package))

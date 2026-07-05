@@ -24,7 +24,8 @@ BASH_CONF_ENV += \
 	bash_cv_job_control_missing=present \
 	bash_cv_sys_named_pipes=present \
 	bash_cv_func_sigsetjmp=present \
-	bash_cv_printf_a_format=yes
+	bash_cv_printf_a_format=yes \
+	CFLAGS_FOR_BUILD="$(HOST_CFLAGS) -std=gnu17 -Wno-error=old-style-definition"
 
 # The static build needs some trickery
 ifeq ($(BR2_STATIC_LIBS),y)
