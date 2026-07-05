@@ -13,15 +13,18 @@ https://drive.proton.me/urls/RRPFQ38NX8#LmFz5AIaV2aI
 
 - Odin2 / Thor Series  
 - Powkiddy X55
-- Anbernic RG-DS (Beta)
-<img width="559" height="746" alt="image" src="https://github.com/user-attachments/assets/2f539866-4174-4c5c-b03c-2676ad81bd74" />
-<img width="481" height="642" alt="image" src="https://github.com/user-attachments/assets/2ac8e6a1-769b-4ddb-b0ea-f04324146561" />
+
+
 
 
 - Dragon Q6A  
+
+## Legacy Devices
 - R36s  
 - BattleXP G350  
-
+- Anbernic RG-DS (Beta)
+<img width="559" height="746" alt="image" src="https://github.com/user-attachments/assets/2f539866-4174-4c5c-b03c-2676ad81bd74" />
+<img width="481" height="642" alt="image" src="https://github.com/user-attachments/assets/2ac8e6a1-769b-4ddb-b0ea-f04324146561" />
 ---
 
 ## Core Features (All ARM64 Builds)
@@ -109,37 +112,8 @@ Includes additional emulators where supported:
 
 ## Rockchip / Allwinner Devices
 
+Development is no longer in the scope of this project for these handhelds. Older images will remain available of the drive for the time being.
 
-  
-### Wine Expectations
-> “No! It can't run Crysis”
-
-### Wine Performance Guidelines (Rockchip)
-These SoCs are limited by:
-- Cortex-A35 / A53 / A55 class CPUs  
-- Panfrost driver maturity  
-- Memory bandwidth  
-
-#### RK3326 / H700
-- Target: early DX8 / DX9 era  
-- Pre-2005 recommended  
-- 2D engines perform best  
-
-#### RK3566/8
-- Light DX9 titles possible  
-- Shader-heavy games will struggle
-- Vulkan enabled in libmali mode -- helps especially with PPSSPP, Azahar, Flycast (Thanks Sydarn)
-- Azahar enabled - don't expect fullspeed, usually
-- Dolphin working with light gamecube titles on RG-DS
-
-Do **NOT** expect:
-- DX10 / DX11 performance  
-- Modern Unity / Unreal engines  
-- Heavy physics or CPU-bound games  
-
-### GPU Stack
-- Mesa + Panfrost  
-- Powkiddy X55 & RG-DS have mali blobs with gpudriver toggle in settings to panfrost
 ---
 
 ## Support Policy
