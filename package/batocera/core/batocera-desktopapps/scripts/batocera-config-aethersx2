@@ -1,4 +1,4 @@
 #!/bin/bash
 batocera-mouse show
 trap 'batocera-mouse hide' EXIT
-batocera-config-gpu-wrapper aethersx2
+batocera-config-gpu-wrapper aethersx2 -bigpicture -fullscreen "$@"

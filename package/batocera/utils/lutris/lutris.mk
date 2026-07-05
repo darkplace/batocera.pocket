@@ -108,41 +108,6 @@ define LUTRIS_CLEAN_UP_DESKTOP_FILES
 		$(TARGET_DIR)/usr/share/applications/net.lutris.Lutris1.desktop
 endef
 
-define LUTRIS_INSTALL_BATOCERA_DATAS
-	mkdir -p $(TARGET_DIR)/usr/share/batocera/datainit/roms/lutris
-	mkdir -p $(TARGET_DIR)/usr/share/batocera/datainit/roms/lutris/images
-	printf '%s\n' \
-		'#!/bin/bash' \
-		'set -euo pipefail' \
-		'batocera-mouse show' \
-		"trap 'batocera-mouse hide' EXIT" \
-		'export LUTRIS_SKIP_INIT=1' \
-		'export BATOCERA_LUTRIS_SAFE_UI=1' \
-		'extra_args=()' \
-		'if [[ -n "$${BATOCERA_LUTRIS_EXTRA_ARGS:-}" ]]; then read -r -a extra_args <<< "$${BATOCERA_LUTRIS_EXTRA_ARGS}"; fi' \
-		'export HOME="/userdata/saves/lutris"' \
-		'export XDG_CONFIG_HOME="$${HOME}/.config"' \
-		'export XDG_DATA_HOME="$${HOME}/.local/share"' \
-		'export XDG_CACHE_HOME="$${HOME}/.cache"' \
-		'mkdir -p "$${XDG_CONFIG_HOME}" "$${XDG_DATA_HOME}" "$${XDG_CACHE_HOME}"' \
-		'exec lutris "$${extra_args[@]}"' \
-		> "$(TARGET_DIR)/usr/share/batocera/datainit/roms/lutris/Lutris Launcher.sh"
-	chmod 0755 "$(TARGET_DIR)/usr/share/batocera/datainit/roms/lutris/Lutris Launcher.sh"
-	printf '%s\n' \
-		'<?xml version="1.0"?>' \
-		'<gameList>' \
-		'  <game>' \
-		'    <path>./Lutris Launcher.sh</path>' \
-		'    <name>Lutris</name>' \
-		'    <image>./images/lutris.png</image>' \
-		'  </game>' \
-		'</gameList>' \
-		> "$(TARGET_DIR)/usr/share/batocera/datainit/roms/lutris/gamelist.xml"
-	$(INSTALL) -D -m 0644 \
-		$(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/core/batocera-desktopapps/icons/lutris.png \
-		$(TARGET_DIR)/usr/share/batocera/datainit/roms/lutris/images/lutris.png
-endef
-
 define LUTRIS_INSTALL_OPENAL_COMPAT
 	for d in lib usr/lib usr/lib64; do \
 		if [ -e "$(TARGET_DIR)/$$d/libopenal.so.1" ] && [ ! -e "$(TARGET_DIR)/$$d/libal.so.1" ]; then \
@@ -174,7 +139,6 @@ LUTRIS_POST_INSTALL_TARGET_HOOKS += LUTRIS_FIX_SHARE_LAYOUT
 LUTRIS_POST_INSTALL_TARGET_HOOKS += LUTRIS_INSTALL_WRAPPER
 LUTRIS_POST_INSTALL_TARGET_HOOKS += LUTRIS_PATCH_ROOT_CHECK
 LUTRIS_POST_INSTALL_TARGET_HOOKS += LUTRIS_CLEAN_UP_DESKTOP_FILES
-LUTRIS_POST_INSTALL_TARGET_HOOKS += LUTRIS_INSTALL_BATOCERA_DATAS
 LUTRIS_POST_INSTALL_TARGET_HOOKS += LUTRIS_INSTALL_OPENAL_COMPAT
 LUTRIS_POST_INSTALL_TARGET_HOOKS += LUTRIS_INSTALL_ICON_FALLBACKS
 

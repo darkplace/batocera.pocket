@@ -64,6 +64,13 @@ while IFS= read -r board; do
 
     add_rewrite_root "/${target}"
     add_rewrite_root "${output_parent}/${target}"
+
+    # Older bad relocations can duplicate the output parent repeatedly.
+    repeated_output_parent="${output_parent}"
+    for _ in {1..12}; do
+        repeated_output_parent="${repeated_output_parent}${output_parent}"
+        add_rewrite_root "${repeated_output_parent}/${target}"
+    done
 done < <(find "${repo_dir}/configs" -maxdepth 1 -name 'batocera-*.board' -type f | sort)
 
 if [ ! -s "${patterns}" ]; then

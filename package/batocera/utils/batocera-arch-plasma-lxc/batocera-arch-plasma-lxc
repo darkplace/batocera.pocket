@@ -1080,11 +1080,12 @@ fi
 pacman-key --populate archlinux >/dev/null 2>&1 || true
 pacman -Sy --noconfirm --needed archlinux-keyring
 required_packages=(
-    bash sudo shadow openssh dbus dbus-broker xorg-xwayland
+    bash sudo shadow openssh dbus dbus-broker polkit polkit-kde-agent xorg-xwayland
     xorg-xauth xorg-xrdb kwin-x11
     plasma-desktop plasma-workspace plasma-pa systemsettings discover
     dolphin konsole kate ark gwenview okular spectacle kcalc
     plasma-systemmonitor kscreen kio-extras packagekit packagekit-qt6
+    flatpak
     pipewire pipewire-pulse pipewire-alsa pipewire-jack wireplumber
     qt6-multimedia-ffmpeg tesseract-data-eng tesseract-data-osd
     mesa noto-fonts ttf-dejavu
@@ -1100,6 +1101,11 @@ for package in "${optional_packages[@]}"; do
         pacman -S --noconfirm --needed "${package}"
     fi
 done
+
+if command -v flatpak >/dev/null 2>&1; then
+    flatpak remote-add --if-not-exists --system flathub https://dl.flathub.org/repo/flathub.flatpakrepo || true
+    flatpak update --appstream --system -y || true
+fi
 
 if ! id "${PLASMA_USER}" >/dev/null 2>&1; then
     existing_uid_user="$(getent passwd 1000 | cut -d: -f1 || true)"
@@ -1132,6 +1138,23 @@ printf '%s:%s\n' "${PLASMA_USER}" "${PLASMA_PASSWORD}" | chpasswd
 install -d -m 0750 /etc/sudoers.d
 printf '%s ALL=(ALL) NOPASSWD: ALL\n' "${PLASMA_USER}" > /etc/sudoers.d/90-batocera-plasma
 chmod 0440 /etc/sudoers.d/90-batocera-plasma
+
+install -d -m 0755 /etc/polkit-1/rules.d
+cat > /etc/polkit-1/rules.d/50-batocera-plasma-discover.rules <<'EOS'
+polkit.addRule(function(action, subject) {
+    if (subject.active !== true || !subject.isInGroup("wheel")) {
+        return polkit.Result.NOT_HANDLED;
+    }
+
+    if (action.id.indexOf("org.freedesktop.Flatpak.") === 0 ||
+        action.id.indexOf("org.freedesktop.packagekit.") === 0) {
+        return polkit.Result.YES;
+    }
+
+    return polkit.Result.NOT_HANDLED;
+});
+EOS
+chmod 0644 /etc/polkit-1/rules.d/50-batocera-plasma-discover.rules
 
 install -d -m 0755 /etc/ssh/sshd_config.d
 cat > /etc/ssh/sshd_config.d/90-batocera-plasma.conf <<'EOS'
@@ -1756,7 +1779,23 @@ run_if_available() {
     "$@" &
 }
 
+start_polkit_agent() {
+    local agent
+
+    for agent in \
+        /usr/lib/polkit-kde-authentication-agent-1 \
+        /usr/libexec/polkit-kde-authentication-agent-1 \
+        polkit-kde-authentication-agent-1
+    do
+        if [ -x "${agent}" ] || command -v "${agent}" >/dev/null 2>&1; then
+            "${agent}" &
+            return 0
+        fi
+    done
+}
+
 start_plasma_shell_session() {
+    start_polkit_agent
     run_if_available kded6
     run_if_available kactivitymanagerd
     run_if_available kglobalacceld
@@ -1778,7 +1817,22 @@ if command -v dbus-run-session >/dev/null 2>&1; then
             command -v "$1" >/dev/null 2>&1 || return 0
             "$@" &
         }
+        start_polkit_agent() {
+            local agent
+
+            for agent in \
+                /usr/lib/polkit-kde-authentication-agent-1 \
+                /usr/libexec/polkit-kde-authentication-agent-1 \
+                polkit-kde-authentication-agent-1
+            do
+                if [ -x "${agent}" ] || command -v "${agent}" >/dev/null 2>&1; then
+                    "${agent}" &
+                    return 0
+                fi
+            done
+        }
         trap "jobs -pr | xargs -r kill 2>/dev/null || true" EXIT INT TERM
+        start_polkit_agent
         run_if_available kded6
         run_if_available kactivitymanagerd
         run_if_available kglobalacceld

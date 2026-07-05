@@ -383,7 +383,7 @@ class AetherSX2Generator(Generator):
             ini.write(f)
 
         return Command.Command(
-            array=[str(_AETHERSX2_BIN), "-fullscreen", str(rom)],
+            array=[str(_AETHERSX2_BIN), "-batch", "-fullscreen", str(rom)],
             env={
                 "XDG_CONFIG_HOME": "/userdata/system/.config",
             },

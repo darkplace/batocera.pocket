@@ -28,7 +28,7 @@ CONFIG_FILE = Path("/userdata/system/configs/batocera-mouse-mode.json")
 
 DEVICE_NAME = "batocera mouse mode"
 IGNORE_NAMES = {DEVICE_NAME, "batocera hotkeys", "evmapy"}
-TOGGLE_CODES = {ecodes.BTN_SELECT, ecodes.BTN_START, ecodes.BTN_TR}
+TOGGLE_CODES = {ecodes.BTN_MODE, ecodes.BTN_THUMBL, ecodes.BTN_THUMBR}
 
 DEFAULT_CONFIG = {
     "deadzone": 0.10,
@@ -146,6 +146,7 @@ class SourceDevice:
 class MouseModeDaemon:
     config: dict[str, float | str] = field(default_factory=read_config)
     enabled: bool = False
+    enabled_at: float = 0.0
     running: bool = True
     selected: SourceDevice | None = None
     pressed_codes: set[int] = field(default_factory=set)
@@ -244,6 +245,7 @@ class MouseModeDaemon:
         if self.enabled:
             return
         self.enabled = True
+        self.enabled_at = time.monotonic()
         STATE_FILE.write_text("1\n")
         self.config = read_config()
         self.select_source()
@@ -306,7 +308,7 @@ class MouseModeDaemon:
             if event.code in TOGGLE_CODES:
                 if event.value:
                     self.pressed_codes.add(event.code)
-                    if TOGGLE_CODES.issubset(self.pressed_codes):
+                    if TOGGLE_CODES.issubset(self.pressed_codes) and time.monotonic() - self.enabled_at > 0.5:
                         self.disable()
                         return
                 else:

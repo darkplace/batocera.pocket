@@ -178,7 +178,7 @@ def get_mapping_full_path(device: evdev.InputDevice) -> Path | None:
         fullpath = GSYSTEM_DIR / fname
     return fullpath
 
-def get_mapping(device: evdev.InputDevice) -> dict[int, str]:
+def get_mapping(device: evdev.InputDevice) -> dict[int | tuple[int, ...], str]:
     if device is None:
         fullpath = None
     else:
@@ -206,44 +206,71 @@ def get_mapping(device: evdev.InputDevice) -> dict[int, str]:
 
         return load_mapping(data | userdata)
 
-def load_mapping(data: dict[str, str]) -> dict[int, str]:
+def load_mapping_key(key: str) -> int | tuple[int, ...]:
+    if "+" in key:
+        codes = []
+        for part in key.split("+"):
+            part = part.strip()
+            if part not in ecodes.ecodes:
+                raise Exception(f"invalid key {part!r}")
+            codes.append(ecodes.ecodes[part])
+        return tuple(sorted(set(codes)))
+
+    if key in ecodes.ecodes:
+        return ecodes.ecodes[key]
+
+    raise Exception(f"invalid key {key!r}")
+
+def format_mapping_key(key: int | tuple[int, ...]) -> str:
+    if isinstance(key, tuple):
+        return "+".join(ECODES_NAMES[x] for x in key)
+    return ECODES_NAMES[key]
+
+def load_mapping(data: dict[str, str]) -> dict[int | tuple[int, ...], str]:
     try:
-        mapping: dict[int, str] = {}
+        mapping: dict[int | tuple[int, ...], str] = {}
         for key, action in data.items():
-            if key in ecodes.ecodes:
-                mapping[ecodes.ecodes[key]] = action
-            else:
-                raise Exception(f"invalid key {action!r}")
+            mapping[load_mapping_key(key)] = action
         return mapping
     except Exception as e:
         print(f"fail to load mapping : {e}")
         return {}
 
-def get_mapping_associations(mapping: Mapping[int, str], caps: evdev._CapabilitiesWithAbsInfo):
+def get_mapping_associations(mapping: Mapping[int | tuple[int, ...], str], caps: evdev._CapabilitiesWithAbsInfo):
     capskeys = set(caps[ecodes.EV_KEY])
-    return {key: value for key, value in mapping.items() if key in capskeys}
+    associations = {}
+    for key, value in mapping.items():
+        if isinstance(key, tuple):
+            if all(code in capskeys for code in key):
+                associations[key] = value
+        elif key in capskeys:
+            associations[key] = value
+    return associations
 
 def print_mapping(
-    mapping: Mapping[int, str], associations: Mapping[int, str], context: HotkeysContext | None = None
+    mapping: Mapping[int | tuple[int, ...], str],
+    associations: Mapping[int | tuple[int, ...], str],
+    context: HotkeysContext | None = None
 ) -> None:
     for k in mapping:
         if k in associations:
+            key_name = format_mapping_key(k)
             if context is None:
-                print(f"  {ECODES_NAMES[k]:-<15}-> {associations[k]}")
+                print(f"  {key_name:-<31}-> {associations[k]}")
             else:
                 if associations[k] in context["keys"]:
                     key_codes = context["keys"][associations[k]]
                     if isinstance(key_codes, list):
                         key_names = [ECODES_NAMES[x] for x in key_codes]
                         print(
-                            f"  {ECODES_NAMES[k]:-<15}-> {associations[k]:-<15}-> {key_names}"
+                            f"  {key_name:-<31}-> {associations[k]:-<15}-> {key_names}"
                         )
                     elif isinstance(key_codes, str):
-                        print(f"  {ECODES_NAMES[k]:-<15}-> {associations[k]:-<15}-> {key_codes}")
+                        print(f"  {key_name:-<31}-> {associations[k]:-<15}-> {key_codes}")
                     else:
-                        print(f"  {ECODES_NAMES[k]:-<15}-> {associations[k]:-<15}-> {ECODES_NAMES[key_codes]}")
+                        print(f"  {key_name:-<31}-> {associations[k]:-<15}-> {ECODES_NAMES[key_codes]}")
                 else:
-                    print(f"  {ECODES_NAMES[k]:-<15}-> {associations[k]:15}")
+                    print(f"  {key_name:-<31}-> {associations[k]:15}")
 
 
 def send_keys(target: evdev.UInput, keys: int | list[int] | str, begin: bool) -> None:
@@ -604,12 +631,14 @@ class Daemon:
     running: bool = field(init=False, default=False)
     input_devices: dict[str, evdev.InputDevice] = field(init=False, default_factory=dict)
     input_devices_by_fd: dict[int, evdev.InputDevice] = field(init=False, default_factory=dict)
-    mappings_by_fd: dict[int, dict[int, str]] = field(init=False, default_factory=dict)
+    mappings_by_fd: dict[int, dict[int | tuple[int, ...], str]] = field(init=False, default_factory=dict)
     udev_context: pyudev.Context = field(init=False)
     monitor: pyudev.Monitor = field(init=False)
     poll: select.poll = field(init=False)
     target: evdev.UInput = field(init=False)
     require_reconfig: bool = field(init=False, default=False)
+    pressed_by_fd: dict[int, set[int]] = field(init=False, default_factory=dict)
+    active_chords_by_fd: dict[int, set[tuple[int, ...]]] = field(init=False, default_factory=dict)
 
     def __post_init__(self) -> None:
         self.udev_context = pyudev.Context()
@@ -648,6 +677,8 @@ class Daemon:
                             self.input_devices[device.device_node] = input_device
                             self.input_devices_by_fd[input_device.fileno()] = input_device
                             self.mappings_by_fd[input_device.fileno()] = mapping
+                            self.pressed_by_fd[input_device.fileno()] = set()
+                            self.active_chords_by_fd[input_device.fileno()] = set()
                             self.poll.register(input_device, select.POLLIN)
             elif action == "remove":
                 input_device = self.input_devices.get(device.device_node)
@@ -658,6 +689,8 @@ class Daemon:
 
                     self.poll.unregister(input_device)
                     del self.mappings_by_fd[input_device.fileno()]
+                    del self.pressed_by_fd[input_device.fileno()]
+                    del self.active_chords_by_fd[input_device.fileno()]
                     del self.input_devices_by_fd[input_device.fileno()]
                     del self.input_devices[device.device_node]
 
@@ -747,12 +780,35 @@ class Daemon:
                         if (
                             event is not None and
                             event.type == ecodes.EV_KEY and
-                            event.code in self.mappings_by_fd[fd]
+                            event.value in (0, 1)
                         ):
+                            mappings = self.mappings_by_fd[fd]
+                            pressed = self.pressed_by_fd[fd]
+                            active_chords = self.active_chords_by_fd[fd]
+
                             if event.value == 1:
-                                self.__handle_event(event, self.mappings_by_fd[fd][event.code], True)
-                            elif event.value == 0:
-                                self.__handle_event(event, self.mappings_by_fd[fd][event.code], False)
+                                pressed.add(event.code)
+                            else:
+                                pressed.discard(event.code)
+
+                            if event.code in mappings:
+                                self.__handle_event(event, mappings[event.code], event.value == 1)
+
+                            for mapping_key, action in mappings.items():
+                                if not isinstance(mapping_key, tuple):
+                                    continue
+
+                                if all(code in pressed for code in mapping_key):
+                                    if mapping_key not in active_chords:
+                                        active_chords.add(mapping_key)
+                                        if self.context is not None and isinstance(self.context["keys"].get(action), str):
+                                            self.__handle_event(event, action, False)
+                                        else:
+                                            self.__handle_event(event, action, True)
+                                elif mapping_key in active_chords:
+                                    active_chords.remove(mapping_key)
+                                    if self.context is not None and not isinstance(self.context["keys"].get(action), str):
+                                        self.__handle_event(event, action, False)
                 #except (OSError, KeyError, FileNotFoundError) as e:
                 except (Exception) as e:
                     if fd == self.monitor.fileno():
@@ -767,6 +823,8 @@ class Daemon:
                                 print(e)
                                 print(f"error on device {input_device.name} ({input_device.path}), closing.")
                             del self.mappings_by_fd[fd]
+                            del self.pressed_by_fd[fd]
+                            del self.active_chords_by_fd[fd]
                             del self.input_devices_by_fd[fd]
                             del self.input_devices[input_device.path]
                             try:

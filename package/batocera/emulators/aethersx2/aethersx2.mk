@@ -1,48 +1,68 @@
 ################################################################################
 #
-# aethersx2 (AppImage)
+# aethersx2
 #
 ################################################################################
 
-AETHERSX2_VERSION = 1.5
-AETHERSX2_LICENSE =  Proprietary
-AETHERSX2_LICENSE_FILES = LICENSE
+AETHERSX2_VERSION = 1.0.0
+AETHERSX2_SITE = https://github.com/ROCKNIX/packages/raw/refs/heads/main
+AETHERSX2_SOURCE = aethersx2.tar.gz
+AETHERSX2_LICENSE = Proprietary
 AETHERSX2_STRIP = NO
 AETHERSX2_TOOLCHAIN = manual
 
-# Only supported on aarch64
+AETHERSX2_DEPENDENCIES = qt6base sdl2 libaio libcurl libpcap libpng xz zlib
 
-AETHERSX2_SITE = https://github.com/droole36/testbench/releases/download/test
-AETHERSX2_SOURCE = AetherSX2.AppImage
-
-
-################################################################################
-# Extract
-################################################################################
-
-define AETHERSX2_EXTRACT_CMDS
-	cp $(DL_DIR)/$(AETHERSX2_DL_SUBDIR)/$(AETHERSX2_SOURCE) \
-		$(@D)/aethersx2.AppImage
+define AETHERSX2_CONFIGURE_CMDS
+	true
 endef
 
-################################################################################
-# Install
-################################################################################
+define AETHERSX2_BUILD_CMDS
+	true
+endef
 
 define AETHERSX2_INSTALL_TARGET_CMDS
-	# Install AppImage to non-ELF-scanned location
 	mkdir -p $(TARGET_DIR)/usr/share/aethersx2
-	cp $(@D)/aethersx2.AppImage \
-		$(TARGET_DIR)/usr/share/aethersx2/aethersx2.AppImage
+	cp -pr $(@D)/usr/share/* $(TARGET_DIR)/usr/share/aethersx2/
+	chmod 0755 $(TARGET_DIR)/usr/share/aethersx2/aethersx2
 
-	# Wrapper (exec-time chmod avoids fix-rpath)
+	mkdir -p $(TARGET_DIR)/usr/share/aethersx2/lib
+	if [ -e "$(TARGET_DIR)/usr/lib/libpcap.so.1" ]; then \
+		ln -snf /usr/lib/libpcap.so.1 \
+			$(TARGET_DIR)/usr/share/aethersx2/lib/libpcap.so.0.8; \
+	else \
+		libpcap="$$(find $(TARGET_DIR)/usr/lib -name 'libpcap.so.1*' | head -n 1)"; \
+		if [ -n "$${libpcap}" ]; then \
+			ln -snf "$${libpcap#$(TARGET_DIR)}" \
+				$(TARGET_DIR)/usr/share/aethersx2/lib/libpcap.so.0.8; \
+		fi; \
+	fi
+	if [ ! -e "$(TARGET_DIR)/usr/lib/libGLX.so.0" ] && [ -e "$(TARGET_DIR)/usr/lib/libmali.so.1" ]; then \
+		ln -snf /usr/lib/libmali.so.1 \
+			$(TARGET_DIR)/usr/share/aethersx2/lib/libGLX.so.0; \
+	fi
+
 	mkdir -p $(TARGET_DIR)/usr/bin
 	printf '%s\n' \
 		'#!/bin/sh' \
-		'chmod +x /usr/share/aethersx2/aethersx2.AppImage 2>/dev/null' \
-		'exec /usr/share/aethersx2/aethersx2.AppImage "$$@"' \
+		'AETHERSX2_DIR=/usr/share/aethersx2' \
+		'export QT_PLUGIN_PATH="$${QT_PLUGIN_PATH:-/usr/lib/qt6/plugins:/usr/lib64/qt6/plugins:/usr/lib/qt/plugins}"' \
+		'export QT_QPA_PLATFORM_PLUGIN_PATH="$${QT_QPA_PLATFORM_PLUGIN_PATH:-/usr/lib/qt6/plugins/platforms:/usr/lib64/qt6/plugins/platforms:/usr/lib/qt/plugins/platforms}"' \
+		'export QT_QPA_PLATFORM_PLUGINS_PATH="$${QT_QPA_PLATFORM_PLUGINS_PATH:-$${QT_QPA_PLATFORM_PLUGIN_PATH}}"' \
+		'export QT_QPA_PLATFORM="$${QT_QPA_PLATFORM:-wayland}"' \
+		'export LD_LIBRARY_PATH="$${AETHERSX2_DIR}/lib$${LD_LIBRARY_PATH:+:$${LD_LIBRARY_PATH}}"' \
+		'exec "$${AETHERSX2_DIR}/aethersx2" "$$@"' \
 		> $(TARGET_DIR)/usr/bin/aethersx2
 	chmod 0755 $(TARGET_DIR)/usr/bin/aethersx2
+
+	mkdir -p $(TARGET_DIR)/usr/share/evmapy
+	$(INSTALL) -D -m 0644 $(AETHERSX2_PKGDIR)/ps2.aethersx2.keys \
+		$(TARGET_DIR)/usr/share/evmapy/ps2.aethersx2.keys
+
+	mkdir -p $(TARGET_DIR)/usr/share/batocera/datainit/bios/ps2
+	$(HOST_DIR)/bin/curl -L \
+		https://github.com/PCSX2/pcsx2_patches/releases/download/latest/patches.zip -o \
+		$(TARGET_DIR)/usr/share/batocera/datainit/bios/ps2/patches.zip
 endef
 
 $(eval $(generic-package))

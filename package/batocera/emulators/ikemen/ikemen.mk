@@ -3,14 +3,15 @@
 # ikemen
 #
 ################################################################################
-# Version: Commits on Aug 1, 2024
+# Version: Commit on Jul 1, 2026
 IKEMEN_VERSION = 799f55fbfb1f201de3bbbe52f23f8057c2a98aa86
 IKEMEN_SITE = https://github.com/ikemen-engine/Ikemen-GO
 IKEMEN_LICENSE = MIT
-IKEMEN_DEPENDENCIES = libgtk3 mesa3d openal libglfw
+IKEMEN_DEPENDENCIES = host-pkgconf ffmpeg libgtk3 libxmp mesa3d sdl2
 
 IKEMEN_SITE_METHOD = git
 IKEMEN_GIT_SUBMODULES = YES
+IKEMEN_GO_ENV = GOPROXY=https://proxy.golang.org,direct
 
 HOST_GO_COMMON_ENV = GOFLAGS=-mod=mod \
 		     GO111MODULE=on \
@@ -29,7 +30,7 @@ endef
 
 define IKEMEN_INSTALL_TARGET_CMDS
 	mkdir -p $(TARGET_DIR)/usr/bin
-	$(INSTALL) -D $(@D)/bin/Ikemen_GO_Linux $(TARGET_DIR)/usr/bin/ikemen
+	$(INSTALL) -D $(@D)/Ikemen_GO_Linux $(TARGET_DIR)/usr/bin/ikemen
 	# evmapy
 	mkdir -p $(TARGET_DIR)/usr/share/evmapy
 	cp $(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/emulators/ikemen/ikemen.keys \

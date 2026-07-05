@@ -1,5 +1,5 @@
 #!/bin/bash
 
 batocera-mouse show
-aethersx2
-batocera-mouse hide
+trap 'batocera-mouse hide' EXIT
+aethersx2 -bigpicture -fullscreen "$@"

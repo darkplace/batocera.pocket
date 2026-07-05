@@ -1,4 +1,10 @@
 # Retroid Pocket Mini default values
 
+# default drm rotation
+display.rotate.DSI=1
+
+# Wayland output rotation (Sway/LabWC)
+display.rotate.DSI-1=1
+
 # default suspend on handled boards
 system.suspendmode=suspend

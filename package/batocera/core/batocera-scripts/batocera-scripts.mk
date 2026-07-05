@@ -40,6 +40,14 @@ ifeq ($(BR2_PACKAGE_BATOCERA_TARGET_SM8250)$(BR2_PACKAGE_BATOCERA_TARGET_SM8X50)
   BATOCERA_SCRIPTS_POST_INSTALL_TARGET_HOOKS += BATOCERA_SCRIPTS_INSTALL_QCOM
 endif
 
+ifeq ($(BR2_PACKAGE_HEROIC),y)
+  BATOCERA_SCRIPTS_POST_INSTALL_TARGET_HOOKS += BATOCERA_SCRIPTS_INSTALL_HEROIC_UPDATE_HOOK
+endif
+
+ifneq ($(filter y,$(BR2_PACKAGE_LUTRIS) $(BR2_PACKAGE_LUTRIS_APPIMAGE)),)
+  BATOCERA_SCRIPTS_POST_INSTALL_TARGET_HOOKS += BATOCERA_SCRIPTS_INSTALL_LUTRIS_UPDATE_HOOK
+endif
+
 define BATOCERA_SCRIPTS_INSTALL_TARGET_CMDS
     mkdir -p $(TARGET_DIR)/usr/lib/python$(PYTHON3_VERSION_MAJOR)
     mkdir -p $(TARGET_DIR)/usr/bin
@@ -81,8 +89,6 @@ define BATOCERA_SCRIPTS_INSTALL_TARGET_CMDS
     install -m 0755 $(BATOCERA_SCRIPTS_PATH)/scripts/batocera-switch-screen-checker-delayed     $(TARGET_DIR)/usr/bin/
     install -m 0755 $(BATOCERA_SCRIPTS_PATH)/scripts/batocera-ikemen                    $(TARGET_DIR)/usr/bin/
     install -m 0755 $(BATOCERA_SCRIPTS_PATH)/scripts/batocera-streaming                 $(TARGET_DIR)/usr/bin/
-    install -m 0755 $(BATOCERA_SCRIPTS_PATH)/scripts/batocera-heroic-update             $(TARGET_DIR)/usr/bin/
-    install -m 0755 $(BATOCERA_SCRIPTS_PATH)/scripts/batocera-lutris-update             $(TARGET_DIR)/usr/bin/
     install -m 0755 $(BATOCERA_SCRIPTS_PATH)/scripts/batocera-n64recomp-update          $(TARGET_DIR)/usr/bin/
     install -m 0755 $(BATOCERA_SCRIPTS_PATH)/scripts/batocera-pcgamingwiki-update       $(TARGET_DIR)/usr/bin/
     install -m 0755 $(BATOCERA_SCRIPTS_PATH)/scripts/batocera-m3u-builder               $(TARGET_DIR)/usr/bin/
@@ -90,8 +96,6 @@ define BATOCERA_SCRIPTS_INSTALL_TARGET_CMDS
     install -m 0755 $(BATOCERA_SCRIPTS_PATH)/scripts/batocera-win9x-tool                $(TARGET_DIR)/usr/bin/
     install -m 0644 $(BATOCERA_SCRIPTS_PATH)/rules/80-switch-screen.rules               $(TARGET_DIR)/etc/udev/rules.d
     mkdir -p $(TARGET_DIR)/usr/share/emulationstation/hooks
-    ln -sf /usr/bin/batocera-heroic-update $(TARGET_DIR)/usr/share/emulationstation/hooks/preupdate-gamelists-heroic
-    ln -sf /usr/bin/batocera-lutris-update $(TARGET_DIR)/usr/share/emulationstation/hooks/preupdate-gamelists-lutris
     ln -sf /usr/bin/batocera-n64recomp-update $(TARGET_DIR)/usr/share/emulationstation/hooks/preupdate-gamelists-n64recomp
     ln -sf /usr/bin/batocera-pcgamingwiki-update $(TARGET_DIR)/usr/share/emulationstation/hooks/preupdate-gamelists-pcgamingwiki
     mkdir -p $(TARGET_DIR)/etc/udev/rules.d
@@ -123,6 +127,18 @@ endef
 
 define BATOCERA_SCRIPTS_INSTALL_QCOM
     install -m 0755 $(BATOCERA_SCRIPTS_PATH)/scripts/qcom-fan                           $(TARGET_DIR)/usr/bin/
+endef
+
+define BATOCERA_SCRIPTS_INSTALL_HEROIC_UPDATE_HOOK
+    install -m 0755 $(BATOCERA_SCRIPTS_PATH)/scripts/batocera-heroic-update             $(TARGET_DIR)/usr/bin/
+    mkdir -p $(TARGET_DIR)/usr/share/emulationstation/hooks
+    ln -sf /usr/bin/batocera-heroic-update $(TARGET_DIR)/usr/share/emulationstation/hooks/preupdate-gamelists-heroic
+endef
+
+define BATOCERA_SCRIPTS_INSTALL_LUTRIS_UPDATE_HOOK
+    install -m 0755 $(BATOCERA_SCRIPTS_PATH)/scripts/batocera-lutris-update             $(TARGET_DIR)/usr/bin/
+    mkdir -p $(TARGET_DIR)/usr/share/emulationstation/hooks
+    ln -sf /usr/bin/batocera-lutris-update $(TARGET_DIR)/usr/share/emulationstation/hooks/preupdate-gamelists-lutris
 endef
 
 define BATOCERA_SCRIPTS_BUILD_NIGHTMODE

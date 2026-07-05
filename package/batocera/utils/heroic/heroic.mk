@@ -39,6 +39,10 @@ define HEROIC_INSTALL_RUNTIME
 	cp -a $(@D)/heroic-arm64/. \
 		$(TARGET_DIR)/usr/share/heroic/heroic-arm64/
 	chmod 0755 $(TARGET_DIR)/usr/share/heroic/heroic-arm64/Heroic-$(HEROIC_VERSION)-linux-arm64/heroic
+	# Heroic's bundled Wine Manager uses a 10s Axios timeout; GitHub release
+	# redirects on handheld Wi-Fi can exceed that before archive headers arrive.
+	find $(TARGET_DIR)/usr/share/heroic/heroic-arm64 -name app.asar -type f \
+		-exec sed -i 's/timeout:10\*1e3/timeout:60*1e3/g' {} \;
 endef
 else
 define HEROIC_INSTALL_RUNTIME
@@ -73,8 +77,15 @@ define HEROIC_INSTALL_TARGET_CMDS
 		'export APPIMAGE_EXTRACT_AND_RUN="$${APPIMAGE_EXTRACT_AND_RUN:-1}"' \
 		'export APPIMAGE_ALLOW_ROOT="$${APPIMAGE_ALLOW_ROOT:-1}"' \
 		'export ELECTRON_OZONE_PLATFORM_HINT="$${ELECTRON_OZONE_PLATFORM_HINT:-wayland}"' \
+		'case " $${NODE_OPTIONS:-} " in *" --dns-result-order="*) ;; *) export NODE_OPTIONS="$${NODE_OPTIONS:+$${NODE_OPTIONS} }--dns-result-order=ipv4first";; esac' \
+		'export RES_OPTIONS="$${RES_OPTIONS:-attempts:1 timeout:2}"' \
 		'export BATOCERA_HEROIC_PATCH_LEGENDARY_PERMS="$${BATOCERA_HEROIC_PATCH_LEGENDARY_PERMS:-1}"' \
 		'export USE_FAKE_EPIC_EXE="$${BATOCERA_HEROIC_USE_FAKE_EPIC_EXE:-0}"' \
+		'export SDL_JOYSTICK_HIDAPI="$${SDL_JOYSTICK_HIDAPI:-0}"' \
+		'export SDL_JOYSTICK_HIDAPI_XBOX="$${SDL_JOYSTICK_HIDAPI_XBOX:-0}"' \
+		'export SDL_JOYSTICK_RAWINPUT="$${SDL_JOYSTICK_RAWINPUT:-0}"' \
+		'export SDL_JOYSTICK_DIRECTINPUT="$${SDL_JOYSTICK_DIRECTINPUT:-0}"' \
+		'export SDL_DIRECTINPUT_ENABLED="$${SDL_DIRECTINPUT_ENABLED:-0}"' \
 		'export HOME="$${home}"' \
 		'export XDG_CONFIG_HOME="$${HOME}/.config"' \
 		'export XDG_DATA_HOME="$${HOME}/.local/share"' \
@@ -135,36 +146,6 @@ define HEROIC_INSTALL_TARGET_CMDS
 		$(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/utils/heroic/sitecustomize.py \
 		$(TARGET_DIR)/usr/share/heroic/python-overrides/sitecustomize.py
 
-	mkdir -p $(TARGET_DIR)/usr/share/batocera/datainit/roms/heroic
-	mkdir -p $(TARGET_DIR)/usr/share/batocera/datainit/roms/heroic/images
-	printf '%s\n' \
-		'#!/bin/bash' \
-		'set -euo pipefail' \
-		'batocera-mouse show' \
-		"trap 'batocera-mouse hide' EXIT" \
-		'extra_args=()' \
-		'if [[ -n "$${BATOCERA_HEROIC_EXTRA_ARGS:-}" ]]; then read -r -a extra_args <<< "$${BATOCERA_HEROIC_EXTRA_ARGS}"; fi' \
-		'if [[ "$${BATOCERA_HEROIC_MODE:-regular}" == "console" ]]; then extra_args=(--console --fullscreen "$${extra_args[@]}"); fi' \
-		'export HOME="/userdata/saves/heroic"' \
-		'export XDG_CONFIG_HOME="$${HOME}/.config"' \
-		'export XDG_DATA_HOME="$${HOME}/.local/share"' \
-		'export XDG_CACHE_HOME="$${HOME}/.cache"' \
-		'mkdir -p "$${XDG_CONFIG_HOME}" "$${XDG_DATA_HOME}" "$${XDG_CACHE_HOME}"' \
-		'exec heroic "$${extra_args[@]}"' \
-		> "$(TARGET_DIR)/usr/share/batocera/datainit/roms/heroic/Heroic Launcher.sh"
-	chmod 0755 "$(TARGET_DIR)/usr/share/batocera/datainit/roms/heroic/Heroic Launcher.sh"
-	printf '%s\n' \
-		'<?xml version="1.0"?>' \
-		'<gameList>' \
-		'  <game>' \
-		'    <path>./Heroic Launcher.sh</path>' \
-		'    <name>Heroic Game Launcher</name>' \
-		'    <image>./images/heroic.png</image>' \
-		'  </game>' \
-		'</gameList>' \
-		> "$(TARGET_DIR)/usr/share/batocera/datainit/roms/heroic/gamelist.xml"
-	ln -snf /usr/share/icons/batocera/heroic.png \
-		$(TARGET_DIR)/usr/share/batocera/datainit/roms/heroic/images/heroic.png
 	for d in lib usr/lib usr/lib64; do \
 		if [ -e "$(TARGET_DIR)/$$d/libopenal.so.1" ] && [ ! -e "$(TARGET_DIR)/$$d/libal.so.1" ]; then \
 			ln -sf libopenal.so.1 "$(TARGET_DIR)/$$d/libal.so.1"; \
