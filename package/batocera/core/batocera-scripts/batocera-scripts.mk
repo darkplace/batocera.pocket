@@ -6,7 +6,7 @@
 
 BATOCERA_SCRIPTS_VERSION = 4.1
 BATOCERA_SCRIPTS_LICENSE = GPL
-BATOCERA_SCRIPTS_DEPENDENCIES = pciutils
+BATOCERA_SCRIPTS_DEPENDENCIES = pciutils python-evdev python-pyudev
 BATOCERA_SCRIPTS_SOURCE=
 
 BATOCERA_SCRIPTS_PATH = $(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/core/batocera-scripts
@@ -68,6 +68,7 @@ define BATOCERA_SCRIPTS_INSTALL_TARGET_CMDS
     install -m 0755 $(BATOCERA_SCRIPTS_PATH)/scripts/batocera-cores                     $(TARGET_DIR)/usr/bin/
     install -m 0755 $(BATOCERA_SCRIPTS_PATH)/scripts/batocera-wifi                      $(TARGET_DIR)/usr/bin/
     install -m 0755 $(BATOCERA_SCRIPTS_PATH)/scripts/batocera-brightness                $(TARGET_DIR)/usr/bin/
+    install -m 0755 $(BATOCERA_SCRIPTS_PATH)/scripts/batocera-mouse-mode                $(TARGET_DIR)/usr/bin/
     install -m 0755 $(BATOCERA_SCRIPTS_PATH)/scripts/batocera-es-swissknife             $(TARGET_DIR)/usr/bin/
     install -m 0755 $(BATOCERA_SCRIPTS_PATH)/scripts/batocera-store                     $(TARGET_DIR)/usr/bin/
     install -m 0755 $(BATOCERA_SCRIPTS_PATH)/scripts/batocera-autologin                 $(TARGET_DIR)/usr/bin/

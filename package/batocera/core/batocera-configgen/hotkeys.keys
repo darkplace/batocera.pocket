@@ -12,6 +12,12 @@
             "target": "batocera-es-swissknife --emukill 0.5",
 	    "description": "Force close emulator"
         },
+        {
+            "trigger": ["pagedown", "select", "start"],
+            "type": "exec",
+            "target": "/usr/bin/batocera-mouse-mode toggle",
+	    "description": "Toggle mouse mode"
+        },
 	{
             "trigger": ["hotkey", "a"],
             "type": "exec",

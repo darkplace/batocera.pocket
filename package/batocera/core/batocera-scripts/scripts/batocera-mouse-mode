@@ -1,0 +1,451 @@
+#!/usr/bin/env python3
+
+from __future__ import annotations
+
+import argparse
+import errno
+import json
+import math
+import os
+import select
+import signal
+import socket
+import subprocess
+import sys
+import time
+from dataclasses import dataclass, field
+from pathlib import Path
+
+import evdev
+import pyudev
+from evdev import ecodes
+
+STATE_FILE = Path("/var/run/batocera-mouse-mode.enabled")
+PID_FILE = Path("/var/run/batocera-mouse-mode.pid")
+SOCKET_FILE = Path("/var/run/batocera-mouse-mode.cmd")
+LOG_FILE = Path("/var/log/batocera-mouse-mode.log")
+CONFIG_FILE = Path("/userdata/system/configs/batocera-mouse-mode.json")
+
+DEVICE_NAME = "batocera mouse mode"
+IGNORE_NAMES = {DEVICE_NAME, "batocera hotkeys", "evmapy"}
+TOGGLE_CODES = {ecodes.BTN_SELECT, ecodes.BTN_START, ecodes.BTN_TR}
+
+DEFAULT_CONFIG = {
+    "deadzone": 0.10,
+    "speed": 18.0,
+    "interval": 0.008,
+    "prefer": "",
+}
+
+
+def log(message: str) -> None:
+    try:
+        with LOG_FILE.open("a") as fd:
+            fd.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {message}\n")
+    except OSError:
+        pass
+
+
+def run_quiet(args: list[str], timeout: float = 1.5) -> None:
+    try:
+        subprocess.run(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=timeout, check=False)
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass
+
+
+def flash(message: str) -> None:
+    env = os.environ.copy()
+    env.setdefault("LANG", "en_US")
+    env.setdefault("HOME", "/userdata/system")
+    env.setdefault("XAUTHORITY", "/var/lib/.Xauthority")
+
+    if "DISPLAY" not in env:
+        try:
+            display = subprocess.check_output(["getLocalXDisplay"], text=True, timeout=0.5).strip()
+            if display:
+                env["DISPLAY"] = display
+        except (FileNotFoundError, subprocess.SubprocessError):
+            env.setdefault("DISPLAY", ":0")
+
+    try:
+        subprocess.Popen(
+            ["/usr/bin/batocera-flash-screen", "1", "#ffffff", message, "20"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            env=env,
+        )
+    except OSError:
+        pass
+
+
+def read_config() -> dict[str, float | str]:
+    config = dict(DEFAULT_CONFIG)
+    try:
+        data = json.loads(CONFIG_FILE.read_text())
+    except (OSError, json.JSONDecodeError):
+        return config
+
+    for key in DEFAULT_CONFIG:
+        if key in data:
+            config[key] = data[key]
+    return config
+
+
+def normalize_abs(value: int, info: evdev.AbsInfo, deadzone: float) -> float:
+    center = (info.min + info.max) / 2.0
+    half = max(1.0, (info.max - info.min) / 2.0)
+    normalized = (value - center) / half
+    normalized = max(-1.0, min(1.0, normalized))
+    if abs(normalized) < deadzone:
+        return 0.0
+    return normalized
+
+
+def curve(value: float, speed: float) -> int:
+    if value == 0:
+        return 0
+
+    scaled = math.copysign((abs(value) ** 1.7) * speed, value)
+    if 0 < scaled < 1:
+        return 1
+    if -1 < scaled < 0:
+        return -1
+    return int(scaled)
+
+
+@dataclass(slots=True)
+class SourceDevice:
+    device: evdev.InputDevice
+    axis_x: int
+    axis_y: int
+    abs_x: evdev.AbsInfo
+    abs_y: evdev.AbsInfo
+    x: float = 0.0
+    y: float = 0.0
+    grabbed: bool = False
+
+    @property
+    def fileno(self) -> int:
+        return self.device.fileno()
+
+    def grab(self) -> None:
+        if not self.grabbed:
+            self.device.grab()
+            self.grabbed = True
+
+    def ungrab(self) -> None:
+        if self.grabbed:
+            try:
+                self.device.ungrab()
+            except OSError:
+                pass
+            self.grabbed = False
+
+
+@dataclass(slots=True)
+class MouseModeDaemon:
+    config: dict[str, float | str] = field(default_factory=read_config)
+    enabled: bool = False
+    running: bool = True
+    selected: SourceDevice | None = None
+    pressed_codes: set[int] = field(default_factory=set)
+    udev_context: pyudev.Context = field(init=False)
+    monitor: pyudev.Monitor = field(init=False)
+    poll: select.poll = field(init=False)
+    sources_by_fd: dict[int, SourceDevice] = field(init=False, default_factory=dict)
+    sources_by_path: dict[str, SourceDevice] = field(init=False, default_factory=dict)
+    target: evdev.UInput = field(init=False)
+    sock: socket.socket = field(init=False)
+
+    def __post_init__(self) -> None:
+        self.udev_context = pyudev.Context()
+        self.monitor = pyudev.Monitor.from_netlink(self.udev_context)
+        self.monitor.filter_by(subsystem="input")
+        self.poll = select.poll()
+        self.target = evdev.UInput(
+            name=DEVICE_NAME,
+            events={
+                ecodes.EV_REL: [ecodes.REL_X, ecodes.REL_Y],
+                ecodes.EV_KEY: [ecodes.BTN_LEFT, ecodes.BTN_RIGHT],
+            },
+        )
+
+    def write_pid(self) -> None:
+        PID_FILE.write_text(str(os.getpid()))
+
+    def write_socket(self) -> None:
+        try:
+            SOCKET_FILE.unlink()
+        except FileNotFoundError:
+            pass
+
+        self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+        self.sock.bind(str(SOCKET_FILE))
+        os.chmod(SOCKET_FILE, 0o666)
+        self.poll.register(self.sock, select.POLLIN)
+
+    def add_device(self, node: str) -> None:
+        try:
+            dev = evdev.InputDevice(node)
+            if dev.name in IGNORE_NAMES:
+                dev.close()
+                return
+
+            caps = dev.capabilities(absinfo=True)
+            keys = set(caps.get(ecodes.EV_KEY, []))
+            abs_caps = dict(caps.get(ecodes.EV_ABS, []))
+            if ecodes.BTN_SOUTH not in keys or ecodes.BTN_EAST not in keys:
+                dev.close()
+                return
+            if ecodes.ABS_X not in abs_caps or ecodes.ABS_Y not in abs_caps:
+                dev.close()
+                return
+
+            source = SourceDevice(dev, ecodes.ABS_X, ecodes.ABS_Y, abs_caps[ecodes.ABS_X], abs_caps[ecodes.ABS_Y])
+            self.sources_by_fd[source.fileno] = source
+            self.sources_by_path[node] = source
+            self.poll.register(dev, select.POLLIN)
+            log(f"added {node} {dev.name}")
+
+            if self.enabled and self.selected is None:
+                self.select_source()
+        except Exception as exc:
+            log(f"add failed {node}: {exc}")
+
+    def remove_device(self, node: str) -> None:
+        source = self.sources_by_path.pop(node, None)
+        if source is None:
+            return
+        if self.selected is source:
+            self.disable(show_message=False)
+        self.sources_by_fd.pop(source.fileno, None)
+        try:
+            self.poll.unregister(source.device)
+        except Exception:
+            pass
+        try:
+            source.ungrab()
+            source.device.close()
+        except Exception:
+            pass
+        log(f"removed {node}")
+
+    def select_source(self) -> None:
+        prefer = str(self.config.get("prefer", ""))
+        sources = list(self.sources_by_fd.values())
+        if prefer:
+            sources.sort(key=lambda source: 0 if prefer.lower() in source.device.name.lower() else 1)
+        self.selected = sources[0] if sources else None
+        if self.enabled and self.selected is not None:
+            self.selected.grab()
+            log(f"selected {self.selected.device.path} {self.selected.device.name}")
+
+    def enable(self) -> None:
+        if self.enabled:
+            return
+        self.enabled = True
+        STATE_FILE.write_text("1\n")
+        self.config = read_config()
+        self.select_source()
+        run_quiet(["batocera-mouse", "show"])
+        flash("Mouse mode enabled")
+        log("enabled")
+
+    def disable(self, show_message: bool = True) -> None:
+        if not self.enabled:
+            return
+        self.enabled = False
+        try:
+            STATE_FILE.unlink()
+        except FileNotFoundError:
+            pass
+        if self.selected is not None:
+            self.selected.ungrab()
+        self.selected = None
+        self.pressed_codes.clear()
+        self.release_buttons()
+        run_quiet(["batocera-mouse", "hide"])
+        if show_message:
+            flash("Mouse mode disabled")
+        log("disabled")
+
+    def release_buttons(self) -> None:
+        for button in (ecodes.BTN_LEFT, ecodes.BTN_RIGHT):
+            self.target.write(ecodes.EV_KEY, button, 0)
+        self.target.syn()
+
+    def toggle(self) -> None:
+        if self.enabled:
+            self.disable()
+        else:
+            self.enable()
+
+    def handle_command(self, command: str) -> None:
+        command = command.strip()
+        if command == "toggle":
+            self.toggle()
+        elif command == "enable":
+            self.enable()
+        elif command == "disable":
+            self.disable()
+        elif command == "stop":
+            self.disable(show_message=False)
+            self.running = False
+
+    def handle_event(self, source: SourceDevice, event: evdev.InputEvent) -> None:
+        if not self.enabled or source is not self.selected:
+            return
+
+        deadzone = float(self.config.get("deadzone", DEFAULT_CONFIG["deadzone"]))
+        if event.type == ecodes.EV_ABS:
+            if event.code == source.axis_x:
+                source.x = normalize_abs(event.value, source.abs_x, deadzone)
+            elif event.code == source.axis_y:
+                source.y = normalize_abs(event.value, source.abs_y, deadzone)
+        elif event.type == ecodes.EV_KEY:
+            if event.code in TOGGLE_CODES:
+                if event.value:
+                    self.pressed_codes.add(event.code)
+                    if TOGGLE_CODES.issubset(self.pressed_codes):
+                        self.disable()
+                        return
+                else:
+                    self.pressed_codes.discard(event.code)
+                return
+
+            if event.code == ecodes.BTN_SOUTH:
+                self.target.write(ecodes.EV_KEY, ecodes.BTN_LEFT, 1 if event.value else 0)
+                self.target.syn()
+            elif event.code == ecodes.BTN_EAST:
+                self.target.write(ecodes.EV_KEY, ecodes.BTN_RIGHT, 1 if event.value else 0)
+                self.target.syn()
+
+    def emit_motion(self) -> None:
+        if not self.enabled or self.selected is None:
+            return
+
+        speed = float(self.config.get("speed", DEFAULT_CONFIG["speed"]))
+        dx = curve(self.selected.x, speed)
+        dy = curve(self.selected.y, speed)
+        if dx == 0 and dy == 0:
+            return
+        if dx:
+            self.target.write(ecodes.EV_REL, ecodes.REL_X, dx)
+        if dy:
+            self.target.write(ecodes.EV_REL, ecodes.REL_Y, dy)
+        self.target.syn()
+
+    def run(self) -> None:
+        self.write_pid()
+        self.write_socket()
+        self.monitor.start()
+        self.poll.register(self.monitor, select.POLLIN)
+        for device in self.udev_context.list_devices(subsystem="input"):
+            if device.device_node and device.device_node.startswith("/dev/input/event"):
+                self.add_device(device.device_node)
+
+        def handle_signal(_signum: int, _frame) -> None:
+            self.running = False
+
+        signal.signal(signal.SIGTERM, handle_signal)
+        signal.signal(signal.SIGINT, handle_signal)
+
+        interval = float(self.config.get("interval", DEFAULT_CONFIG["interval"]))
+        while self.running:
+            timeout = int(interval * 1000) if self.enabled else 1000
+            for fd, _ in self.poll.poll(timeout):
+                try:
+                    if fd == self.monitor.fileno():
+                        action, device = self.monitor.receive_device()
+                        node = device.device_node
+                        if node and node.startswith("/dev/input/event"):
+                            if action == "add":
+                                self.add_device(node)
+                            elif action == "remove":
+                                self.remove_device(node)
+                    elif fd == self.sock.fileno():
+                        self.handle_command(self.sock.recv(128).decode("utf-8", errors="ignore"))
+                    else:
+                        source = self.sources_by_fd.get(fd)
+                        if source is None:
+                            continue
+                        for event in source.device.read():
+                            self.handle_event(source, event)
+                except OSError as exc:
+                    if exc.errno != errno.ENODEV:
+                        log(f"os error: {exc}")
+                except Exception as exc:
+                    log(f"event error: {exc}")
+            self.emit_motion()
+
+        self.disable(show_message=False)
+        self.release_buttons()
+        for source in list(self.sources_by_fd.values()):
+            source.ungrab()
+            source.device.close()
+        self.target.close()
+        try:
+            SOCKET_FILE.unlink()
+        except FileNotFoundError:
+            pass
+        try:
+            PID_FILE.unlink()
+        except FileNotFoundError:
+            pass
+
+
+def send_command(command: str) -> int:
+    if not SOCKET_FILE.exists():
+        return 1
+    sock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+    sock.sendto(command.encode("utf-8"), str(SOCKET_FILE))
+    return 0
+
+
+def daemon_running() -> bool:
+    try:
+        pid = int(PID_FILE.read_text().strip())
+    except (OSError, ValueError):
+        return False
+
+    proc = Path(f"/proc/{pid}")
+    if not proc.exists() or not SOCKET_FILE.exists():
+        return False
+
+    try:
+        cmdline = (proc / "cmdline").read_text(errors="ignore").replace("\0", " ")
+    except OSError:
+        return False
+    return "batocera-mouse-mode" in cmdline and "start" in cmdline
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(prog="batocera-mouse-mode")
+    parser.add_argument("command", choices=["start", "stop", "toggle", "enable", "disable", "status"])
+    args = parser.parse_args()
+
+    if args.command == "start":
+        if daemon_running():
+            return 0
+        MouseModeDaemon().run()
+        return 0
+
+    if args.command == "status":
+        print("enabled" if STATE_FILE.exists() else "disabled")
+        return 0
+
+    if args.command == "stop":
+        return 0 if send_command("stop") == 0 else 1
+
+    if not daemon_running():
+        subprocess.Popen([sys.argv[0], "start"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+        for _ in range(20):
+            if SOCKET_FILE.exists():
+                break
+            time.sleep(0.05)
+
+    return send_command(args.command)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
