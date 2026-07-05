@@ -73,6 +73,10 @@ Includes additional emulators where supported:
 - Docker *(enable in Services menu)*
 - Waydroid
 - Hotkey + touchscreen support for on-screen keyboard  
+- Arch Plasma LXC Desktop
+
+https://github.com/user-attachments/assets/4c939a09-1fd7-4ea7-a014-4050a58c632f
+
 
 ---
 
