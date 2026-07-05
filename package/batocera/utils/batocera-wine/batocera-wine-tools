@@ -1723,6 +1723,7 @@ inject_protontricks_verb() {
     local appid="$1"
     local prefix="$2"
     local verb="$3"
+    local prompt_before="${4:-1}"
     local stamp_dir="${prefix}/.batocera-runtime-stamps"
     local stamp="${stamp_dir}/$(protontricks_stamp_name "$verb")"
     local output rc summary
@@ -1731,7 +1732,11 @@ inject_protontricks_verb() {
         return 0
     fi
 
-    msg_box "Check the main display for any installer prompts.\n\nApplying ${verb} to Steam AppID ${appid}:\n${prefix}"
+    if [ "$prompt_before" = "1" ]; then
+        msg_box "Check the main display for any installer prompts.\n\nApplying ${verb} to Steam AppID ${appid}:\n${prefix}"
+    else
+        info_box "Applying ${verb} to Steam AppID ${appid}..."
+    fi
     export DISPLAY="${DISPLAY:-:0.0}"
     command -v unclutter-remote >/dev/null 2>&1 && unclutter-remote -s || true
     output=$(protontricks "$appid" -q "$verb" 2>&1)
@@ -1752,7 +1757,7 @@ inject_protontricks_verb() {
 
 run_easy_protontricks() {
     require_commands protontricks || return 1
-    local selected appid prefix action verb
+    local selected appid prefix action verb prompt_each
     local verbs=()
 
     while true; do
@@ -1779,8 +1784,13 @@ run_easy_protontricks() {
             esac
 
             [ "${#verbs[@]}" -gt 0 ] || break
+            prompt_each=1
+            if [ "${#verbs[@]}" -gt 1 ]; then
+                msg_box "Check the main display for any installer prompts.\n\nApplying ${#verbs[@]} Protontricks components to Steam AppID ${appid}:\n${prefix}"
+                prompt_each=0
+            fi
             for verb in "${verbs[@]}"; do
-                inject_protontricks_verb "$appid" "$prefix" "$verb" || break
+                inject_protontricks_verb "$appid" "$prefix" "$verb" "$prompt_each" || break
             done
             msg_box "Protontricks processing complete for Steam AppID ${appid}."
 
