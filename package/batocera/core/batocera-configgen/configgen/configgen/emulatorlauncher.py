@@ -68,6 +68,197 @@ MANGOHUD_ENV_KEYS = (
     "LD_PRELOAD",
     "LD_AUDIT",
 )
+OPENGL_DRIVER_ENV_KEYS = ("MESA_LOADER_DRIVER_OVERRIDE", "GALLIUM_DRIVER")
+OPENGL_DRIVER_UNSET_ENV = "BATOCERA_UNSET_OPENGL_DRIVER_OVERRIDE"
+DUAL_SCREEN_OUTPUT_IGNORED_SYSTEMS = {"3ds", "nds"}
+DUAL_SCREEN_OUTPUT_IGNORED_EMULATORS = {"azahar", "cemu", "desmume", "drastic", "melonds"}
+DUAL_SCREEN_OUTPUT_IGNORED_LIBRETRO_CORES = {"azahar", "citra", "desmume", "desmume2015", "melonds", "melondsds"}
+SWAY_OUTPUT_MOVE_RETRY_SECONDS = 4.0
+
+
+def _settings_get_master(key: str) -> str:
+    try:
+        return subprocess.run(
+            ["/usr/bin/batocera-settings-get-master", key],
+            check=False,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+    except Exception:
+        return ""
+
+
+def getDualScreenTargetOutput(config) -> str:
+    screen = config.get_str("dual_screen_output", "primary")
+    if screen not in {"primary", "secondary"}:
+        return ""
+
+    if _settings_get_master("display.position") != "top-bottom":
+        return ""
+
+    primary_output = _settings_get_master("global.videooutput")
+    secondary_output = _settings_get_master("global.videooutput2")
+    if not primary_output or not secondary_output:
+        return ""
+
+    return secondary_output if screen == "secondary" else primary_output
+
+
+def shouldApplyDualScreenTargetOutput(system, effective_core: str) -> bool:
+    emulator = system.config.emulator.lower()
+    core = effective_core.lower()
+
+    if system.name in DUAL_SCREEN_OUTPUT_IGNORED_SYSTEMS:
+        return False
+
+    if emulator in DUAL_SCREEN_OUTPUT_IGNORED_EMULATORS:
+        return False
+
+    return emulator != "libretro" or core not in DUAL_SCREEN_OUTPUT_IGNORED_LIBRETRO_CORES
+
+
+def _unset_zink_opengl_driver_env(env: dict[str, str | Path]) -> None:
+    for key in OPENGL_DRIVER_ENV_KEYS:
+        if str(env.get(key, "")).lower() == "zink":
+            env.pop(key, None)
+
+
+def applyOpenGLDriverOverride(command: Command, config) -> None:
+    driver = config.get_str("opengl_driver", "native").strip().lower()
+
+    if driver == "zink":
+        existing_driver = command.env.get("MESA_LOADER_DRIVER_OVERRIDE") or command.env.get("GALLIUM_DRIVER")
+        if existing_driver in (None, "", "zink"):
+            command.env["MESA_LOADER_DRIVER_OVERRIDE"] = "zink"
+            command.env["GALLIUM_DRIVER"] = "zink"
+            command.env.pop(OPENGL_DRIVER_UNSET_ENV, None)
+    elif driver == "native":
+        command.env[OPENGL_DRIVER_UNSET_ENV] = "1"
+        _unset_zink_opengl_driver_env(command.env)
+
+
+def _is_sway_available(env: dict[str, str | Path]) -> bool:
+    return bool(env.get("SWAYSOCK")) and Path("/usr/bin/swaymsg").exists()
+
+
+def _focus_sway_output(target_output: str, env: dict[str, str | Path]) -> None:
+    if not target_output or not _is_sway_available(env):
+        return
+
+    subprocess.call(
+        ["swaymsg", "-q", "focus", "output", target_output],
+        env=env,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+
+
+def _find_focused_sway_node(node: dict) -> dict | None:
+    if node.get("focused"):
+        return node
+
+    for child in node.get("nodes", []) + node.get("floating_nodes", []):
+        if focused := _find_focused_sway_node(child):
+            return focused
+
+    return None
+
+
+def _find_emulator_sway_nodes(node: dict) -> list[dict]:
+    nodes = []
+    if _is_emulator_window_node(node):
+        nodes.append(node)
+
+    for child in node.get("nodes", []) + node.get("floating_nodes", []):
+        nodes.extend(_find_emulator_sway_nodes(child))
+
+    return nodes
+
+
+def _is_emulator_window_node(node: dict) -> bool:
+    if node.get("type") not in {"con", "floating_con"}:
+        return False
+
+    properties = node.get("window_properties") or {}
+    values = [
+        node.get("app_id"),
+        node.get("name"),
+        properties.get("class"),
+        properties.get("instance"),
+        properties.get("title"),
+    ]
+    normalized = [str(value).lower() for value in values if value]
+    if not normalized:
+        return False
+
+    return not any(value == "backglass" or "emulationstation" in value for value in normalized)
+
+
+def _move_sway_node_to_output(node: dict, target_output: str, env: dict[str, str | Path]) -> None:
+    node_id = node.get("id")
+    if not isinstance(node_id, int):
+        return
+
+    criteria = f'[con_id="{node_id}"]'
+    output = json.dumps(target_output)
+    subprocess.call(
+        ["swaymsg", "-q", f"{criteria} move to output {output}"],
+        env=env,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    subprocess.call(
+        ["swaymsg", "-q", f"{criteria} focus"],
+        env=env,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+
+
+def _move_focused_sway_window_to_output(target_output: str, env: dict[str, str | Path]) -> None:
+    if not _is_sway_available(env):
+        return
+
+    try:
+        result = subprocess.run(
+            ["swaymsg", "-t", "get_tree"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=0.5,
+            env=env,
+        )
+        if result.returncode != 0:
+            return
+
+        tree = json.loads(result.stdout)
+        focused = _find_focused_sway_node(tree)
+        if focused is not None and _is_emulator_window_node(focused):
+            _move_sway_node_to_output(focused, target_output, env)
+            return
+
+        emulator_nodes = _find_emulator_sway_nodes(tree)
+        if len(emulator_nodes) == 1:
+            _move_sway_node_to_output(emulator_nodes[0], target_output, env)
+    except Exception:
+        return
+
+
+def _start_sway_output_mover(target_output: str, env: dict[str, str | Path]) -> tuple[threading.Event, threading.Thread] | None:
+    if not target_output or not _is_sway_available(env):
+        return None
+
+    stop_event = threading.Event()
+
+    def move_window() -> None:
+        deadline = time.monotonic() + SWAY_OUTPUT_MOVE_RETRY_SECONDS
+        while not stop_event.is_set() and time.monotonic() < deadline:
+            _move_focused_sway_window_to_output(target_output, env)
+            time.sleep(0.1)
+
+    thread = threading.Thread(target=move_window, daemon=True)
+    thread.start()
+    return stop_event, thread
 
 def main(args: argparse.Namespace, maxnbplayers: int) -> int:
     # squashfs roms if squashed
@@ -183,6 +374,7 @@ def start_rom(args: argparse.Namespace, maxnbplayers: int, rom: Path, original_r
                     os.chdir(executionDirectory)
 
                 cmd = generator.generate(system, rom, player_controllers, metadata, guns, wheels, gameResolution)
+                applyOpenGLDriverOverride(cmd, system.config)
 
                 cpu_limit_adaptive = cpuLimitAdaptiveEnabled()
                 if args.systemname == "steam" and cpu_limit_adaptive:
@@ -219,6 +411,9 @@ def start_rom(args: argparse.Namespace, maxnbplayers: int, rom: Path, original_r
                             cmd.array.insert(0, "mangohud")
 
                 add_gamescope_arguments(cmd, system, gameResolution)
+                if shouldApplyDualScreenTargetOutput(system, effectiveCore):
+                    if target_output := getDualScreenTargetOutput(system.config):
+                        cmd.env["BATOCERA_EMULATOR_OUTPUT"] = target_output
 
                 with profiler.pause():
                     try:
@@ -718,6 +913,8 @@ def runCommand(command: Command) -> int:
     envvars: dict[str, str | Path] = dict(os.environ)
     envvars.update(command.env)
     command.env = envvars
+    if command.env.pop(OPENGL_DRIVER_UNSET_ENV, None):
+        _unset_zink_opengl_driver_env(command.env)
     if str(command.env.get("DISABLE_MANGOHUD", "")).lower() in ("1", "true", "yes", "on"):
         stripMangoHud(command.array, command.env)
 
@@ -728,7 +925,11 @@ def runCommand(command: Command) -> int:
     if not command.array:
         raise BadCommandLineArguments
 
+    target_output = str(command.env.get("BATOCERA_EMULATOR_OUTPUT", ""))
+    _focus_sway_output(target_output, command.env)
+
     proc = subprocess.Popen(command.array, env=command.env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    sway_mover = _start_sway_output_mover(target_output, command.env)
     exitcode = 0
 
     try:
@@ -744,6 +945,11 @@ def runCommand(command: Command) -> int:
         _logger.error("emulator exited")
 
         raise UnexpectedEmulatorExit from e
+    finally:
+        if sway_mover is not None:
+            stop_event, thread = sway_mover
+            stop_event.set()
+            thread.join(timeout=0.2)
 
     return exitcode
 

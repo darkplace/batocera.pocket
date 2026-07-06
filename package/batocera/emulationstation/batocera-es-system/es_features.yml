@@ -84,6 +84,18 @@ shared:
       choices:
         Top Screen: primary
         Bottom Screen: secondary
+    opengl_driver:
+      archs_include:
+      - qcs6490
+      - sm8250
+      - sm8550
+      - sm8750
+      submenu: GRAPHICS
+      prompt: OPENGL DRIVER
+      description: Choose the Gallium OpenGL driver used by OpenGL emulators.
+      choices:
+        Native Freedreno: native
+        Zink (Default): zink
     ratio:
       prompt: GAME ASPECT RATIO
       description: Force the game to render in this aspect ratio. Not all systems
@@ -841,6 +853,7 @@ global:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - ratio
   - shaderset
   - smooth
@@ -908,6 +921,7 @@ libretro:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - ratio
   - shaderset
   - smooth
@@ -1043,6 +1057,15 @@ libretro:
       - rewind
       - autosave
       cfeatures:
+        citra_graphics_api:
+          submenu: GRAPHICS
+          prompt: GRAPHICS API
+          description: Choose which renderer lr-azahar should use.
+          choices:
+            Auto: Auto
+            OpenGL: OpenGL
+            Vulkan (Default): Vulkan
+            Software: Software
         citra_layout_option:
           prompt: SCREEN LAYOUT
           description: Arrange the dual screen layout.
@@ -8580,6 +8603,7 @@ amiberry:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - ratio
   - bezel
   - bezel_stretch
@@ -8665,6 +8689,7 @@ cannonball:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   cfeatures:
     ratio:
       prompt: ASPECT RATIO
@@ -8769,6 +8794,7 @@ cemu:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - gamescope
   - gamescope_output_resolution
   - gamescope_nested_resolution
@@ -8943,6 +8969,7 @@ hypseus-singe:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - use_guns
   cfeatures:
     hypseus_api:
@@ -9063,6 +9090,7 @@ devilutionx:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - bezel
   - bezel_stretch
   - hud
@@ -9088,6 +9116,7 @@ dolphin:
       - tdp
       - videomode
       - dual_screen_output
+      - opengl_driver
       - bezel
       - bezel_stretch
       - bezel.tattoo
@@ -9590,6 +9619,7 @@ dosbox:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - gamescope_xwayland_count
   - gamescope_xwayland_count_custom
   - gamescope_prefer_vk_device
@@ -9649,6 +9679,7 @@ dosbox_staging:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - gamescope
   - gamescope_output_resolution
   - gamescope_nested_resolution
@@ -9698,6 +9729,7 @@ dosbox-x:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - gamescope
   - gamescope_output_resolution
   - gamescope_nested_resolution
@@ -9745,6 +9777,7 @@ duckstation:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - bezel
   - bezel_stretch
   - hud
@@ -10095,6 +10128,7 @@ flycast:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - bezel
   - bezel_stretch
   - hud
@@ -10294,6 +10328,7 @@ fsuae:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - ratio
   - bezel
   - bezel_stretch
@@ -10314,6 +10349,7 @@ hatari:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - bezel
   - bezel_stretch
   - hud
@@ -10382,6 +10418,7 @@ melonds:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - bezel
   - bezel_stretch
   - hud
@@ -10521,6 +10558,7 @@ moonlight:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - ratio
   cfeatures:
     moonlight_codec:
@@ -10600,6 +10638,7 @@ mupen64plus:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - bezel
   - bezel_stretch
   - hud
@@ -10873,6 +10912,7 @@ openbor:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   cfeatures:
     openbor_ratio:
       prompt: SCREEN RATIO
@@ -10927,6 +10967,7 @@ pcsx2:
       - tdp
       - videomode
       - dual_screen_output
+      - opengl_driver
       - bezel
       - bezel_stretch
       - hud
@@ -11284,6 +11325,7 @@ ppsspp:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - hud
   - hud_corner
   - bezel.tattoo
@@ -11577,6 +11619,7 @@ pygame:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - bezel
   - bezel_stretch
   - hud
@@ -11595,6 +11638,7 @@ reicast:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - ratio
   - bezel
   - bezel_stretch
@@ -12078,6 +12122,7 @@ scummvm:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - bezel
   - bezel_stretch
   - hud
@@ -12155,6 +12200,7 @@ opengoal:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - hud
   features:
   - padtokeyboard
@@ -12242,6 +12288,7 @@ easyrpg:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - bezel
   - bezel_stretch
   - hud
@@ -12281,6 +12328,7 @@ redream:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - bezel
   - bezel_stretch
   - hud
@@ -12370,6 +12418,7 @@ sdlpop:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - ratio
   - hud
 superbroswar:
@@ -12382,6 +12431,7 @@ superbroswar:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - ratio
   - bezel
   - bezel_stretch
@@ -12402,6 +12452,7 @@ supermodel:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - bezel
   - bezel_stretch
   - hud
@@ -12536,6 +12587,7 @@ cgenius:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - bezel
   - bezel_stretch
   - hud
@@ -12594,6 +12646,7 @@ vice:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - ratio
   - bezel
   - bezel_stretch
@@ -12622,6 +12675,7 @@ tsugaru:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - bezel
   - bezel_stretch
   - hud
@@ -12658,6 +12712,7 @@ mame:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - bezel
   - bezel_stretch
   - hud
@@ -13915,6 +13970,7 @@ wine:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - gamescope
   - gamescope_output_resolution
   - gamescope_nested_resolution
@@ -14346,6 +14402,7 @@ solarus:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - bezel
   - bezel_stretch
   - hud
@@ -14373,6 +14430,7 @@ mugen:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   cfeatures:
     esync:
       group: ADVANCED OPTIONS
@@ -14406,6 +14464,7 @@ ikemen:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - bezel
   - bezel_stretch
   - hud
@@ -14425,6 +14484,7 @@ ruffle:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
 lightspark:
   features:
   - padtokeyboard
@@ -14436,6 +14496,7 @@ lightspark:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - bezel
   - bezel_stretch
   - hud
@@ -14453,6 +14514,7 @@ drastic:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - bezel
   - bezel_stretch
   - hud
@@ -14561,6 +14623,7 @@ xemu:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - bezel
   - bezel_stretch
   - hud
@@ -14661,6 +14724,7 @@ lexaloffle:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - bezel
   - bezel_stretch
   - hud
@@ -14680,6 +14744,7 @@ ecwolf:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - bezel
   - bezel_stretch
   - hud
@@ -14699,6 +14764,7 @@ sonic2013:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - bezel
   - bezel_stretch
   - hud
@@ -14769,6 +14835,7 @@ soniccd:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - bezel
   - bezel_stretch
   - hud
@@ -14837,6 +14904,7 @@ model2emu:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   cfeatures:
     model2_renderRes:
       prompt: RENDERING RESOLUTION
@@ -14964,6 +15032,7 @@ gsplus:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - bezel
   - bezel_stretch
   - hud
@@ -14992,6 +15061,7 @@ applewin:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   cfeatures:
     applewin_media:
       group: ADVANCED OPTIONS
@@ -15092,6 +15162,7 @@ play:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - bezel
   - bezel_stretch
   - hud
@@ -15172,6 +15243,7 @@ flatpak:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   cfeatures:
     flatpak_no_sandbox:
       prompt: NO SANDBOX MODE
@@ -15363,6 +15435,7 @@ apps:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - gamescope
   - gamescope_output_resolution
   - gamescope_nested_resolution
@@ -15414,6 +15487,7 @@ waydroid:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - gamescope
   - gamescope_output_resolution
   - gamescope_nested_resolution
@@ -15468,6 +15542,7 @@ ios:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - gamescope
   - gamescope_output_resolution
   - gamescope_nested_resolution
@@ -15508,6 +15583,7 @@ steam:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   cores:
     steamos:
       shared:
@@ -15708,6 +15784,7 @@ heroic:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - gamescope
   - gamescope_output_resolution
   - gamescope_nested_resolution
@@ -15753,6 +15830,7 @@ lutris:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - gamescope
   - gamescope_output_resolution
   - gamescope_nested_resolution
@@ -15798,6 +15876,7 @@ n64recomp:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - gamescope
   - gamescope_output_resolution
   - gamescope_nested_resolution
@@ -15843,6 +15922,7 @@ citron:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - bezel
   - bezel_stretch
   - hud
@@ -16238,6 +16318,7 @@ eden:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - bezel
   - bezel_stretch
   - hud
@@ -16567,6 +16648,7 @@ yuzu:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - bezel
   - bezel_stretch
   - hud
@@ -16876,6 +16958,7 @@ ryujinx:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - bezel
   - bezel_stretch
   - hud
@@ -17388,6 +17471,7 @@ samcoupe:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - bezel
   - bezel_stretch
   - hud
@@ -17407,6 +17491,7 @@ hcl:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - hud
   - hud_corner
 hurrican:
@@ -17420,6 +17505,7 @@ hurrican:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - hud
   - hud_corner
 tyrian:
@@ -17433,6 +17519,7 @@ tyrian:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - hud
   - hud_corner
 openjazz:
@@ -17446,6 +17533,7 @@ openjazz:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - bezel
   - bezel_stretch
   - hud
@@ -17487,6 +17575,7 @@ abuse:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - bezel
   - bezel_stretch
   - hud
@@ -17506,6 +17595,7 @@ cdogs:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - bezel
   - bezel_stretch
   - hud
@@ -17525,6 +17615,7 @@ openmsx:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - bezel
   - bezel_stretch
   - hud
@@ -17557,6 +17648,7 @@ sh:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - gamescope
   - gamescope_output_resolution
   - gamescope_nested_resolution
@@ -17604,6 +17696,7 @@ xenia:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - hud
   - hud_corner
   cfeatures:
@@ -17980,6 +18073,7 @@ xenia-canary:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - hud
   - hud_corner
   - gamescope
@@ -18497,6 +18591,7 @@ xenia-edge:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - hud
   - hud_corner
   cfeatures:
@@ -19078,6 +19173,7 @@ freej2me:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - gamescope
   - gamescope_output_resolution
   - gamescope_nested_resolution
@@ -19149,6 +19245,7 @@ gopher64:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - hud
   - hud_corner
   cfeatures:
@@ -19178,6 +19275,12 @@ gopher64:
       choices:
         'Off': false
         'On': true
+    gopher64_ssaa:
+      prompt: SSAA
+      description: Render with the emulator's supersampling antialiasing option.
+      choices:
+        'Off': false
+        'On': true
     gopher64_overclock:
       prompt: CPU OVERCLOCK
       description: Enable the emulator's N64 overclock option.
@@ -19193,6 +19296,12 @@ gopher64:
     gopher64_usb:
       prompt: EMULATE USB
       description: Enable the emulator's USB device support.
+      choices:
+        'Off (Default)': false
+        'On': true
+    gopher64_rewind:
+      prompt: REWIND
+      description: Enable the emulator's rewind support.
       choices:
         'Off (Default)': false
         'On': true
@@ -19213,6 +19322,7 @@ yabasanshiro-sa:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - hud
   - hud_corner
   cfeatures:
@@ -19276,6 +19386,7 @@ nanoboyadvance:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   cfeatures:
     nanoboyadvance_scale:
       prompt: WINDOW SCALE
@@ -19337,6 +19448,7 @@ ares:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - bezel
   - bezel_stretch
   - hud
@@ -19365,6 +19477,7 @@ skyemu:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - gamescope
   cfeatures:
     skyemu_integer_scaling:
@@ -19395,6 +19508,7 @@ eka2l1:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - bezel
   - bezel_stretch
   - hud
@@ -19413,6 +19527,7 @@ odcommander:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - ratio
   - hud
 gzdoom:
@@ -19424,6 +19539,7 @@ gzdoom:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - bezel
   - bezel_stretch
   - hud
@@ -19457,6 +19573,7 @@ corsixth:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   features:
   - padtokeyboard
   cfeatures:
@@ -19488,6 +19605,7 @@ stella:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   features:
   - padtokeyboard
 eduke32:
@@ -19499,6 +19617,7 @@ eduke32:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - bezel
   - bezel_stretch
   - hud
@@ -19523,6 +19642,7 @@ fury:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - bezel
   - bezel_stretch
   - hud
@@ -19547,6 +19667,7 @@ raze:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - bezel
   - bezel_stretch
   - hud
@@ -19579,6 +19700,7 @@ vita3k:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   features: []
   cfeatures:
     vita3k_gfxbackend:
@@ -19639,6 +19761,7 @@ bigpemu:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - bezel
   - bezel_stretch
   - hud
@@ -19750,6 +19873,7 @@ pyxel:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - bezel
   - bezel_stretch
   - hud
@@ -19767,6 +19891,7 @@ ioquake3:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - bezel
   - bezel_stretch
   - hud
@@ -19799,6 +19924,7 @@ thextech:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - hud
   - hud_corner
   cfeatures:
@@ -19826,6 +19952,7 @@ vpinball:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - bezel
   - bezel_stretch
   - hud
@@ -20098,6 +20225,7 @@ theforceengine:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - bezel
   - bezel_stretch
   - hud
@@ -20264,6 +20392,7 @@ iortcw:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - bezel
   - bezel_stretch
   - hud
@@ -20342,6 +20471,7 @@ fallout1-ce:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - bezel
   - bezel_stretch
   - hud
@@ -20398,6 +20528,7 @@ fallout2-ce:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - bezel
   - bezel_stretch
   - hud
@@ -20454,6 +20585,7 @@ dxx-rebirth:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - bezel
   - bezel_stretch
   - hud
@@ -20498,6 +20630,7 @@ etlegacy:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - bezel
   - bezel_stretch
   - hud
@@ -20548,6 +20681,7 @@ sonic3-air:
   shared:
   - videomode
   - dual_screen_output
+  - opengl_driver
   - bezel
   - bezel_stretch
   - hud
@@ -20562,6 +20696,7 @@ sonic-mania:
   shared:
   - videomode
   - dual_screen_output
+  - opengl_driver
   - bezel
   - bezel_stretch
   - hud
@@ -20602,6 +20737,7 @@ fba2x:
   shared:
   - videomode
   - dual_screen_output
+  - opengl_driver
   - use_wheels
   - wheel_rotation
   - wheel_deadzone
@@ -20617,6 +20753,7 @@ taradino:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - bezel
   - bezel_stretch
   - hud
@@ -20636,6 +20773,7 @@ x16emu:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - bezel
   - bezel_stretch
   - hud
@@ -20677,6 +20815,7 @@ shadps4:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - gamescope
   - gamescope_output_resolution
   - gamescope_nested_resolution
@@ -20798,6 +20937,7 @@ dhewm3:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - bezel
   - bezel_stretch
   - hud
@@ -20843,6 +20983,7 @@ jazz2-native:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - bezel
   - bezel_stretch
   - hud
@@ -20862,6 +21003,7 @@ catacombgl:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - bezel
   - bezel_stretch
   - hud
@@ -20881,6 +21023,7 @@ lindbergh-loader:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - bezel
   - bezel_stretch
   - hud
@@ -21025,6 +21168,7 @@ vkquake:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - bezel
   - bezel_stretch
   - hud
@@ -21044,6 +21188,7 @@ vkquake2:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - bezel
   - bezel_stretch
   - hud
@@ -21061,6 +21206,7 @@ vkquake3:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - bezel
   - bezel_stretch
   - hud
@@ -21097,6 +21243,7 @@ tr1x:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - bezel
   - bezel_stretch
   - hud
@@ -21125,6 +21272,7 @@ tr2x:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - bezel
   - bezel_stretch
   - hud
@@ -21144,6 +21292,7 @@ bstone:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - bezel
   - bezel_stretch
   - hud
@@ -21183,6 +21332,7 @@ openjkdf2:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - bezel
   - bezel_stretch
   - hud
@@ -21428,6 +21578,7 @@ openjk:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - bezel
   - bezel_stretch
   - hud
@@ -21602,6 +21753,7 @@ azahar:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - bezel
   - bezel_stretch
   - hud
@@ -21673,8 +21825,8 @@ azahar:
       description: Choose which graphics API library to use.
       choices:
         Software: 0
-        OpenGL (Default): 1
-        Vulkan: 2
+        OpenGL: 1
+        Vulkan (Default): 2
     azahar_use_hw_shader:
       submenu: GRAPHICS
       prompt: HARDWARE SHADER
@@ -21737,6 +21889,7 @@ citra:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - bezel
   - bezel_stretch
   - hud
@@ -21836,6 +21989,7 @@ openmohaa:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - bezel
   - bezel_stretch
   - hud
@@ -22005,6 +22159,7 @@ ymir:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - bezel
   - bezel_stretch
   - hud
@@ -22053,6 +22208,7 @@ clk:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - bezel
   - bezel_stretch
   - hud
@@ -22072,6 +22228,7 @@ yquake2:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
 xroar:
   features:
   - padtokeyboard
@@ -22083,6 +22240,7 @@ xroar:
   - tdp
   - videomode
   - dual_screen_output
+  - opengl_driver
   - bezel
   - bezel_stretch
   - hud
@@ -22135,6 +22293,7 @@ aethersx2:
       - tdp
       - videomode
       - dual_screen_output
+      - opengl_driver
       - bezel
       - bezel_stretch
       - hud

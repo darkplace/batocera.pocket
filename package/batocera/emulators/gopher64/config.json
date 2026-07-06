@@ -52,6 +52,7 @@
   },
   "video": {
     "upscale": 1,
+    "ssaa": false,
     "integer_scaling": false,
     "fullscreen": false,
     "widescreen": false,
@@ -61,7 +62,8 @@
   "emulation": {
     "overclock": false,
     "disable_expansion_pak": false,
-    "usb": false
+    "usb": false,
+    "rewind": false
   },
   "rom_dir": "/userdata/roms/n64",
   "recent_roms": []

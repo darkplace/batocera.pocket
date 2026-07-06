@@ -1,9 +1,9 @@
 --- a/ThunkLibs/HostLibs/CMakeLists.txt
 +++ b/ThunkLibs/HostLibs/CMakeLists.txt
-@@ -10,6 +10,80 @@
-   add_link_options(${LD_OVERRIDE})
- endif()
- 
+@@ -7,15 +7,97 @@
+
+ find_package(PkgConfig REQUIRED)
+
 +set(HOST_THUNK_SYSROOT "" CACHE PATH "Sysroot containing host thunk parsing headers")
 +set(HOST_THUNK_TARGET_TRIPLE "" CACHE STRING "Target triple used for host thunk parsing")
 +set(HOST_THUNK_TOOLCHAIN_INCLUDE_ROOT "" CACHE PATH "Root of the target toolchain headers used for host thunk parsing")
@@ -12,17 +12,19 @@
 +set(CLANG_BUILTIN_HEADERS "" CACHE PATH "Clang builtin headers directory for thunk parsing")
 +
 +function(host_thunk_add_sysroot_include TARGET INCLUDE_DIR)
-+  if (HOST_THUNK_SYSROOT)
-+    set(SYSROOT_INCLUDE "${HOST_THUNK_SYSROOT}${INCLUDE_DIR}")
-+    if (EXISTS "${SYSROOT_INCLUDE}")
-+      target_include_directories(${TARGET} INTERFACE "${SYSROOT_INCLUDE}")
-+      return()
-+    endif()
-+  elseif (CMAKE_SYSROOT)
-+    set(SYSROOT_INCLUDE "${CMAKE_SYSROOT}${INCLUDE_DIR}")
-+    if (EXISTS "${SYSROOT_INCLUDE}")
-+      target_include_directories(${TARGET} INTERFACE "${SYSROOT_INCLUDE}")
-+      return()
++  if (INCLUDE_DIR MATCHES "^/usr(/|$)")
++    if (HOST_THUNK_SYSROOT)
++      set(SYSROOT_INCLUDE "${HOST_THUNK_SYSROOT}${INCLUDE_DIR}")
++      if (EXISTS "${SYSROOT_INCLUDE}")
++        target_include_directories(${TARGET} INTERFACE "${SYSROOT_INCLUDE}")
++        return()
++      endif()
++    elseif (CMAKE_SYSROOT)
++      set(SYSROOT_INCLUDE "${CMAKE_SYSROOT}${INCLUDE_DIR}")
++      if (EXISTS "${SYSROOT_INCLUDE}")
++        target_include_directories(${TARGET} INTERFACE "${SYSROOT_INCLUDE}")
++        return()
++      endif()
 +    endif()
 +  endif()
 +
@@ -78,13 +80,31 @@
 +  set(${OUT_VAR} "${FLAGS}" PARENT_SCOPE)
 +endfunction()
 +
- # Syntax: generate(libxyz libxyz-interface.cpp)
- # This defines two targets and a custom command:
- # - custom command: Main build step that runs the thunk generator on the given interface definition
-@@ -47,15 +117,17 @@
+ # Helper to add include directories from pkg-config, falling back to global defaults if not available.
+ # /usr/include is dropped to avoid mixing foreign-architecture standard library headers.
+ function(target_include_directories_from_pkgconfig target pkg)
+   pkg_check_modules(PKG QUIET ${pkg})
+   if (PKG_FOUND)
+-    list(REMOVE_ITEM PKG_INCLUDE_DIRS /usr/include)
+-    target_include_directories(${target} INTERFACE ${PKG_INCLUDE_DIRS})
++    foreach(PKG_INCLUDE_DIR IN LISTS PKG_INCLUDE_DIRS)
++      if (PKG_INCLUDE_DIR STREQUAL "/usr/include" AND NOT HOST_THUNK_SYSROOT AND NOT CMAKE_SYSROOT)
++        continue()
++      endif()
++      host_thunk_add_sysroot_include(${target} "${PKG_INCLUDE_DIR}")
++    endforeach()
+   elseif (ARGN)
+-    target_include_directories(${target} INTERFACE ${ARGN})
++    foreach(FALLBACK_INCLUDE_DIR IN LISTS ARGN)
++      host_thunk_add_sysroot_include(${target} "${FALLBACK_INCLUDE_DIR}")
++    endforeach()
+   endif()
+ endfunction()
+
+@@ -67,16 +149,18 @@
      set(BITNESS_FLAGS "-for-32bit-guest")
    endif()
- 
+
 +  host_thunk_append_parser_flags(CLANG_PARSER_FLAGS)
 +
    add_custom_command(
@@ -93,6 +113,7 @@
      DEPENDS thunkgen
 -    COMMAND "${GENERATOR_EXE}" "${SOURCE_FILE}" "${NAME}" "-host" "${OUTFILE}" "${X86_DEV_ROOTFS}" ${BITNESS_FLAGS} -- -std=c++20
 +    COMMAND "${GENERATOR_EXE}" "${SOURCE_FILE}" "${NAME}" "-host" "${OUTFILE}" "${X86_DEV_ROOTFS}" ${BITNESS_FLAGS} -- -std=c++20 ${CLANG_PARSER_FLAGS}
+       ${THUNKGEN_SYSTEM_INCLUDES}
        # Expand compile definitions to space-separated list of -D parameters
        "$<$<BOOL:${compile_prop}>:;-D$<JOIN:${compile_prop},;-D>>"
        # Expand include directories to space-separated list of -isystem parameters
@@ -100,48 +121,47 @@
 +      "$<$<BOOL:${prop}>:;-isystem;$<JOIN:${prop},;-isystem;>>"
      VERBATIM
      COMMAND_EXPAND_LISTS)
- 
-@@ -105,6 +177,7 @@
-   #add_host_lib(fex_malloc ${GUEST_BITNESS})
- 
+
+@@ -127,6 +211,7 @@
+
    generate(libasound ${CMAKE_CURRENT_SOURCE_DIR}/../libasound/libasound_interface.cpp ${GUEST_BITNESS})
+   target_include_directories_from_pkgconfig(libasound-${GUEST_BITNESS}-deps alsa)
 +  host_thunk_add_sysroot_include(libasound-${GUEST_BITNESS}-deps /usr/include)
    add_host_lib(asound ${GUEST_BITNESS})
- 
+
    # disabled for now, headers are platform specific
-@@ -114,8 +187,9 @@
-   # target_include_directories(SDL2-host PRIVATE ${SDL2_INCLUDE_DIRS})
- 
+@@ -137,6 +222,7 @@
+
    generate(libdrm ${CMAKE_CURRENT_SOURCE_DIR}/../libdrm/libdrm_interface.cpp ${GUEST_BITNESS})
--  target_include_directories(libdrm-${GUEST_BITNESS}-deps INTERFACE /usr/include/drm/)
--  target_include_directories(libdrm-${GUEST_BITNESS}-deps INTERFACE /usr/include/libdrm/)
+   target_include_directories_from_pkgconfig(libdrm-${GUEST_BITNESS}-deps libdrm /usr/include/drm /usr/include/libdrm)
 +  host_thunk_add_sysroot_include(libdrm-${GUEST_BITNESS}-deps /usr/include)
-+  host_thunk_add_sysroot_include(libdrm-${GUEST_BITNESS}-deps /usr/include/drm)
-+  host_thunk_add_sysroot_include(libdrm-${GUEST_BITNESS}-deps /usr/include/libdrm)
    add_host_lib(drm ${GUEST_BITNESS})
  endforeach()
- 
-@@ -128,16 +202,22 @@
- 
+
+@@ -150,19 +236,26 @@
    generate(libvulkan ${CMAKE_CURRENT_SOURCE_DIR}/../libvulkan/libvulkan_interface.cpp ${GUEST_BITNESS})
    target_include_directories(libvulkan-${GUEST_BITNESS}-deps INTERFACE ${FEX_PROJECT_SOURCE_DIR}/External/Vulkan-Headers/include/)
+   target_include_directories_from_pkgconfig(libvulkan-${GUEST_BITNESS}-deps "xcb;x11;xrandr;xrender")
 +  host_thunk_add_common_window_includes(libvulkan-${GUEST_BITNESS}-deps)
    add_host_lib(vulkan ${GUEST_BITNESS})
- 
+
    generate(libwayland-client ${CMAKE_CURRENT_SOURCE_DIR}/../libwayland-client/libwayland-client_interface.cpp ${GUEST_BITNESS})
-+  host_thunk_add_sysroot_include(libwayland-client-${GUEST_BITNESS}-deps /usr/include)
    add_host_lib(wayland-client ${GUEST_BITNESS})
--  target_include_directories(libwayland-client-${GUEST_BITNESS}-deps INTERFACE /usr/include/wayland)
- 
+   target_include_directories_from_pkgconfig(libwayland-client-${GUEST_BITNESS}-deps wayland-client /usr/include/wayland)
++  host_thunk_add_sysroot_include(libwayland-client-${GUEST_BITNESS}-deps /usr/include)
+
    generate(libEGL ${CMAKE_CURRENT_SOURCE_DIR}/../libEGL/libEGL_interface.cpp ${GUEST_BITNESS})
+   target_include_directories_from_pkgconfig(libEGL-${GUEST_BITNESS}-deps egl)
 +  host_thunk_add_sysroot_include(libEGL-${GUEST_BITNESS}-deps /usr/include)
 +  host_thunk_add_sysroot_include(libEGL-${GUEST_BITNESS}-deps /usr/include/EGL)
    add_host_lib(EGL ${GUEST_BITNESS})
- 
+
    generate(libGL ${CMAKE_CURRENT_SOURCE_DIR}/../libGL/libGL_interface.cpp ${GUEST_BITNESS})
+   target_include_directories_from_pkgconfig(libGL-${GUEST_BITNESS}-deps gl)
+   target_include_directories_from_pkgconfig(libGL-${GUEST_BITNESS}-deps "xcb;x11;xrandr;xrender")
 +  host_thunk_add_sysroot_include(libGL-${GUEST_BITNESS}-deps /usr/include)
 +  host_thunk_add_sysroot_include(libGL-${GUEST_BITNESS}-deps /usr/include/GL)
 +  host_thunk_add_common_window_includes(libGL-${GUEST_BITNESS}-deps)
    add_host_lib(GL ${GUEST_BITNESS})
- 
+
    find_package(OpenGL REQUIRED)

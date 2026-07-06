@@ -217,11 +217,12 @@ class AzaharGenerator(Generator):
         azaharConfig.set("Renderer", r"use_hw_shader\default", "false")
         azaharConfig.set("Renderer", "use_shader_jit",  "true")
         azaharConfig.set("Renderer", r"use_hw_shader_jit\default", "false")
-        # Software, OpenGL (default) or Vulkan
-        azaharConfig.set("Renderer", "graphics_api", system.config.get("azahar_graphics_api", "1"))
+        # Software, OpenGL or Vulkan (default)
+        graphics_api = system.config.get("azahar_graphics_api", "2")
+        azaharConfig.set("Renderer", "graphics_api", graphics_api)
         azaharConfig.set("Renderer", r"graphics_api\default", "false")
         # Set Vulkan as necessary
-        if system.config.get("azahar_graphics_api") == "2" and vulkan.is_available():
+        if graphics_api == "2" and vulkan.is_available():
             _logger.debug("Vulkan driver is available on the system.")
             if vulkan.has_discrete_gpu():
                 _logger.debug("A discrete GPU is available on the system. We will use that for performance")

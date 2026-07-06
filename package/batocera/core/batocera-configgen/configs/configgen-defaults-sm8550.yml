@@ -2,6 +2,7 @@ default:
   options:
     hud_support: true
     gpu_performance_profile: highperformance
+    opengl_driver: zink
 
 odcommander:
   options:
@@ -41,6 +42,11 @@ n64:
 nds:
   emulator: libretro
   core:     melonds
+3ds:
+  options:
+    gfxbackend: vulkan
+    citra_graphics_api: Vulkan
+    azahar_graphics_api: 2
 steam:
   emulator: steam
   core:     steamos

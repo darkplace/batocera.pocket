@@ -1,6 +1,7 @@
 default:
   options:
     gpu_performance_profile: auto
+    opengl_driver: zink
 
 odcommander:
   options:
@@ -39,6 +40,10 @@ nds:
 3ds:
   emulator: azahar
   core:     azahar
+  options:
+    gfxbackend: vulkan
+    citra_graphics_api: Vulkan
+    azahar_graphics_api: 2
 steam:
   emulator: steam
   core:     gamepadui

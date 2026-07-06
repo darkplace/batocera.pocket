@@ -1,15 +1,16 @@
 --- a/ThunkLibs/Generator/CMakeLists.txt	2026-04-12 13:45:06.435216556 +0300
 +++ b/ThunkLibs/Generator/CMakeLists.txt	2026-04-12 13:45:12.911883221 +0300
-@@ -1,4 +1,5 @@
+@@ -1,5 +1,6 @@
  find_package(Clang REQUIRED CONFIG)
+ find_package(LLVM REQUIRED CONFIG)
 +find_package(fmt REQUIRED CONFIG)
  find_package(OpenSSL REQUIRED COMPONENTS Crypto)
  
  # Query clang's global resource directory for system include directories
-@@ -13,13 +14,13 @@
+@@ -14,13 +15,13 @@ endif()
  add_library(thunkgenlib STATIC analysis.cpp data_layout.cpp gen.cpp)
  target_include_directories(thunkgenlib INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
- target_include_directories(thunkgenlib SYSTEM PUBLIC ${CLANG_INCLUDE_DIRS})
+ target_include_directories(thunkgenlib SYSTEM PUBLIC ${CLANG_INCLUDE_DIRS} ${LLVM_INCLUDE_DIRS})
 -target_link_libraries(thunkgenlib PUBLIC clang-cpp LLVM)
 +target_link_libraries(thunkgenlib PUBLIC clangTooling clangFrontend clangAST LLVM)
  target_link_libraries(thunkgenlib PRIVATE OpenSSL::Crypto)

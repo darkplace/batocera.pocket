@@ -1,3 +1,7 @@
+default:
+  options:
+    opengl_driver: zink
+
 advision:
   emulator: mame
   core:     mame
@@ -19,6 +23,10 @@ nds:
 3ds:
   emulator: azahar
   core:     azahar
+  options:
+    gfxbackend: vulkan
+    citra_graphics_api: Vulkan
+    azahar_graphics_api: 2
 steam:
   emulator: steam
   core:     gamepadui

@@ -11,7 +11,7 @@ custom_features:
     choices:
       Auto: Auto
       OpenGL: OpenGL
-      Vulkan: Vulkan
+      Vulkan (Default): Vulkan
       Software: Software
     before: citra_resolution_factor
   citra_layout_option:

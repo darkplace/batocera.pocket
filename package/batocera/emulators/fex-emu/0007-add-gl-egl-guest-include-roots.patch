@@ -1,13 +1,19 @@
 --- a/ThunkLibs/GuestLibs/CMakeLists.txt
 +++ b/ThunkLibs/GuestLibs/CMakeLists.txt
-@@ -239,2 +239,5 @@
+@@ -288,11 +288,16 @@
  generate(libGL ${CMAKE_CURRENT_SOURCE_DIR}/../libGL/libGL_interface.cpp)
+ target_include_directories_from_pkgconfig(libGL-guest-deps gl)
+ target_include_directories_from_pkgconfig(libGL-guest-deps "xcb;x11;xrandr;xrender")
 +guest_thunk_add_sysroot_include(libGL-guest-deps /usr/include)
 +guest_thunk_add_sysroot_include(libGL-guest-deps /usr/include/GL)
 +guest_thunk_add_common_window_includes(libGL-guest-deps)
  add_guest_lib(GL "libGL.so.1")
-@@ -242,2 +245,4 @@
+
  generate(libEGL ${CMAKE_CURRENT_SOURCE_DIR}/../libEGL/libEGL_interface.cpp)
+ target_include_directories_from_pkgconfig(libEGL-guest-deps egl)
 +guest_thunk_add_sysroot_include(libEGL-guest-deps /usr/include)
 +guest_thunk_add_sysroot_include(libEGL-guest-deps /usr/include/EGL)
  add_guest_lib(EGL "libEGL.so.1")
+ target_link_libraries(EGL-guest PRIVATE GL-guest)
+
+ # libGL must pull in libX11.so, so generate a placeholder libX11.so to link against

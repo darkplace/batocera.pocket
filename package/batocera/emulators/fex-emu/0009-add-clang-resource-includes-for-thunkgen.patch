@@ -1,20 +1,18 @@
 --- a/ThunkLibs/GuestLibs/CMakeLists.txt
 +++ b/ThunkLibs/GuestLibs/CMakeLists.txt
-@@ -10,6 +10,8 @@
- endif()
- 
+@@ -24,6 +24,8 @@ endfunction()
+ endfunction()
+
  set(GUEST_THUNK_SYSROOT "" CACHE PATH "Sysroot containing guest thunk parsing headers")
 +set(CLANG_RESOURCE_DIR "" CACHE PATH "Clang resource directory for thunk parsing")
 +set(CLANG_BUILTIN_HEADERS "" CACHE PATH "Clang builtin headers directory for thunk parsing")
- 
+
  function(guest_thunk_add_sysroot_include TARGET INCLUDE_DIR)
-   if (EXISTS "${INCLUDE_DIR}")
-@@ -96,6 +98,26 @@
-   else()
-     set(BITNESS_FLAGS "")
-     set(BITNESS_FLAGS2 "--target=x86_64-linux-gnu")
-+  endif()
-+
+   if (GUEST_THUNK_SYSROOT AND INCLUDE_DIR MATCHES "^/usr(/|$)")
+@@ -145,6 +147,26 @@ function(generate NAME SOURCE_FILE)
+   endif()
+   list(APPEND BITNESS_FLAGS2 "--sysroot" "${X86_DEV_ROOTFS}")
+
 +  set(CLANG_RESOURCE_FLAGS "")
 +  if (CLANG_RESOURCE_DIR)
 +    list(APPEND CLANG_RESOURCE_FLAGS "-resource-dir" "${CLANG_RESOURCE_DIR}")
@@ -33,10 +31,12 @@
 +        break()
 +      endif()
 +    endforeach()
-   endif()
- 
++  endif()
++
    add_custom_command(
-@@ -104,7 +114,7 @@
+     OUTPUT "${OUTFILE}"
+     DEPENDS "${GENERATOR_EXE}"
+@@ -152,7 +174,7 @@ function(generate NAME SOURCE_FILE)
      OUTPUT "${OUTFILE}"
      DEPENDS "${GENERATOR_EXE}"
      DEPENDS "${SOURCE_FILE}"

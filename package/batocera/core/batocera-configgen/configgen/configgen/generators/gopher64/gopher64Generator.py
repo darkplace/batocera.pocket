@@ -304,14 +304,16 @@ class Gopher64Generator(Generator):
 
         _set_nested(config, "video", "upscale", value=_get_int_option(system.config, "gopher64_upscale", 1, "upscale"))
         _set_nested(config, "video", "integer_scaling", value=_get_bool_option(system.config, "gopher64_integer_scaling", False, "integer_scaling", "integerscale"))
-        _set_nested(config, "video", "widescreen", value=system.config.get_bool("gopher64_widescreen", False))
-        _set_nested(config, "video", "crt", value=system.config.get_bool("gopher64_crt", False))
+        _set_nested(config, "video", "widescreen", value=_get_bool_option(system.config, "gopher64_widescreen", False, "widescreen"))
+        _set_nested(config, "video", "crt", value=_get_bool_option(system.config, "gopher64_crt", False, "crt"))
+        _set_nested(config, "video", "ssaa", value=_get_bool_option(system.config, "gopher64_ssaa", False, "ssaa"))
         _set_nested(config, "video", "fullscreen", value=not configure_emulator(rom))
         _set_nested(config, "video", "vsync", value=True)
-        _set_nested(config, "emulation", "overclock", value=system.config.get_bool("gopher64_overclock", False))
-        _set_nested(config, "emulation", "disable_expansion_pak", value=system.config.get_bool("gopher64_disable_expansion_pak", False))
-        _set_nested(config, "emulation", "usb", value=system.config.get_bool("gopher64_usb", False))
-        _set_nested(config, "input", "emulate_vru", value=system.config.get_bool("gopher64_emulate_vru", False))
+        _set_nested(config, "emulation", "overclock", value=_get_bool_option(system.config, "gopher64_overclock", False, "overclock"))
+        _set_nested(config, "emulation", "disable_expansion_pak", value=_get_bool_option(system.config, "gopher64_disable_expansion_pak", False, "disable_expansion_pak"))
+        _set_nested(config, "emulation", "usb", value=_get_bool_option(system.config, "gopher64_usb", False, "usb"))
+        _set_nested(config, "emulation", "rewind", value=_get_bool_option(system.config, "gopher64_rewind", False))
+        _set_nested(config, "input", "emulate_vru", value=_get_bool_option(system.config, "gopher64_emulate_vru", False, "emulate_vru"))
         _set_nested(config, "input", "gb_rom_path", value=["", "", "", ""])
         _set_nested(config, "input", "gb_ram_path", value=["", "", "", ""])
         config.setdefault("recent_roms", [])
@@ -359,6 +361,6 @@ class Gopher64Generator(Generator):
         )
 
     def getInGameRatio(self, config, gameResolution, rom):
-        if config.get_bool("gopher64_widescreen", False):
+        if _get_bool_option(config, "gopher64_widescreen", False, "widescreen"):
             return 16 / 9
         return 4 / 3
