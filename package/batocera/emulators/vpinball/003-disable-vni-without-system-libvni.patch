@@ -1,0 +1,60 @@
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -116,6 +116,7 @@
+ option(USE_SYSTEM_LIBS "Search system locations for third-party libs before the bundled tree" OFF)
+ set(SYSTEM_LIBS_INCLUDE_DIR "/usr/include" CACHE PATH "System include dir searched first when USE_SYSTEM_LIBS")
+ set(SYSTEM_LIBS_LIB_DIR "/usr/lib" CACHE PATH "System library dir searched first when USE_SYSTEM_LIBS")
++option(ENABLE_VNI_PLUGIN "Build VNI DMD colorization plugin" ON)
+
+ if(USE_SYSTEM_LIBS)
+    # include_directories(BEFORE) prepends each entry, so the resulting search order is the
+@@ -127,6 +128,20 @@
+       "${SYSTEM_LIBS_INCLUDE_DIR}/libwinevbs/atl")
+    link_directories(BEFORE "${SYSTEM_LIBS_LIB_DIR}")
+    message(STATUS "USE_SYSTEM_LIBS: include=${SYSTEM_LIBS_INCLUDE_DIR} lib=${SYSTEM_LIBS_LIB_DIR}")
++
++   if(ENABLE_VNI_PLUGIN
++      AND NOT (EXISTS "${SYSTEM_LIBS_INCLUDE_DIR}/vni.h"
++         AND (EXISTS "${SYSTEM_LIBS_LIB_DIR}/libvni.so" OR EXISTS "${SYSTEM_LIBS_LIB_DIR}/libvni.a")))
++      set(ENABLE_VNI_PLUGIN OFF)
++      message(STATUS "VNI plugin disabled: system libvni headers/libs not found")
++   endif()
++endif()
++
++set(VPINBALL_VNI_LIBS)
++if(ENABLE_VNI_PLUGIN)
++   list(APPEND VPINBALL_VNI_LIBS
++      vni
++      VNIPlugin)
+ endif()
+
+ include("${CMAKE_SOURCE_DIR}/make/CMakeLists_sources.txt")
+@@ -874,7 +889,7 @@
+       serum
+       dmdutil
+       pupdmd
+-      vni
++      ${VPINBALL_VNI_LIBS}
+       sockpp
+       dof
+       avcodec
+@@ -899,7 +914,6 @@
+       RemoteControlPlugin
+       ScoreViewPlugin
+       SerumPlugin
+-      VNIPlugin
+       WMPPlugin
+       UpscaleDMDPlugin
+       $<$<BOOL:${ENABLE_XR}>:openxr_loader>
+--- a/make/CMakeLists_plugins.txt
++++ b/make/CMakeLists_plugins.txt
+@@ -32,6 +32,8 @@
+ include("${CMAKE_SOURCE_DIR}/make/CMakeLists_plugin_RemoteControl.txt")
+ include("${CMAKE_SOURCE_DIR}/make/CMakeLists_plugin_ScoreView.txt")
+ include("${CMAKE_SOURCE_DIR}/make/CMakeLists_plugin_Serum.txt")
+-include("${CMAKE_SOURCE_DIR}/make/CMakeLists_plugin_VNI.txt")
++if(ENABLE_VNI_PLUGIN)
++   include("${CMAKE_SOURCE_DIR}/make/CMakeLists_plugin_VNI.txt")
++endif()
+ include("${CMAKE_SOURCE_DIR}/make/CMakeLists_plugin_UpscaleDMD.txt")
+ include("${CMAKE_SOURCE_DIR}/make/CMakeLists_plugin_WMP.txt")

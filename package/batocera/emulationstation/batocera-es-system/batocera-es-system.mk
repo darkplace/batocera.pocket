@@ -126,6 +126,9 @@ define BATOCERA_ES_SYSTEM_INSTALL_TARGET_CMDS
 	# Drop stale Steam datainit files from incremental target trees.
 	rm -rf $(TARGET_DIR)/usr/share/batocera/datainit/roms/steam
 	cp -pr $(@D)/roms $(TARGET_DIR)/usr/share/batocera/datainit/
+	$(INSTALL) -D -m 0644 \
+		$(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/core/batocera-desktopapps/icons/shadps4.png \
+		$(TARGET_DIR)/usr/share/batocera/datainit/roms/emulator/images/shadps4.png
 	$(BATOCERA_ES_SYSTEM_INSTALL_WINE_TOOLS)
 	$(BATOCERA_ES_SYSTEM_INSTALL_STEAM_TOOLS)
 	$(BATOCERA_ES_SYSTEM_INSTALL_GAMEPAD_CALIBRATION_TOOL)

@@ -1,0 +1,52 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: batocera <batocera@localhost>
+Date: Tue, 7 Jul 2026 00:00:00 +0000
+Subject: [PATCH] Respect wayland feature cache options
+
+Qt 6.10 exposes wayland_client and wayland_server through QtGui, so the
+QtWayland repository sees QT_FEATURE_wayland_client/server as enabled
+even when Buildroot passes FEATURE_wayland_client/server=OFF to this
+package. Use the explicit cache options, when present, to decide which
+QtWayland subdirectories to enter.
+
+This keeps host qtwayland builds from entering client/compositor code and
+keeps client-only target builds from configuring the compositor module.
+---
+ src/CMakeLists.txt | 16 +++++++++++++---
+ 1 file changed, 13 insertions(+), 3 deletions(-)
+
+diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
+index 9f657d4..ba72266 100644
+--- a/src/CMakeLists.txt
++++ b/src/CMakeLists.txt
+@@ -37,15 +37,25 @@ if (NOT WaylandScanner_FOUND OR NOT Wayland_FOUND)
+ # TODO: Ideally these macros would be part of the qtwaylandscanner tool, and not the compositor/client
+ #special case end
+
+-if (QT_FEATURE_wayland_server)
++set(qtwayland_build_server ${QT_FEATURE_wayland_server})
++if(DEFINED FEATURE_wayland_server)
++    set(qtwayland_build_server ${FEATURE_wayland_server})
++endif()
++
++set(qtwayland_build_client ${QT_FEATURE_wayland_client})
++if(DEFINED FEATURE_wayland_client)
++    set(qtwayland_build_client ${FEATURE_wayland_client})
++endif()
++
++if (qtwayland_build_server)
+     add_subdirectory(compositor)
+ endif()
+
+-if (QT_FEATURE_wayland_client)
++if (qtwayland_build_client)
+     add_subdirectory(client)
+ endif()
+
+-if (QT_FEATURE_wayland_server OR QT_FEATURE_wayland_client)
++if (qtwayland_build_server OR qtwayland_build_client)
+     add_subdirectory(hardwareintegration)
+     add_subdirectory(plugins)
+     add_subdirectory(imports)
+--
+2.50.0

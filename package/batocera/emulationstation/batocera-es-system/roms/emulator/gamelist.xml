@@ -86,6 +86,11 @@
     <image>./images/vita3k.png</image>
   </game>
   <game>
+    <path>./Configure_shadPS4.sh</path>
+    <name>Configure shadPS4</name>
+    <image>./images/shadps4.png</image>
+  </game>
+  <game>
     <path>./Configure_Xenia_Canary.sh</path>
     <name>Configure Xenia Canary</name>
     <image>./images/xenia-canary.png</image>

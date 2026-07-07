@@ -1,5 +1,6 @@
 config BR2_PACKAGE_QT6MULTIMEDIA
 	bool "qt6multimedia"
+	select BR2_PACKAGE_QT6BASE_CONCURRENT
 	select BR2_PACKAGE_QT6BASE_GUI
 	select BR2_PACKAGE_QT6BASE_NETWORK
 	select BR2_PACKAGE_QT6SHADERTOOLS
@@ -39,11 +40,9 @@ config BR2_PACKAGE_QT6MULTIMEDIA_FFMPEG
 	depends on BR2_PACKAGE_PULSEAUDIO_HAS_ATOMIC
 	# V4L2_PIX_FMT_BGRA32
 	depends on BR2_TOOLCHAIN_HEADERS_AT_LEAST_5_2
-	# qt6-multimedia ffmpeg plugin needs
-	# qt6base-concurrent, PulseAudio and ffmpeg-swcale.
+	# qt6-multimedia ffmpeg plugin needs PulseAudio and ffmpeg-swscale.
 	select BR2_PACKAGE_FFMPEG
 	select BR2_PACKAGE_FFMPEG_SWSCALE
-	select BR2_PACKAGE_QT6BASE_CONCURRENT
 	select BR2_PACKAGE_QT6MULTIMEDIA_PULSEAUDIO
 	# libxext/libxrandr are needed for ffmpeg plugin to build with
 	# X11 support:
@@ -77,6 +76,7 @@ config BR2_PACKAGE_QT6MULTIMEDIA_GSTREAMER
 	bool "gstreamer plugin"
 	# gstreamer 1.x and gst-plugins-base-app are required
 	# for gstreamer support in qt6-multimedia
+	select BR2_PACKAGE_GST1_PLUGINS_BAD
 	select BR2_PACKAGE_GST1_PLUGINS_BASE
 	select BR2_PACKAGE_GST1_PLUGINS_BASE_PLUGIN_APP
 	select BR2_PACKAGE_GSTREAMER1

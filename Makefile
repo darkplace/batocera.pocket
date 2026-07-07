@@ -42,6 +42,11 @@ UC = $(shell echo '$1' | tr '[:lower:]' '[:upper:]')
 ifdef DIRECT_BUILD
 
 define MAKE_BUILDROOT
+	BUILDROOT_HOST_LIB="$(OUTPUT_DIR)/$*/host/lib"; \
+	BUILDROOT_HOST_PYTHON="$(OUTPUT_DIR)/$*/host/bin/python3"; \
+	if [ -d "$$BUILDROOT_HOST_LIB" ] && [ -x "$$BUILDROOT_HOST_PYTHON" ] && ! "$$BUILDROOT_HOST_PYTHON" -V >/dev/null 2>&1; then \
+		export LD_LIBRARY_PATH="$$BUILDROOT_HOST_LIB$${LD_LIBRARY_PATH:+:$$LD_LIBRARY_PATH}"; \
+	fi; \
 	SANITIZED_PATH="$$(printf '%s' "$$PATH" | tr ':' '\n' | awk 'NF && $$0 !~ /[[:space:]]/ { if (!seen[$$0]++) printf("%s%s", sep, $$0); sep=":" }')"; \
 	if [ -n "$$SANITIZED_PATH" ]; then export PATH="$$SANITIZED_PATH"; fi; \
 	make $(MAKE_OPTS) O=$(OUTPUT_DIR)/$* \
@@ -67,6 +72,7 @@ define RUN_DOCKER
 		-v $(PROJECT_DIR):/build \
 		-v $(DL_DIR):/build/buildroot/dl \
 		-v $(OUTPUT_DIR)/$*:/$* \
+		-v $(OUTPUT_DIR)/$*:$(OUTPUT_DIR)/$* \
 		-v $(CCACHE_DIR):$(HOME)/.buildroot-ccache \
 		-w /$* \
 		-v /etc/passwd:/etc/passwd:ro \
@@ -77,9 +83,14 @@ define RUN_DOCKER
 endef
 
 define MAKE_BUILDROOT
-	$(RUN_DOCKER) make $(MAKE_OPTS) O=/$* \
+	$(RUN_DOCKER) sh -c ' \
+		if [ -d "/$*/host/lib" ] && [ -x "/$*/host/bin/python3" ] && ! "/$*/host/bin/python3" -V >/dev/null 2>&1; then \
+			export LD_LIBRARY_PATH="/$*/host/lib$${LD_LIBRARY_PATH:+:$$LD_LIBRARY_PATH}"; \
+		fi; \
+		exec make $(MAKE_OPTS) O=/$* \
 			BR2_EXTERNAL=/build \
-			-C /build/buildroot
+			-C /build/buildroot "$$@"; \
+	' sh
 endef
 
 endif # DIRECT_BUILD
@@ -188,34 +199,78 @@ dl-dir:
 %-pkg:
 	$(if $(PKG),,$(error "PKG not specified!"))
 
-	@$(MAKE) $*-build CMD=$(PKG)
+	@MAKEFLAGS= $(MAKE) $*-build \
+		CMD=$(PKG) \
+		DIRECT_BUILD=$(DIRECT_BUILD) \
+		PARALLEL_BUILD=$(PARALLEL_BUILD) \
+		BATCH_MODE=$(BATCH_MODE) \
+		OUTPUT_DIR=$(OUTPUT_DIR) \
+		DL_DIR=$(DL_DIR) \
+		CCACHE_DIR=$(CCACHE_DIR)
 	
 # Multilib added by suckbluefrog@proton.me
-# Build optional 32-bit multilib stacks first (armhf and/or i386),
-# then the normal image target.
+# Build optional side payloads first (armhf/i386 multilib stacks and/or
+# shadPS4's x86-64-v3 FEX rootfs), then the normal image target.
 %-multilib: %-supported
 	@set -e; \
 	has_armhf=0; \
 	has_i386=0; \
+	has_shadps4_fex=0; \
 	if [ -f "$(PROJECT_DIR)/configs/batocera-$*_armhf_libs.board" ]; then has_armhf=1; fi; \
 	if [ -f "$(PROJECT_DIR)/configs/batocera-$*_i386_libs.board" ]; then has_i386=1; fi; \
-	if [ "$$has_armhf" -eq 0 ] && [ "$$has_i386" -eq 0 ]; then \
-		echo "ERROR: no multilib board found for '$*' (expected *_armhf_libs.board and/or *_i386_libs.board)"; \
+	if [ -f "$(PROJECT_DIR)/configs/batocera-$*_x86_64_v3_shadps4.board" ]; then has_shadps4_fex=1; fi; \
+	if [ "$$has_armhf" -eq 0 ] && [ "$$has_i386" -eq 0 ] && [ "$$has_shadps4_fex" -eq 0 ]; then \
+		echo "ERROR: no side-build board found for '$*' (expected *_armhf_libs.board, *_i386_libs.board, and/or *_x86_64_v3_shadps4.board)"; \
 		exit 1; \
 	fi; \
 	if [ "$$has_armhf" -eq 1 ]; then \
-		$(MAKE) $*_armhf_libs-build; \
+		MAKEFLAGS= $(MAKE) $*_armhf_libs-build \
+			DIRECT_BUILD=$(DIRECT_BUILD) \
+			PARALLEL_BUILD=$(PARALLEL_BUILD) \
+			BATCH_MODE=$(BATCH_MODE) \
+			OUTPUT_DIR=$(OUTPUT_DIR) \
+			DL_DIR=$(DL_DIR) \
+			CCACHE_DIR=$(CCACHE_DIR) \
+			EXTRA_OPTS="$(EXTRA_OPTS)"; \
 		test -f "$(OUTPUT_DIR)/$*_armhf_libs/.config" || { echo "ERROR: missing $(OUTPUT_DIR)/$*_armhf_libs/.config after $*_armhf_libs-build"; exit 1; }; \
 		grep -q '^BR2_ARM_EABIHF=y' "$(OUTPUT_DIR)/$*_armhf_libs/.config" || { echo "ERROR: $*_armhf_libs is not ARM EABIHF"; exit 1; }; \
 		grep -q '^BR2_GCC_TARGET_FLOAT_ABI=\"hard\"' "$(OUTPUT_DIR)/$*_armhf_libs/.config" || { echo "ERROR: $*_armhf_libs toolchain is not hard-float"; exit 1; }; \
 		grep -q '^BR2_arm926t=y' "$(OUTPUT_DIR)/$*_armhf_libs/.config" && { echo "ERROR: $*_armhf_libs fell back to arm926t (invalid armhf config)"; exit 1; } || true; \
 	fi; \
 	if [ "$$has_i386" -eq 1 ]; then \
-		$(MAKE) $*_i386_libs-build; \
+		MAKEFLAGS= $(MAKE) $*_i386_libs-build \
+			DIRECT_BUILD=$(DIRECT_BUILD) \
+			PARALLEL_BUILD=$(PARALLEL_BUILD) \
+			BATCH_MODE=$(BATCH_MODE) \
+			OUTPUT_DIR=$(OUTPUT_DIR) \
+			DL_DIR=$(DL_DIR) \
+			CCACHE_DIR=$(CCACHE_DIR) \
+			EXTRA_OPTS="$(EXTRA_OPTS)"; \
 		test -f "$(OUTPUT_DIR)/$*_i386_libs/.config" || { echo "ERROR: missing $(OUTPUT_DIR)/$*_i386_libs/.config after $*_i386_libs-build"; exit 1; }; \
 		grep -q '^BR2_x86_i686=y' "$(OUTPUT_DIR)/$*_i386_libs/.config" || { echo "ERROR: $*_i386_libs is not i686"; exit 1; }; \
 	fi; \
-	$(MAKE) $*-build; \
+	if [ "$$has_shadps4_fex" -eq 1 ]; then \
+		MAKEFLAGS= $(MAKE) $*_x86_64_v3_shadps4-build \
+			DIRECT_BUILD=$(DIRECT_BUILD) \
+			PARALLEL_BUILD=$(PARALLEL_BUILD) \
+			BATCH_MODE=$(BATCH_MODE) \
+			OUTPUT_DIR=$(OUTPUT_DIR) \
+			DL_DIR=$(DL_DIR) \
+			CCACHE_DIR=$(CCACHE_DIR) \
+			EXTRA_OPTS="$(EXTRA_OPTS)"; \
+		test -f "$(OUTPUT_DIR)/$*_x86_64_v3_shadps4/.config" || { echo "ERROR: missing $(OUTPUT_DIR)/$*_x86_64_v3_shadps4/.config after $*_x86_64_v3_shadps4-build"; exit 1; }; \
+		grep -q '^BR2_x86_64=y' "$(OUTPUT_DIR)/$*_x86_64_v3_shadps4/.config" || { echo "ERROR: $*_x86_64_v3_shadps4 is not x86_64"; exit 1; }; \
+		grep -q '^BR2_x86_x86_64_v3=y' "$(OUTPUT_DIR)/$*_x86_64_v3_shadps4/.config" || { echo "ERROR: $*_x86_64_v3_shadps4 is not x86-64-v3"; exit 1; }; \
+		grep -q '^BR2_PACKAGE_SHADPS4=y' "$(OUTPUT_DIR)/$*_x86_64_v3_shadps4/.config" || { echo "ERROR: $*_x86_64_v3_shadps4 did not select shadps4"; exit 1; }; \
+	fi; \
+	MAKEFLAGS= $(MAKE) $*-build \
+		DIRECT_BUILD=$(DIRECT_BUILD) \
+		PARALLEL_BUILD=$(PARALLEL_BUILD) \
+		BATCH_MODE=$(BATCH_MODE) \
+		OUTPUT_DIR=$(OUTPUT_DIR) \
+		DL_DIR=$(DL_DIR) \
+		CCACHE_DIR=$(CCACHE_DIR) \
+		EXTRA_OPTS="$(EXTRA_OPTS)"; \
 	if [ "$$has_armhf" -eq 1 ]; then \
 		test -e "$(OUTPUT_DIR)/$*/target/lib32/ld-linux-armhf.so.3" || { echo "ERROR: missing /lib32/ld-linux-armhf.so.3 after $*-multilib"; exit 1; }; \
 		file -L "$(OUTPUT_DIR)/$*/target/lib32/ld-linux-armhf.so.3" | grep -q "Intel 80386" && { echo "ERROR: /lib32/ld-linux-armhf.so.3 is i386 after $*-multilib"; exit 1; } || true; \
@@ -223,6 +278,22 @@ dl-dir:
 	if [ "$$has_i386" -eq 1 ]; then \
 		test -e "$(OUTPUT_DIR)/$*/target/lib32/ld-linux.so.2" || { echo "ERROR: missing /lib32/ld-linux.so.2 after $*-multilib"; exit 1; }; \
 		file -L "$(OUTPUT_DIR)/$*/target/lib32/ld-linux.so.2" | grep -q "Intel 80386" || { echo "ERROR: /lib32/ld-linux.so.2 is not i386 after $*-multilib"; exit 1; }; \
+	fi; \
+	if [ "$$has_shadps4_fex" -eq 1 ]; then \
+		shadps4_guest="$(OUTPUT_DIR)/$*/target2/usr/share/batocera/apps/shadps4-fex-rootfs/usr/bin/shadps4/shadps4"; \
+		if [ ! -x "$$shadps4_guest" ]; then \
+			shadps4_guest="$(OUTPUT_DIR)/$*/target/usr/share/batocera/apps/shadps4-fex-rootfs/usr/bin/shadps4/shadps4"; \
+		fi; \
+		test -x "$$shadps4_guest" || { echo "ERROR: missing injected shadPS4 FEX guest binary after $*-multilib"; exit 1; }; \
+		file -L "$$shadps4_guest" | grep -q "x86-64" || { echo "ERROR: injected shadPS4 FEX guest binary is not x86-64"; exit 1; }; \
+		shadps4_qtlauncher="$$(dirname "$$shadps4_guest")/shadps4-qtlauncher"; \
+		if [ -e "$$shadps4_qtlauncher" ]; then \
+			file -L "$$shadps4_qtlauncher" | grep -q "x86-64" || { echo "ERROR: injected shadPS4 FEX Qt launcher is not x86-64"; exit 1; }; \
+		fi; \
+		shadps4_qtlauncher_native="$$(dirname "$$shadps4_guest")/shadPS4QtLauncher"; \
+		if [ -e "$$shadps4_qtlauncher_native" ]; then \
+			file -L "$$shadps4_qtlauncher_native" | grep -q "x86-64" || { echo "ERROR: injected shadPS4 FEX Qt launcher is not x86-64"; exit 1; }; \
+		fi; \
 	fi
 
 # Compare top-level SONAME coverage between 64-bit and armhf lib stacks.

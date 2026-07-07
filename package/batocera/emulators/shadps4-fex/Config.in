@@ -1,0 +1,30 @@
+config BR2_PACKAGE_SHADPS4_FEX
+	bool "shadps4-fex"
+	depends on BR2_aarch64
+	select BR2_PACKAGE_FEX_EMU
+	help
+	  FEX launcher support for the x86_64 Linux shadPS4 build on
+	  AArch64 Batocera systems.
+
+	  This package does not build shadPS4 for AArch64. It installs a
+	  launcher that runs an x86-64 shadPS4 payload through FEX-Emu.
+	  SM8X50 images can inject the matching x86-64-v3 rootfs from the
+	  *_x86_64_v3_shadps4 side build during post-build.
+
+if BR2_PACKAGE_SHADPS4_FEX
+
+config BR2_PACKAGE_SHADPS4_FEX_PAYLOAD_PATH
+	string "prebuilt x86_64 shadPS4 payload path"
+	default ""
+	help
+	  Optional directory containing the x86_64 shadPS4 payload to copy
+	  into the target image.
+
+	  The normal SM8X50 path is to build a matching
+	  *_x86_64_v3_shadps4 side rootfs and let the post-build injector
+	  install it under /usr/share/batocera/apps/shadps4-fex-rootfs.
+
+	  Leave this path missing to install the launcher only. In that case,
+	  place the x86_64 payload at /userdata/system/shadps4-x86_64.
+
+endif

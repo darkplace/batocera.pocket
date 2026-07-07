@@ -28,6 +28,71 @@ if [ ! -d "${output_abs}/host" ]; then
     exit 0
 fi
 
+is_host_elf_executable() {
+    local file="${1}"
+
+    readelf -l "${file}" 2>/dev/null \
+        | grep -q "Requesting program interpreter:"
+}
+
+elf_needs_host_rpath() {
+    local file="${1}"
+    local hostdir="${2}"
+    local lib
+
+    while IFS= read -r lib; do
+        [ -e "${hostdir}/lib/${lib}" ] && return 0
+    done < <(
+        readelf -d "${file}" 2>/dev/null \
+            | sed -r -e '/^.* \(NEEDED\) .*Shared library: \[(.+)\]$/!d' \
+                     -e 's//\1/'
+    )
+
+    return 1
+}
+
+host_rpath_points_to_lib() {
+    local hostdir="${1}"
+    local rpath="${2}"
+    local dir normalized
+
+    [ -n "${rpath}" ] || return 1
+
+    for dir in ${rpath//:/ }; do
+        [ -n "${dir}" ] || continue
+        normalized="$(sed -r -e 's:/+:/:g; s:/$::;' <<<"${dir}")"
+        [ "${normalized}" = "\$ORIGIN/../lib" ] && return 0
+        [ -e "${normalized}" ] && [ "${normalized}" -ef "${hostdir}/lib" ] && return 0
+    done
+
+    return 1
+}
+
+repair_host_tool_rpaths() {
+    local hostdir="${1}"
+    local patchelf="${hostdir}/bin/patchelf"
+    local file rpath changed
+
+    [ -x "${patchelf}" ] || return 0
+    [ -d "${hostdir}/lib" ] || return 0
+
+    changed=0
+    while IFS= read -r -d '' file; do
+        is_host_elf_executable "${file}" || continue
+        elf_needs_host_rpath "${file}" "${hostdir}" || continue
+
+        rpath="$("${patchelf}" --print-rpath "${file}" 2>/dev/null || true)"
+        host_rpath_points_to_lib "${hostdir}" "${rpath}" && continue
+
+        "${patchelf}" --set-rpath "\$ORIGIN/../lib" "${file}" || continue
+        changed=$((changed + 1))
+    done < <(find "${hostdir}/bin" "${hostdir}/sbin" -type f -print0 2>/dev/null)
+
+    if [ "${changed}" -gt 0 ]; then
+        echo "Repaired host RPATH in ${changed} executable(s) under ${hostdir}."
+    fi
+}
+
 patterns="$(mktemp)"
 rewrites="$(mktemp)"
 files="$(mktemp)"
@@ -177,3 +242,5 @@ PY
         fi
     fi
 fi
+
+repair_host_tool_rpaths "${output_abs}/host"

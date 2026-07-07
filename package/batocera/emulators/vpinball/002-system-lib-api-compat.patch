@@ -1,0 +1,199 @@
+--- a/plugins/altsound/AltSoundPlugin.cpp
++++ b/plugins/altsound/AltSoundPlugin.cpp
+@@ -10,6 +10,13 @@
+ #include "plugins/VPXPlugin.h"
+ #include <altsound.h>
+
++#if defined(ALTSOUND_VERSION_MAJOR) && defined(ALTSOUND_VERSION_MINOR) \
++    && (ALTSOUND_VERSION_MAJOR == 0) && (ALTSOUND_VERSION_MINOR <= 1)
++#define VPX_LEGACY_ALTSOUND_API 1
++#else
++#define VPX_LEGACY_ALTSOUND_API 0
++#endif
++
+ using namespace std::string_literals;
+ using namespace std::string_view_literals;
+
+@@ -23,22 +30,25 @@
+
+ MSGPI_STRING_VAL_SETTING(altsoundFolderProp, "Folder", "AltSound Folder", "", true, "", 1024);
+
+-static constexpr uint32_t BUFFER_SIZE_FRAMES = 128;
+-
+ static MsgPluginAPI* msgApi = nullptr;
+ static VPXPluginAPI* vpxApi = nullptr;
+
+ static uint32_t endpointId;
+ static unsigned int onControllerGameStartId;
+ static unsigned int onControllerGameEndId;
+-static unsigned int onAudioUpdateId = 0;
+ static unsigned int onSoundCommandId = 0;
++
++#if !VPX_LEGACY_ALTSOUND_API
++static constexpr uint32_t BUFFER_SIZE_FRAMES = 128;
++static unsigned int onAudioUpdateId = 0;
+ static unsigned int onAudioSrcChangedId = 0;
+ static unsigned int getAudioSrcId = 0;
++#endif
+
+ static bool isRunning = false;
+ static string currentGameId;
+
++#if !VPX_LEGACY_ALTSOUND_API
+ static CtlResId audioResId;
+ static uint32_t nextAudioResId = 1;
+ static AudioSrcId audioSrcDef = {};
+@@ -50,7 +60,9 @@
+     unsigned int onAudioUpdateId;
+     AudioUpdateMsg* msg;
+ };
++#endif
+
++#if !VPX_LEGACY_ALTSOUND_API
+ static void OnGetAudioSrc(const unsigned int msgId, void* userData, void* msgData)
+ {
+     GetAudioSrcMsg* msg = static_cast<GetAudioSrcMsg*>(msgData);
+@@ -116,27 +128,42 @@
+         delete data;
+     }, cbData);
+ }
++#endif
+
+ static void StartAltSound(const string& gameId, const string& basePath, uint64_t hardwareGen)
+ {
+     if (isRunning) {
+         isRunning = false;
++#if VPX_LEGACY_ALTSOUND_API
++        AltsoundShutdown();
++#else
+         AltSoundShutdown();
++#endif
+     }
+
+     VPXInfo vpxInfo;
+     vpxApi->GetVpxInfo(&vpxInfo);
++#if VPX_LEGACY_ALTSOUND_API
++    AltsoundSetLogger(vpxInfo.prefPath, ALTSOUND_LOG_LEVEL_INFO, false);
++#else
+     AltSoundSetLogger(vpxInfo.prefPath, ALTSOUND_LOG_LEVEL_INFO, false);
++#endif
+
+     LOGI(std::format("Initializing AltSound for game: {}, basePath: {}", gameId, basePath));
+
++#if VPX_LEGACY_ALTSOUND_API
++    if (AltsoundInit(basePath, gameId)) {
++        AltsoundSetHardwareGen(static_cast<ALTSOUND_HARDWARE_GEN>(hardwareGen));
++#else
+     if (AltSoundInit(basePath, gameId, 44100, 2, BUFFER_SIZE_FRAMES)) {
+         AltSoundSetAudioCallback(AudioCallback, nullptr);
+         AltSoundSetHardwareGen(static_cast<ALTSOUND_HARDWARE_GEN>(hardwareGen));
++#endif
+
+         currentGameId = gameId;
+         isRunning = true;
+
++#if !VPX_LEGACY_ALTSOUND_API
+         UpdatePinmameAudioId();
+         audioSrcDef.id = audioResId;
+         audioSrcDef.overrideId = pinmameAudioId;
+@@ -144,6 +171,7 @@
+         audioSrcDef.format = CTLPI_AUDIO_FORMAT_SAMPLE_FLOAT;
+         audioSrcDef.sampleRate = 44100;
+         msgApi->BroadcastMsg(endpointId, onAudioSrcChangedId, nullptr);
++#endif
+
+         LOGI("AltSound initialized successfully for game: " + gameId);
+     } else {
+@@ -157,9 +185,14 @@
+        return;
+
+     isRunning = false;
++#if VPX_LEGACY_ALTSOUND_API
++    AltsoundShutdown();
++#else
+     AltSoundShutdown();
++#endif
+     currentGameId.clear();
+
++#if !VPX_LEGACY_ALTSOUND_API
+     AudioUpdateMsg* pAudioUpdateMsg = new AudioUpdateMsg();
+     pAudioUpdateMsg->id = audioResId;
+     pAudioUpdateMsg->buffer = nullptr;
+@@ -176,6 +209,7 @@
+
+     memset(&audioSrcDef, 0, sizeof(audioSrcDef));
+     msgApi->BroadcastMsg(endpointId, onAudioSrcChangedId, nullptr);
++#endif
+ }
+
+ static void OnControllerGameStart(const unsigned int eventId, void* userData, void* msgData)
+@@ -225,7 +259,11 @@
+
+     const CtlOnSoundCommandMsg* msg = static_cast<const CtlOnSoundCommandMsg*>(msgData);
+     if (msg != nullptr)
++#if VPX_LEGACY_ALTSOUND_API
++        AltsoundProcessCommand(msg->cmd, 0);
++#else
+         AltSoundProcessCommand(msg->cmd, 0);
++#endif
+ }
+
+ static void OnControllerGameEnd(const unsigned int eventId, void* userData, void* msgData)
+@@ -245,8 +283,10 @@
+     msgApi = const_cast<MsgPluginAPI*>(api);
+     endpointId = sessionId;
+
++#if !VPX_LEGACY_ALTSOUND_API
+     audioResId.endpointId = endpointId;
+     audioResId.resId = nextAudioResId++;
++#endif
+
+     LPISetup(endpointId, msgApi);
+
+@@ -256,11 +296,13 @@
+     msgApi->BroadcastMsg(endpointId, getVpxApiId, &vpxApi);
+     msgApi->ReleaseMsgID(getVpxApiId);
+
++#if !VPX_LEGACY_ALTSOUND_API
+     onAudioUpdateId = msgApi->GetMsgID(CTLPI_NAMESPACE, CTLPI_AUDIO_ON_UPDATE_MSG);
+     onAudioSrcChangedId = msgApi->GetMsgID(CTLPI_NAMESPACE, CTLPI_AUDIO_ON_SRC_CHG_MSG);
+     getAudioSrcId = msgApi->GetMsgID(CTLPI_NAMESPACE, CTLPI_AUDIO_GET_SRC_MSG);
+     msgApi->SubscribeMsg(endpointId, getAudioSrcId, OnGetAudioSrc, nullptr);
+     msgApi->SubscribeMsg(endpointId, onAudioSrcChangedId, OnAudioSrcChanged, nullptr);
++#endif
+
+     msgApi->SubscribeMsg(endpointId, onControllerGameStartId = msgApi->GetMsgID(CTLPI_NAMESPACE, CTLPI_EVT_ON_GAME_START), OnControllerGameStart, nullptr);
+     msgApi->SubscribeMsg(endpointId, onControllerGameEndId = msgApi->GetMsgID(CTLPI_NAMESPACE, CTLPI_EVT_ON_GAME_END), OnControllerGameEnd, nullptr);
+@@ -288,6 +330,7 @@
+             msgApi->ReleaseMsgID(onControllerGameEndId);
+             onControllerGameEndId = 0;
+         }
++#if !VPX_LEGACY_ALTSOUND_API
+         if (onAudioUpdateId != 0) {
+             msgApi->ReleaseMsgID(onAudioUpdateId);
+             onAudioUpdateId = 0;
+@@ -302,6 +345,7 @@
+             msgApi->ReleaseMsgID(onAudioSrcChangedId);
+             onAudioSrcChangedId = 0;
+         }
++#endif
+     }
+
+     vpxApi = nullptr;
+--- a/plugins/dmdutil/DMDUtilPlugin.cpp
++++ b/plugins/dmdutil/DMDUtilPlugin.cpp
+@@ -282,14 +282,8 @@
+    pConfig->SetZeDMDBrightness(zeDMDBrightnessFolderProp_Val);
+    pConfig->SetZeDMDWiFiEnabled(zeDMDWiFiEnabledProp_Val);
+    pConfig->SetZeDMDWiFiAddr(zeDMDWiFiAddrFolderProp_Get());
+-   pConfig->SetZeDMDSpiEnabled(zeDMDSPIEnabledProp_Val);
+-   pConfig->SetZeDMDSpiSpeed(zeDMDSPISpeedProp_Val);
+-   pConfig->SetZeDMDSpiFramePause(zeDMDSPIFramePauseProp_Val);
+-   pConfig->SetZeDMDWidth(zeDMDSPIWidthProp_Val);
+-   pConfig->SetZeDMDHeight(zeDMDSPIHeightProp_Val);
+    pConfig->SetPixelcade(pixelcadeProp_Val);
+    pConfig->SetPixelcadeDevice(pixelcadeDeviceProp_Get());
+-   pConfig->SetPIN2DMD(pin2dmdProp_Val);
+    pConfig->SetDMDServer(dmdServerFolderProp_Val);
+    pConfig->SetDMDServerAddr(dmdServerAddrFolderProp_Get());
+    pConfig->SetDMDServerPort(dmdServerPortFolderProp_Val);

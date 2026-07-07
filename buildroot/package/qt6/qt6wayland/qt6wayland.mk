@@ -29,16 +29,16 @@ QT6WAYLAND_LICENSE_FILES = \
 
 QT6WAYLAND_CONF_OPTS = \
 	-DQT_HOST_PATH=$(HOST_DIR) \
+	-DQT_FIND_PRIVATE_MODULES=ON \
 	-DBUILD_WITH_PCH=OFF \
 	-DQT_BUILD_EXAMPLES=OFF \
 	-DQT_BUILD_TESTS=OFF \
 	-DFEATURE_wayland_client=ON
 
-# host-qt6wayland needed to build the qtwaylandscanner host tool
+# host-qt6base provides qtwaylandscanner when Wayland is enabled.
 QT6WAYLAND_DEPENDENCIES = \
 	qt6base \
-	wayland \
-	host-qt6wayland
+	wayland
 
 ifeq ($(BR2_PACKAGE_QT6DECLARATIVE),y)
 QT6WAYLAND_DEPENDENCIES += qt6declarative
@@ -52,6 +52,7 @@ QT6WAYLAND_CONF_OPTS += -DFEATURE_wayland_server=OFF
 endif
 
 HOST_QT6WAYLAND_CONF_OPTS = \
+	-DQT_FIND_PRIVATE_MODULES=ON \
 	-DFEATURE_wayland_client=OFF \
 	-DFEATURE_wayland_server=OFF
 

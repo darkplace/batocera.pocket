@@ -1,0 +1,76 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Batocera Linux <batocera@batocera.org>
+Date: Mon, 6 Jul 2026 00:00:00 +0000
+Subject: [PATCH] video_core: allow Wayland builds without Xlib headers
+
+shadPS4 enables both Wayland and Xlib Vulkan WSI on Linux, which requires
+X11 headers even for Wayland-only builds. Detect the available native WSI
+headers and compile each Linux surface path independently.
+
+Signed-off-by: Batocera Linux <batocera@batocera.org>
+---
+ src/video_core/renderer_vulkan/vk_platform.cpp | 12 +++++++++++-
+ 1 file changed, 11 insertions(+), 1 deletion(-)
+
+diff --git a/src/video_core/renderer_vulkan/vk_platform.cpp b/src/video_core/renderer_vulkan/vk_platform.cpp
+index 21d04fd..39d80f7 100644
+--- a/src/video_core/renderer_vulkan/vk_platform.cpp
++++ b/src/video_core/renderer_vulkan/vk_platform.cpp
+@@ -9,8 +9,12 @@
+ #elif defined(__APPLE__)
+ #define VK_USE_PLATFORM_METAL_EXT
+ #else
++#if __has_include(<wayland-client.h>)
+ #define VK_USE_PLATFORM_WAYLAND_KHR
++#endif
++#if __has_include(<X11/Xlib.h>)
+ #define VK_USE_PLATFORM_XLIB_KHR
++#endif
+ #endif
+
+ #include <vector>
+@@ -76,6 +80,7 @@ vk::SurfaceKHR CreateSurface(vk::Instance instance, const Frontend::WindowSDL& e
+         }
+     }
+ #elif defined(VK_USE_PLATFORM_XLIB_KHR) || defined(VK_USE_PLATFORM_WAYLAND_KHR)
++#if defined(VK_USE_PLATFORM_XLIB_KHR)
+     if (window_info.type == Frontend::WindowSystemType::X11) {
+         const vk::XlibSurfaceCreateInfoKHR xlib_ci = {
+             .dpy = static_cast<Display*>(window_info.display_connection),
+@@ -86,7 +91,9 @@ vk::SurfaceKHR CreateSurface(vk::Instance instance, const Frontend::WindowSDL& e
+             LOG_ERROR(Render_Vulkan, "Failed to initialize Xlib surface");
+             UNREACHABLE();
+         }
+-    } else if (window_info.type == Frontend::WindowSystemType::Wayland) {
++    }
++#endif
++#if defined(VK_USE_PLATFORM_WAYLAND_KHR)
++    if (window_info.type == Frontend::WindowSystemType::Wayland) {
+         if (Config::isRdocEnabled()) {
+             LOG_ERROR(Render_Vulkan,
+                       "RenderDoc is not compatible with Wayland, use an X11 window instead.");
+@@ -102,6 +109,7 @@ vk::SurfaceKHR CreateSurface(vk::Instance instance, const Frontend::WindowSDL& e
+             UNREACHABLE();
+         }
+     }
++#endif
+ #elif defined(VK_USE_PLATFORM_METAL_EXT)
+     if (window_info.type == Frontend::WindowSystemType::Metal) {
+         const vk::MetalSurfaceCreateInfoEXT macos_ci = {
+@@ -176,11 +184,13 @@ std::vector<const char*> GetInstanceExtensions(Frontend::WindowSystemType window
+         extensions.push_back(VK_KHR_WIN32_SURFACE_EXTENSION_NAME);
+         break;
+ #elif defined(VK_USE_PLATFORM_XLIB_KHR) || defined(VK_USE_PLATFORM_WAYLAND_KHR)
++#if defined(VK_USE_PLATFORM_XLIB_KHR)
+     case Frontend::WindowSystemType::X11:
+         extensions.push_back(VK_KHR_XLIB_SURFACE_EXTENSION_NAME);
+         break;
++#endif
++#if defined(VK_USE_PLATFORM_WAYLAND_KHR)
+     case Frontend::WindowSystemType::Wayland:
+         extensions.push_back(VK_KHR_WAYLAND_SURFACE_EXTENSION_NAME);
+         break;
++#endif
+ #elif defined(VK_USE_PLATFORM_METAL_EXT)
+     case Frontend::WindowSystemType::Metal:
+         extensions.push_back(VK_EXT_METAL_SURFACE_EXTENSION_NAME);

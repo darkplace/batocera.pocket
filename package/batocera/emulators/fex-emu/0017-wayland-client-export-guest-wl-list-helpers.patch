@@ -1,0 +1,49 @@
+--- a/ThunkLibs/libwayland-client/Guest.cpp
++++ b/ThunkLibs/libwayland-client/Guest.cpp
+@@ -351,6 +351,46 @@ extern "C" void wl_log_set_handler_client(wl_log_func_t handler) {
+   // Ignore
+ }
+
++extern "C" void wl_list_init(wl_list* list) {
++  list->prev = list;
++  list->next = list;
++}
++
++extern "C" void wl_list_insert(wl_list* list, wl_list* elm) {
++  elm->prev = list;
++  elm->next = list->next;
++  list->next->prev = elm;
++  list->next = elm;
++}
++
++extern "C" void wl_list_remove(wl_list* elm) {
++  elm->prev->next = elm->next;
++  elm->next->prev = elm->prev;
++}
++
++extern "C" int wl_list_length(const wl_list* list) {
++  int count = 0;
++  for (const wl_list* elm = list->next; elm != list; elm = elm->next) {
++    ++count;
++  }
++  return count;
++}
++
++extern "C" int wl_list_empty(const wl_list* list) {
++  return list->next == list;
++}
++
++extern "C" void wl_list_insert_list(wl_list* list, wl_list* other) {
++  if (wl_list_empty(other)) {
++    return;
++  }
++
++  other->next->prev = list;
++  other->prev->next = list->next;
++  list->next->prev = other->prev;
++  list->next = other->next;
++}
++
+
+ void OnInit() {
+   fex_wl_exchange_interface_pointer(const_cast<wl_interface*>(&wl_output_interface), "wl_output_interface");

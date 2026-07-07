@@ -1,0 +1,121 @@
+#!/bin/sh
+
+if command -v FEX >/dev/null 2>&1; then
+	FEX_RUNNER="FEX"
+elif command -v FEXBash >/dev/null 2>&1; then
+	FEX_RUNNER="FEXBash"
+else
+	echo "shadps4-fex: FEX is not installed" >&2
+	exit 127
+fi
+
+ROOTFS="/usr/share/batocera/apps/shadps4-fex-rootfs"
+APP_CONFIG_DIR="/usr/share/fex-emu/shadps4-fex"
+APP_CONFIG="${APP_CONFIG_DIR}/shadps4-fex.json"
+GUEST_BIN_DIR="/usr/bin/shadps4"
+GUEST_QTLAUNCHER_BIN="${GUEST_BIN_DIR}/shadps4-qtlauncher"
+GUEST_QTLAUNCHER_NATIVE_BIN="${GUEST_BIN_DIR}/shadPS4QtLauncher"
+GUEST_BIN="${SHADPS4_FEX_GUEST_BIN:-}"
+
+find_wayland_display() {
+	[ -n "${WAYLAND_DISPLAY:-}" ] && return 0
+
+	for runtime_dir in "${XDG_RUNTIME_DIR:-}" /run /run/user/0; do
+		[ -n "${runtime_dir}" ] || continue
+		for socket in "${runtime_dir}"/wayland-*; do
+			[ -S "${socket}" ] || continue
+			export XDG_RUNTIME_DIR="${runtime_dir}"
+			export WAYLAND_DISPLAY="$(basename "${socket}")"
+			return 0
+		done
+	done
+
+	return 1
+}
+
+find_sway_socket() {
+	[ -n "${SWAYSOCK:-}" ] && [ -S "${SWAYSOCK}" ] && return 0
+
+	for socket in \
+		"${XDG_RUNTIME_DIR:-}"/sway-ipc*.sock \
+		/run/sway-ipc*.sock \
+		/run/user/0/sway-ipc*.sock; do
+		[ -S "${socket}" ] || continue
+		export SWAYSOCK="${socket}"
+		return 0
+	done
+
+	return 1
+}
+
+focus_shadps4_window() {
+	command -v swaymsg >/dev/null 2>&1 || return 0
+	find_sway_socket || return 0
+
+	(
+		for _ in 1 2 3 4 5 6 7 8 9 10; do
+			if swaymsg '[app_id="shadps4"] focus' >/dev/null 2>&1; then
+				swaymsg '[app_id="shadps4"] fullscreen enable' >/dev/null 2>&1 || true
+				exit 0
+			fi
+			sleep 1
+		done
+	) &
+}
+
+select_guest_bin() {
+	if [ -n "${GUEST_BIN}" ]; then
+		return 0
+	fi
+
+	if [ "$#" -eq 0 ] && [ -x "${ROOTFS}${GUEST_QTLAUNCHER_BIN}" ]; then
+		GUEST_BIN="${GUEST_QTLAUNCHER_BIN}"
+	elif [ "$#" -eq 0 ] && [ -x "${ROOTFS}${GUEST_QTLAUNCHER_NATIVE_BIN}" ]; then
+		GUEST_BIN="${GUEST_QTLAUNCHER_NATIVE_BIN}"
+	elif [ -x "${ROOTFS}${GUEST_BIN_DIR}/shadps4" ]; then
+		GUEST_BIN="${GUEST_BIN_DIR}/shadps4"
+	elif [ -x "${ROOTFS}${GUEST_QTLAUNCHER_BIN}" ]; then
+		GUEST_BIN="${GUEST_QTLAUNCHER_BIN}"
+	elif [ -x "${ROOTFS}${GUEST_QTLAUNCHER_NATIVE_BIN}" ]; then
+		GUEST_BIN="${GUEST_QTLAUNCHER_NATIVE_BIN}"
+	fi
+}
+
+select_guest_bin "$@"
+
+if [ -n "${GUEST_BIN}" ] && [ -x "${ROOTFS}${GUEST_BIN}" ] && [ -f "${APP_CONFIG}" ]; then
+	export FEX_APP_CONFIG_LOCATION="${APP_CONFIG_DIR}/"
+	export FEX_APP_CONFIG="${APP_CONFIG}"
+	export QT_QPA_PLATFORM="${QT_QPA_PLATFORM:-wayland}"
+	export SDL_VIDEODRIVER="${SDL_VIDEODRIVER:-wayland}"
+	export XDG_SESSION_TYPE="${XDG_SESSION_TYPE:-wayland}"
+	find_wayland_display || true
+	focus_shadps4_window
+	exec "${FEX_RUNNER}" "${GUEST_BIN}" "$@"
+fi
+
+for candidate in \
+	"${SHADPS4_FEX_BINARY:-}" \
+	"/usr/bin/shadps4-x86_64/shadPS4QtLauncher" \
+	"/usr/bin/shadps4-x86_64/shadps4-qtlauncher" \
+	"/usr/bin/shadps4-x86_64/shadps4" \
+	"/usr/lib/shadps4-x86_64/shadPS4QtLauncher" \
+	"/usr/lib/shadps4-x86_64/shadps4-qtlauncher" \
+	"/usr/lib/shadps4-x86_64/shadps4" \
+	"/userdata/system/shadps4-x86_64/shadPS4QtLauncher" \
+	"/userdata/system/shadps4-x86_64/shadps4-qtlauncher" \
+	"/userdata/system/shadps4-x86_64/shadps4" \
+	"/userdata/system/configs/shadps4/shadps4-x86_64/shadPS4QtLauncher" \
+	"/userdata/system/configs/shadps4/shadps4-x86_64/shadps4-qtlauncher" \
+	"/userdata/system/configs/shadps4/shadps4-x86_64/shadps4" \
+	"/userdata/system/configs/shadps4/shadPS4QtLauncher" \
+	"/userdata/system/configs/shadps4/shadps4-qtlauncher" \
+	"/userdata/system/configs/shadps4/shadps4"; do
+	if [ -n "$candidate" ] && [ -x "$candidate" ]; then
+		exec "${FEX_RUNNER}" "$candidate" "$@"
+	fi
+done
+
+echo "shadps4-fex: no x86-64 shadPS4 binary found" >&2
+echo "shadps4-fex: build the *_x86_64_v3_shadps4 side rootfs or set SHADPS4_FEX_BINARY" >&2
+exit 127

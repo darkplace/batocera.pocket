@@ -299,10 +299,14 @@ ifeq ($(BR2_PACKAGE_PLAY),y)
 endif
 
 # shadPS4
-ifeq ($(BR2_PACKAGE_SHADPS4),y)
+ifneq ($(BR2_PACKAGE_SHADPS4)$(BR2_PACKAGE_SHADPS4_FEX),)
   BATOCERA_DESKTOPAPPS_SCRIPTS += batocera-config-shadps4
   BATOCERA_DESKTOPAPPS_APPS    += shadps4-config.desktop
   BATOCERA_DESKTOPAPPS_ICONS   += shadps4.png
+endif
+
+ifeq ($(BR2_PACKAGE_SHADPS4_FEX),y)
+  BATOCERA_DESKTOPAPPS_APPS    += shadps4.desktop
 endif
 
 # lindbergh loader

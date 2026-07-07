@@ -49,6 +49,14 @@
 +    endif()
 +  endif()
 +
++  if (GUEST_THUNK_SYSROOT AND INCLUDE_DIR MATCHES "/sysroot(/usr(/.*)?)$")
++    set(SYSROOT_INCLUDE "${GUEST_THUNK_SYSROOT}${CMAKE_MATCH_1}")
++    if (EXISTS "${SYSROOT_INCLUDE}")
++      target_include_directories(${TARGET} INTERFACE "${SYSROOT_INCLUDE}")
++      return()
++    endif()
++  endif()
++
 +  if (EXISTS "${INCLUDE_DIR}")
 +    target_include_directories(${TARGET} INTERFACE "${INCLUDE_DIR}")
 +  endif()

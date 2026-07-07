@@ -1,0 +1,41 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 754c6ed..b7c3f08 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -27,6 +27,7 @@ if (NOT CMAKE_BUILD_TYPE)
+ endif()
+ 
+ project(shadPS4QtLauncher CXX C ASM ${ADDITIONAL_LANGUAGES})
++option(ENABLE_TRANSLATIONS "Build Qt translation resources" ON)
+ 
+ # Forcing PIE makes sure that the base address is high enough so that it doesn't clash with the PS4 memory.
+ if(UNIX AND NOT APPLE)
+@@ -237,7 +238,12 @@ endif()
+ add_subdirectory(externals)
+ include_directories(src)
+ 
+-find_package(Qt6 REQUIRED COMPONENTS Widgets Concurrent LinguistTools Network Multimedia)
++set(QT_COMPONENTS Widgets Concurrent Network Multimedia)
++if(ENABLE_TRANSLATIONS)
++    list(APPEND QT_COMPONENTS LinguistTools)
++endif()
++find_package(Qt6 REQUIRED COMPONENTS ${QT_COMPONENTS})
++
+ qt_standard_project_setup()
+ set(CMAKE_AUTORCC ON)
+ set(CMAKE_AUTOMOC ON)
+@@ -246,5 +252,7 @@ set(CMAKE_AUTOUIC ON)
+ set(CMAKE_AUTOUIC ON)
+ 
++set(TRANSLATIONS)
++if(ENABLE_TRANSLATIONS)
+ set(QT_TRANSLATIONS "${PROJECT_SOURCE_DIR}/src/qt_gui/translations")
+ file(GLOB_RECURSE TRANSLATIONS_TS ${QT_TRANSLATIONS}/*.ts)
+ 
+@@ -260,6 +268,7 @@ file(APPEND ${TRANSLATIONS_QRC} "</qresource></RCC>")
+ 
+ qt_add_resources(TRANSLATIONS ${TRANSLATIONS_QRC})
++endif()
+ 
+ set(COMMON src/common/logging/backend.cpp
+            src/common/logging/backend.h

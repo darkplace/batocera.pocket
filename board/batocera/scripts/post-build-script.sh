@@ -50,6 +50,12 @@ if [ -f "${BATOCERA_INJECT_I386_SCRIPT}" ]; then
     bash "${BATOCERA_INJECT_I386_SCRIPT}" "${BATOCERA_TARGET}" "${TARGET_DIR}" "${BR2_EXTERNAL_BATOCERA_PATH}" || exit 1
 fi
 
+# Inject optional x86-64-v3 shadPS4 rootfs for FEX on SM8X50 targets.
+BATOCERA_INJECT_SHADPS4_FEX_SCRIPT="${BR2_EXTERNAL_BATOCERA_PATH}/board/batocera/scripts/inject-shadps4-fex-rootfs.sh"
+if [ -f "${BATOCERA_INJECT_SHADPS4_FEX_SCRIPT}" ]; then
+    bash "${BATOCERA_INJECT_SHADPS4_FEX_SCRIPT}" "${BATOCERA_TARGET}" "${TARGET_DIR}" "${BR2_EXTERNAL_BATOCERA_PATH}" || exit 1
+fi
+
 # Compatibility helpers for scripts that only include /bin in PATH.
 # Keep tool entrypoints available there.
 if [ -x "${TARGET_DIR}/usr/bin/systemctl" ]; then

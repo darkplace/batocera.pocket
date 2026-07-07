@@ -1,0 +1,17 @@
+# SPDX-FileCopyrightText: Added/modified by suckbluefrog
+# x86-64-v3 shadPS4 guest rootfs for FEX on SM8550 hosts.
+
+include batocera-board.x86_64_v3.shadps4
+
+# Target definition - x86-64-v3 userspace
+BR2_x86_64=y
+BR2_x86_x86_64_v3=y
+BR2_PACKAGE_BATOCERA_TARGET_ZEN3=y
+BR2_TARGET_OPTIMIZATION="-pipe -fsigned-char"
+BR2_TARGET_GENERIC_GETTY_BAUDRATE_115200=y
+BR2_GLOBAL_PATCH_DIR="$(BR2_EXTERNAL_BATOCERA_PATH)/board/batocera/patches $(BR2_EXTERNAL_BATOCERA_PATH)/board/batocera/x86/patches"
+
+# Keep userspace ABI in sync with the SM8550 host build.
+BR2_KERNEL_HEADERS_7_0=y
+
+include batocera-sm8x50_x86_64_v3_shadps4.packages

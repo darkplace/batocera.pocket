@@ -1,13 +1,18 @@
-diff --git a/standalone/inc/vpinmame/VPinMAMEController.cpp b/standalone/inc/vpinmame/VPinMAMEController.cpp
-index 69ca58b8..0c912c2a 100644
---- a/standalone/inc/vpinmame/VPinMAMEController.cpp
-+++ b/standalone/inc/vpinmame/VPinMAMEController.cpp
-@@ -302,7 +302,7 @@ VPinMAMEController::VPinMAMEController()
- #if (defined(__APPLE__) && ((defined(TARGET_OS_IOS) && TARGET_OS_IOS) || (defined(TARGET_OS_TV) && TARGET_OS_TV))) || defined(__ANDROID__)
-          m_szPath = g_pvp->m_szMyPath + "pinmame" + PATH_SEPARATOR_CHAR;
- #else
--         m_szPath = string(getenv("HOME")) + PATH_SEPARATOR_CHAR + ".pinmame" + PATH_SEPARATOR_CHAR;
-+         m_szPath = g_pvp->m_szMyPrefPath + "pinmame" + PATH_SEPARATOR_CHAR;
- #endif
+diff --git a/plugins/pinmame/PinMAMEPlugin.cpp b/plugins/pinmame/PinMAMEPlugin.cpp
+index 9ab3c7e3..71c61cad 100644
+--- a/plugins/pinmame/PinMAMEPlugin.cpp
++++ b/plugins/pinmame/PinMAMEPlugin.cpp
+@@ -474,8 +474,14 @@ MSGPI_EXPORT void MSGPIAPI PinMAMEPluginLoad(const uint32_t sessionId, const Msg
+          pinmamePath = find_case_insensitive_directory_path(std::filesystem::path(vpxInfo.prefPath) / "pinmame"sv);
        }
-    }
+       #elif defined(__APPLE__) || defined(__linux__)
++      if (pinmamePath.empty() && vpxApi != nullptr)
++      {
++         VPXInfo vpxInfo;
++         vpxApi->GetVpxInfo(&vpxInfo);
++         pinmamePath = std::filesystem::path(vpxInfo.prefPath) / "pinmame"sv;
++      }
+       if (pinmamePath.empty())
+          pinmamePath = std::filesystem::path(getenv("HOME")) / ".pinmame"sv;
+       #endif
+       // FIXME implement a last resort or just ask the user to define its path setup in the settings ?

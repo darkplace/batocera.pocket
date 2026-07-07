@@ -32,6 +32,14 @@ if TYPE_CHECKING:
 
 _logger = logging.getLogger(__name__)
 
+SHADPS4_NATIVE_BIN = Path("/usr/bin/shadps4/shadps4")
+SHADPS4_FEX_BIN = Path("/usr/bin/shadps4-fex")
+
+
+def _is_aarch64() -> bool:
+    return os.uname().machine.lower() in ("aarch64", "arm64")
+
+
 class shadPS4Generator(Generator):
 
     def getHotkeysContext(self) -> HotkeysContext:
@@ -233,18 +241,25 @@ class shadPS4Generator(Generator):
         else:
             eboot_path = rom.parent / "eboot.bin"
 
+        commandBase: list[str | Path] = (
+            [SHADPS4_FEX_BIN] if _is_aarch64() and SHADPS4_FEX_BIN.exists() else [SHADPS4_NATIVE_BIN]
+        )
+
         # Run command
         if configure_emulator(rom):
-            commandArray: list[str | Path] = ["/usr/bin/shadps4/shadps4"]
+            commandArray = commandBase
         else:
-            commandArray: list[str | Path] = ["/usr/bin/shadps4/shadps4", eboot_path]
+            commandArray = [*commandBase, eboot_path]
+
+        sdl_controller_config = generate_sdl_game_controller_config(playersControllers)
+        environment = {
+            "SDL_GAMECONTROLLERCONFIG": sdl_controller_config,
+            "SDL_JOYSTICK_HIDAPI": "0"
+        }
 
         return Command.Command(
             array=commandArray,
-            env={
-                "SDL_GAMECONTROLLERCONFIG": generate_sdl_game_controller_config(playersControllers),
-                "SDL_JOYSTICK_HIDAPI": "0"
-            }
+            env=environment
         )
 
     def getInGameRatio(self, config, gameResolution, rom):
