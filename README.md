@@ -56,6 +56,7 @@ Includes additional emulators where supported:
 - RPCS3
 - Vita3K
 - Cemu (now upstream)
+- ShadPS4 (heavy games too heavy even for odin 3) 
 - Xenia
   <img width="661" height="881" alt="image" src="https://github.com/user-attachments/assets/ce658ce6-7753-47fd-a56e-caaeddf29c67" />
 - SkyEmu  
