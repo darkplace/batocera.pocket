@@ -9,14 +9,14 @@ headers and compile each Linux surface path independently.
 
 Signed-off-by: Batocera Linux <batocera@batocera.org>
 ---
- src/video_core/renderer_vulkan/vk_platform.cpp | 12 +++++++++++-
- 1 file changed, 11 insertions(+), 1 deletion(-)
+ src/video_core/renderer_vulkan/vk_platform.cpp | 13 ++++++++++++-
+ 1 file changed, 12 insertions(+), 1 deletion(-)
 
 diff --git a/src/video_core/renderer_vulkan/vk_platform.cpp b/src/video_core/renderer_vulkan/vk_platform.cpp
 index 21d04fd..39d80f7 100644
 --- a/src/video_core/renderer_vulkan/vk_platform.cpp
 +++ b/src/video_core/renderer_vulkan/vk_platform.cpp
-@@ -9,8 +9,12 @@
+@@ -9,9 +9,13 @@
  #elif defined(__APPLE__)
  #define VK_USE_PLATFORM_METAL_EXT
  #else
@@ -25,10 +25,11 @@ index 21d04fd..39d80f7 100644
 +#endif
 +#if __has_include(<X11/Xlib.h>)
  #define VK_USE_PLATFORM_XLIB_KHR
-+#endif
  #endif
++#endif
 
  #include <vector>
+ #include <fmt/ranges.h>
 @@ -76,6 +80,7 @@ vk::SurfaceKHR CreateSurface(vk::Instance instance, const Frontend::WindowSDL& e
          }
      }
@@ -37,7 +38,7 @@ index 21d04fd..39d80f7 100644
      if (window_info.type == Frontend::WindowSystemType::X11) {
          const vk::XlibSurfaceCreateInfoKHR xlib_ci = {
              .dpy = static_cast<Display*>(window_info.display_connection),
-@@ -86,7 +91,9 @@ vk::SurfaceKHR CreateSurface(vk::Instance instance, const Frontend::WindowSDL& e
+@@ -86,7 +91,10 @@ vk::SurfaceKHR CreateSurface(vk::Instance instance, const Frontend::WindowSDL& e
              LOG_ERROR(Render_Vulkan, "Failed to initialize Xlib surface");
              UNREACHABLE();
          }
@@ -46,10 +47,10 @@ index 21d04fd..39d80f7 100644
 +#endif
 +#if defined(VK_USE_PLATFORM_WAYLAND_KHR)
 +    if (window_info.type == Frontend::WindowSystemType::Wayland) {
-         if (Config::isRdocEnabled()) {
+         if (EmulatorSettings.IsRenderdocEnabled()) {
              LOG_ERROR(Render_Vulkan,
                        "RenderDoc is not compatible with Wayland, use an X11 window instead.");
-@@ -102,6 +109,7 @@ vk::SurfaceKHR CreateSurface(vk::Instance instance, const Frontend::WindowSDL& e
+@@ -103,6 +111,7 @@ vk::SurfaceKHR CreateSurface(vk::Instance instance, const Frontend::WindowSDL& e
              UNREACHABLE();
          }
      }
@@ -57,7 +58,7 @@ index 21d04fd..39d80f7 100644
  #elif defined(VK_USE_PLATFORM_METAL_EXT)
      if (window_info.type == Frontend::WindowSystemType::Metal) {
          const vk::MetalSurfaceCreateInfoEXT macos_ci = {
-@@ -176,11 +184,13 @@ std::vector<const char*> GetInstanceExtensions(Frontend::WindowSystemType window
+@@ -176,12 +185,16 @@ std::vector<const char*> GetInstanceExtensions(Frontend::WindowSystemType window
          extensions.push_back(VK_KHR_WIN32_SURFACE_EXTENSION_NAME);
          break;
  #elif defined(VK_USE_PLATFORM_XLIB_KHR) || defined(VK_USE_PLATFORM_WAYLAND_KHR)

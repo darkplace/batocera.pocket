@@ -17686,6 +17686,160 @@ sh:
   - bezel.tattoo_corner
   - bezel.tattoo_file
   - bezel.resize_tattoo
+  systems:
+    ports:
+      cfeatures:
+        ports_no_sandbox:
+          group: PORTS COMMON FLAGS
+          prompt: NO SANDBOX MODE
+          description: Append --no-sandbox for Chromium/Electron ports. Auto enables it for detected Chromium/Electron AppImages because Batocera launches them as root.
+          choices:
+            Auto (Detect Chromium/Electron): ''
+            Disabled: '0'
+            Enabled: '1'
+        ports_extra_args:
+          group: PORTS COMMON FLAGS
+          prompt: EXTRA PORT ARGUMENTS
+          description: Extra arguments appended to AppImage launch commands and exposed to .sh launchers as BATOCERA_PORTS_EXTRA_ARGS.
+          preset: input
+        ports_ld_library_paths:
+          group: PORTS ENVIRONMENT
+          prompt: ADDITIONAL LIBRARY PATHS
+          description: Colon-separated library paths prepended to LD_LIBRARY_PATH for ports that are missing runtime libraries.
+          preset: input
+        ports_appimage_extract_and_run:
+          group: APPIMAGE
+          prompt: EXTRACT AND RUN
+          description: Run the AppImage without FUSE. Auto enables this when /dev/fuse or libfuse2 is unavailable.
+          choices:
+            Auto (When FUSE is unavailable): ''
+            Disabled: '0'
+            Enabled: '1'
+        ports_display_backend:
+          group: PORTS DISPLAY
+          prompt: DISPLAY BACKEND
+          description: Force the runtime display backend. X11 uses the active Xorg/Xwayland display; Wayland uses the compositor socket.
+          choices:
+            Auto (Do not force): ''
+            X11 / Xwayland: x11
+            Wayland: wayland
+        ports_ozone_platform:
+          group: PORTS CHROMIUM FLAGS
+          prompt: OZONE PLATFORM
+          description: Add --ozone-platform for Chromium/Electron ports. Use x11 on Xorg or Xwayland builds; use wayland only for native Wayland-capable apps.
+          choices:
+            Auto (Do not force): ''
+            Wayland: wayland
+            X11: x11
+        ports_use_ozone_platform_feature:
+          group: PORTS CHROMIUM FLAGS
+          prompt: USE OZONE PLATFORM FEATURE
+          description: Add UseOzonePlatform to --enable-features or --disable-features for Chromium/Electron ports.
+          choices:
+            Auto (Do not force): ''
+            Enable: enable
+            Disable: disable
+        ports_enable_vaapi_video_decoder:
+          group: PORTS CHROMIUM FLAGS
+          prompt: ENABLE VAAPI VIDEO DECODER
+          description: Add VaapiVideoDecoder to Chromium/Electron --enable-features for hardware video decode testing.
+          choices:
+            'Off': '0'
+            'On': '1'
+        ports_enable_accelerated_video_decode:
+          group: PORTS CHROMIUM FLAGS
+          prompt: ENABLE ACCELERATED VIDEO DECODE
+          description: Add --enable-accelerated-video-decode for Chromium/Electron ports.
+          choices:
+            'Off': '0'
+            'On': '1'
+        ports_use_gl_egl:
+          group: PORTS CHROMIUM FLAGS
+          prompt: FORCE EGL
+          description: Add --use-gl=egl for Chromium/Electron ports that fail with the default GL path.
+          choices:
+            'Off': '0'
+            'On': '1'
+        ports_use_angle:
+          group: PORTS CHROMIUM FLAGS
+          prompt: ANGLE BACKEND
+          description: Add --use-angle to select the Chromium/Electron ANGLE renderer.
+          choices:
+            Auto (Do not force): ''
+            OpenGL: gl
+            Vulkan: vulkan
+        ports_env_desktop_session_flatpak:
+          group: PORTS ENVIRONMENT
+          prompt: DESKTOP_SESSION=flatpak
+          description: Export DESKTOP_SESSION=flatpak.
+          choices:
+            'Off': '0'
+            'On': '1'
+        ports_env_xdg_current_desktop_gnome:
+          group: PORTS ENVIRONMENT
+          prompt: XDG_CURRENT_DESKTOP=GNOME
+          description: Export XDG_CURRENT_DESKTOP=GNOME.
+          choices:
+            'Off': '0'
+            'On': '1'
+        ports_xdg_session_type:
+          group: PORTS ENVIRONMENT
+          prompt: XDG_SESSION_TYPE
+          description: Export XDG_SESSION_TYPE for ports.
+          choices:
+            Auto (Do not force): ''
+            Wayland: wayland
+            X11: x11
+        ports_sdl_video_driver:
+          group: PORTS ENVIRONMENT
+          prompt: SDL_VIDEODRIVER
+          description: Select SDL video backend in ports.
+          choices:
+            Auto (Do not force): ''
+            Wayland: wayland
+            X11: x11
+        ports_sdl_audio_driver:
+          group: PORTS ENVIRONMENT
+          prompt: SDL_AUDIODRIVER
+          description: Set SDL audio backend in ports.
+          choices:
+            Auto (Do not force): ''
+            PipeWire: pipewire
+            PulseAudio: pulse
+        ports_qt_qpa_platform:
+          group: PORTS ENVIRONMENT
+          prompt: QT_QPA_PLATFORM
+          description: Select Qt platform plugin.
+          choices:
+            Auto (Do not force): ''
+            Wayland: wayland
+            X11 (xcb): xcb
+        ports_qt_platformtheme_gtk3:
+          group: PORTS ENVIRONMENT
+          prompt: QT_QPA_PLATFORMTHEME=gtk3
+          description: Export QT_QPA_PLATFORMTHEME=gtk3.
+          choices:
+            'Off': '0'
+            'On': '1'
+        ports_qt_wayland_disable_windowdecoration:
+          group: PORTS ENVIRONMENT
+          prompt: QT WAYLAND DISABLE DECORATION
+          description: Export QT_WAYLAND_DISABLE_WINDOWDECORATION=1.
+          choices:
+            'Off': '0'
+            'On': '1'
+        ports_env_sdl_gamecontrollerconfig:
+          group: PORTS ENVIRONMENT
+          prompt: SDL GAMECONTROLLERDB
+          description: Export the Batocera SDL gamecontroller database.
+          choices:
+            'Off': '0'
+            'On': '1'
+        ports_pipewire_latency:
+          group: PORTS ENVIRONMENT
+          prompt: PIPEWIRE LATENCY
+          description: Export PIPEWIRE_LATENCY value (example 128/48000).
+          preset: input
 xenia:
   features: []
   shared:

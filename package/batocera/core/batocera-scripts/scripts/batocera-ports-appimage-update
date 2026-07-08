@@ -1,0 +1,488 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import re
+import shutil
+import struct
+import subprocess
+import tempfile
+import urllib.request
+import xml.etree.ElementTree as ET
+from dataclasses import dataclass
+from pathlib import Path
+
+
+ROMS_DIR = Path(os.environ.get("BATOCERA_PORTS_DIR", "/userdata/roms/ports"))
+IMAGES_DIR = ROMS_DIR / "images"
+GAMELIST = ROMS_DIR / "gamelist.xml"
+ES_SERVER = os.environ.get("BATOCERA_ES_SERVER", "http://127.0.0.1:1234").strip()
+IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".svg", ".xpm"}
+
+
+@dataclass(slots=True)
+class AppImageMetadata:
+    path: Path
+    name: str
+    comment: str
+    image: str
+    no_sandbox: bool
+
+
+def run(command: list[str], timeout: int = 20) -> subprocess.CompletedProcess[bytes]:
+    return subprocess.run(
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        timeout=timeout,
+        check=False,
+    )
+
+
+def safe_id(value: str) -> str:
+    slug = re.sub(r"[^A-Za-z0-9._-]+", "-", value).strip("-._").lower()
+    return slug or "appimage"
+
+
+def xml_text(parent: ET.Element, tag: str) -> str:
+    child = parent.find(tag)
+    if child is None or child.text is None:
+        return ""
+    return child.text.strip()
+
+
+def set_xml_text(parent: ET.Element, tag: str, value: str) -> ET.Element:
+    child = parent.find(tag)
+    if child is None:
+        child = ET.SubElement(parent, tag)
+    child.text = value
+    return child
+
+
+def normalize_gamelist_path(value: str) -> str:
+    value = value.strip()
+    if value.startswith("./"):
+        value = value[2:]
+    return value
+
+
+def appimage_offset_from_runtime(path: Path) -> int | None:
+    try:
+        result = run([str(path), "--appimage-offset"], timeout=5)
+    except Exception:
+        return None
+
+    if result.returncode != 0:
+        return None
+
+    text = result.stdout.decode("utf-8", errors="ignore").strip().splitlines()
+    if not text:
+        return None
+
+    try:
+        return int(text[-1].strip())
+    except ValueError:
+        return None
+
+
+def squashfs_offset_by_scan(path: Path) -> int | None:
+    # AppImages are ELF runtimes with an embedded SquashFS. Scan for plausible
+    # SquashFS superblocks so non-executable or mismatched runtimes still parse.
+    size = path.stat().st_size
+    magic = b"hsqs"
+    previous = b""
+    position = 0
+
+    with path.open("rb") as handle:
+        while chunk := handle.read(1024 * 1024):
+            data = previous + chunk
+            index = 0
+            while True:
+                found = data.find(magic, index)
+                if found < 0:
+                    break
+
+                offset = position - len(previous) + found
+                header = data[found:found + 96]
+                if len(header) >= 96 and valid_squashfs_header(header, size - offset):
+                    return offset
+                index = found + 1
+
+            position += len(chunk)
+            previous = data[-95:]
+
+    return None
+
+
+def valid_squashfs_header(header: bytes, remaining: int) -> bool:
+    try:
+        fields = struct.unpack_from("<IIIIIHHHHHHQQQQQQQQ", header, 0)
+    except struct.error:
+        return False
+
+    magic, inode_count, _mkfs_time, block_size = fields[:4]
+    compression, block_log, _flags, _ids, major, minor = fields[5:11]
+    bytes_used = fields[12]
+
+    return (
+        magic == 0x73717368
+        and inode_count > 0
+        and major == 4
+        and minor == 0
+        and compression > 0
+        and block_size == (1 << block_log)
+        and 4096 <= block_size <= 1048576
+        and 0 < bytes_used <= remaining
+    )
+
+
+def appimage_offset(path: Path) -> int | None:
+    return appimage_offset_from_runtime(path) or squashfs_offset_by_scan(path)
+
+
+def squashfs_paths(path: Path, offset: int) -> list[str]:
+    result = run(["unsquashfs", "-o", str(offset), "-lc", str(path)], timeout=30)
+    if result.returncode != 0:
+        return []
+
+    paths: list[str] = []
+    for line in result.stdout.decode("utf-8", errors="ignore").splitlines():
+        line = line.strip()
+        if line.startswith("squashfs-root/"):
+            line = line[len("squashfs-root/"):]
+        if line and line != "squashfs-root":
+            paths.append(line)
+    return paths
+
+
+def squashfs_cat(path: Path, offset: int, member: str) -> bytes:
+    result = run(["unsquashfs", "-cat", "-o", str(offset), str(path), member], timeout=10)
+    if result.returncode != 0:
+        return b""
+    return result.stdout
+
+
+def desktop_value(text: str, key: str) -> str:
+    localized = ""
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if line.startswith(f"{key}="):
+            return line.split("=", 1)[1].strip()
+        if not localized and line.startswith(f"{key}["):
+            localized = line.split("=", 1)[1].strip()
+    return localized
+
+
+def desktop_exec(text: str) -> str:
+    return desktop_value(text, "Exec")
+
+
+def choose_desktop(paths: list[str], appimage: Path) -> str:
+    desktop_files = [path for path in paths if path.lower().endswith(".desktop")]
+    if not desktop_files:
+        return ""
+
+    stem = appimage.stem.lower()
+
+    def score(path: str) -> tuple[int, int, int, str]:
+        lowered = path.lower()
+        root_level = 1 if "/" not in path else 0
+        name_match = 1 if stem in Path(path).stem.lower() else 0
+        app_dir = 1 if lowered.startswith("usr/share/applications/") else 0
+        return (root_level, name_match, app_dir, path)
+
+    return sorted(desktop_files, key=score, reverse=True)[0]
+
+
+def icon_score(path: str, icon_name: str) -> tuple[int, int, int, str]:
+    lowered = path.lower()
+    suffix = Path(lowered).suffix
+    ext_score = {".png": 5, ".jpg": 4, ".jpeg": 4, ".svg": 3, ".xpm": 2}.get(suffix, 0)
+    size = 0
+    if match := re.search(r"/([0-9]+)x\1/", lowered):
+        size = int(match.group(1))
+    name_score = 1 if Path(lowered).stem == icon_name.lower() else 0
+    return (ext_score, size, name_score, path)
+
+
+def choose_icon(paths: list[str], desktop_icon: str) -> str:
+    path_set = set(paths)
+    if ".DirIcon" in path_set:
+        return ".DirIcon"
+
+    icon = desktop_icon.strip()
+    if not icon:
+        return ""
+
+    icon_path = icon.lstrip("/")
+    if icon_path in path_set:
+        return icon_path
+
+    icon_candidate_paths: list[str] = []
+    if Path(icon_path).suffix:
+        names = {Path(icon_path).name.lower()}
+        icon_candidate_paths = [path for path in paths if Path(path).name.lower() in names]
+    else:
+        for ext in sorted(IMAGE_EXTENSIONS):
+            candidate = f"{icon_path}{ext}"
+            if candidate in path_set:
+                return candidate
+
+        icon_base = Path(icon_path).name.lower()
+        icon_candidate_paths = [
+            path for path in paths
+            if Path(path).suffix.lower() in IMAGE_EXTENSIONS
+            and Path(path).stem.lower() == icon_base
+        ]
+
+    if not icon_candidate_paths:
+        return ""
+
+    return sorted(icon_candidate_paths, key=lambda p: icon_score(p, icon), reverse=True)[0]
+
+
+def detect_no_sandbox_default(paths: list[str], desktop_text: str) -> bool:
+    if "--no-sandbox" in desktop_exec(desktop_text):
+        return True
+
+    lower_paths = {path.lower() for path in paths}
+    lower_names = {Path(path).name.lower() for path in paths}
+
+    return (
+        "chrome-sandbox" in lower_names
+        or "app.asar" in lower_names
+        or "chrome_100_percent.pak" in lower_names
+        or "chrome_200_percent.pak" in lower_names
+        or any(path.endswith("/resources/app.asar") for path in lower_paths)
+    )
+
+
+def detect_image_extension(data: bytes, fallback: str) -> str:
+    lowered = fallback.lower()
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return ".png"
+    if data.startswith(b"\xff\xd8\xff"):
+        return ".jpg"
+    if data.lstrip().lower().startswith((b"<svg", b"<?xml")):
+        return ".svg"
+    if data.lstrip().startswith(b"/* XPM */"):
+        return ".xpm"
+    if lowered in IMAGE_EXTENSIONS:
+        return lowered
+    return ".png"
+
+
+def extract_icon(appimage: Path, offset: int, member: str, image_id: str) -> str:
+    if not member:
+        return ""
+
+    with tempfile.TemporaryDirectory(prefix="batocera-appimage-icon-") as tmp:
+        tmp_path = Path(tmp)
+        result = run(
+            [
+                "unsquashfs",
+                "-q",
+                "-no-progress",
+                "-d",
+                str(tmp_path),
+                "-follow-symlinks",
+                "-o",
+                str(offset),
+                str(appimage),
+                member,
+            ],
+            timeout=15,
+        )
+        if result.returncode != 0:
+            return ""
+
+        files = [path for path in tmp_path.rglob("*") if path.is_file()]
+        if not files:
+            return ""
+
+        source = max(files, key=lambda p: p.stat().st_size)
+        data = source.read_bytes()
+        ext = detect_image_extension(data, source.suffix)
+        image_name = f"appimage-auto-{image_id}{ext}"
+        image_path = IMAGES_DIR / image_name
+        image_path.write_bytes(data)
+        return f"./images/{image_name}"
+
+
+def read_appimage_metadata(appimage: Path) -> AppImageMetadata:
+    fallback_name = appimage.stem
+    image_id = safe_id(appimage.stem)
+    digest = hashlib.sha1(appimage.name.encode("utf-8", errors="ignore")).hexdigest()[:8]
+    image_id = f"{image_id}-{digest}"
+
+    try:
+        appimage.chmod(appimage.stat().st_mode | 0o755)
+    except OSError:
+        pass
+
+    offset = appimage_offset(appimage)
+    if offset is None:
+        return AppImageMetadata(appimage, fallback_name, "", "", False)
+
+    paths = squashfs_paths(appimage, offset)
+    if not paths:
+        return AppImageMetadata(appimage, fallback_name, "", "", False)
+
+    desktop_path = choose_desktop(paths, appimage)
+    desktop_text = ""
+    if desktop_path:
+        desktop_text = squashfs_cat(appimage, offset, desktop_path).decode("utf-8", errors="ignore")
+
+    name = desktop_value(desktop_text, "Name") or fallback_name
+    comment = desktop_value(desktop_text, "Comment")
+    icon_name = desktop_value(desktop_text, "Icon")
+    icon_member = choose_icon(paths, icon_name)
+    image = extract_icon(appimage, offset, icon_member, image_id)
+    no_sandbox = detect_no_sandbox_default(paths, desktop_text)
+
+    return AppImageMetadata(appimage, name, comment, image, no_sandbox)
+
+
+def load_gamelist() -> ET.Element:
+    if GAMELIST.is_file():
+        try:
+            root = ET.parse(GAMELIST).getroot()
+            if root.tag == "gameList":
+                return root
+        except ET.ParseError:
+            pass
+    return ET.Element("gameList")
+
+
+def default_game_node(path: str) -> ET.Element:
+    game = ET.Element("game")
+    for tag in (
+        "path",
+        "name",
+        "desc",
+        "rating",
+        "releasedate",
+        "developer",
+        "publisher",
+        "genre",
+        "players",
+        "image",
+        "manual",
+        "video",
+    ):
+        set_xml_text(game, tag, path if tag == "path" else "")
+    return game
+
+
+def update_gamelist(entries: list[AppImageMetadata]) -> ET.Element:
+    root = load_gamelist()
+    current = {entry.path.name: entry for entry in entries}
+    nodes_by_path: dict[str, ET.Element] = {}
+
+    for game in list(root.findall("game")):
+        rel_path = normalize_gamelist_path(xml_text(game, "path"))
+        if rel_path.lower().endswith(".appimage"):
+            if rel_path not in current:
+                root.remove(game)
+                continue
+            nodes_by_path[rel_path] = game
+
+    for rel_path, entry in current.items():
+        game = nodes_by_path.get(rel_path)
+        if game is None:
+            game = default_game_node(f"./{rel_path}")
+            root.append(game)
+
+        set_xml_text(game, "path", f"./{rel_path}")
+
+        old_name = xml_text(game, "name")
+        if not old_name or old_name == entry.path.stem:
+            set_xml_text(game, "name", entry.name)
+
+        if entry.comment and not xml_text(game, "desc"):
+            set_xml_text(game, "desc", entry.comment)
+
+        old_image = xml_text(game, "image")
+        if entry.image and (not old_image or old_image.startswith("./images/appimage-auto-")):
+            set_xml_text(game, "image", entry.image)
+
+    ET.indent(root, space="  ")
+    ET.ElementTree(root).write(GAMELIST, encoding="utf-8", xml_declaration=True)
+    return root
+
+
+def post_live_entries(entries: list[AppImageMetadata]) -> None:
+    if not entries or not ES_SERVER:
+        return
+
+    root = ET.Element("gameList")
+    for entry in entries:
+        game = default_game_node(f"./{entry.path.name}")
+        set_xml_text(game, "name", entry.name)
+        set_xml_text(game, "desc", entry.comment)
+        set_xml_text(game, "image", entry.image)
+        root.append(game)
+
+    ET.indent(root, space="  ")
+    payload = ET.tostring(root, encoding="utf-8", xml_declaration=False)
+    try:
+        request = urllib.request.Request(
+            f"{ES_SERVER.rstrip('/')}/addgames/ports",
+            data=payload,
+            headers={
+                "Content-type": "application/x-www-form-urlencoded",
+                "Accept": "text/plain",
+            },
+            method="POST",
+        )
+        urllib.request.urlopen(request, timeout=2).close()
+    except Exception:
+        pass
+
+
+def write_manifest(entries: list[AppImageMetadata]) -> None:
+    manifest = {
+        entry.path.name: {
+            "name": entry.name,
+            "comment": entry.comment,
+            "image": entry.image,
+            "no_sandbox": entry.no_sandbox,
+        }
+        for entry in entries
+    }
+    (ROMS_DIR / ".appimage-metadata.json").write_text(
+        json.dumps(manifest, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+
+
+def main() -> int:
+    ROMS_DIR.mkdir(parents=True, exist_ok=True)
+    IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+
+    for image in IMAGES_DIR.glob("appimage-auto-*"):
+        try:
+            image.unlink()
+        except OSError:
+            pass
+
+    appimages = sorted(
+        path for path in ROMS_DIR.iterdir()
+        if path.is_file() and path.suffix.lower() == ".appimage"
+    )
+
+    if not shutil.which("unsquashfs"):
+        entries = [AppImageMetadata(path, path.stem, "", "", False) for path in appimages]
+    else:
+        entries = [read_appimage_metadata(path) for path in appimages]
+
+    write_manifest(entries)
+    update_gamelist(entries)
+    post_live_entries(entries)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

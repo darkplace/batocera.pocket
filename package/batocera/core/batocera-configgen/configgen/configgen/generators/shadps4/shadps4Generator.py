@@ -24,7 +24,7 @@ import toml
 from ... import Command
 from ...batoceraPaths import CONFIGS, configure_emulator, mkdir_if_not_exists
 from ...controller import generate_sdl_game_controller_config
-from ...utils import vulkan
+from ...utils import fex_sdl, vulkan
 from ..Generator import Generator
 
 if TYPE_CHECKING:
@@ -34,10 +34,19 @@ _logger = logging.getLogger(__name__)
 
 SHADPS4_NATIVE_BIN = Path("/usr/bin/shadps4/shadps4")
 SHADPS4_FEX_BIN = Path("/usr/bin/shadps4-fex")
+SHADPS4_FEX_APP_CONFIG_DIR = Path("/usr/share/fex-emu/shadps4-fex")
+SHADPS4_FEX_APP_CONFIG = SHADPS4_FEX_APP_CONFIG_DIR / "shadps4-fex.json"
 
 
 def _is_aarch64() -> bool:
     return os.uname().machine.lower() in ("aarch64", "arm64")
+
+
+def _fex_app_environment() -> dict[str, str]:
+    return {
+        "FEX_APP_CONFIG_LOCATION": f"{SHADPS4_FEX_APP_CONFIG_DIR}/",
+        "FEX_APP_CONFIG": str(SHADPS4_FEX_APP_CONFIG),
+    }
 
 
 class shadPS4Generator(Generator):
@@ -241,9 +250,8 @@ class shadPS4Generator(Generator):
         else:
             eboot_path = rom.parent / "eboot.bin"
 
-        commandBase: list[str | Path] = (
-            [SHADPS4_FEX_BIN] if _is_aarch64() and SHADPS4_FEX_BIN.exists() else [SHADPS4_NATIVE_BIN]
-        )
+        use_fex = _is_aarch64() and SHADPS4_FEX_BIN.exists()
+        commandBase: list[str | Path] = [SHADPS4_FEX_BIN] if use_fex else [SHADPS4_NATIVE_BIN]
 
         # Run command
         if configure_emulator(rom):
@@ -251,11 +259,28 @@ class shadPS4Generator(Generator):
         else:
             commandArray = [*commandBase, eboot_path]
 
-        sdl_controller_config = generate_sdl_game_controller_config(playersControllers)
+        fex_app_environment = _fex_app_environment() if use_fex and SHADPS4_FEX_APP_CONFIG.exists() else {}
+        if use_fex:
+            sdl_controller_config = fex_sdl.generate_sdl_game_controller_config(
+                playersControllers,
+                fex_app_environment,
+            )
+        else:
+            sdl_controller_config = generate_sdl_game_controller_config(playersControllers)
+
         environment = {
             "SDL_GAMECONTROLLERCONFIG": sdl_controller_config,
             "SDL_JOYSTICK_HIDAPI": "0"
         }
+        if use_fex:
+            environment.update(fex_app_environment)
+            environment.update({
+                "FEX_ENV": f"SDL_GAMECONTROLLERCONFIG={sdl_controller_config}",
+                "SDL_XINPUT_ENABLED": "1",
+                "SDL_JOYSTICK_RAWINPUT": "0",
+                "SDL_JOYSTICK_DIRECTINPUT": "0",
+                "SDL_DIRECTINPUT_ENABLED": "0",
+            })
 
         return Command.Command(
             array=commandArray,

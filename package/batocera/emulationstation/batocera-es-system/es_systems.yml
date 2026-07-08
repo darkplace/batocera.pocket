@@ -2591,7 +2591,7 @@ ports:
   manufacturer: Ports
   release:
   hardware: port
-  extensions: [sh, squashfs]
+  extensions: [sh, squashfs, appimage]
   platform: pc
   group: ports
   path: ports
@@ -2603,17 +2603,17 @@ ports:
     ## SYSTEM PORTS ##
     -------------------------------------------------------------------------------
     Here you can find Linux games and apps, launched by shell scripts ending in
-    ".sh". Only the ".sh" scripts appear in EmulationStation.
+    ".sh" or by AppImage files copied directly into this folder.
   comment_fr: |
     ## SYSTEM PORTS ##
     -------------------------------------------------------------------------------
     Vous trouverez ici des jeux et applications Linux, qui sont lancés par des scripts
-    shell en ".sh". Seuls les scripts en ".sh" apparaissent dans EmulationStation.
+    shell en ".sh" ou par des fichiers AppImage copiés directement dans ce dossier.
   comment_br: |
     ## SISTEMA DE PORTS ##
      -------------------------------------------------- -----------------------------
      Aqui você pode encontrar jogos e aplicativos para Linux, iniciados via scripts shell que terminam em
-     ".sh". Apenas os scripts ".sh" aparecem no EmulationStation.
+     ".sh" ou por arquivos AppImage copiados diretamente para esta pasta.
 
 windows:
   name:       Windows

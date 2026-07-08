@@ -91,6 +91,7 @@ define BATOCERA_SCRIPTS_INSTALL_TARGET_CMDS
     install -m 0755 $(BATOCERA_SCRIPTS_PATH)/scripts/batocera-streaming                 $(TARGET_DIR)/usr/bin/
     install -m 0755 $(BATOCERA_SCRIPTS_PATH)/scripts/batocera-n64recomp-update          $(TARGET_DIR)/usr/bin/
     install -m 0755 $(BATOCERA_SCRIPTS_PATH)/scripts/batocera-pcgamingwiki-update       $(TARGET_DIR)/usr/bin/
+    install -m 0755 $(BATOCERA_SCRIPTS_PATH)/scripts/batocera-ports-appimage-update     $(TARGET_DIR)/usr/bin/
     install -m 0755 $(BATOCERA_SCRIPTS_PATH)/scripts/batocera-m3u-builder               $(TARGET_DIR)/usr/bin/
     install -m 0755 $(BATOCERA_SCRIPTS_PATH)/scripts/batocera-media-swap                $(TARGET_DIR)/usr/bin/
     install -m 0755 $(BATOCERA_SCRIPTS_PATH)/scripts/batocera-win9x-tool                $(TARGET_DIR)/usr/bin/
@@ -98,6 +99,7 @@ define BATOCERA_SCRIPTS_INSTALL_TARGET_CMDS
     mkdir -p $(TARGET_DIR)/usr/share/emulationstation/hooks
     ln -sf /usr/bin/batocera-n64recomp-update $(TARGET_DIR)/usr/share/emulationstation/hooks/preupdate-gamelists-n64recomp
     ln -sf /usr/bin/batocera-pcgamingwiki-update $(TARGET_DIR)/usr/share/emulationstation/hooks/preupdate-gamelists-pcgamingwiki
+    ln -sf /usr/bin/batocera-ports-appimage-update $(TARGET_DIR)/usr/share/emulationstation/hooks/preupdate-gamelists-ports-appimage
     mkdir -p $(TARGET_DIR)/etc/udev/rules.d
     install -m 0755 $(BATOCERA_SCRIPTS_PATH)/scripts/batocera-amd-tdp                   $(TARGET_DIR)/usr/bin/
     install -m 0755 $(BATOCERA_SCRIPTS_PATH)/scripts/batocera-spinner-calibrator        $(TARGET_DIR)/usr/bin/

@@ -18,7 +18,7 @@
          "-DX86_DEV_ROOTFS=${X86_DEV_ROOTFS}"
 --- a/ThunkLibs/GuestLibs/CMakeLists.txt
 +++ b/ThunkLibs/GuestLibs/CMakeLists.txt
-@@ -11,13 +11,41 @@
+@@ -11,13 +11,49 @@
  function(target_include_directories_from_pkgconfig target pkg)
    pkg_check_modules(PKG QUIET ${pkg})
    if (PKG_FOUND)
@@ -71,7 +71,7 @@
  if (ENABLE_CLANG_THUNKS)
    set(LD_OVERRIDE "-fuse-ld=lld")
    add_link_options(${LD_OVERRIDE})
-@@ -196,6 +224,7 @@
+@@ -196,6 +232,7 @@
  
    generate(libasound ${CMAKE_CURRENT_SOURCE_DIR}/../libasound/libasound_interface.cpp)
    target_include_directories_from_pkgconfig(libasound-guest-deps alsa)
@@ -79,7 +79,7 @@
    add_guest_lib(asound "libasound.so.2")
  
    # disabled for now, headers are platform specific
-@@ -209,16 +238,19 @@
+@@ -209,16 +246,19 @@
    generate(libvulkan ${CMAKE_CURRENT_SOURCE_DIR}/../libvulkan/libvulkan_interface.cpp)
    target_include_directories(libvulkan-guest-deps INTERFACE ${FEX_PROJECT_SOURCE_DIR}/External/Vulkan-Headers/include/)
    target_include_directories_from_pkgconfig(libvulkan-guest-deps "xcb;x11;xrandr;xrender")

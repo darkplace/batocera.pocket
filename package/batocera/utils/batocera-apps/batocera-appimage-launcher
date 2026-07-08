@@ -11,7 +11,7 @@ app_id="$2"
 default_no_sandbox="$3"
 shift 3
 
-export HOME="/userdata/saves/apps/${app_id}"
+export HOME="${BATOCERA_APPS_HOME:-/userdata/saves/apps/${app_id}}"
 export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
 export XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
 export XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
@@ -19,6 +19,10 @@ export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
 local_app="${BATOCERA_APPS_LOCAL_APPIMAGE:-$HOME/${app_id}.AppImage}"
 
 mkdir -p "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_CACHE_HOME" "$XDG_RUNTIME_DIR" "$(dirname "$local_app")" 2>/dev/null || true
+
+if [ ! -x "$appimage" ] && [ -f "$appimage" ]; then
+    chmod 0755 "$appimage" 2>/dev/null || true
+fi
 
 if [ ! -x "$appimage" ]; then
     if [ ! -x "$local_app" ] && [ -f "$appimage" ]; then
@@ -30,59 +34,254 @@ if [ ! -x "$appimage" ]; then
     fi
 fi
 
+setup_sdl_controller_env() {
+    if [ -f /userdata/system/gamecontrollerdb.txt ]; then
+        SDL_GAMECONTROLLERCONFIG="$(cat /userdata/system/gamecontrollerdb.txt)"
+        export SDL_GAMECONTROLLERCONFIG
+    fi
+    export SDL_JOYSTICK_HIDAPI="${SDL_JOYSTICK_HIDAPI:-0}"
+}
+
+append_library_paths() {
+    if [ -z "${BATOCERA_APPIMAGE_LD_LIBRARY_PATHS:-}" ]; then
+        return 0
+    fi
+
+    if [ -n "${LD_LIBRARY_PATH:-}" ]; then
+        LD_LIBRARY_PATH="${BATOCERA_APPIMAGE_LD_LIBRARY_PATHS}:${LD_LIBRARY_PATH}"
+    else
+        LD_LIBRARY_PATH="${BATOCERA_APPIMAGE_LD_LIBRARY_PATHS}"
+    fi
+    export LD_LIBRARY_PATH
+}
+
+fuse_available() {
+    [ -e /dev/fuse ] || return 1
+    for libdir in /usr/lib /lib /usr/lib64 /lib64; do
+        [ -e "$libdir/libfuse.so.2" ] || [ -e "$libdir"/libfuse.so.2.* ] && return 0
+    done
+    return 1
+}
+
+find_x_display() {
+    if [ -n "${DISPLAY:-}" ]; then
+        return 0
+    fi
+
+    DISPLAY="$(
+        pgrep -af '(^|/)Xwayland ' 2>/dev/null \
+        | sort -nr \
+        | sed -n 's/.*Xwayland \(:[0-9][0-9]*\).*/\1/p' \
+        | head -n 1
+    )"
+
+    if [ -z "${DISPLAY:-}" ] && [ -d /tmp/.X11-unix ]; then
+        x_sock="$(ls /tmp/.X11-unix/X* 2>/dev/null | sort -V | tail -n 1 || true)"
+        if [ -n "$x_sock" ]; then
+            DISPLAY=":${x_sock##*X}"
+        fi
+    fi
+
+    if [ -z "${DISPLAY:-}" ] && command -v getLocalXDisplay >/dev/null 2>&1; then
+        DISPLAY="$(getLocalXDisplay 2>/dev/null || true)"
+    fi
+
+    if [ -n "${DISPLAY:-}" ] && [ -z "${XAUTHORITY:-}" ] && [ -f /var/lib/.Xauthority ]; then
+        export XAUTHORITY=/var/lib/.Xauthority
+    fi
+
+    export DISPLAY
+}
+
+find_wayland_display() {
+    if [ -z "${XDG_RUNTIME_DIR:-}" ] || [ ! -d "$XDG_RUNTIME_DIR" ]; then
+        export XDG_RUNTIME_DIR=/var/run
+    fi
+
+    if [ -z "${WAYLAND_DISPLAY:-}" ] && command -v getLocalWaylandDisplay >/dev/null 2>&1; then
+        WAYLAND_DISPLAY="$(getLocalWaylandDisplay 2>/dev/null || true)"
+    fi
+
+    if [ -z "${WAYLAND_DISPLAY:-}" ]; then
+        for sock in "$XDG_RUNTIME_DIR"/wayland-* /var/run/wayland-* /run/wayland-*; do
+            [ -S "$sock" ] || continue
+            XDG_RUNTIME_DIR="$(dirname "$sock")"
+            WAYLAND_DISPLAY="$(basename "$sock")"
+            break
+        done
+    fi
+
+    export XDG_RUNTIME_DIR WAYLAND_DISPLAY
+}
+
+apply_common_runtime_env() {
+    case "${BATOCERA_APPIMAGE_DISPLAY_BACKEND:-}" in
+        x11|xorg|xcb)
+            find_x_display
+            export XDG_SESSION_TYPE="${XDG_SESSION_TYPE:-x11}"
+            export SDL_VIDEODRIVER="${SDL_VIDEODRIVER:-x11}"
+            export QT_QPA_PLATFORM="${QT_QPA_PLATFORM:-xcb}"
+            unset WAYLAND_DISPLAY
+            ;;
+        wayland)
+            find_wayland_display
+            export XDG_SESSION_TYPE="${XDG_SESSION_TYPE:-wayland}"
+            export SDL_VIDEODRIVER="${SDL_VIDEODRIVER:-wayland}"
+            export QT_QPA_PLATFORM="${QT_QPA_PLATFORM:-wayland}"
+            ;;
+    esac
+
+    case "${BATOCERA_APPIMAGE_QT_QPA_PLATFORM:-}" in
+        wayland|xcb)
+            export QT_QPA_PLATFORM="$BATOCERA_APPIMAGE_QT_QPA_PLATFORM"
+            ;;
+    esac
+
+    if [ "${BATOCERA_APPIMAGE_QT_PLATFORMTHEME_GTK3:-0}" = "1" ]; then
+        export QT_QPA_PLATFORMTHEME=gtk3
+    fi
+    if [ "${BATOCERA_APPIMAGE_QT_WAYLAND_DISABLE_WINDOWDECORATION:-0}" = "1" ]; then
+        export QT_WAYLAND_DISABLE_WINDOWDECORATION=1
+    fi
+
+    case "${BATOCERA_APPIMAGE_XDG_SESSION_TYPE:-}" in
+        wayland|x11)
+            export XDG_SESSION_TYPE="$BATOCERA_APPIMAGE_XDG_SESSION_TYPE"
+            ;;
+    esac
+    case "${BATOCERA_APPIMAGE_SDL_VIDEODRIVER:-}" in
+        wayland|x11)
+            export SDL_VIDEODRIVER="$BATOCERA_APPIMAGE_SDL_VIDEODRIVER"
+            ;;
+    esac
+    case "${BATOCERA_APPIMAGE_SDL_AUDIODRIVER:-}" in
+        pipewire|pulse)
+            export SDL_AUDIODRIVER="$BATOCERA_APPIMAGE_SDL_AUDIODRIVER"
+            ;;
+    esac
+
+    if [ "${BATOCERA_APPIMAGE_DESKTOP_SESSION_FLATPAK:-0}" = "1" ]; then
+        export DESKTOP_SESSION=flatpak
+    fi
+    if [ "${BATOCERA_APPIMAGE_XDG_CURRENT_DESKTOP_GNOME:-0}" = "1" ]; then
+        export XDG_CURRENT_DESKTOP=GNOME
+    fi
+    if [ "${BATOCERA_APPIMAGE_SDL_CONTROLLERDB:-0}" = "1" ]; then
+        setup_sdl_controller_env
+    fi
+    if [ -n "${BATOCERA_APPIMAGE_PIPEWIRE_LATENCY:-}" ]; then
+        export PIPEWIRE_LATENCY="$BATOCERA_APPIMAGE_PIPEWIRE_LATENCY"
+    fi
+}
+
+append_library_paths
+apply_common_runtime_env
+
+extract_and_run=0
+case "${BATOCERA_APPIMAGE_EXTRACT_AND_RUN:-}" in
+    1|true|yes|on|enabled)
+        extract_and_run=1
+        ;;
+    0|false|no|off|disabled)
+        extract_and_run=0
+        ;;
+    *)
+        if ! fuse_available; then
+            extract_and_run=1
+        fi
+        ;;
+esac
+
+enable_features=""
+disable_features=""
+
+case "${BATOCERA_APPIMAGE_USE_OZONE_PLATFORM_FEATURE:-}" in
+    enable)
+        enable_features="UseOzonePlatform"
+        ;;
+    disable)
+        disable_features="UseOzonePlatform"
+        ;;
+esac
+
+if [ "${BATOCERA_APPIMAGE_ENABLE_VAAPI_VIDEO_DECODER:-0}" = "1" ]; then
+    if [ -n "$enable_features" ]; then
+        enable_features="${enable_features},VaapiVideoDecoder"
+    else
+        enable_features="VaapiVideoDecoder"
+    fi
+fi
+
 # App-specific runtime fixes.
 case "$app_id" in
+    vacuumtube|greenlight|chiaki|geforceinfinity)
+        setup_sdl_controller_env
+        ;;
     moonlight)
+        setup_sdl_controller_env
         export QT_QPA_PLATFORM="${QT_QPA_PLATFORM:-xcb}"
-
-        # Prefer a live Xwayland display, not the first X socket.
-        if [ -z "${DISPLAY:-}" ]; then
-            DISPLAY="$(
-                pgrep -af '(^|/)Xwayland ' 2>/dev/null \
-                | sort -nr \
-                | sed -n 's/.*Xwayland \(:[0-9][0-9]*\).*/\1/p' \
-                | head -n 1
-            )"
-        fi
-
-        if [ -z "${DISPLAY:-}" ]; then
-            if [ -d /tmp/.X11-unix ]; then
-                x_sock="$(ls /tmp/.X11-unix/X* 2>/dev/null | sort -V | tail -n 1 || true)"
-                if [ -n "$x_sock" ]; then
-                    DISPLAY=":${x_sock##*X}"
-                fi
-            fi
-        fi
-
-        if [ -z "${DISPLAY:-}" ] && command -v getLocalXDisplay >/dev/null 2>&1; then
-            DISPLAY="$(getLocalXDisplay 2>/dev/null || true)"
-        fi
-
+        find_x_display
         if [ -z "${DISPLAY:-}" ]; then
             echo "moonlight: no active X display found (/tmp/.X11-unix/X* missing)" >&2
             exit 125
         fi
-        if [ -z "${XAUTHORITY:-}" ] && [ -f /var/lib/.Xauthority ]; then
-            export XAUTHORITY=/var/lib/.Xauthority
-        fi
-        export DISPLAY
         ;;
 esac
 
 need_no_sandbox=0
-if [ "${BATOCERA_APPS_NO_SANDBOX:-0}" = "1" ] || [ "${BATOCERA_APPS_NO_SANDBOX:-false}" = "true" ]; then
-    need_no_sandbox=1
-elif [ "$default_no_sandbox" = "1" ] && [ "$(id -u)" = "0" ]; then
-    need_no_sandbox=1
+case "${BATOCERA_APPIMAGE_NO_SANDBOX:-}" in
+    1|true|yes|on|enabled)
+        need_no_sandbox=1
+        ;;
+    0|false|no|off|disabled)
+        need_no_sandbox=0
+        ;;
+    *)
+        if [ "${BATOCERA_APPS_NO_SANDBOX:-0}" = "1" ] || [ "${BATOCERA_APPS_NO_SANDBOX:-false}" = "true" ]; then
+            need_no_sandbox=1
+        elif [ "$default_no_sandbox" = "1" ] && [ "$(id -u)" = "0" ]; then
+            need_no_sandbox=1
+        fi
+        ;;
+esac
+
+case "${BATOCERA_APPIMAGE_OZONE_PLATFORM:-}" in
+    wayland|x11)
+        set -- "$@" "--ozone-platform=$BATOCERA_APPIMAGE_OZONE_PLATFORM"
+        ;;
+esac
+if [ -n "$enable_features" ]; then
+    set -- "$@" "--enable-features=$enable_features"
 fi
+if [ -n "$disable_features" ]; then
+    set -- "$@" "--disable-features=$disable_features"
+fi
+if [ "${BATOCERA_APPIMAGE_ENABLE_ACCELERATED_VIDEO_DECODE:-0}" = "1" ]; then
+    set -- "$@" --enable-accelerated-video-decode
+fi
+if [ "${BATOCERA_APPIMAGE_USE_GL_EGL:-0}" = "1" ]; then
+    set -- "$@" --use-gl=egl
+fi
+case "${BATOCERA_APPIMAGE_USE_ANGLE:-}" in
+    gl|vulkan)
+        set -- "$@" "--use-angle=$BATOCERA_APPIMAGE_USE_ANGLE"
+        ;;
+esac
 
 if [ -n "${BATOCERA_APPS_EXTRA_ARGS:-}" ]; then
     # shellcheck disable=SC2086
     set -- "$@" ${BATOCERA_APPS_EXTRA_ARGS}
 fi
+if [ -n "${BATOCERA_APPIMAGE_EXTRA_ARGS:-}" ]; then
+    # shellcheck disable=SC2086
+    set -- "$@" ${BATOCERA_APPIMAGE_EXTRA_ARGS}
+fi
 
 if [ "$need_no_sandbox" = "1" ]; then
-    exec "$appimage" --no-sandbox "$@"
+    set -- --no-sandbox "$@"
+fi
+if [ "$extract_and_run" = "1" ]; then
+    set -- --appimage-extract-and-run "$@"
 fi
 
 exec "$appimage" "$@"

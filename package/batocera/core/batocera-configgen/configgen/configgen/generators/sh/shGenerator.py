@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
+import re
 from typing import TYPE_CHECKING
 
 from ... import Command
@@ -85,6 +87,42 @@ class ShGenerator(Generator):
         env = {
             "SDL_GAMECONTROLLERCONFIG": sdl_controller_config
         }
+        is_appimage = rom.is_file() and rom.suffix.lower() == ".appimage"
+        if system.name == "ports" and not is_appimage:
+            env.update(self._ports_env(system.config))
+
+        if is_appimage:
+            app_id = self._appimage_id(rom.stem)
+            metadata = self._appimage_metadata(rom)
+            default_no_sandbox = "1" if metadata.get("no_sandbox") is True else "0"
+            ports_env = self._ports_env(system.config, apps_compat=False)
+            env.update(ports_env)
+            commandArray = ["/usr/libexec/batocera-appimage-launcher", rom, app_id, default_no_sandbox]
+            env.update({
+                "BATOCERA_APPS_HOME": f"/userdata/saves/ports/{app_id}",
+                "BATOCERA_APPIMAGE_NO_SANDBOX": ports_env["BATOCERA_PORTS_NO_SANDBOX"],
+                "BATOCERA_APPIMAGE_EXTRA_ARGS": ports_env["BATOCERA_PORTS_EXTRA_ARGS"],
+                "BATOCERA_APPIMAGE_LD_LIBRARY_PATHS": ports_env["BATOCERA_PORTS_LD_LIBRARY_PATHS"],
+                "BATOCERA_APPIMAGE_EXTRACT_AND_RUN": system.config.get_str("ports_appimage_extract_and_run", ""),
+                "BATOCERA_APPIMAGE_DISPLAY_BACKEND": ports_env["BATOCERA_PORTS_DISPLAY_BACKEND"],
+                "BATOCERA_APPIMAGE_OZONE_PLATFORM": ports_env["BATOCERA_PORTS_OZONE_PLATFORM"],
+                "BATOCERA_APPIMAGE_USE_OZONE_PLATFORM_FEATURE": ports_env["BATOCERA_PORTS_USE_OZONE_PLATFORM_FEATURE"],
+                "BATOCERA_APPIMAGE_ENABLE_VAAPI_VIDEO_DECODER": ports_env["BATOCERA_PORTS_ENABLE_VAAPI_VIDEO_DECODER"],
+                "BATOCERA_APPIMAGE_ENABLE_ACCELERATED_VIDEO_DECODE": ports_env["BATOCERA_PORTS_ENABLE_ACCELERATED_VIDEO_DECODE"],
+                "BATOCERA_APPIMAGE_USE_GL_EGL": ports_env["BATOCERA_PORTS_USE_GL_EGL"],
+                "BATOCERA_APPIMAGE_USE_ANGLE": ports_env["BATOCERA_PORTS_USE_ANGLE"],
+                "BATOCERA_APPIMAGE_DESKTOP_SESSION_FLATPAK": ports_env["BATOCERA_PORTS_DESKTOP_SESSION_FLATPAK"],
+                "BATOCERA_APPIMAGE_XDG_CURRENT_DESKTOP_GNOME": ports_env["BATOCERA_PORTS_XDG_CURRENT_DESKTOP_GNOME"],
+                "BATOCERA_APPIMAGE_XDG_SESSION_TYPE": ports_env["BATOCERA_PORTS_XDG_SESSION_TYPE"],
+                "BATOCERA_APPIMAGE_SDL_VIDEODRIVER": ports_env["BATOCERA_PORTS_SDL_VIDEODRIVER"],
+                "BATOCERA_APPIMAGE_SDL_AUDIODRIVER": ports_env["BATOCERA_PORTS_SDL_AUDIODRIVER"],
+                "BATOCERA_APPIMAGE_QT_QPA_PLATFORM": ports_env["BATOCERA_PORTS_QT_QPA_PLATFORM"],
+                "BATOCERA_APPIMAGE_QT_PLATFORMTHEME_GTK3": ports_env["BATOCERA_PORTS_QT_PLATFORMTHEME_GTK3"],
+                "BATOCERA_APPIMAGE_QT_WAYLAND_DISABLE_WINDOWDECORATION": ports_env["BATOCERA_PORTS_QT_WAYLAND_DISABLE_WINDOWDECORATION"],
+                "BATOCERA_APPIMAGE_SDL_CONTROLLERDB": ports_env["BATOCERA_PORTS_SDL_CONTROLLERDB"],
+                "BATOCERA_APPIMAGE_PIPEWIRE_LATENCY": ports_env["BATOCERA_PORTS_PIPEWIRE_LATENCY"],
+            })
+            return Command.Command(array=commandArray, env=env)
 
         if system.config.emulator == "heroic":
             env["BATOCERA_HEROIC_EXTRA_ARGS"] = system.config.get_str("heroic_extra_args", "")
@@ -116,3 +154,74 @@ class ShGenerator(Generator):
 
     def getMouseMode(self, config, rom):
         return True
+
+    @staticmethod
+    def _appimage_id(stem: str) -> str:
+        app_id = re.sub(r"[^A-Za-z0-9._-]+", "-", stem).strip("-._").lower()
+        return app_id or "appimage"
+
+    @staticmethod
+    def _appimage_metadata(rom) -> dict:
+        manifest = rom.parent / ".appimage-metadata.json"
+        try:
+            data = json.loads(manifest.read_text(encoding="utf-8"))
+        except Exception:
+            return {}
+
+        if not isinstance(data, dict):
+            return {}
+
+        entry = data.get(rom.name, {})
+        return entry if isinstance(entry, dict) else {}
+
+    @classmethod
+    def _ports_env(cls, config, *, apps_compat: bool = True) -> dict[str, str]:
+        no_sandbox = cls._config_str(config, "ports_no_sandbox", "ports_appimage_no_sandbox")
+        extra_args = cls._config_str(config, "ports_extra_args", "ports_appimage_extra_args")
+
+        env = {
+            "BATOCERA_PORTS_NO_SANDBOX": no_sandbox,
+            "BATOCERA_PORTS_EXTRA_ARGS": extra_args,
+            "BATOCERA_PORTS_LD_LIBRARY_PATHS": cls._config_str(config, "ports_ld_library_paths", "ports_appimage_ld_library_paths"),
+            "BATOCERA_PORTS_DISPLAY_BACKEND": cls._config_str(config, "ports_display_backend", "ports_appimage_display_backend"),
+            "BATOCERA_PORTS_OZONE_PLATFORM": cls._config_str(config, "ports_ozone_platform", "ports_appimage_ozone_platform"),
+            "BATOCERA_PORTS_USE_OZONE_PLATFORM_FEATURE": cls._config_str(config, "ports_use_ozone_platform_feature", "ports_appimage_use_ozone_platform_feature"),
+            "BATOCERA_PORTS_ENABLE_VAAPI_VIDEO_DECODER": cls._config_bool(config, "ports_enable_vaapi_video_decoder", "ports_appimage_enable_vaapi_video_decoder"),
+            "BATOCERA_PORTS_ENABLE_ACCELERATED_VIDEO_DECODE": cls._config_bool(config, "ports_enable_accelerated_video_decode", "ports_appimage_enable_accelerated_video_decode"),
+            "BATOCERA_PORTS_USE_GL_EGL": cls._config_bool(config, "ports_use_gl_egl", "ports_appimage_use_gl_egl"),
+            "BATOCERA_PORTS_USE_ANGLE": cls._config_str(config, "ports_use_angle", "ports_appimage_use_angle"),
+            "BATOCERA_PORTS_DESKTOP_SESSION_FLATPAK": cls._config_bool(config, "ports_env_desktop_session_flatpak", "ports_appimage_env_desktop_session_flatpak"),
+            "BATOCERA_PORTS_XDG_CURRENT_DESKTOP_GNOME": cls._config_bool(config, "ports_env_xdg_current_desktop_gnome", "ports_appimage_env_xdg_current_desktop_gnome"),
+            "BATOCERA_PORTS_XDG_SESSION_TYPE": cls._config_str(config, "ports_xdg_session_type", "ports_appimage_xdg_session_type"),
+            "BATOCERA_PORTS_SDL_VIDEODRIVER": cls._config_str(config, "ports_sdl_video_driver", "ports_appimage_sdl_video_driver"),
+            "BATOCERA_PORTS_SDL_AUDIODRIVER": cls._config_str(config, "ports_sdl_audio_driver", "ports_appimage_sdl_audio_driver"),
+            "BATOCERA_PORTS_QT_QPA_PLATFORM": cls._config_str(config, "ports_qt_qpa_platform", "ports_appimage_qt_qpa_platform"),
+            "BATOCERA_PORTS_QT_PLATFORMTHEME_GTK3": cls._config_bool(config, "ports_qt_platformtheme_gtk3", "ports_appimage_qt_platformtheme_gtk3"),
+            "BATOCERA_PORTS_QT_WAYLAND_DISABLE_WINDOWDECORATION": cls._config_bool(config, "ports_qt_wayland_disable_windowdecoration", "ports_appimage_qt_wayland_disable_windowdecoration"),
+            "BATOCERA_PORTS_SDL_CONTROLLERDB": cls._config_bool(config, "ports_env_sdl_gamecontrollerconfig", "ports_appimage_env_sdl_gamecontrollerconfig"),
+            "BATOCERA_PORTS_PIPEWIRE_LATENCY": cls._config_str(config, "ports_pipewire_latency", "ports_appimage_pipewire_latency"),
+        }
+        if apps_compat:
+            # Compatibility with existing app-oriented .sh launch helpers.
+            env["BATOCERA_APPS_NO_SANDBOX"] = "1" if no_sandbox in {"1", "true", "on", "enabled"} else "0"
+            env["BATOCERA_APPS_EXTRA_ARGS"] = extra_args
+        return env
+
+    @staticmethod
+    def _config_str(config, *keys: str) -> str:
+        for key in keys:
+            value = config.get_str(key, config.MISSING)
+            if value is not config.MISSING:
+                return value
+        return ""
+
+    @staticmethod
+    def _config_bool(config, *keys: str) -> str:
+        for key in keys:
+            value = config.get(key, config.MISSING)
+            if value is config.MISSING:
+                continue
+            if isinstance(value, str):
+                value = value.lower()
+            return "1" if value in config.TRUE_VALUES else "0"
+        return "0"
