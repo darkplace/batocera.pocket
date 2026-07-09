@@ -27,7 +27,7 @@ https://drive.proton.me/urls/RRPFQ38NX8#LmFz5AIaV2aI
 <img width="481" height="642" alt="image" src="https://github.com/user-attachments/assets/2ac8e6a1-769b-4ddb-b0ea-f04324146561" />
 ---
 
-## Core Features (All ARM64 Builds)
+## Core Features beyond upstream (All ARM64 Builds)
 - Flatpak enabled (with DBus + Wayland fixes)  
 - Wine + Box64 + Box86  
 - PortMaster fixes with multilib 32-bit support  (32bit not availble on CQ8725S)
@@ -49,14 +49,14 @@ Extra libraries (e.g. `libcups`) included for better AppImage compatibility
 
 ---
 
-## Qualcomm Builds (SM8550, CQ8725S, QCS6490)
+## Qualcomm Builds (QCS8550, CQ8725S, QCS6490)
 Includes additional emulators where supported:
 - AetherSX2  
-- ARMSX2 (+Masies fork with newer aarch64 JIT engine)
+- ARMSX2 (+Masies' fork with newer aarch64 JIT engine)
 - RPCS3
 - Vita3K
 - Cemu (now upstream)
-- ShadPS4 (heavy games too heavy even for odin 3 (only qcs8550 build is up currently with shadps4. rebuilding odin 3 with shadps4 support) 
+- ShadPS4 (heavy games too heavy even for odin 3 (only qcs8550 build is up currently with shadps4. rebuilding odin 3 with shadps4 support)) 
 - Xenia
   <img width="661" height="881" alt="image" src="https://github.com/user-attachments/assets/ce658ce6-7753-47fd-a56e-caaeddf29c67" />
 - SkyEmu  
@@ -72,7 +72,7 @@ Includes additional emulators where supported:
 - LSFG-VK (requires Losless.dll - can be bought on steam)
   <img width="661" height="881" alt="image" src="https://github.com/user-attachments/assets/7183369d-ca34-4d24-9f6b-86d35feb9918" />
 - Docker *(enable in Services menu)*
-- Waydroid
+- Waydroid (Not on CQ8725S until drivers mature)
 - Hotkey + touchscreen support for on-screen keyboard  
 - Arch Plasma LXC Desktop
 
@@ -81,7 +81,7 @@ https://github.com/user-attachments/assets/4c939a09-1fd7-4ea7-a014-4050a58c632f
 
 ---
 
-## SM8550 (Snapdragon 8 Gen 2 Class)
+## QCS8550 Dragonwing (Snapdragon 8 Gen 2 Class)
 - Odin 2 includes LED support
 - GPU Profile settings
 - experimental gamescope for wine, cemu
@@ -96,7 +96,7 @@ https://github.com/user-attachments/assets/4c939a09-1fd7-4ea7-a014-4050a58c632f
   <img width="661" height="881" alt="image" src="https://github.com/user-attachments/assets/307330f2-39b4-4c33-8893-85c19507884f" />
 
 
-## CQ8725S (Dragonwing Q8 - Odin 3)
+## CQ8725S Dragonwing Q8 - (8 Gen elite class - Odin 3)
 - Same stack as above with more power
 - Waydroid currently not working on CQ8725S as Adreno 830 currently doesn't support hardware acceleration on waydroid.
   
