@@ -69,7 +69,7 @@ Includes additional emulators where supported:
 - Steam aarch64 (aarch64 client) (with drm/kms gamescope working on sm8550/sm8750)
 - DXVK (DX11 support)
 - Fex-Emu support on Wine runners
-- LSFG-VK (requires Losless.dll - can be bought on steam)
+- LSFG-VK (requires Lossless.dll - can be bought on steam)
   <img width="661" height="881" alt="image" src="https://github.com/user-attachments/assets/7183369d-ca34-4d24-9f6b-86d35feb9918" />
 - Docker *(enable in Services menu)*
 - Waydroid (Not on CQ8725S until drivers mature)

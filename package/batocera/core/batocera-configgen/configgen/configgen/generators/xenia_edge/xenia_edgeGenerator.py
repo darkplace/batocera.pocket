@@ -21,6 +21,8 @@ _logger = logging.getLogger(__name__)
 
 XENIA_EDGE_BIN     = Path('/usr/xenia_edge/xenia_edge')
 XENIA_EDGE_PATCHES_SRC = Path('/usr/xenia_edge/patches')
+XENIA_ACHIEVEMENT_SOUND_ROOT = Path('/usr/share/libretro/assets/sounds')
+XENIA_DEFAULT_ACHIEVEMENT_SOUND = 'xbox360-achievement'
 
 
 def _normalize_xenia_profile_xuid(value: Any) -> str:
@@ -38,27 +40,51 @@ def _normalize_xenia_profile_xuid(value: Any) -> str:
 
 def _apply_xenia_profiles(system: Any, config: dict[str, dict[str, Any]]) -> None:
     profiles_cfg = config.setdefault('Profiles', {})
-    selected: dict[int, str] = {}
+    profile_hints: dict[int, Any] = {}
 
     profile_hint = system.config.get('xenia_profile', system.config.MISSING)
     if profile_hint is not system.config.MISSING:
-        profile = _normalize_xenia_profile_xuid(profile_hint)
-        if profile:
-            selected[0] = profile
+        profile_hints[0] = profile_hint
 
     for slot in range(4):
         profile_hint = system.config.get(f'xenia_profile{slot + 1}', system.config.MISSING)
         if profile_hint is system.config.MISSING:
             continue
+        profile_hints[slot] = profile_hint
+
+    auto_profile = True
+    for slot, profile_hint in profile_hints.items():
+        profile_text = str(profile_hint or '').strip().lower()
+        profile_is_auto = profile_text in ('', 'auto', 'prompt', 'ask', 'ask each time')
+        if slot == 0:
+            auto_profile = profile_is_auto
+        if profile_is_auto:
+            continue
 
         profile = _normalize_xenia_profile_xuid(profile_hint)
         if profile:
-            selected[slot] = profile
+            profiles_cfg[f'logged_profile_slot_{slot}_xuid'] = profile
         else:
-            selected.pop(slot, None)
+            profiles_cfg[f'logged_profile_slot_{slot}_xuid'] = ''
 
-    for slot in range(4):
-        profiles_cfg[f'logged_profile_slot_{slot}_xuid'] = selected.get(slot, '')
+    profiles_cfg['batocera_auto_profile'] = auto_profile
+
+
+def _achievement_sound_path(system: Any) -> str:
+    sound = str(system.config.get('retroachievements.sound', XENIA_DEFAULT_ACHIEVEMENT_SOUND))
+    if sound.lower() in ('', '0', 'false', 'none'):
+        return ''
+
+    if '/' in sound:
+        path = Path(sound)
+        return str(path) if path.is_file() else ''
+
+    for suffix in ('.ogg', '.wav'):
+        path = XENIA_ACHIEVEMENT_SOUND_ROOT / f'{sound}{suffix}'
+        if path.is_file():
+            return str(path)
+
+    return ''
 
 
 class XeniaEdgeGenerator(Generator):
@@ -166,9 +192,16 @@ class XeniaEdgeGenerator(Generator):
             'mount_cache':   system.config.get_bool('xenia_cache', True)
         }
 
+        achievements_enabled = system.config.get_bool('xenia_achievement', True)
+        achievement_sound = ''
+        if achievements_enabled and system.config.get_bool('xenia_achievement_sound', True):
+            achievement_sound = _achievement_sound_path(system)
+
         config['UI'] = {
             'headless': system.config.get_bool('xenia_headless', False),
-            'show_achievement_notification': system.config.get_bool('xenia_achievement', True)
+            'show_achievement_notification': achievements_enabled,
+            'notification_sound_path': achievement_sound,
+            'achievement_sound_path': achievement_sound,
         }
 
         _apply_xenia_profiles(system, config)

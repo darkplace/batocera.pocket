@@ -48,7 +48,12 @@ resolve_lossless_dll() {
 ' "$configured"; return 0; }
     fi
 
-    for candidate in         "/userdata/system/wine/lossless-config/Lossless.dll"         "/userdata/system/wine/lossless-scaling/Lossless.dll"         "/userdata/system/wine/.local/share/Steam/steamapps/common/Lossless Scaling/Lossless.dll"         "/userdata/system/.local/share/Steam/steamapps/common/Lossless Scaling/Lossless.dll"         "/userdata/roms/windows/Lossless Scaling/Lossless.dll"
+    for candidate in \
+        "/userdata/system/wine/lossless-scaling/Lossless.dll" \
+        "/userdata/system/wine/lossless-config/Lossless.dll" \
+        "/userdata/system/wine/.local/share/Steam/steamapps/common/Lossless Scaling/Lossless.dll" \
+        "/userdata/system/.local/share/Steam/steamapps/common/Lossless Scaling/Lossless.dll" \
+        "/userdata/roms/windows/Lossless Scaling/Lossless.dll"
     do
         [ -f "$candidate" ] && { printf '%s
 ' "$candidate"; return 0; }

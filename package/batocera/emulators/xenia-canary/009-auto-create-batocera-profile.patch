@@ -1,0 +1,45 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Fri, 10 Jul 2026 00:00:00 +000
+Subject: [PATCH] xam: provide an automatic Batocera profile
+
+Xbox 360 achievements require a signed-in profile. When EmulationStation's
+profile selector is left on AUTO, sign in an existing profile or create a
+persistent Batocera profile on first launch.
+---
+ src/xenia/kernel/xam/profile_manager.cc | 14 ++++++++++++++
+ 1 file changed, 14 insertions(+)
+
+diff --git a/src/xenia/kernel/xam/profile_manager.cc b/src/xenia/kernel/xam/profile_manager.cc
+--- a/src/xenia/kernel/xam/profile_manager.cc
++++ b/src/xenia/kernel/xam/profile_manager.cc
+@@ -26,6 +26,11 @@ DEFINE_string(logged_profile_slot_2_xuid, "",
+ DEFINE_string(logged_profile_slot_3_xuid, "",
+               "XUID of the profile to load on boot in slot 3", "Profiles");
+ 
++DEFINE_bool(batocera_auto_profile, false,
++            "Create or sign in a profile for Batocera's AUTO "
++            "selection",
++            "Profiles");
++
+ namespace xe {
+ namespace kernel {
+ namespace xam {
+@@ -130,6 +135,15 @@ ProfileManager::ProfileManager(KernelState* kernel_state,
+               cvars::logged_profile_slot_3_xuid, true),
+           3);
+   }
++
++  if (cvars::batocera_auto_profile && !logged_profiles_.contains(0)) {
++    if (!accounts_.empty()) {
++      Login(accounts_.begin()->first, 0);
++    } else if (!CreateProfile("Batocera", true, true) &&
++               !CreateProfile("Batocera", true)) {
++      XELOGE("Unable to create the automatic Batocera profile");
++    }
++  }
+ }
+ 
+ void ProfileManager::ReloadProfile(const uint64_t xuid) {
+-- 
+2.50.1

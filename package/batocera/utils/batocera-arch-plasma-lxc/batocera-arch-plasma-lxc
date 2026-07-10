@@ -23,6 +23,21 @@ DEFAULT_USER="batocera"
 DEFAULT_PASSWORD="linux"
 ARCH_IMAGE_ARCH="${BATOCERA_ARCH_PLASMA_IMAGE_ARCH:-arm64}"
 ARCH_IMAGE_RELEASE="${BATOCERA_ARCH_PLASMA_IMAGE_RELEASE:-current}"
+PLASMA_DIST="${BATOCERA_PLASMA_DIST:-archlinux}"
+PLASMA_LABEL="${BATOCERA_PLASMA_LABEL:-Arch Plasma}"
+PLASMA_OS_ID="${BATOCERA_PLASMA_OS_ID:-arch}"
+PLASMA_ROOTFS_URL="${BATOCERA_PLASMA_ROOTFS_URL:-}"
+PLASMA_ROOTFS_FALLBACK_URLS="${BATOCERA_PLASMA_ROOTFS_FALLBACK_URLS:-}"
+PLASMA_ROOTFS_INDEX_URL="${BATOCERA_PLASMA_ROOTFS_INDEX_URL:-}"
+PLASMA_IMAGE_RELEASE="${BATOCERA_PLASMA_IMAGE_RELEASE:-${ARCH_IMAGE_RELEASE}}"
+if [ "${PLASMA_DIST}" = "debian" ]; then
+    PLASMA_IMAGE_RELEASE="${BATOCERA_PLASMA_IMAGE_RELEASE:-trixie}"
+    PLASMA_OS_ID="${BATOCERA_PLASMA_OS_ID:-debian}"
+elif [ "${PLASMA_DIST}" = "ubuntu" ]; then
+    PLASMA_IMAGE_RELEASE="${BATOCERA_PLASMA_IMAGE_RELEASE:-resolute}"
+    PLASMA_OS_ID="${BATOCERA_PLASMA_OS_ID:-ubuntu}"
+fi
+export PLASMA_LABEL PLASMA_DIST LOG
 PLASMA_RENDERER="${BATOCERA_ARCH_PLASMA_RENDERER:-raw}"
 if [ -n "${BATOCERA_ARCH_PLASMA_SESSION_TYPE:-}" ]; then
     PLASMA_SESSION_TYPE="${BATOCERA_ARCH_PLASMA_SESSION_TYPE}"
@@ -94,14 +109,15 @@ is_ayn_thor() {
     return 1
 }
 
-is_ayn_odin2() {
+is_ayn_odin() {
     local model compatible
 
     model="$(read_device_tree_string /proc/device-tree/model 2>/dev/null || true)"
     compatible="$(read_device_tree_string /proc/device-tree/compatible 2>/dev/null || true)"
 
     case "${model} ${compatible}" in
-        *"AYN Odin 2"*|*"AYN-Odin2"*|*"ayn,odin2"*)
+        *"AYN Odin 2"*|*"AYN Odin2"*|*"AYN-Odin2"*|*"ayn,odin2"*|\
+        *"AYN Odin 3"*|*"AYN Odin3"*|*"AYN-Odin3"*|*"ayn,odin3"*)
             return 0
             ;;
     esac
@@ -151,13 +167,13 @@ configure_device_display_defaults() {
 }
 
 configure_device_input_defaults() {
-    is_ayn_odin2 || return 0
+    is_ayn_odin || return 0
 
     if [ -z "${BATOCERA_ARCH_PLASMA_THOR_GAMEPAD_MOUSE+x}" ]; then
         export BATOCERA_ARCH_PLASMA_THOR_GAMEPAD_MOUSE="1"
     fi
 
-    log "applying AYN Odin2 input defaults: gamepad_mouse=${BATOCERA_ARCH_PLASMA_THOR_GAMEPAD_MOUSE}"
+    log "applying AYN Odin input defaults: gamepad_mouse=${BATOCERA_ARCH_PLASMA_THOR_GAMEPAD_MOUSE}"
 }
 
 run_detached() {
@@ -219,20 +235,20 @@ prompt_credentials() {
     command -v dialog >/dev/null 2>&1 || die "dialog is not installed"
 
     while :; do
-        user="$(dialog_input "Arch Plasma LXC" "Default desktop username:" "${PLASMA_USER:-${DEFAULT_USER}}")" || return 1
+        user="$(dialog_input "${PLASMA_LABEL} LXC" "Default desktop username:" "${PLASMA_USER:-${DEFAULT_USER}}")" || return 1
         if validate_username "${user}"; then
             break
         fi
-        dialog --title "Arch Plasma LXC" --msgbox "Use a Linux username beginning with a lowercase letter or underscore. Allowed later characters: lowercase letters, numbers, underscore, hyphen." 10 70
+        dialog --title "${PLASMA_LABEL} LXC" --msgbox "Use a Linux username beginning with a lowercase letter or underscore. Allowed later characters: lowercase letters, numbers, underscore, hyphen." 10 70
     done
 
     while :; do
-        password="$(dialog_password "Arch Plasma LXC" "Default password for ${user}:" "${DEFAULT_PASSWORD}")" || return 1
-        confirm="$(dialog_password "Arch Plasma LXC" "Confirm password for ${user}:" "${password}")" || return 1
+        password="$(dialog_password "${PLASMA_LABEL} LXC" "Default password for ${user}:" "${DEFAULT_PASSWORD}")" || return 1
+        confirm="$(dialog_password "${PLASMA_LABEL} LXC" "Confirm password for ${user}:" "${password}")" || return 1
         if [ "${password}" = "${confirm}" ] && [ -n "${password}" ]; then
             break
         fi
-        dialog --title "Arch Plasma LXC" --msgbox "Passwords did not match, or the password was empty." 8 58
+        dialog --title "${PLASMA_LABEL} LXC" --msgbox "Passwords did not match, or the password was empty." 8 58
     done
 
     PLASMA_USER="${user}"
@@ -479,6 +495,7 @@ GAMEPAD_SPEED = float(os.environ.get("THOR_GAMEPAD_MOUSE_SPEED", "24"))
 GAMEPAD_INTERVAL = 1.0 / float(os.environ.get("THOR_GAMEPAD_MOUSE_HZ", "60"))
 GAMEPAD_STICK = os.environ.get("THOR_GAMEPAD_MOUSE_STICK", "left").lower()
 GAMEPAD_TRIGGER_THRESHOLD = float(os.environ.get("THOR_GAMEPAD_MOUSE_TRIGGER_THRESHOLD", "0.50"))
+GAMEPAD_GRAB = os.environ.get("THOR_GAMEPAD_MOUSE_GRAB", "1").lower() in ("1", "yes", "true", "on")
 running = True
 
 def stop(_signum, _frame):
@@ -615,6 +632,8 @@ def main():
             touch.grab()
     if gamepad is not None:
         devices[gamepad.fd] = ("gamepad", gamepad)
+        if GAMEPAD_GRAB:
+            gamepad.grab()
         axis_info = {}
         axis_values = {}
         for code in (ecodes.ABS_X, ecodes.ABS_Y, ecodes.ABS_RX, ecodes.ABS_RY, ecodes.ABS_Z, ecodes.ABS_RZ):
@@ -652,6 +671,11 @@ def main():
                 touch.ungrab()
             except Exception:
                 pass
+        if gamepad is not None and GAMEPAD_GRAB:
+            try:
+                gamepad.ungrab()
+            except Exception:
+                pass
         ui.close()
 
 main()
@@ -662,7 +686,7 @@ PY
 start_thor_touch_mouse_bridge() {
     local event_path gamepad_path pid pidfile log_path enable_touch enable_gamepad
 
-    is_ayn_thor || is_ayn_odin2 || return 0
+    is_ayn_thor || is_ayn_odin || return 0
     enable_touch="${BATOCERA_ARCH_PLASMA_THOR_TOUCH_MOUSE:-0}"
     enable_gamepad="${BATOCERA_ARCH_PLASMA_THOR_GAMEPAD_MOUSE:-0}"
     [ "${enable_touch}" = "1" ] || [ "${enable_gamepad}" = "1" ] || return 0
@@ -679,7 +703,7 @@ PY
     fi
     gamepad_path=""
     if [ "${enable_gamepad}" = "1" ]; then
-        gamepad_path="$(find_input_event_by_sysfs_pattern 'AYN Odin2 Gamepad|rsinput-gamepad|2020/3001' 2>/dev/null || true)"
+        gamepad_path="$(find_input_event_by_sysfs_pattern 'AYN Odin(2|3) Gamepad|rsinput-gamepad|2020/3001' 2>/dev/null || true)"
     fi
     [ -n "${event_path}${gamepad_path}" ] || {
         log "AYN pointer bridge source not found"
@@ -702,6 +726,7 @@ PY
         THOR_TOUCH_MOUSE_GRAB="${BATOCERA_ARCH_PLASMA_THOR_TOUCH_MOUSE_GRAB:-0}" \
         THOR_GAMEPAD_MOUSE_SPEED="${BATOCERA_ARCH_PLASMA_THOR_GAMEPAD_MOUSE_SPEED:-24}" \
         THOR_GAMEPAD_MOUSE_STICK="${BATOCERA_ARCH_PLASMA_THOR_GAMEPAD_MOUSE_STICK:-left}" \
+        THOR_GAMEPAD_MOUSE_GRAB="${BATOCERA_ARCH_PLASMA_THOR_GAMEPAD_MOUSE_GRAB:-1}" \
         THOR_GAMEPAD_MOUSE_TRIGGER_THRESHOLD="${BATOCERA_ARCH_PLASMA_THOR_GAMEPAD_MOUSE_TRIGGER_THRESHOLD:-0.50}" \
         nohup "${HOST_RUNTIME_DIR}/thor-touch-mouse.py" >"${log_path}" 2>&1 &
     printf '%s\n' "$!" > "${pidfile}"
@@ -711,7 +736,7 @@ PY
 stop_thor_touch_mouse_bridge() {
     local pid pidfile
 
-    is_ayn_thor || is_ayn_odin2 || return 0
+    is_ayn_thor || is_ayn_odin || return 0
     pidfile="${HOST_RUNTIME_DIR}/thor-touch-mouse.pid"
 
     if [ -s "${pidfile}" ]; then
@@ -737,7 +762,7 @@ synthesize_thor_touch_mouse_udev_record() {
     local udev_root="$1"
     local event_sys device name devnode hex_major hex_minor major minor input_name data_dir
 
-    is_ayn_thor || is_ayn_odin2 || return 0
+    is_ayn_thor || is_ayn_odin || return 0
     [ -d "${udev_root}/data" ] || return 0
 
     for event_sys in /sys/class/input/event*; do
@@ -848,40 +873,10 @@ configure_container_dns() {
     tmp_resolv="${HOST_RESOLV_CONF}.new"
 
     mkdir -p "$(dirname "${HOST_RESOLV_CONF}")"
-    if [ -s /etc/resolv.conf ]; then
-        awk '
-            $1 == "nameserver" {
-                ns = $2
-                if (ns ~ /^(127\.|0\.0\.0\.0$|::1$)/) {
-                    next
-                }
-                if (ns ~ /^fe80:/) {
-                    next
-                }
-                print "nameserver " ns
-                count++
-                next
-            }
-            $1 == "search" || $1 == "domain" || $1 == "options" {
-                extra[++extra_count] = $0
-            }
-            END {
-                if (count == 0) {
-                    print "nameserver 1.1.1.1"
-                    print "nameserver 8.8.8.8"
-                }
-                for (i = 1; i <= extra_count; i++) {
-                    print extra[i]
-                }
-            }
-        ' /etc/resolv.conf > "${tmp_resolv}" 2>>"${LOG}" || true
-    fi
-    if [ ! -s "${tmp_resolv}" ]; then
-        {
-            printf 'nameserver 1.1.1.1\n'
-            printf 'nameserver 8.8.8.8\n'
-        } > "${tmp_resolv}" 2>>"${LOG}" || true
-    fi
+    {
+        printf 'nameserver 1.1.1.1\n'
+        printf 'nameserver 8.8.8.8\n'
+    } > "${tmp_resolv}" 2>>"${LOG}" || true
     chmod 0644 "${tmp_resolv}" 2>/dev/null || true
     mv -f "${tmp_resolv}" "${HOST_RESOLV_CONF}" 2>>"${LOG}" || true
 
@@ -896,6 +891,82 @@ configure_container_dns() {
     chmod 0644 "${resolv}" 2>/dev/null || true
 }
 
+download_rootfs_image() {
+    local image_tmp="$1"
+    local url index_tmp latest_dir dynamic_url
+
+    for url in ${PLASMA_ROOTFS_URL} ${PLASMA_ROOTFS_FALLBACK_URLS}; do
+        [ -n "${url}" ] || continue
+        log "downloading ${PLASMA_DIST} rootfs from ${url}"
+        rm -f "${image_tmp}"
+        if curl -fL --retry 3 --retry-delay 2 --connect-timeout 30 "${url}" -o "${image_tmp}" >>"${LOG}" 2>&1; then
+            if unsquashfs -s "${image_tmp}" >/dev/null 2>&1; then
+                return 0
+            fi
+            log "warning: downloaded rootfs from ${url} is not valid squashfs"
+        else
+            log "warning: rootfs download failed from ${url}"
+        fi
+    done
+
+    if [ -n "${PLASMA_ROOTFS_INDEX_URL}" ]; then
+        index_tmp="${image_tmp}.index"
+        rm -f "${index_tmp}"
+        log "resolving latest ${PLASMA_DIST} rootfs from ${PLASMA_ROOTFS_INDEX_URL}"
+        if curl -fL --retry 3 --retry-delay 2 --connect-timeout 30 \
+            "${PLASMA_ROOTFS_INDEX_URL}" -o "${index_tmp}" >>"${LOG}" 2>&1; then
+            latest_dir="$(sed -n 's/.*href="\([^"]*\)\/".*/\1/p' "${index_tmp}" | \
+                grep -E '^20[0-9]{6}_[0-9]{2}(%3A|:)[0-9]{2}$' | sort | tail -n 1 || true)"
+            if [ -n "${latest_dir}" ]; then
+                dynamic_url="${PLASMA_ROOTFS_INDEX_URL%/}/${latest_dir}/rootfs.squashfs"
+                log "downloading latest ${PLASMA_DIST} rootfs from ${dynamic_url}"
+                rm -f "${image_tmp}"
+                if curl -fL --retry 3 --retry-delay 2 --connect-timeout 30 \
+                    "${dynamic_url}" -o "${image_tmp}" >>"${LOG}" 2>&1 && \
+                    unsquashfs -s "${image_tmp}" >/dev/null 2>&1; then
+                    rm -f "${index_tmp}"
+                    return 0
+                fi
+            fi
+        fi
+        rm -f "${index_tmp}"
+    fi
+
+    rm -f "${image_tmp}"
+    return 1
+}
+
+create_container_from_squashfs() {
+    local container_dir rootfs image image_tmp
+
+    command -v curl >/dev/null 2>&1 || die "curl is required for direct rootfs downloads"
+    command -v unsquashfs >/dev/null 2>&1 || die "unsquashfs is required for direct rootfs downloads"
+
+    container_dir="${LXC_PATH}/${CONTAINER}"
+    rootfs="${container_dir}/rootfs"
+    image="${STATE_DIR}/rootfs.squashfs"
+    image_tmp="${image}.part"
+
+    mkdir -p "${STATE_DIR}" "${container_dir}"
+    if ! unsquashfs -s "${image}" >/dev/null 2>&1; then
+        download_rootfs_image "${image_tmp}" || die "could not download a valid ${PLASMA_DIST} rootfs"
+        mv -f "${image_tmp}" "${image}"
+    fi
+
+    rm -rf "${rootfs}"
+    unsquashfs -f -d "${rootfs}" "${image}" >>"${LOG}" 2>&1 || die "could not extract ${PLASMA_DIST} rootfs"
+    cat > "${container_dir}/config" <<EOF
+# Direct rootfs image: ${PLASMA_ROOTFS_URL}
+lxc.include = /usr/share/lxc/config/common.conf
+lxc.arch = linux64
+lxc.rootfs.path = dir:${rootfs}
+lxc.uts.name = ${CONTAINER}
+lxc.net.0.type = veth
+lxc.net.0.link = lxcbr0
+lxc.net.0.flags = up
+EOF
+}
+
 create_container() {
     mkdir -p "${LXC_PATH}"
     start_lxc_network
@@ -904,16 +975,32 @@ create_container() {
     destroy_incomplete_container "base image is missing"
 
     if container_exists; then
+        if ! container_has_expected_distribution; then
+            die "existing container ${CONTAINER} is not ${PLASMA_LABEL} (${PLASMA_OS_ID}); remove ${LXC_PATH}/${CONTAINER} before launching this variant"
+        fi
         configure_lxc
         configure_container_dns
         return 0
     fi
 
-    log "creating Arch container ${CONTAINER}"
-    lxc-create -P "${LXC_PATH}" -n "${CONTAINER}" -t download -- \
-        --dist archlinux --release "${ARCH_IMAGE_RELEASE}" --arch "${ARCH_IMAGE_ARCH}" >>"${LOG}" 2>&1
+    log "creating ${PLASMA_DIST} container ${CONTAINER}"
+    if [ -n "${PLASMA_ROOTFS_URL}" ]; then
+        create_container_from_squashfs
+    else
+        lxc-create -P "${LXC_PATH}" -n "${CONTAINER}" -t download -- \
+            --dist "${PLASMA_DIST}" --release "${PLASMA_IMAGE_RELEASE}" --arch "${ARCH_IMAGE_ARCH}" >>"${LOG}" 2>&1
+    fi
     configure_lxc
     configure_container_dns
+}
+
+container_has_expected_distribution() {
+    local rootfs container_os_id
+
+    rootfs="$(container_rootfs)"
+    [ -r "${rootfs}/etc/os-release" ] || return 1
+    container_os_id="$(awk -F= '$1 == "ID" { gsub(/"/, "", $2); print $2; exit }' "${rootfs}/etc/os-release")"
+    [ "${container_os_id}" = "${PLASMA_OS_ID}" ]
 }
 
 start_container() {
@@ -1042,7 +1129,7 @@ wait_for_container_command() {
     local i
 
     for i in $(seq 1 90); do
-        if lxc-attach -P "${LXC_PATH}" -n "${CONTAINER}" -- /bin/sh -lc 'command -v pacman >/dev/null 2>&1' >/dev/null 2>&1; then
+        if lxc-attach -P "${LXC_PATH}" -n "${CONTAINER}" -- /bin/sh -lc 'command -v pacman >/dev/null 2>&1 || command -v apt-get >/dev/null 2>&1' >/dev/null 2>&1; then
             return 0
         fi
         sleep 1
@@ -1057,7 +1144,7 @@ provision_container() {
 
     wait_for_container_command
 
-    log "provisioning Arch Plasma packages"
+    log "provisioning ${PLASMA_LABEL} packages"
     lxc-attach -P "${LXC_PATH}" -n "${CONTAINER}" --clear-env \
         -v "PLASMA_USER=${user}" -v "PLASMA_PASSWORD=${password}" -- /bin/bash -s >>"${LOG}" 2>&1 <<'EOF'
 set -euo pipefail
@@ -1066,19 +1153,94 @@ export LANG=C
 export LC_ALL=C
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/bin:/usr/sbin:/bin:/sbin
 
+if command -v apt-get >/dev/null 2>&1; then
+    export DEBIAN_FRONTEND=noninteractive
+    archive_keyring=debian-archive-keyring
+    if grep -q '^ID=ubuntu' /etc/os-release 2>/dev/null; then
+        archive_keyring=ubuntu-keyring
+    fi
+    policy_rc_d_created=0
+    if [ ! -e /usr/sbin/policy-rc.d ]; then
+        cat > /usr/sbin/policy-rc.d <<'EOS'
+#!/bin/sh
+# LXC owns service lifecycle; package post-install scripts must not block on
+# systemctl while this desktop rootfs is being provisioned.
+exit 101
+EOS
+        chmod 0755 /usr/sbin/policy-rc.d
+        policy_rc_d_created=1
+    fi
+    apt_update_log=/tmp/batocera-apt-update.log
+    if ! apt-get update --allow-releaseinfo-change 2>&1 | tee "${apt_update_log}"; then
+        # A downloaded Debian rootfs can outlive an archive signing-key
+        # rotation. Bootstrap only Debian's archive keyring, then immediately
+        # restore normal signed repository verification.
+        if grep -Eiq 'NO_PUBKEY|EXPKEYSIG|The following signatures|not signed' "${apt_update_log}"; then
+            printf 'APT archive-keyring refresh failed; bootstrapping %s once\n' "${archive_keyring}"
+            apt-get -o Acquire::AllowInsecureRepositories=true update
+            apt-get -o APT::Get::AllowUnauthenticated=true install -y --reinstall "${archive_keyring}"
+            apt-get update --allow-releaseinfo-change
+        else
+            exit 1
+        fi
+    fi
+    rm -f "${apt_update_log}"
+    # Keep trust current on every provisioning run, not just when a rootfs is
+    # first created. This is Debian's equivalent of refreshing pacman keyrings.
+    apt-get install -y --reinstall "${archive_keyring}" ca-certificates
+    apt-get update --allow-releaseinfo-change
+    apt-get dist-upgrade -y
+    required_packages=(
+        bash sudo passwd util-linux openssh-server dbus dbus-broker seatd libseat1 polkitd polkit-kde-agent-1 xwayland
+        fuse3 libfuse2t64 zlib1g-dev
+        xauth x11-xserver-utils kwin-x11
+        plasma-desktop plasma-workspace plasma-pa systemsettings plasma-discover plasma-discover-backend-flatpak
+        dolphin konsole kate ark gwenview okular kde-spectacle kcalc
+        plasma-systemmonitor kscreen kio-extras packagekit flatpak
+        pipewire pipewire-pulse pipewire-alsa pipewire-jack wireplumber
+        ffmpeg tesseract-ocr-eng tesseract-ocr-osd
+        mesa-utils mesa-vulkan-drivers fonts-noto-core fonts-dejavu-core
+    )
+    optional_packages=(
+        plasma-keyboard maliit-keyboard squeekboard
+        vulkan-tools
+    )
+    apt-get install -y --no-install-recommends "${required_packages[@]}"
+    for package in "${optional_packages[@]}"; do
+        if apt-cache show "${package}" >/dev/null 2>&1; then
+            apt-get install -y --no-install-recommends "${package}"
+        fi
+    done
+    if [ "${policy_rc_d_created}" = "1" ]; then
+        rm -f /usr/sbin/policy-rc.d
+    fi
+fi
+
 if [ -f /etc/pacman.conf ]; then
     sed -i \
         -e 's/^[[:space:]]*DownloadUser[[:space:]]*=/#DownloadUser =/' \
         -e 's/^[#[:space:]]*DisableSandboxFilesystem/DisableSandboxFilesystem/' \
         -e 's/^[#[:space:]]*DisableSandboxSyscalls/DisableSandboxSyscalls/' \
         /etc/pacman.conf
-fi
 
 if ! pacman-key --list-keys >/dev/null 2>&1; then
     pacman-key --init
 fi
-pacman-key --populate archlinux >/dev/null 2>&1 || true
-pacman -Sy --noconfirm --needed archlinux-keyring
+pacman-key --populate archlinux archlinuxarm >/dev/null 2>&1 || true
+if ! pacman -Sy --noconfirm --needed archlinux-keyring archlinuxarm-keyring; then
+    # An old downloaded rootfs can have a keyring that predates the current
+    # Arch or Arch Linux ARM signing keys. Bootstrap only those keyrings, then
+    # return to normal signature verification for every other package.
+    printf '%s\n' 'pacman keyring refresh failed; bootstrapping Arch and Arch Linux ARM keyrings once'
+    cp /etc/pacman.conf /tmp/batocera-pacman-keyring.conf
+    sed -i -E 's/^[[:space:]]*SigLevel[[:space:]]*=.*/SigLevel = Never/' /tmp/batocera-pacman-keyring.conf
+    if ! grep -q '^[[:space:]]*SigLevel[[:space:]]*=[[:space:]]*Never' /tmp/batocera-pacman-keyring.conf; then
+        sed -i '/^\[options\]$/a SigLevel = Never' /tmp/batocera-pacman-keyring.conf
+    fi
+    pacman -Sy --noconfirm --needed --config /tmp/batocera-pacman-keyring.conf archlinux-keyring archlinuxarm-keyring
+    rm -f /tmp/batocera-pacman-keyring.conf
+    pacman-key --populate archlinux archlinuxarm
+fi
 required_packages=(
     bash sudo shadow openssh dbus dbus-broker polkit polkit-kde-agent xorg-xwayland
     xorg-xauth xorg-xrdb kwin-x11
@@ -1088,7 +1250,7 @@ required_packages=(
     flatpak
     pipewire pipewire-pulse pipewire-alsa pipewire-jack wireplumber
     qt6-multimedia-ffmpeg tesseract-data-eng tesseract-data-osd
-    mesa noto-fonts ttf-dejavu
+    mesa noto-fonts ttf-dejavu fuse2 zlib
 )
 optional_packages=(
     plasma-keyboard maliit-keyboard squeekboard
@@ -1101,10 +1263,15 @@ for package in "${optional_packages[@]}"; do
         pacman -S --noconfirm --needed "${package}"
     fi
 done
+fi
 
 if command -v flatpak >/dev/null 2>&1; then
-    flatpak remote-add --if-not-exists --system flathub https://dl.flathub.org/repo/flathub.flatpakrepo || true
-    flatpak update --appstream --system -y || true
+    flatpak remote-add --if-not-exists --system --title=Flathub flathub https://dl.flathub.org/repo/flathub.flatpakrepo || true
+    flatpak remote-modify --system --enable flathub || true
+    for attempt in 1 2 3; do
+        flatpak update --appstream --system -y && break
+        sleep "$((attempt * 2))"
+    done
 fi
 
 if ! id "${PLASMA_USER}" >/dev/null 2>&1; then
@@ -1128,7 +1295,7 @@ if ! id "${PLASMA_USER}" >/dev/null 2>&1; then
     fi
 fi
 
-for group in wheel audio video input render seat storage; do
+for group in wheel sudo audio video input render seat storage; do
     if getent group "${group}" >/dev/null 2>&1; then
         usermod -aG "${group}" "${PLASMA_USER}" || true
     fi
@@ -1142,12 +1309,15 @@ chmod 0440 /etc/sudoers.d/90-batocera-plasma
 install -d -m 0755 /etc/polkit-1/rules.d
 cat > /etc/polkit-1/rules.d/50-batocera-plasma-discover.rules <<'EOS'
 polkit.addRule(function(action, subject) {
-    if (subject.active !== true || !subject.isInGroup("wheel")) {
+    // Direct KWin DRM sessions do not have a logind "active seat". Treat the
+    // container's explicitly configured administrator groups as authoritative.
+    if (!subject.isInGroup("wheel") && !subject.isInGroup("sudo")) {
         return polkit.Result.NOT_HANDLED;
     }
 
     if (action.id.indexOf("org.freedesktop.Flatpak.") === 0 ||
-        action.id.indexOf("org.freedesktop.packagekit.") === 0) {
+        action.id.indexOf("org.freedesktop.packagekit.") === 0 ||
+        action.id.indexOf("org.freedesktop.fwupd.") === 0) {
         return polkit.Result.YES;
     }
 
@@ -1164,7 +1334,8 @@ PermitRootLogin no
 UsePAM yes
 EOS
 ssh-keygen -A >/dev/null 2>&1 || true
-systemctl enable --now sshd.service >/dev/null 2>&1 || true
+systemctl enable --now sshd.service >/dev/null 2>&1 || \
+    systemctl enable --now ssh.service >/dev/null 2>&1 || true
 
 cat > /usr/local/bin/batocera-start-plasma <<'EOS'
 #!/bin/bash
@@ -1231,7 +1402,9 @@ session_type="${BATOCERA_ARCH_PLASMA_SESSION_TYPE:-wayland}"
 user="${PLASMA_USER:-${USER:-batocera}}"
 
 if [ "${session_type}" != "wayland" ]; then
-    exec /usr/bin/runuser -u "${user}" --preserve-environment -- /usr/local/bin/batocera-start-plasma
+    runuser_cmd="$(command -v runuser 2>/dev/null || true)"
+    [ -n "${runuser_cmd}" ] || { printf '%s\n' 'runuser is required to start Plasma' >&2; exit 127; }
+    exec "${runuser_cmd}" -u "${user}" --preserve-environment -- /usr/local/bin/batocera-start-plasma
 fi
 
 uid="${PLASMA_UID:-$(id -u "${user}")}"
@@ -1312,9 +1485,12 @@ set -euo pipefail
 user="${PLASMA_USER:-batocera}"
 uid="${PLASMA_UID:-$(id -u "${user}")}"
 gid="${PLASMA_GID:-$(id -g "${user}")}"
+runuser_cmd="$(command -v runuser 2>/dev/null || true)"
 runtime_dir="${XDG_RUNTIME_DIR:-/run/batocera-plasma/${uid}}"
 runtime_parent="$(dirname "${runtime_dir}")"
 wayland_display="${WAYLAND_DISPLAY:-wayland-0}"
+
+[ -n "${runuser_cmd}" ] || { printf '%s\n' 'runuser is required to start the Plasma user session' >&2; exit 127; }
 
 export WAYLAND_DISPLAY="${wayland_display}"
 install -d -m 0755 "${runtime_parent}"
@@ -1563,7 +1739,7 @@ if [ -n "${DISPLAY:-}" ]; then
     chmod 777 "/tmp/.X11-unix/X${display_number}" 2>/dev/null || true
 fi
 
-exec /usr/bin/runuser -u "${user}" -- /usr/bin/env \
+exec "${runuser_cmd}" -u "${user}" -- /usr/bin/env \
     PATH=/usr/local/sbin:/usr/local/bin:/usr/bin:/usr/sbin:/bin:/sbin \
     USER="${user}" \
     LOGNAME="${user}" \
@@ -1859,7 +2035,8 @@ pkill -TERM -u "${uid}" -f 'dbus-run-session -- /bin/bash -lc|batocera-plasma-se
 EOS
 chmod 0755 /usr/local/bin/batocera-return-to-es
 
-install -d -m 0755 /usr/share/applications "/home/${PLASMA_USER}/Desktop" /host
+install -d -m 0755 /usr/share/applications /host
+install -d -m 0755 -o "${PLASMA_USER}" -g "${PLASMA_USER}" "/home/${PLASMA_USER}/Desktop"
 [ -e /host/userdata ] || install -d -m 0755 /host/userdata
 ln -sfn /host/userdata "/home/${PLASMA_USER}/Host userdata"
 ln -sfn /host/userdata "/home/${PLASMA_USER}/Desktop/Host userdata"
@@ -2100,7 +2277,7 @@ stop_xorg_frontend_for_drm() {
     local i
 
     if xorg_frontend_running; then
-        log "stopping leftover Xorg frontend before Arch Plasma DRM launch"
+        log "stopping leftover Xorg frontend before ${PLASMA_LABEL} DRM launch"
     fi
 
     pkill -TERM -x openbox >/dev/null 2>&1 || true
@@ -2118,7 +2295,7 @@ stop_xorg_frontend_for_drm() {
     done
 
     if xorg_frontend_running; then
-        log "force-killing leftover Xorg frontend before Arch Plasma DRM launch"
+        log "force-killing leftover Xorg frontend before ${PLASMA_LABEL} DRM launch"
         pkill -KILL -x openbox >/dev/null 2>&1 || true
         pkill -KILL -x xinit >/dev/null 2>&1 || true
         pkill -KILL -x startx >/dev/null 2>&1 || true
@@ -2131,7 +2308,7 @@ stop_xorg_frontend_for_drm() {
 
 stop_frontend_for_drm() {
     if [ -x "${ES_SERVICE}" ]; then
-        log "stopping EmulationStation frontend before Arch Plasma launch"
+        log "stopping EmulationStation frontend before ${PLASMA_LABEL} launch"
         "${ES_SERVICE}" stop >>"${LOG}" 2>&1 || true
     fi
 
@@ -2151,7 +2328,7 @@ stop_frontend_for_drm() {
 
 restore_frontend() {
     if frontend_ready; then
-        log "EmulationStation already running after Arch Plasma exit"
+        log "EmulationStation already running after ${PLASMA_LABEL} exit"
         return 0
     fi
 
@@ -2170,7 +2347,7 @@ restore_frontend() {
     fi
 
     if [ -x "${ES_SERVICE}" ]; then
-        log "restoring EmulationStation after Arch Plasma exit"
+        log "restoring EmulationStation after ${PLASMA_LABEL} exit"
         clear_frontend_restore_env
         "${ES_SERVICE}" start >>"${LOG}" 2>&1 || "${ES_SERVICE}" restart >>"${LOG}" 2>&1 || true
     fi
@@ -2222,7 +2399,7 @@ detach_from_frontend_session() {
     [[ "${BATOCERA_ARCH_PLASMA_DETACHED:-0}" != "1" ]] || return 0
     command -v setsid >/dev/null 2>&1 || return 0
 
-    log "detaching Arch Plasma launcher from frontend process group"
+    log "detaching ${PLASMA_LABEL} launcher from frontend process group"
     export BATOCERA_ARCH_PLASMA_DETACHED=1
 
     set +e
@@ -2298,7 +2475,7 @@ detect_refresh_rate() {
 
 launch_plasma_session() {
     local user="$1"
-    local uid gid runtime_dir runtime_parent udev_sync_pid session_rc
+    local uid gid runtime_dir runtime_parent udev_sync_pid session_rc runuser_cmd
 
     start_container
     wait_for_container_command
@@ -2324,7 +2501,7 @@ launch_plasma_session() {
     export BATOCERA_ARCH_PLASMA_CONTAINER="${CONTAINER}"
     export BATOCERA_ARCH_PLASMA_USER="${user}"
 
-    log "launching Arch Plasma with ${PLASMA_RENDERER} KWin renderer (${PLASMA_SESSION_TYPE})"
+    log "launching ${PLASMA_LABEL} with ${PLASMA_RENDERER} KWin renderer (${PLASMA_SESSION_TYPE})"
     if command -v batocera-mouse >/dev/null 2>&1; then
         batocera-mouse show >/dev/null 2>&1 || true
     fi
@@ -2363,6 +2540,8 @@ launch_plasma_session() {
         stop_container_udev_sync_loop "${udev_sync_pid}"
         return "${session_rc}"
     else
+        runuser_cmd="$(lxc-attach -P "${LXC_PATH}" -n "${CONTAINER}" -- /bin/sh -lc 'command -v runuser' 2>/dev/null || true)"
+        [ -n "${runuser_cmd}" ] || die "runuser is missing inside ${CONTAINER}"
         lxc-attach -P "${LXC_PATH}" -n "${CONTAINER}" --clear-env \
             -v "USER=${user}" \
             -v "LOGNAME=${user}" \
@@ -2377,7 +2556,7 @@ launch_plasma_session() {
             -v "PULSE_SERVER=unix:/batocera-runtime/pulse/native" \
             -v "BATOCERA_ARCH_PLASMA_ENABLE_INPUTMETHOD=${BATOCERA_ARCH_PLASMA_ENABLE_INPUTMETHOD:-1}" \
             -v "BATOCERA_ARCH_PLASMA_POINTER_ACCEL=${BATOCERA_ARCH_PLASMA_POINTER_ACCEL:-}" \
-            -- /usr/bin/runuser -u "${user}" --preserve-environment -- /usr/local/bin/batocera-start-plasma
+            -- "${runuser_cmd}" -u "${user}" --preserve-environment -- /usr/local/bin/batocera-start-plasma
     fi
 }
 
@@ -2391,7 +2570,7 @@ cleanup_session() {
 
     set +e
     load_state
-    log "Arch Plasma session exited with status ${rc}"
+    log "${PLASMA_LABEL} session exited with status ${rc}"
     stop_thor_touch_mouse_bridge
     terminate_plasma_session "${PLASMA_USER}"
     if command -v batocera-mouse >/dev/null 2>&1; then
@@ -2422,7 +2601,7 @@ terminal_setup_then_launch() {
     load_state
     prompt_credentials
     if ! run_with_visible_log install_or_update_container; then
-        printf '\n%s\n' "Arch Plasma LXC setup failed."
+        printf '\n%s\n' "${PLASMA_LABEL} LXC setup failed."
         printf '%s\n' "The last log lines are shown above and saved in ${LOG}."
         printf '%s' "Press Enter to close..."
         read -r _ || true
@@ -2430,9 +2609,12 @@ terminal_setup_then_launch() {
     fi
     install_launcher
 
-    printf '%s\n' "Arch Plasma is installed."
-    printf '%s\n' "Relaunch Arch Plasma LXC from the launcher to start the desktop."
-    sleep 8
+    if command -v dialog >/dev/null 2>&1 && have_tty; then
+        dialog --title "${PLASMA_LABEL} LXC" --msgbox \
+            "Setup complete.\n\nRelaunch ${PLASMA_LABEL} LXC to start the desktop." 9 62
+    else
+        printf '%s\n' "Setup complete. Relaunch ${PLASMA_LABEL} LXC to start the desktop."
+    fi
 }
 
 run_with_visible_log() {
@@ -2441,8 +2623,8 @@ run_with_visible_log() {
 
     prepare_setup_log
     clear 2>/dev/null || true
-    printf '%s\n' "Arch Plasma LXC setup is running."
-    printf '%s\n' "This can take a while while the Arch image and Plasma packages download."
+    printf '%s\n' "${PLASMA_LABEL} LXC setup is running."
+    printf '%s\n' "This can take a while while the ${PLASMA_DIST} image and Plasma packages download."
     printf '%s\n\n' "Live log: ${LOG}"
 
     tail -n 40 -f "${LOG}" &
@@ -2472,15 +2654,15 @@ ensure_setup_terminal() {
 
     command -v xterm >/dev/null 2>&1 || die "xterm is required for first-run setup when no tty is attached"
     exec xterm -fullscreen -bg black -fg white -fa "DejaVu Sans Mono" -fs 12 \
-        -T "Arch Plasma LXC setup" -e /bin/bash -lc '
+        -T "${PLASMA_LABEL} LXC setup" -e /bin/bash -lc '
             script="$1"
             "$script" --setup-terminal
             rc="$?"
             if [ "$rc" -ne 0 ]; then
                 clear
-                printf "%s\n\n" "Arch Plasma LXC setup failed with exit code ${rc}."
-                printf "%s\n\n" "Last log lines from /userdata/system/logs/arch-plasma-lxc.log:"
-                tail -120 /userdata/system/logs/arch-plasma-lxc.log 2>/dev/null || true
+                printf "%s\n\n" "${PLASMA_LABEL} LXC setup failed with exit code ${rc}."
+                printf "%s\n\n" "Last log lines from ${LOG}:"
+                tail -120 "${LOG}" 2>/dev/null || true
                 printf "\n%s" "Press Enter to close..."
                 read -r _ || true
             fi
@@ -2543,14 +2725,14 @@ cleanup_legacy_ports_launcher() {
 
 install_launcher() {
     cleanup_legacy_ports_launcher
-    log "Arch Plasma LXC launcher is managed by the packaged emulator menu and F1 desktop entries"
+    log "${PLASMA_LABEL} LXC launcher is managed by the packaged emulator menu and F1 desktop entries"
 }
 
 usage() {
     cat <<EOF
 usage: $0 [--install-launcher|--repair-config|--provision-from-state|--setup-terminal|--configure|--session|--help]
 
-Default mode installs/configures the Arch Plasma container if needed, then
+Default mode installs/configures the ${PLASMA_LABEL} container if needed, then
 starts a direct KWin DRM session and restores EmulationStation on exit.
 EOF
 }

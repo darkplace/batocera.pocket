@@ -112,4 +112,11 @@
     <image>./images/archkde.png</image>
     <thumbnail>./images/archkde.png</thumbnail>
   </game>
+  <game>
+    <path>./Start_Ubuntu_Plasma_LXC.sh</path>
+    <name>Ubuntu Plasma LXC</name>
+    <desc>Launch an Ubuntu 26.04 LTS KDE Plasma desktop in LXC.</desc>
+    <image>./images/ubukde.png</image>
+    <thumbnail>./images/ubukde.png</thumbnail>
+  </game>
 </gameList>

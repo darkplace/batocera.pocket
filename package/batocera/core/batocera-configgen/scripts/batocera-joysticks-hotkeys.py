@@ -8,6 +8,12 @@ from pathlib import Path
 SYSTEM_HOTKEYS_FILE = Path("/usr/share/evmapy/hotkeys.keys")
 USER_HOTKEYS_FILE = Path("/userdata/system/configs/hotkeys.keys")
 HOTKEYGEN_MAPPING = Path("/etc/hotkeygen/default_mapping.conf")
+HOTKEY_BUTTON_ORDER = [
+    "start", "select", "up", "down", "left", "right",
+    "a", "b", "x", "y",
+    "pageup", "pagedown", "l2", "r2", "l3", "r3",
+    "paddle1", "paddle2",
+]
 
 def read_config(system_config_file: Path, user_config_file: Path, systemOnly: bool = False):
     if user_config_file.exists() and systemOnly == False:
@@ -57,10 +63,9 @@ def getKeysFromConfig(config):
 def list_hotkeys_xml(config: dict, default_config: dict, hotkeys_mapping: dict):
     keys = getKeysFromConfig(config)
     default_keys = getKeysFromConfig(default_config)
-    order = ["start", "select", "up", "down", "left", "right", "a", "b", "x", "y", "pageup", "pagedown", "l2", "r2", "l3", "r3"]
 
     sorted_keys = {}
-    for k in order:
+    for k in HOTKEY_BUTTON_ORDER:
         if k in keys:
             sorted_keys[k] = keys[k]
         else:
@@ -91,10 +96,9 @@ def list_hotkeys_xml(config: dict, default_config: dict, hotkeys_mapping: dict):
 def list_hotkeys_text(config: dict, default_config: dict, hotkeys_mapping: dict):
     keys = getKeysFromConfig(config)
     default_keys = getKeysFromConfig(default_config)
-    order = ["start", "select", "up", "down", "left", "right", "a", "b", "x", "y", "pageup", "pagedown", "l2", "r2", "l3", "r3"]
 
     sorted_keys = {}
-    for k in order:
+    for k in HOTKEY_BUTTON_ORDER:
         if k in keys:
             sorted_keys[k] = keys[k]
         else:
@@ -197,6 +201,8 @@ parser.add_argument("--l2", type=str, help="key for hotkey+l2")
 parser.add_argument("--r2", type=str, help="key for hotkey+r2")
 parser.add_argument("--l3", type=str, help="key for hotkey+l3")
 parser.add_argument("--r3", type=str, help="key for hotkey+r3")
+parser.add_argument("--paddle1", type=str, help="key for hotkey+paddle1")
+parser.add_argument("--paddle2", type=str, help="key for hotkey+paddle2")
 parser.add_argument("--debug", action="store_true")
 
 args = parser.parse_args()
@@ -238,6 +244,10 @@ if args.l3:
     new_keys["l3"] = args.l3
 if args.r3:
     new_keys["r3"] = args.r3
+if args.paddle1:
+    new_keys["paddle1"] = args.paddle1
+if args.paddle2:
+    new_keys["paddle2"] = args.paddle2
 
 gdebug = args.debug
 hotkeys_mapping = read_hotkey_mapping(HOTKEYGEN_MAPPING)

@@ -17002,7 +17002,7 @@ ryujinx:
       submenu: SYSTEM
       prompt: LOSSLESS.DLL PATH
       description: Optional path to Lossless.dll. Leave blank to use automatic lookup.
-      message: Default location is ~/wine/lossless-config/Lossless.dll (/userdata/system/wine/lossless-config/Lossless.dll).
+      message: Default location is ~/wine/lossless-scaling/Lossless.dll (/userdata/system/wine/lossless-scaling/Lossless.dll).
       preset: input
     lsfg_vk_multiplier:
       archs_include:
@@ -18368,7 +18368,7 @@ xenia-canary:
       description: Choose to display achievement messages in the UI.
       choices:
         Disabled: false
-        Enabled: true
+        Enabled (Default): true
     xenia_country:
       prompt: CONSOLE COUNTRY
       description: Change the consoles country from the default of the United States.
@@ -18950,7 +18950,7 @@ xenia-edge:
       description: Choose to display achievement messages in the UI.
       choices:
         Disabled: false
-        Enabled: true
+        Enabled (Default): true
     xenia_country:
       prompt: CONSOLE COUNTRY
       description: Change the consoles country from the default of the United States.
@@ -21008,6 +21008,13 @@ shadps4:
   - bezel.tattoo_file
   - bezel.resize_tattoo
   cfeatures:
+    shadps4_achievements:
+      submenu: SYSTEM
+      prompt: SHOW TROPHY MESSAGES
+      description: Display trophy notifications and play the PlayStation 3 trophy sound.
+      choices:
+        Enabled (Default): true
+        Disabled: false
     shadps4_hdr:
       submenu: VIDEO
       prompt: HDR

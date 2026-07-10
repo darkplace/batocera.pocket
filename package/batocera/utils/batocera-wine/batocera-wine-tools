@@ -17,6 +17,17 @@ STEAM_PROTON_CACHYOS_CONFIG="/userdata/system/configs/steam/proton-cachyos.conf"
 STEAM_PROTON_GE_CONFIG="/userdata/system/configs/steam/proton-ge.conf"
 STEAM_PROTON11_ARM64_APPID="${BATOCERA_STEAM_PROTON11_ARM64_APPID:-4628740}"
 STEAM_PROTON11_ARM64_DIR_NAME="Proton 11.0 (ARM64)"
+DECKY_HOME="${BATOCERA_DECKY_HOME:-/userdata/system/homebrew}"
+DECKY_PLUGINLOADER="${DECKY_HOME}/services/PluginLoader"
+DECKY_PLUGINS_DIR="${DECKY_HOME}/plugins"
+DECKY_LSFG_VERSION="v0.12.5"
+DECKY_LSFG_URL="https://github.com/xXJSONDeruloXx/decky-lsfg-vk/releases/download/${DECKY_LSFG_VERSION}/Decky.LSFG-VK.zip"
+DECKY_LSFG_SHA256="13b8c8de5744a4fcf300e85971cb0c110f0734cb2db508c8de6309bbf8298a07"
+DECKY_LSFG_CONFIG="${BATOCERA_DECKY_LSFG_CONFIG:-/userdata/system/.config/lsfg-vk/conf.toml}"
+DECKY_LSFG_SYSTEM_DLL="${BATOCERA_DECKY_LSFG_DLL:-/userdata/system/wine/lossless-scaling/Lossless.dll}"
+DECKY_LSFG_UPSTREAM_DEFAULT_DLL="/games/Lossless Scaling/Lossless.dll"
+BATOCERA_ODIN3_PATCHES_URL="https://github.com/darkplace/batocera-odin3-patches/releases/download/main/Batocera-Odin3-Patches.zip"
+BATOCERA_ODIN3_PATCHES_SHA256="3093befd7575ba19295fe9923e463555457ca80c413240c0506db8fb82da57a6"
 TOOL_NAME="$(basename "$0")"
 
 steam_tools_mode() {
@@ -1536,20 +1547,12 @@ steam_client_installed() {
     return 1
 }
 
-install_decky_loader_menu() {
+decky_loader_installed() {
+    [[ -x "${DECKY_PLUGINLOADER}" ]]
+}
+
+run_decky_loader_install() {
     local output rc summary
-
-    if ! command -v batocera-steam-decky-install >/dev/null 2>&1; then
-        msg_box "Decky installer is not available in this image.\n\nInstall or enable Batocera Steam support first."
-        return 1
-    fi
-
-    if ! steam_client_installed; then
-        msg_box "Steam needs to be installed first.\n\nLaunch Steam GamepadUI once and complete its initial setup, then run this Decky installer again."
-        return 1
-    fi
-
-    yes_no "Install or update Decky PluginLoader now?\n\nDecky will auto-start the next time Steam GamepadUI is launched through Batocera." || return 1
 
     info_box "Installing Decky PluginLoader..."
     output=$(batocera-steam-decky-install 2>&1)
@@ -1561,6 +1564,274 @@ install_decky_loader_menu() {
         msg_box "Decky PluginLoader installed.\n\nDecky will auto-start the next time Steam GamepadUI is launched through Batocera.\n\n${summary}"
     else
         msg_box "Decky PluginLoader install failed:\n\n${summary}"
+    fi
+
+    return "${rc}"
+}
+
+ensure_decky_loader_installed() {
+    if decky_loader_installed; then
+        return 0
+    fi
+
+    if ! command -v batocera-steam-decky-install >/dev/null 2>&1; then
+        msg_box "Decky installer is not available in this image.\n\nInstall or enable Batocera Steam support first."
+        return 1
+    fi
+
+    if ! steam_client_installed; then
+        msg_box "Steam needs to be installed first.\n\nLaunch Steam GamepadUI once and complete its initial setup, then run this Decky installer again."
+        return 1
+    fi
+
+    yes_no "Decky PluginLoader is not installed.\n\nInstall it now so Decky plugins can be added?" || return 1
+    run_decky_loader_install
+}
+
+verify_sha256_file() {
+    local file="$1"
+    local expected="$2"
+    local actual unused
+
+    read -r actual unused < <(sha256sum "$file")
+    if [ "${actual}" != "${expected}" ]; then
+        msg_box "Hash verification failed for $(basename "$file").\n\nExpected:\n${expected}\n\nGot:\n${actual}"
+        return 1
+    fi
+
+    return 0
+}
+
+download_verified_zip() {
+    local url="$1"
+    local expected_sha="$2"
+    local output="$3"
+    local label="$4"
+
+    if ! download_with_gauge "$url" "$output" "Downloading ${label}..."; then
+        msg_box "Download failed:\n\n${url}"
+        return 1
+    fi
+
+    verify_sha256_file "$output" "$expected_sha"
+}
+
+find_first_plugin_dir() {
+    local root="$1"
+    local dir
+
+    while IFS= read -r -d '' dir; do
+        if [ -f "${dir}/plugin.json" ]; then
+            printf '%s\n' "$dir"
+            return 0
+        fi
+    done < <(find "$root" -mindepth 1 -maxdepth 3 -type d -print0 2>/dev/null)
+
+    return 1
+}
+
+install_decky_plugin_from_dir() {
+    local src="$1"
+    local dest="$2"
+    local tmp_dest="${dest}.tmp.$$"
+
+    mkdir -p "$(dirname "$dest")" || return 1
+    rm -rf "$tmp_dest"
+    if ! cp -a "$src" "$tmp_dest"; then
+        rm -rf "$tmp_dest"
+        return 1
+    fi
+
+    rm -rf "$dest"
+    mv "$tmp_dest" "$dest"
+}
+
+decky_lsfg_config_dll() {
+    local config_file="$1"
+    local line
+
+    [ -f "$config_file" ] || return 0
+
+    while IFS= read -r line || [ -n "$line" ]; do
+        if [[ "$line" =~ ^[[:space:]]*dll[[:space:]]*=[[:space:]]*\"([^\"]*)\" ]]; then
+            printf '%s\n' "${BASH_REMATCH[1]}"
+            return 0
+        fi
+    done < "$config_file"
+
+    return 0
+}
+
+write_decky_lsfg_config_dll() {
+    local config_file="$1"
+    local tmp="${config_file}.tmp.$$"
+    local line replaced=0
+
+    while IFS= read -r line || [ -n "$line" ]; do
+        if [ "$replaced" -eq 0 ] && [[ "$line" =~ ^[[:space:]]*dll[[:space:]]*= ]]; then
+            printf 'dll = "%s"\n' "$DECKY_LSFG_SYSTEM_DLL"
+            replaced=1
+        else
+            printf '%s\n' "$line"
+        fi
+    done < "$config_file" > "$tmp"
+
+    if [ "$replaced" -eq 0 ]; then
+        printf '\ndll = "%s"\n' "$DECKY_LSFG_SYSTEM_DLL" >> "$tmp"
+    fi
+
+    mv "$tmp" "$config_file"
+}
+
+seed_decky_lsfg_vk_config() {
+    local current
+
+    mkdir -p "$(dirname "$DECKY_LSFG_CONFIG")" || return 1
+
+    if [ ! -f "$DECKY_LSFG_CONFIG" ]; then
+        printf 'dll = "%s"\n' "$DECKY_LSFG_SYSTEM_DLL" > "$DECKY_LSFG_CONFIG"
+        return
+    fi
+
+    current="$(decky_lsfg_config_dll "$DECKY_LSFG_CONFIG")"
+    case "$current" in
+        ""|"$DECKY_LSFG_UPSTREAM_DEFAULT_DLL")
+            write_decky_lsfg_config_dll "$DECKY_LSFG_CONFIG"
+            ;;
+    esac
+}
+
+patch_decky_lsfg_vk_defaults() {
+    local plugin_dir="$1"
+    local file tmp
+
+    while IFS= read -r -d '' file; do
+        if grep -Fq "$DECKY_LSFG_UPSTREAM_DEFAULT_DLL" "$file"; then
+            tmp="${file}.tmp.$$"
+            if ! sed "s|${DECKY_LSFG_UPSTREAM_DEFAULT_DLL}|${DECKY_LSFG_SYSTEM_DLL}|g" "$file" > "$tmp"; then
+                rm -f "$tmp"
+                return 1
+            fi
+            mv "$tmp" "$file" || return 1
+        fi
+    done < <(find "$plugin_dir" -type f \( -name '*.py' -o -name '*.js' -o -name '*.json' -o -name '*.map' \) -print0 2>/dev/null)
+}
+
+install_decky_loader_menu() {
+    if ! command -v batocera-steam-decky-install >/dev/null 2>&1; then
+        msg_box "Decky installer is not available in this image.\n\nInstall or enable Batocera Steam support first."
+        return 1
+    fi
+
+    if ! steam_client_installed; then
+        msg_box "Steam needs to be installed first.\n\nLaunch Steam GamepadUI once and complete its initial setup, then run this Decky installer again."
+        return 1
+    fi
+
+    yes_no "Install or update Decky PluginLoader now?\n\nDecky will auto-start the next time Steam GamepadUI is launched through Batocera." || return 1
+    run_decky_loader_install
+}
+
+install_decky_lsfg_vk_menu() {
+    local tmp zip extract plugin_src dest
+
+    require_commands wget unzip sha256sum || return 1
+    ensure_decky_loader_installed || return 1
+
+    yes_no "Install or update Decky LSFG-VK ${DECKY_LSFG_VERSION}?\n\nThis installs the Decky plugin, not the system-wide LSFG wrapper. Configure it from Steam's Decky menu after restarting Steam/GamepadUI." || return 1
+
+    tmp=$(mktemp -d)
+    zip="${tmp}/Decky.LSFG-VK.zip"
+    extract="${tmp}/extract"
+    mkdir -p "$extract"
+
+    if ! download_verified_zip "$DECKY_LSFG_URL" "$DECKY_LSFG_SHA256" "$zip" "Decky LSFG-VK ${DECKY_LSFG_VERSION}"; then
+        rm -rf "$tmp"
+        return 1
+    fi
+
+    if ! unzip -q "$zip" -d "$extract"; then
+        rm -rf "$tmp"
+        msg_box "Unable to extract Decky LSFG-VK release zip."
+        return 1
+    fi
+
+    plugin_src=$(find_first_plugin_dir "$extract") || {
+        rm -rf "$tmp"
+        msg_box "Decky LSFG-VK release did not contain a Decky plugin.json."
+        return 1
+    }
+
+    dest="${DECKY_PLUGINS_DIR}/decky-lsfg-vk"
+    if install_decky_plugin_from_dir "$plugin_src" "$dest"; then
+        if ! patch_decky_lsfg_vk_defaults "$dest"; then
+            rm -rf "$tmp"
+            msg_box "Decky LSFG-VK was installed, but Batocera could not patch its default Lossless.dll path."
+            return 1
+        fi
+        if ! seed_decky_lsfg_vk_config; then
+            rm -rf "$tmp"
+            msg_box "Decky LSFG-VK was installed, but Batocera could not write:\n${DECKY_LSFG_CONFIG}"
+            return 1
+        fi
+        chmod -R a+rX "$dest" 2>/dev/null || true
+        rm -rf "$tmp"
+        msg_box "Decky LSFG-VK ${DECKY_LSFG_VERSION} installed.\n\nDefault Lossless.dll path:\n${DECKY_LSFG_SYSTEM_DLL}\n\nRestart Steam/GamepadUI, then open Decky -> LSFG-VK to configure it."
+        return 0
+    fi
+
+    rm -rf "$tmp"
+    msg_box "Decky LSFG-VK install failed while copying files to:\n${dest}"
+    return 1
+}
+
+install_decky_batocera_control_menu() {
+    local tmp zip extract installer output rc summary
+
+    require_commands wget unzip sha256sum bash git curl python3 npm || return 1
+    ensure_decky_loader_installed || return 1
+
+    yes_no "Install or update the Decky Batocera Control plugin?\n\nThis runs the Odin3 Batocera Control installer from darkplace's patch bundle. It builds the Armada-derived Decky plugin and installs its power/control support files." || return 1
+
+    tmp=$(mktemp -d)
+    zip="${tmp}/Batocera-Odin3-Patches.zip"
+    extract="${tmp}/extract"
+    mkdir -p "$extract"
+
+    if ! download_verified_zip "$BATOCERA_ODIN3_PATCHES_URL" "$BATOCERA_ODIN3_PATCHES_SHA256" "$zip" "Batocera Odin3 patch bundle"; then
+        rm -rf "$tmp"
+        return 1
+    fi
+
+    if ! unzip -q "$zip" -d "$extract"; then
+        rm -rf "$tmp"
+        msg_box "Unable to extract Batocera Odin3 patch bundle."
+        return 1
+    fi
+
+    installer=""
+    while IFS= read -r -d '' file; do
+        installer="$file"
+        break
+    done < <(find "$extract" -path '*/patches/06-armada-control/install-sd.sh' -type f -print0 2>/dev/null)
+
+    if [ -z "$installer" ]; then
+        rm -rf "$tmp"
+        msg_box "Batocera Control installer was not found in the downloaded patch bundle."
+        return 1
+    fi
+
+    info_box "Installing Decky Batocera Control..."
+    output=$(bash "$installer" 2>&1)
+    rc=$?
+    clear_screen
+    summary="$(printf '%s\n' "${output}" | tail -n 30)"
+    rm -rf "$tmp"
+
+    if [ "${rc}" -eq 0 ]; then
+        msg_box "Decky Batocera Control installed.\n\nOpen Steam -> Quick Access -> Batocera Control.\n\n${summary}"
+    else
+        msg_box "Decky Batocera Control install failed:\n\n${summary}"
     fi
 
     return "${rc}"
@@ -2051,6 +2322,8 @@ steam_tools_menu() {
             5 "Install GE-Proton Steam build from URL"
             6 "Easy Protontricks (VC++ / DX9)"
             7 "Install Decky PluginLoader for Steam"
+            8 "Install Decky LSFG-VK plugin"
+            9 "Install Decky Batocera Control plugin"
             99 "Exit"
         )
 
@@ -2073,6 +2346,8 @@ steam_tools_menu() {
             5) steam_proton_ge_url_menu ;;
             6) run_easy_protontricks ;;
             7) install_decky_loader_menu ;;
+            8) install_decky_lsfg_vk_menu ;;
+            9) install_decky_batocera_control_menu ;;
             99) break ;;
         esac
     done

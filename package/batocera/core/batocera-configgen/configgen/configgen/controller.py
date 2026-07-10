@@ -24,6 +24,10 @@ _DEFAULT_SDL_MAPPING: Final = {
     'r2': 'righttrigger',
     'l3': 'leftstick',
     'r3': 'rightstick',
+    'paddle1': 'paddle1',
+    'paddle2': 'paddle2',
+    'paddle3': 'paddle3',
+    'paddle4': 'paddle4',
     'pageup': 'leftshoulder',
     'pagedown': 'rightshoulder',
     'start': 'start',
@@ -39,6 +43,11 @@ _DEFAULT_SDL_MAPPING: Final = {
     'hotkey': 'guide'
 }
 
+_ODIN3_PADDLE_KEY_CODES: Final = {
+    'paddle1': 309,  # BTN_Z, left rear paddle
+    'paddle2': 306,  # BTN_C, right rear paddle
+}
+
 
 def _key_to_sdl_game_controller_config(keyname: str, input: Input, /) -> str | None:
     """
@@ -51,6 +60,8 @@ def _key_to_sdl_game_controller_config(keyname: str, input: Input, /) -> str | N
       (str) SDL_GAMECONTROLLERCONFIG-formatted key mapping string.
     """
     if input.type == 'button':
+        if input.id == '':
+            return None
         return f'{keyname}:b{input.id}'
 
     if input.type == 'hat':
@@ -133,9 +144,26 @@ class Controller:
 
     def __post_init__(self, inputs_: InputMapping | Iterable[tuple[str, Input]] | None, /) -> None:
         self.inputs = dict(inputs_) if inputs_ is not None else {}
+        self.__add_odin3_paddle_inputs()
 
     def replace(self, /, **changes: Unpack[_ControllerChanges]) -> Self:
         return replace(self, **changes, inputs_={name: input.replace() for name, input in self.inputs.items()})
+
+    def __add_odin3_paddle_inputs(self) -> None:
+        if self.type != 'joystick' or self.real_name != 'AYN Odin3 Gamepad':
+            return
+
+        try:
+            import evdev
+
+            caps = evdev.InputDevice(self.device_path).capabilities(verbose=False)
+        except (ImportError, OSError):
+            return
+
+        key_codes = set(caps.get(evdev.ecodes.EV_KEY, ()))
+        for name, code in _ODIN3_PADDLE_KEY_CODES.items():
+            if name not in self.inputs and code in key_codes:
+                self.inputs[name] = Input(name=name, type='button', id='', value='1', code=str(code))
 
     def generate_sdl_game_db_line(self, sdl_mapping: Mapping[str, str] = _DEFAULT_SDL_MAPPING, /, ignore_buttons: list[str] | None = None) -> str:
         """Returns an SDL_GAMECONTROLLERCONFIG-formatted string for the given configuration."""

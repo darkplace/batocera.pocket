@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Icon=applications-system
+Exec=/usr/bin/batocera-ubuntu-plasma-lxc
+Terminal=false
+Type=Application
+Categories=System;batocera.linux;
+Name=Ubuntu Plasma LXC
+GenericName=Linux Desktop
+Comment=Launch an Ubuntu 26.04 LTS KDE Plasma desktop in LXC

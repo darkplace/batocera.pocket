@@ -137,25 +137,36 @@ def _normalize_xenia_profile_xuid(value: Any) -> str:
 
 def _apply_xenia_profiles(system: Any, config: dict[str, dict[str, Any]]) -> None:
     profiles_cfg = config.setdefault('Profiles', {})
-    selected: dict[int, str] = {}
+    profile_hints: dict[int, Any] = {}
 
-    primary_profile = _normalize_xenia_profile_xuid(_cfg_get(system, 'xenia_profile', ''))
-    if primary_profile:
-        selected[0] = primary_profile
+    primary_profile = system.config.get('xenia_profile', system.config.MISSING)
+    if primary_profile is not system.config.MISSING:
+        profile_hints[0] = primary_profile
 
     for slot in range(4):
         profile_hint = system.config.get(f'xenia_profile{slot + 1}', system.config.MISSING)
         if profile_hint is system.config.MISSING:
             continue
+        profile_hints[slot] = profile_hint
+
+    auto_profile = True
+    for slot, profile_hint in profile_hints.items():
+        profile_text = str(profile_hint or '').strip().lower()
+        profile_is_auto = profile_text in ('', 'auto', 'prompt', 'ask', 'ask each time')
+        if slot == 0:
+            auto_profile = profile_is_auto
+        if profile_is_auto:
+            continue
 
         profile = _normalize_xenia_profile_xuid(profile_hint)
         if profile:
-            selected[slot] = profile
+            profiles_cfg[f'logged_profile_slot_{slot}_xuid'] = profile
         else:
-            selected.pop(slot, None)
+            profiles_cfg[f'logged_profile_slot_{slot}_xuid'] = ''
 
-    for slot in range(4):
-        profiles_cfg[f'logged_profile_slot_{slot}_xuid'] = selected.get(slot, '')
+    # Native Canary/Edge create and sign in a Batocera profile when player 1 is
+    # left on AUTO. Preserve emulator-managed slots rather than blanking them.
+    profiles_cfg['batocera_auto_profile'] = auto_profile
 
 
 class XeniaGenerator(Generator):
@@ -681,6 +692,7 @@ exit $EXIT_CODE
         general_cfg['discord'] = _cfg_get_bool(system, 'discord', False)
         general_cfg['apply_patches'] = _cfg_get_bool(system, 'xenia_patches', False)
         general_cfg['controller_hotkeys'] = False
+        general_cfg['notification_sound_path'] = xenia_achievement_sound_path
 
         hid_cfg = config.setdefault('HID', {})
         hid_cfg['hid'] = str(_cfg_get(system, 'xenia_hid', 'sdl'))

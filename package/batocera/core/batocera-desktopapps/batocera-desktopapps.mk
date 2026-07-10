@@ -215,6 +215,11 @@ ifeq ($(BR2_PACKAGE_BATOCERA_ARCH_PLASMA_LXC),y)
   BATOCERA_DESKTOPAPPS_ICONS   += arch-plasma-lxc.svg
 endif
 
+# Ubuntu Plasma LXC
+ifeq ($(BR2_PACKAGE_BATOCERA_UBUNTU_PLASMA_LXC),y)
+  BATOCERA_DESKTOPAPPS_APPS    += ubuntu-plasma-lxc.desktop
+endif
+
 # yuzu
 ifeq ($(BR2_PACKAGE_YUZU),y)
   BATOCERA_DESKTOPAPPS_SCRIPTS += batocera-config-yuzu

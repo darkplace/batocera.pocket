@@ -16,6 +16,8 @@ from __future__ import annotations
 import json
 import logging
 import os
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -37,6 +39,8 @@ SHADPS4_NATIVE_BIN = Path("/usr/bin/shadps4/shadps4")
 SHADPS4_FEX_BIN = Path("/usr/bin/shadps4-fex")
 SHADPS4_FEX_APP_CONFIG_DIR = Path("/usr/share/fex-emu/shadps4-fex")
 SHADPS4_FEX_APP_CONFIG = SHADPS4_FEX_APP_CONFIG_DIR / "shadps4-fex.json"
+SHADPS4_TROPHY_SOUND_SOURCE = Path("/usr/share/libretro/assets/sounds/ps3-trophy.ogg")
+SHADPS4_TROPHY_SOUND_MARKER = ".batocera-ps3-trophy"
 
 
 def _is_aarch64() -> bool:
@@ -48,6 +52,65 @@ def _fex_app_environment() -> dict[str, str]:
         "FEX_APP_CONFIG_LOCATION": f"{SHADPS4_FEX_APP_CONFIG_DIR}/",
         "FEX_APP_CONFIG": str(SHADPS4_FEX_APP_CONFIG),
     }
+
+
+def _prepare_ps3_trophy_sound(user_config_path: Path) -> None:
+    custom_trophy_path = user_config_path / "custom_trophy"
+    trophy_sound = custom_trophy_path / "trophy.wav"
+    marker = custom_trophy_path / SHADPS4_TROPHY_SOUND_MARKER
+
+    # A trophy.wav without our marker belongs to the user and must not be replaced.
+    if trophy_sound.is_file() and not marker.is_file():
+        _logger.debug("Keeping user-provided shadPS4 trophy sound at %s", trophy_sound)
+        return
+
+    if not SHADPS4_TROPHY_SOUND_SOURCE.is_file():
+        _logger.warning("Batocera PS3 trophy sound is missing: %s", SHADPS4_TROPHY_SOUND_SOURCE)
+        return
+
+    try:
+        signature = (
+            f"{SHADPS4_TROPHY_SOUND_SOURCE.stat().st_size}:"
+            f"{SHADPS4_TROPHY_SOUND_SOURCE.stat().st_mtime_ns}\n"
+        )
+        if trophy_sound.is_file() and marker.is_file() and marker.read_text() == signature:
+            return
+    except OSError as exc:
+        _logger.warning("Unable to inspect the shadPS4 trophy sound: %s", exc)
+        return
+
+    ffmpeg = shutil.which("ffmpeg")
+    if ffmpeg is None:
+        _logger.warning("ffmpeg is missing; cannot prepare the PS3 trophy sound for shadPS4")
+        return
+
+    mkdir_if_not_exists(custom_trophy_path)
+    temporary_sound = custom_trophy_path / "trophy.tmp.wav"
+    try:
+        subprocess.run(
+            [
+                ffmpeg,
+                "-y",
+                "-loglevel",
+                "error",
+                "-i",
+                str(SHADPS4_TROPHY_SOUND_SOURCE),
+                "-c:a",
+                "pcm_s16le",
+                "-ar",
+                "44100",
+                "-ac",
+                "2",
+                str(temporary_sound),
+            ],
+            check=True,
+        )
+        temporary_sound.replace(trophy_sound)
+        marker.write_text(signature)
+    except (OSError, subprocess.CalledProcessError) as exc:
+        _logger.warning("Failed to prepare the PS3 trophy sound for shadPS4: %s", exc)
+    finally:
+        temporary_sound.unlink(missing_ok=True)
 
 
 class shadPS4Generator(Generator):
@@ -201,9 +264,14 @@ class shadPS4Generator(Generator):
 
         # --- Apply Batocera Specific Overrides ---
         # General
-        config.setdefault("General", {})["autoUpdate"] = False
-        config.setdefault("General", {})["enableDiscordRPC"] = False
-        config.setdefault("General", {})["userName"] = "Batocera"
+        general_config = config.setdefault("General", {})
+        general_config["autoUpdate"] = False
+        general_config["enableDiscordRPC"] = False
+        general_config["userName"] = "Batocera"
+        trophy_notifications_enabled = system.config.get_bool("shadps4_achievements", True)
+        general_config["isTrophyPopupDisabled"] = not trophy_notifications_enabled
+
+        _prepare_ps3_trophy_sound(userConfigPath)
 
         # GPU
         gpu_config = config.setdefault("GPU", {})
@@ -250,6 +318,9 @@ class shadPS4Generator(Generator):
         shadPS4Generator._write_json_overrides(
             json_file,
             {
+                "General": {
+                    "trophy_popup_disabled": not trophy_notifications_enabled,
+                },
                 "Input": {
                     "use_unified_input_config": True,
                     "background_controller_input": True,

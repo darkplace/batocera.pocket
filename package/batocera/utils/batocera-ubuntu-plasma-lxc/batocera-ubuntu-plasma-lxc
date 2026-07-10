@@ -1,0 +1,22 @@
+#!/bin/bash
+set -euo pipefail
+
+export BATOCERA_PLASMA_DIST=ubuntu
+export BATOCERA_PLASMA_OS_ID=ubuntu
+export BATOCERA_PLASMA_IMAGE_RELEASE="${BATOCERA_UBUNTU_PLASMA_IMAGE_RELEASE:-resolute}"
+export BATOCERA_PLASMA_LABEL="Ubuntu Plasma"
+export BATOCERA_PLASMA_ROOTFS_URL="${BATOCERA_UBUNTU_PLASMA_ROOTFS_URL:-https://sgp1mirror01.do.images.linuxcontainers.org/images/ubuntu/resolute/arm64/default/20260707_07%3A42/rootfs.squashfs}"
+export BATOCERA_PLASMA_ROOTFS_FALLBACK_URLS="${BATOCERA_UBUNTU_PLASMA_ROOTFS_FALLBACK_URLS:-https://images.linuxcontainers.org/images/ubuntu/resolute/arm64/default/20260707_07%3A42/rootfs.squashfs}"
+export BATOCERA_PLASMA_ROOTFS_INDEX_URL="${BATOCERA_UBUNTU_PLASMA_ROOTFS_INDEX_URL:-https://images.linuxcontainers.org/images/ubuntu/resolute/arm64/default/}"
+export BATOCERA_ARCH_PLASMA_CONTAINER="${BATOCERA_UBUNTU_PLASMA_CONTAINER:-ubuntu-plasma}"
+export BATOCERA_ARCH_PLASMA_LXC_PATH="${BATOCERA_UBUNTU_PLASMA_LXC_PATH:-/userdata/system/lxc}"
+export BATOCERA_ARCH_PLASMA_STATE_DIR="${BATOCERA_UBUNTU_PLASMA_STATE_DIR:-/userdata/system/ubuntu-plasma-lxc}"
+export BATOCERA_ARCH_PLASMA_LOG="${BATOCERA_UBUNTU_PLASMA_LOG:-/userdata/system/logs/ubuntu-plasma-lxc.log}"
+export BATOCERA_ARCH_PLASMA_RUNTIME="${BATOCERA_UBUNTU_PLASMA_RUNTIME:-/userdata/system/.runtime-ubuntu-plasma}"
+export BATOCERA_ARCH_PLASMA_SESSION_NAME="${BATOCERA_UBUNTU_PLASMA_SESSION_NAME:-ubuntu-plasma-lxc}"
+export BATOCERA_ARCH_PLASMA_ENABLE_INPUTMETHOD="${BATOCERA_UBUNTU_PLASMA_ENABLE_INPUTMETHOD:-1}"
+export BATOCERA_ARCH_PLASMA_OUTPUT_SCALE="${BATOCERA_UBUNTU_PLASMA_OUTPUT_SCALE:-1}"
+export BATOCERA_ARCH_PLASMA_TOUCH_CALIBRATION_MATRIX="${BATOCERA_UBUNTU_PLASMA_TOUCH_CALIBRATION_MATRIX:-auto}"
+export BATOCERA_ARCH_PLASMA_POINTER_ACCEL="${BATOCERA_UBUNTU_PLASMA_POINTER_ACCEL:--0.5}"
+
+exec /usr/bin/batocera-arch-plasma-lxc "$@"

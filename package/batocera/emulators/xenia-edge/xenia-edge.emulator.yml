@@ -132,8 +132,14 @@ custom_features:
     prompt: SHOW ACHIEVEMENT MESSAGES
     description: Display in-game achievement notifications.
     choices:
-      Disabled (Default): false
-      Enabled: true
+      Enabled (Default): true
+      Disabled: false
+  xenia_achievement_sound:
+    prompt: ACHIEVEMENT SOUND
+    description: Play an Xbox 360 style sound when an achievement notification is shown.
+    choices:
+      Enabled (Default): true
+      Disabled: false
   xenia_country:
     prompt: CONSOLE COUNTRY
     description: Change the console's country from the default of the United States.
