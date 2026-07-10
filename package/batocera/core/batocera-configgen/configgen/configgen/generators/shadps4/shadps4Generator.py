@@ -13,6 +13,7 @@
 #
 from __future__ import annotations
 
+import json
 import logging
 import os
 import sys
@@ -63,6 +64,7 @@ class shadPS4Generator(Generator):
         configPath = CONFIGS / "shadps4"
         userConfigPath = configPath / "user"
         toml_file = userConfigPath / "config.toml"
+        json_file = userConfigPath / "config.json"
         savesPath = Path("/userdata/saves/shadps4")
         romDir = Path("/userdata/roms/ps4")
         dlcPath = romDir / "DLC"
@@ -224,6 +226,10 @@ class shadPS4Generator(Generator):
         # Vulkan - Set the detected GPU ID
         config.setdefault("Vulkan", {})["gpuId"] = int(discrete_index)
 
+        input_config = config.setdefault("Input", {})
+        input_config["useUnifiedInputConfig"] = True
+        input_config["backgroundControllerInput"] = True
+
         # Options
         if system.config.get_bool("shadps4_hdr"):
             gpu_config["allowHDR"] = True
@@ -240,6 +246,16 @@ class shadPS4Generator(Generator):
         # Now write the updated toml
         with toml_file.open("w") as f:
             toml.dump(config, f)
+
+        shadPS4Generator._write_json_overrides(
+            json_file,
+            {
+                "Input": {
+                    "use_unified_input_config": True,
+                    "background_controller_input": True,
+                },
+            },
+        )
 
         # Change to the configPath directory before running
         os.chdir(configPath)
@@ -270,6 +286,7 @@ class shadPS4Generator(Generator):
 
         environment = {
             "SDL_GAMECONTROLLERCONFIG": sdl_controller_config,
+            "SDL_JOYSTICK_ALLOW_BACKGROUND_EVENTS": "1",
             "SDL_JOYSTICK_HIDAPI": "0"
         }
         if use_fex:
@@ -286,6 +303,29 @@ class shadPS4Generator(Generator):
             array=commandArray,
             env=environment
         )
+
+    @staticmethod
+    def _write_json_overrides(path: Path, overrides: dict[str, dict[str, object]]) -> None:
+        data: dict[str, object] = {}
+        if path.is_file():
+            try:
+                with path.open("r") as f:
+                    loaded = json.load(f)
+                if isinstance(loaded, dict):
+                    data = loaded
+            except Exception as e:
+                _logger.error("Failed to load existing shadps4 json config: %s. Will create default.", e)
+
+        for section, values in overrides.items():
+            current = data.setdefault(section, {})
+            if not isinstance(current, dict):
+                current = {}
+                data[section] = current
+            current.update(values)
+
+        with path.open("w") as f:
+            json.dump(data, f, indent=2)
+            f.write("\n")
 
     def getInGameRatio(self, config, gameResolution, rom):
         return 16 / 9

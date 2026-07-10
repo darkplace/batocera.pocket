@@ -1,0 +1,70 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Fri, 10 Jul 2026 00:00:00 +000
+Subject: [PATCH] Fix const-correct string searches with newer libc headers
+
+Newer libc headers can expose const-preserving strchr/strstr/strrchr
+prototypes. vkquake builds with -Werror, so assigning those results to
+mutable char pointers fails even when the code only inspects the string.
+
+Use const pointers for read-only searches, and explicitly search the
+mutable savegame buffer where the result is intentionally overwritten.
+
+Signed-off-by: suckbluefrog <suckbluefrog@proton.me>
+---
+ Quake/host_cmd.c   | 2 +-
+ Quake/net_udp.c    | 4 ++--
+ Quake/r_part_fte.c | 4 ++--
+ 3 files changed, 5 insertions(+), 5 deletions(-)
+
+diff --git a/Quake/host_cmd.c b/Quake/host_cmd.c
+--- a/Quake/host_cmd.c
++++ b/Quake/host_cmd.c
+@@ -1475,7 +1475,7 @@ static void Host_Loadgame_f (void)
+ 			char	   *end;
+ 			const char *ext;
+ 			ext = data + 2;
+-			while ((end = strchr (ext, '\n')))
++			while ((end = strchr ((char *)ext, '\n')))
+ 			{
+ 				*end = 0;
+ 				ext = COM_Parse (ext);
+diff --git a/Quake/net_udp.c b/Quake/net_udp.c
+--- a/Quake/net_udp.c
++++ b/Quake/net_udp.c
+@@ -476,6 +476,6 @@ int UDP4_GetAddrFromName (const char *name, struct qsockaddr *addr)
+ {
+ 	struct hostent *hostentry;
+-	char		   *colon;
++	const char	   *colon;
+ 	unsigned short	port = net_hostport;
+ 
+ 	if (name[0] >= '0' && name[0] <= '9')
+@@ -731,7 +731,7 @@
+	struct addrinfo *pos;
+	struct addrinfo	 udp6hint;
+	int				 error;
+-	char			*port;
++	const char		*port;
+ 	char			 dupbase[256];
+ 	size_t			 len;
+ 	qboolean		 success = false;
+diff --git a/Quake/r_part_fte.c b/Quake/r_part_fte.c
+--- a/Quake/r_part_fte.c
++++ b/Quake/r_part_fte.c
+@@ -801,5 +801,5 @@ static part_type_t *P_GetParticleType (const char *config, const char *name)
+ 	part_type_t *ptype;
+ 	part_type_t *oldlist = part_type;
+ 	char		 cfgbuf[MAX_QPATH];
+-	char		*dot = strchr (name, '.');
++	const char	*dot = strchr (name, '.');
+ 	if (dot && (dot - name) < MAX_QPATH - 1)
+@@ -908,5 +908,5 @@ part_type_t *PScript_FindParticleType (const char *fullname)
+ 	int			 i;
+ 	char		 cfg[MAX_QPATH];
+-	char		*dot;
++	const char	*dot;
+ 	const char	*name = fullname;
+ 
+-- 
+2.43.0

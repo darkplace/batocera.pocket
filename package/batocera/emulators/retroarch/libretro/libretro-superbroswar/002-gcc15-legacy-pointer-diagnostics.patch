@@ -1,0 +1,12 @@
+diff --git a/Makefile.libretro b/Makefile.libretro
+index b551ea4..889e8b3 100644
+--- a/Makefile.libretro
++++ b/Makefile.libretro
+@@ -521,6 +521,7 @@ else
+ endif
+ 
+ WARNINGS := -Wall \
++	-Wno-error=incompatible-pointer-types \
+ 	-Wno-sign-compare \
+ 	-Wno-unused-variable \
+ 	-Wno-unused-function \

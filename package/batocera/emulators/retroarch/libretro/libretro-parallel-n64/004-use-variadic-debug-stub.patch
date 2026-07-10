@@ -1,0 +1,16 @@
+diff --git a/mupen64plus-core/src/r4300/new_dynarec/new_dynarec_64.c b/mupen64plus-core/src/r4300/new_dynarec/new_dynarec_64.c
+index 26c5990..d733f24 100644
+--- a/mupen64plus-core/src/r4300/new_dynarec/new_dynarec_64.c
++++ b/mupen64plus-core/src/r4300/new_dynarec/new_dynarec_64.c
+@@ -259,7 +259,10 @@ static int internal_branch(uint64_t i_is32, int addr);
+ #define DEBUG_CYCLE_COUNT
+ #endif
+ 
+-static void nullf() {}
++static void nullf(const char *fmt, ...)
++{
++    (void)fmt;
++}
+ #if defined( ASSEM_DEBUG )
+     #define assem_debug(...) DebugMessage(M64MSG_VERBOSE, __VA_ARGS__)
+ #else

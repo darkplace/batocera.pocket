@@ -13,6 +13,9 @@ HTOP_CONF_ENV = HTOP_NCURSES_CONFIG_SCRIPT=$(STAGING_DIR)/usr/bin/$(NCURSES_CONF
 HTOP_LICENSE = GPL-2.0+
 HTOP_LICENSE_FILES = COPYING
 
+# Keep ncurses from redefining C99 bool to its int-sized NCURSES_BOOL type.
+HTOP_CONF_ENV += CFLAGS="$(TARGET_CFLAGS) -DNCURSES_ENABLE_STDBOOL_H=1"
+
 # ac_cv_prog_cc_c99 is required for BR2_USE_WCHAR=n because the C99 test
 # provided by autoconf relies on wchar_t.
 HTOP_CONF_ENV += ac_cv_prog_cc_c99=-std=gnu99

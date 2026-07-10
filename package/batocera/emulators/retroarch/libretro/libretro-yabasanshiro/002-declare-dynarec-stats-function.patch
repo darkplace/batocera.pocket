@@ -1,0 +1,14 @@
+diff --git a/yabause/src/yabause.c b/yabause/src/yabause.c
+index 0fa05c8..48cfe60 100644
+--- a/yabause/src/yabause.c
++++ b/yabause/src/yabause.c
+@@ -118,6 +118,9 @@ along with YabaSanshiro; if not, write to the Free Software
+ #include <inttypes.h>
+ 
+ extern void SH2HandleInterrupts(SH2_struct *context);
++#if DYNAREC_DEVMIYAX
++extern void SH2DynShowSttaics(SH2_struct *master, SH2_struct *slave);
++#endif
+ 
+ //////////////////////////////////////////////////////////////////////////////
+ 

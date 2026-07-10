@@ -1,0 +1,23 @@
+parted: fix version command callback signature
+
+command_create expects command callbacks to accept the current device and disk
+pointers.  do_version does not use them, but it still needs the same prototype
+to avoid incompatible-function-pointer errors with newer compilers.
+
+Signed-off-by: suckbluefrog <suckbluefrog@proton.me>
+
+--- a/parted/parted.c
++++ b/parted/parted.c
+@@ -2171,8 +2171,11 @@ do_unit (PedDevice** dev, PedDisk** diskp)
+ }
+ 
+ static int
+-do_version ()
++do_version (PedDevice **dev, PedDisk **diskp)
+ {
++    (void) dev;
++    (void) diskp;
++
+     printf ("\n%s\n%s",
+             prog_name,
+             _(copyright_msg));

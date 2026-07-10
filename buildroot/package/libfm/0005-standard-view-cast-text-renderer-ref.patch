@@ -1,0 +1,30 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Fri, 10 Jul 2026 00:00:00 +000
+Subject: [PATCH] standard-view: cast text renderer ref
+
+The icon-view setup stores a ref-sunk FmCellRendererText in the view state.
+Newer GLib preserves the generic GtkCellRenderer * type through
+g_object_ref_sink(), so cast the result back to the concrete renderer type.
+
+Signed-off-by: suckbluefrog <suckbluefrog@proton.me>
+---
+ src/gtk/fm-standard-view.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/gtk/fm-standard-view.c b/src/gtk/fm-standard-view.c
+index e8986d4..9ff8c8a 100644
+--- a/src/gtk/fm-standard-view.c
++++ b/src/gtk/fm-standard-view.c
+@@ -637,7 +637,7 @@ static void create_icon_view(FmStandardView* fv, FmFolderModel* model)
+                                 "text", FM_FOLDER_MODEL_COL_NAME );
+     if(fv->renderer_text)
+         g_object_unref(fv->renderer_text);
+-    fv->renderer_text = g_object_ref_sink(render);
++    fv->renderer_text = FM_CELL_RENDERER_TEXT(g_object_ref_sink(render));
+     exo_icon_view_set_search_column((ExoIconView*)fv->view, FM_FOLDER_MODEL_COL_NAME);
+     g_signal_connect(fv->view, "item-activated", G_CALLBACK(on_icon_view_item_activated), fv);
+     g_signal_connect(fv->view, "selection-changed", G_CALLBACK(on_sel_changed), fv);
+-- 
+2.50.0
+

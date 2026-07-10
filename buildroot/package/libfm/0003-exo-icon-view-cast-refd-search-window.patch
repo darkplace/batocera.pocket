@@ -1,0 +1,30 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Fri, 10 Jul 2026 00:00:00 +000
+Subject: [PATCH] exo-icon-view: cast ref'd search window
+
+Newer GLib returns GObject * from g_object_ref() when passed through
+G_OBJECT().  Cast the result back to GdkWindow * before storing it in the
+forwarded key event.
+
+Signed-off-by: suckbluefrog <suckbluefrog@proton.me>
+---
+ src/gtk/exo/exo-icon-view.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/gtk/exo/exo-icon-view.c b/src/gtk/exo/exo-icon-view.c
+index fbda2ec..f17c41f 100644
+--- a/src/gtk/exo/exo-icon-view.c
++++ b/src/gtk/exo/exo-icon-view.c
+@@ -2819,7 +2819,7 @@ exo_icon_view_key_press_event (GtkWidget   *widget,
+   /* allocate a new event to forward */
+   new_event = gdk_event_copy ((GdkEvent *) event);
+   g_object_unref (G_OBJECT (new_event->key.window));
+-  new_event->key.window = g_object_ref (G_OBJECT (gtk_widget_get_window (icon_view->priv->search_entry)));
++  new_event->key.window = GDK_WINDOW (g_object_ref (G_OBJECT (gtk_widget_get_window (icon_view->priv->search_entry))));
+ 
+   /* send the event to the search entry. If the "preedit-changed" signal is
+    * emitted during this event, priv->search_imcontext_changed will be set.
+-- 
+2.50.0
+

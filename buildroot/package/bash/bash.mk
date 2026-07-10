@@ -27,6 +27,10 @@ BASH_CONF_ENV += \
 	bash_cv_printf_a_format=yes \
 	CFLAGS_FOR_BUILD="$(HOST_CFLAGS) -std=gnu17 -Wno-error=old-style-definition"
 
+ifeq ($(BR2_TOOLCHAIN_GCC_AT_LEAST_15),y)
+BASH_CONF_ENV += CFLAGS="$(TARGET_CFLAGS) -std=gnu17 -Wno-error=old-style-definition"
+endif
+
 # The static build needs some trickery
 ifeq ($(BR2_STATIC_LIBS),y)
 BASH_CONF_OPTS += --enable-static-link

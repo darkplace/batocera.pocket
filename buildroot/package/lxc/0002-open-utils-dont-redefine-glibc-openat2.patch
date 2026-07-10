@@ -1,0 +1,54 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Fri, 10 Jul 2026 00:00:00 +000
+Subject: [PATCH] open_utils: don't redefine glibc openat2
+
+glibc 2.43 provides openat2() in <fcntl.h>, including a fortify inline.
+When LXC's configure result still leaves HAVE_OPENAT2 disabled during
+cross builds, the local fallback wrapper conflicts with the libc
+declaration. Keep the syscall fallback for older libcs and skip it when
+glibc already provides the function.
+
+Also make the fallback signature match glibc's const struct open_how *
+argument.
+
+Signed-off-by: suckbluefrog <suckbluefrog@proton.me>
+---
+ src/lxc/open_utils.h | 14 +++++++++++++-
+ 1 file changed, 13 insertions(+), 1 deletion(-)
+
+diff --git a/src/lxc/open_utils.h b/src/lxc/open_utils.h
+--- a/src/lxc/open_utils.h
++++ b/src/lxc/open_utils.h
+@@ -5,6 +5,7 @@
+ #define __LXC_OPEN_UTILS_H
+ 
+ #include "config.h"
++#include <features.h>
+ 
+ #include "syscall_numbers.h"
+ 
+@@ -76,8 +77,19 @@ struct open_how {
+ #define PROTECT_OPEN_W (PROTECT_OPEN_W_WITH_TRAILING_SYMLINKS | O_NOFOLLOW)
+ #define PROTECT_OPEN_RW (O_CLOEXEC | O_NOCTTY | O_RDWR | O_NOFOLLOW)
+ 
+-#if !HAVE_OPENAT2
+-static inline int openat2(int dfd, const char *filename, struct open_how *how, size_t size)
++#ifdef __GLIBC_PREREQ
++#define LXC_GLIBC_HAS_OPENAT2 __GLIBC_PREREQ(2, 43)
++#else
++#define LXC_GLIBC_HAS_OPENAT2 0
++#endif
++
++/*
++ * glibc 2.43 declares openat2() in <fcntl.h>. Do not provide a local
++ * fallback with the same name when those headers are in use, even if the
++ * configure-time function check did not detect it while cross-compiling.
++ */
++#if !HAVE_OPENAT2 && !LXC_GLIBC_HAS_OPENAT2
++static inline int openat2(int dfd, const char *filename, const struct open_how *how, size_t size)
+ {
+ 	return syscall(__NR_openat2, dfd, filename, how, size);
+ }
+-- 
+2.50.0

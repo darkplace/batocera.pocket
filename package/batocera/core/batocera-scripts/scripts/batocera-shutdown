@@ -283,6 +283,16 @@ set_suspend_status_led() {
     fi
 }
 
+restart_triggerhappy_after_resume() {
+    rm -f /var/run/shutdown-delay.flag /var/run/shutdown-delay.last
+
+    if [ -x "/etc/init.d/S50triggerhappy" ]; then
+        echo "INFO: Restarting triggerhappy after resume."
+        sleep 1
+        /etc/init.d/S50triggerhappy restart >/dev/null 2>&1 || true
+    fi
+}
+
 do_pm_sleep() {
     local support_arg="$1"
     local pm_command="$2"
@@ -291,7 +301,10 @@ do_pm_sleep() {
         suspend_led_daemon
         set_suspend_status_led
         "${pm_command}"
+        local sleep_rc=$?
+        restart_triggerhappy_after_resume
         resume_led_daemon
+        return "${sleep_rc}"
     fi
 }
 
@@ -701,6 +714,9 @@ if [ "${SETACTION}" = "1" ]; then
     fi
 else
     # the one who manage to remove the file can do the action
+    if [ ! -e "/var/run/shutdown-delay.flag" ]; then
+        exit 0
+    fi
     FLAG_DELAY=$(expr $(($(date +%s) - $(date +%s -r "/var/run/shutdown-delay.flag"))))
     if rm "/var/run/shutdown-delay.flag" 2>/dev/null; then
 		# if there is a delay, check it first
@@ -714,13 +730,13 @@ else
 		### callable only once every 7 seconds
 		### because some boards (steamdeck) have 2 events reacting to the KEY_POWER
 		### this is mainly for suspend to not call it 2 times
-		if [ -e "/var/run/shutdown-delay.last" ]; then
-			DELAY=$(expr $(($(date +%s) - $(date +%s -r "/var/run/shutdown-delay.last"))))
-			if [ "${DELAY}" -lt 5 ]; then
-				echo "wait between 2 calls" >2&
-				exit 0
+			if [ -e "/var/run/shutdown-delay.last" ]; then
+				DELAY=$(expr $(($(date +%s) - $(date +%s -r "/var/run/shutdown-delay.last"))))
+				if [ "${DELAY}" -lt 5 ]; then
+					echo "wait between 2 calls" >&2
+					exit 0
+				fi
 			fi
-		fi
 		touch "/var/run/shutdown-delay.last"
 		########
 

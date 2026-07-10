@@ -1,0 +1,55 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Fri, 10 Jul 2026 00:00:00 +000
+Subject: [PATCH] actions: preserve const system data dirs
+
+g_get_system_data_dirs() returns a NULL-terminated array of const strings.
+The generated C assigned that result to mutable gchar ** temporaries, which
+GCC 15 diagnoses as an incompatible pointer type.
+
+Keep the generated array temporaries const-qualified and cast only at the
+Vala helper that counts NULL-terminated arrays.
+
+Signed-off-by: suckbluefrog <suckbluefrog@proton.me>
+---
+ src/actions/action.c | 12 ++++++------
+ 1 file changed, 6 insertions(+), 6 deletions(-)
+
+diff --git a/src/actions/action.c b/src/actions/action.c
+index 6c3d8c5..b40ad1a 100644
+--- a/src/actions/action.c
++++ b/src/actions/action.c
+@@ -2037,24 +2037,24 @@ void fm_load_all_actions (void) {
+ 	GHashTable* _tmp0_ = NULL;
+-	gchar** dirs = NULL;
+-	gchar** _tmp1_ = NULL;
+-	gchar** _tmp2_ = NULL;
++	const gchar* const* dirs = NULL;
++	const gchar* const* _tmp1_ = NULL;
++	const gchar* const* _tmp2_ = NULL;
+ 	gint dirs_length1 = 0;
+ 	gint _dirs_size_ = 0;
+-	gchar** _tmp3_ = NULL;
++	const gchar* const* _tmp3_ = NULL;
+ 	gint _tmp3__length1 = 0;
+ 	const gchar* _tmp7_ = NULL;
+ 	gchar* _tmp8_ = NULL;
+ 	gchar* _tmp9_ = NULL;
+ 	_tmp0_ = fm_all_actions;
+ 	g_hash_table_remove_all (_tmp0_);
+ 	_tmp2_ = _tmp1_ = g_get_system_data_dirs ();
+ 	dirs = _tmp2_;
+-	dirs_length1 = _vala_array_length (_tmp1_);
++	dirs_length1 = _vala_array_length ((gpointer) _tmp1_);
+ 	_dirs_size_ = dirs_length1;
+ 	_tmp3_ = dirs;
+ 	_tmp3__length1 = dirs_length1;
+ 	{
+-		gchar** dir_collection = NULL;
++		const gchar* const* dir_collection = NULL;
+ 		gint dir_collection_length1 = 0;
+ 		gint _dir_collection_size_ = 0;
+ 		gint dir_it = 0;
+-- 
+2.50.0
+

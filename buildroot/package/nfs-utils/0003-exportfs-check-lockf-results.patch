@@ -1,0 +1,35 @@
+utils/exportfs: check lockf results
+
+glibc marks lockf with warn_unused_result, and nfs-utils builds with
+-Werror=unused-result.  Check lock/unlock failures explicitly so exportfs
+continues to build with newer toolchains while preserving the intended
+locking behavior.
+
+Signed-off-by: suckbluefrog <suckbluefrog@proton.me>
+
+--- a/utils/exportfs/exportfs.c
++++ b/utils/exportfs/exportfs.c
+@@ -72,16 +72,20 @@ need these additional lockfile() routines.
+ static void
+ grab_lockfile(void)
+ {
+ 	_lockfd = open(lockfile, O_CREAT|O_RDWR, 0666);
+-	if (_lockfd != -1)
+-		lockf(_lockfd, F_LOCK, 0);
++	if (_lockfd != -1 && lockf(_lockfd, F_LOCK, 0) < 0) {
++		xlog(L_WARNING, "failed to lock %s: %m", lockfile);
++		close(_lockfd);
++		_lockfd = -1;
++	}
+ }
+ static void
+ release_lockfile(void)
+ {
+ 	if (_lockfd != -1) {
+-		lockf(_lockfd, F_ULOCK, 0);
++		if (lockf(_lockfd, F_ULOCK, 0) < 0)
++			xlog(L_WARNING, "failed to unlock %s: %m", lockfile);
+ 		close(_lockfd);
+ 		_lockfd = -1;
+ 	}
+ }

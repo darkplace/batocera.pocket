@@ -1,0 +1,13 @@
+diff --git a/dependencies/SDL/src/audio/libretro/SDL_libretroaudio.c b/dependencies/SDL/src/audio/libretro/SDL_libretroaudio.c
+index 6fc8f3f..92e7d68 100644
+--- a/dependencies/SDL/src/audio/libretro/SDL_libretroaudio.c
++++ b/dependencies/SDL/src/audio/libretro/SDL_libretroaudio.c
+@@ -155,7 +155,7 @@ void LIBRETRO_MixAudio()
+ 	(*spec->callback)(spec->userdata, audio->hidden->mixbuf, audio->hidden->mixlen);
+ 	SDL_mutexV(audio->mixer_lock);
+ 
+-	libretro_audio_cb(audio->hidden->mixbuf, spec->size / spec->channels / 2);
++	libretro_audio_cb((int16_t *)audio->hidden->mixbuf, spec->size / spec->channels / 2);
+ }
+ 
+ static int LIBRETRO_OpenAudio(_THIS, SDL_AudioSpec *spec)

@@ -1,0 +1,21 @@
+libliftoff: fix calloc argument order
+
+GCC 15 diagnoses calloc calls where sizeof is passed as the element count
+instead of the element size.  Swap the arguments so the allocation keeps the
+same total size and satisfies -Wcalloc-transposed-args under -Werror.
+
+Signed-off-by: suckbluefrog <suckbluefrog@proton.me>
+Upstream: not submitted
+
+--- a/layer.c
++++ b/layer.c
+@@ -17,8 +17,8 @@ liftoff_layer_create(struct liftoff_output *output)
+ 	}
+ 	layer->output = output;
+-	layer->candidate_planes = calloc(sizeof(layer->candidate_planes[0]),
+-					 output->device->planes_cap);
++	layer->candidate_planes = calloc(output->device->planes_cap,
++					 sizeof(layer->candidate_planes[0]));
+ 	if (layer->candidate_planes == NULL) {
+ 		liftoff_log_errno(LIFTOFF_ERROR, "calloc");
+ 		free(layer);

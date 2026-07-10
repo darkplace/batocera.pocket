@@ -1,0 +1,34 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Fri, 10 Jul 2026 00:00:00 +000
+Subject: [PATCH] Build C sources as GNU17 with GCC 15
+
+quasi88 uses legacy C callback declarations such as:
+
+  typedef void (*Q8tkSignalFunc)();
+
+Under GCC 15's newer default C dialect this is treated as a no-argument
+prototype, which turns the existing q8tk callbacks into incompatible
+function pointer errors. Build the C side as GNU17 so the existing
+old-style callback ABI keeps its historical semantics.
+
+Signed-off-by: suckbluefrog <suckbluefrog@proton.me>
+---
+ Makefile | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/Makefile b/Makefile
+index 3d2a501..9d93a7c 100644
+--- a/Makefile
++++ b/Makefile
+@@ -596,6 +596,7 @@ FLAGS += $(ENDIANNESS_DEFINES) $(WARNINGS) -DSTDC_HEADERS -D__STDC_LIMIT_MACROS
+ 
+ CXXFLAGS += $(FLAGS)
+ CFLAGS += $(FLAGS)
++CFLAGS += -std=gnu17 -Wno-error=incompatible-pointer-types
+ 
+ OBJOUT   = -o 
+ LINKOUT  = -o 
+-- 
+2.50.0
+

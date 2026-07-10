@@ -1,0 +1,38 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Fri, 10 Jul 2026 00:00:00 +000
+Subject: [PATCH] syscall: use prototyped lseek64 declaration
+
+GCC 15 defaults C compilation to a newer dialect where an empty function
+parameter list means that the function takes no arguments.  The fallback
+lseek64 declaration in syscall.c therefore conflicts with libc's prototype
+and makes the subsequent three-argument call invalid.
+
+Keep the local declaration for platforms that need it, but give it the same
+prototype as the call site.
+
+Signed-off-by: suckbluefrog <suckbluefrog@proton.me>
+Upstream: not submitted
+---
+ syscall.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/syscall.c b/syscall.c
+index 34f72a2..d3f90dc 100644
+--- a/syscall.c
++++ b/syscall.c
+@@ -389,9 +389,9 @@ OFF_T do_lseek(int fd, OFF_T offset, int whence)
+ {
+ #ifdef HAVE_LSEEK64
+ #if !SIZEOF_OFF64_T
+-	OFF_T lseek64();
++	OFF_T lseek64(int fd, OFF_T offset, int whence);
+ #else
+-	off64_t lseek64();
++	off64_t lseek64(int fd, off64_t offset, int whence);
+ #endif
+ 	return lseek64(fd, offset, whence);
+ #else
+-- 
+2.50.0
+

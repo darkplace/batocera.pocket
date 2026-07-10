@@ -1,0 +1,21 @@
+unxcfg: drop obsolete time function declarations
+
+unix/unxcfg.h includes <time.h>, then redeclares gmtime() and localtime()
+using old K&R-style empty parameter lists.  With C23, an empty parameter list
+means the function takes no arguments, so these declarations conflict with the
+real libc prototypes.
+
+Rely on <time.h> for the declarations.
+
+Signed-off-by: suckbluefrog <suckbluefrog@proton.me>
+
+--- a/unix/unxcfg.h
++++ b/unix/unxcfg.h
+@@ -118,7 +118,6 @@
+ #  endif
+ #else
+ #  include <time.h>
+-   struct tm *gmtime(), *localtime();
+ #endif
+ 
+ #if (defined(BSD4_4) || (defined(SYSV) && defined(MODERN)))

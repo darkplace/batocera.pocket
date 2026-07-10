@@ -1,0 +1,11 @@
+--- a/configure
++++ b/configure
+@@ -518,7 +518,8 @@ includes_test="#ifndef _XOPEN_SOURCE_EXTENDED
+ includes_test_flags="-I$BASE_INCLUDE_PATH/ncursesw"
+ libs_test="-lncursesw"
+-code_test="int testvar = WACS_VLINE;"
++code_test="const cchar_t *testvar = WACS_VLINE;
++  (void)testvar;"
+ test_lib "ncursesw"
+ tool_gmuc=$?
+ 

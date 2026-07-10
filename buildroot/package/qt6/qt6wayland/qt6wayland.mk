@@ -33,7 +33,8 @@ QT6WAYLAND_CONF_OPTS = \
 	-DBUILD_WITH_PCH=OFF \
 	-DQT_BUILD_EXAMPLES=OFF \
 	-DQT_BUILD_TESTS=OFF \
-	-DFEATURE_wayland_client=ON
+	-DFEATURE_wayland_client=ON \
+	-DFEATURE_wayland_decoration_adwaita=OFF
 
 # host-qt6base provides qtwaylandscanner when Wayland is enabled.
 QT6WAYLAND_DEPENDENCIES = \

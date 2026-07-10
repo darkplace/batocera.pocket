@@ -1,0 +1,28 @@
+desktop: cast typed accessible references to AtkObject
+
+Newer GLib versions type g_object_ref() with the argument type.  Returning a
+referenced FmDesktopItemAccessible from functions declared to return AtkObject *
+therefore triggers incompatible-pointer-type diagnostics with newer compilers.
+
+Signed-off-by: suckbluefrog <suckbluefrog@proton.me>
+
+--- a/src/desktop.c
++++ b/src/desktop.c
+@@ -1267,7 +1267,7 @@ static AtkObject *fm_desktop_accessible_ref_selection(AtkSelection *selection,
+         item = items->data;
+         if (item->item->is_selected)
+             if (i-- == 0)
+-                return g_object_ref(item);
++                return ATK_OBJECT(g_object_ref(item));
+     }
+     return NULL;
+ }
+@@ -1454,7 +1454,7 @@ static AtkObject *fm_desktop_accessible_ref_child(AtkObject *accessible,
+     item = g_list_nth_data(priv->items, index);
+     if (!item)
+         return NULL;
+-    return g_object_ref(item);
++    return ATK_OBJECT(g_object_ref(item));
+ }
+ 
+ static void fm_desktop_accessible_initialize(AtkObject *accessible, gpointer data)

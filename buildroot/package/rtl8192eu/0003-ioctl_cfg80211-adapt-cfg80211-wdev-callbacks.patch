@@ -1,0 +1,183 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Fri, 10 Jul 2026 00:00:00 +000
+Subject: [PATCH] ioctl_cfg80211: adapt cfg80211 wdev callbacks
+
+Linux 7.1 changed several cfg80211_ops callbacks and station notification
+helpers to take struct wireless_dev instead of struct net_device.  Keep the
+existing driver implementation on net_device and add thin 7.1-only wrappers
+that recover wdev->netdev before calling the existing functions.
+
+Signed-off-by: suckbluefrog <suckbluefrog@proton.me>
+Upstream: not submitted
+---
+ os_dep/linux/ioctl_cfg80211.c | 114 +++++++++++++++++++++++++++++++++++++-----
+ 1 file changed, 101 insertions(+), 13 deletions(-)
+
+--- a/os_dep/linux/ioctl_cfg80211.c
++++ b/os_dep/linux/ioctl_cfg80211.c
+@@ -50,6 +50,18 @@
+ #define RTW_MAX_REMAIN_ON_CHANNEL_DURATION 5000 /* ms */
+ #define RTW_MAX_NUM_PMKIDS 4
+ 
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(7, 1, 0))
++#define rtw_cfg80211_new_sta(padapter, ndev, mac, sinfo, gfp) \
++	cfg80211_new_sta((padapter)->rtw_wdev, mac, sinfo, gfp)
++#define rtw_cfg80211_del_sta(padapter, ndev, mac, gfp) \
++	cfg80211_del_sta((padapter)->rtw_wdev, mac, gfp)
++#else
++#define rtw_cfg80211_new_sta(padapter, ndev, mac, sinfo, gfp) \
++	cfg80211_new_sta(ndev, mac, sinfo, gfp)
++#define rtw_cfg80211_del_sta(padapter, ndev, mac, gfp) \
++	cfg80211_del_sta(ndev, mac, gfp)
++#endif
++
+ #define RTW_CH_MAX_2G_CHANNEL               14      /* Max channel in 2G band */
+ 
+ #ifdef CONFIG_WAPI_SUPPORT
+@@ -5129,7 +5141,7 @@ void rtw_cfg80211_indicate_sta_assoc(_adapter *padapter, u8 *pmgmt_frame, uint f
+ 		sinfo.filled = STATION_INFO_ASSOC_REQ_IES;
+ 		sinfo.assoc_req_ies = pmgmt_frame + WLAN_HDR_A3_LEN + ie_offset;
+ 		sinfo.assoc_req_ies_len = frame_len - WLAN_HDR_A3_LEN - ie_offset;
+-		cfg80211_new_sta(ndev, get_addr2_ptr(pmgmt_frame), &sinfo, GFP_ATOMIC);
++		rtw_cfg80211_new_sta(padapter, ndev, get_addr2_ptr(pmgmt_frame), &sinfo, GFP_ATOMIC);
+ 	}
+ #else /* defined(RTW_USE_CFG80211_STA_EVENT) */
+ 	channel = pmlmeext->cur_channel;
+@@ -5175,7 +5187,7 @@ void rtw_cfg80211_indicate_sta_disassoc(_adapter *padapter, const u8 *da, unsign
+ 	RTW_INFO(FUNC_ADPT_FMT"\n", FUNC_ADPT_ARG(padapter));
+ 
+ #if defined(RTW_USE_CFG80211_STA_EVENT) || defined(COMPAT_KERNEL_RELEASE)
+-	cfg80211_del_sta(ndev, da, GFP_ATOMIC);
++	rtw_cfg80211_del_sta(padapter, ndev, da, GFP_ATOMIC);
+ #else /* defined(RTW_USE_CFG80211_STA_EVENT) */
+ 	channel = pmlmeext->cur_channel;
+ 	freq = rtw_ch2freq(channel);
+@@ -5809,7 +5821,7 @@ release_plink_ctl:
+ 
+ 			/* indicate new sta */
+ 			_rtw_memset(&sinfo, 0, sizeof(sinfo));
+-			cfg80211_new_sta(ndev, mac, &sinfo, GFP_ATOMIC);
++			rtw_cfg80211_new_sta(padapter, ndev, mac, &sinfo, GFP_ATOMIC);
+ 		}
+ 		goto exit;
+ 	}
+@@ -10395,19 +10407,97 @@ void rtw_cfg80211_external_auth_status(struct wiphy *wiphy, struct net_device *d
+ 	}
+ }
+ 
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(7, 1, 0))
++static int cfg80211_rtw_add_key_wdev(struct wiphy *wiphy, struct wireless_dev *wdev,
++	int link_id, u8 key_index, bool pairwise, const u8 *mac_addr,
++	struct key_params *params)
++{
++	return cfg80211_rtw_add_key(wiphy, wdev->netdev, link_id, key_index,
++		pairwise, mac_addr, params);
++}
++
++static int cfg80211_rtw_get_key_wdev(struct wiphy *wiphy, struct wireless_dev *wdev,
++	int link_id, u8 key_index, bool pairwise, const u8 *mac_addr,
++	void *cookie, void (*callback)(void *cookie, struct key_params *))
++{
++	return cfg80211_rtw_get_key(wiphy, wdev->netdev, link_id, key_index,
++		pairwise, mac_addr, cookie, callback);
++}
++
++static int cfg80211_rtw_del_key_wdev(struct wiphy *wiphy, struct wireless_dev *wdev,
++	int link_id, u8 key_index, bool pairwise, const u8 *mac_addr)
++{
++	return cfg80211_rtw_del_key(wiphy, wdev->netdev, link_id, key_index,
++		pairwise, mac_addr);
++}
++
++static int cfg80211_rtw_set_default_mgmt_key_wdev(struct wiphy *wiphy,
++	struct wireless_dev *wdev, int link_id, u8 key_index)
++{
++	return cfg80211_rtw_set_default_mgmt_key(wiphy, wdev->netdev, link_id,
++		key_index);
++}
++
++static int cfg80211_rtw_get_station_wdev(struct wiphy *wiphy,
++	struct wireless_dev *wdev, const u8 *mac, struct station_info *sinfo)
++{
++	return cfg80211_rtw_get_station(wiphy, wdev->netdev, mac, sinfo);
++}
++
++static int cfg80211_rtw_add_station_wdev(struct wiphy *wiphy,
++	struct wireless_dev *wdev, const u8 *mac,
++	struct station_parameters *params)
++{
++	return cfg80211_rtw_add_station(wiphy, wdev->netdev, mac, params);
++}
++
++static int cfg80211_rtw_del_station_wdev(struct wiphy *wiphy,
++	struct wireless_dev *wdev, struct station_del_parameters *params)
++{
++	return cfg80211_rtw_del_station(wiphy, wdev->netdev, params);
++}
++
++static int cfg80211_rtw_change_station_wdev(struct wiphy *wiphy,
++	struct wireless_dev *wdev, const u8 *mac,
++	struct station_parameters *params)
++{
++	return cfg80211_rtw_change_station(wiphy, wdev->netdev, mac, params);
++}
++
++static int cfg80211_rtw_dump_station_wdev(struct wiphy *wiphy,
++	struct wireless_dev *wdev, int idx, u8 *mac, struct station_info *sinfo)
++{
++	return cfg80211_rtw_dump_station(wiphy, wdev->netdev, idx, mac, sinfo);
++}
++#endif
++
+ static struct cfg80211_ops rtw_cfg80211_ops = {
+ 	.change_virtual_intf = cfg80211_rtw_change_iface,
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(7, 1, 0))
++	.add_key = cfg80211_rtw_add_key_wdev,
++	.get_key = cfg80211_rtw_get_key_wdev,
++	.del_key = cfg80211_rtw_del_key_wdev,
++#else
+ 	.add_key = cfg80211_rtw_add_key,
+ 	.get_key = cfg80211_rtw_get_key,
+ 	.del_key = cfg80211_rtw_del_key,
++#endif
+ 	.set_default_key = cfg80211_rtw_set_default_key,
+ #if (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 30))
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(7, 1, 0))
++	.set_default_mgmt_key = cfg80211_rtw_set_default_mgmt_key_wdev,
++#else
+ 	.set_default_mgmt_key = cfg80211_rtw_set_default_mgmt_key,
+ #endif
++#endif
+ #if defined(CONFIG_GTK_OL) && (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 1, 0))
+ 	.set_rekey_data = cfg80211_rtw_set_rekey_data,
+ #endif /*CONFIG_GTK_OL*/
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(7, 1, 0))
++	.get_station = cfg80211_rtw_get_station_wdev,
++#else
+ 	.get_station = cfg80211_rtw_get_station,
++#endif
+ 	.scan = cfg80211_rtw_scan,
+ #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 5, 0)) && \
+     defined(CONFIG_RTW_ABORT_SCAN)
+@@ -10445,10 +10535,17 @@ static struct cfg80211_ops rtw_cfg80211_ops = {
+ 	.set_mac_acl = cfg80211_rtw_set_mac_acl,
+ #endif
+ 
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(7, 1, 0))
++	.add_station = cfg80211_rtw_add_station_wdev,
++	.del_station = cfg80211_rtw_del_station_wdev,
++	.change_station = cfg80211_rtw_change_station_wdev,
++	.dump_station = cfg80211_rtw_dump_station_wdev,
++#else
+ 	.add_station = cfg80211_rtw_add_station,
+ 	.del_station = cfg80211_rtw_del_station,
+ 	.change_station = cfg80211_rtw_change_station,
+ 	.dump_station = cfg80211_rtw_dump_station,
++#endif
+ #if (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 28))
+ 	.change_bss = cfg80211_rtw_change_bss,
+ #endif
+-- 
+2.50.0
+

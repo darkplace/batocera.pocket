@@ -1,0 +1,28 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Fri, 10 Jul 2026 00:00:00 +000
+Subject: [PATCH] AdaptiveUtils: include cstdint
+
+AdaptiveUtils.h uses uint16_t and uint64_t directly. Newer toolchains no
+longer provide these transitively through the existing include set in all
+translation units, so include <cstdint> explicitly.
+
+Upstream: Not submitted
+Signed-off-by: suckbluefrog <suckbluefrog@proton.me>
+---
+ src/common/AdaptiveUtils.h | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/src/common/AdaptiveUtils.h b/src/common/AdaptiveUtils.h
+--- a/src/common/AdaptiveUtils.h
++++ b/src/common/AdaptiveUtils.h
+@@ -8,6 +8,7 @@
+ #pragma once
+ 
+ #include <algorithm>
++#include <cstdint>
+ #include <limits>
+ #include <memory>
+ #include <string_view>
+-- 
+2.50.0

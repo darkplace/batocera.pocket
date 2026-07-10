@@ -10,6 +10,7 @@ IRQBALANCE_LICENSE = GPL-2.0
 IRQBALANCE_LICENSE_FILES = COPYING
 IRQBALANCE_SELINUX_MODULES = irqbalance
 IRQBALANCE_DEPENDENCIES = host-pkgconf libglib2
+IRQBALANCE_CONF_ENV += CFLAGS="$(TARGET_CFLAGS) -std=gnu17"
 # Autoreconf needed because package is distributed without a configure script
 IRQBALANCE_AUTORECONF = YES
 

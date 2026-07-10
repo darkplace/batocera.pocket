@@ -1,0 +1,14 @@
+diff --git a/build.rs b/build.rs
+index 9770ea0..5ea9f20 100644
+--- a/build.rs
++++ b/build.rs
+@@ -215,6 +215,9 @@ fn main() {
+     if arch == "aarch64" {
+         let simd_bindings = bindgen::Builder::default()
+             .header("src/compat/sse2neon/sse2neon.h")
++            .clang_arg("-std=c17")
++            .clang_arg("-D_POSIX_C_SOURCE=200112L")
++            .clang_arg("-D__STDC_NO_ATOMICS__=1")
+             .allowlist_function("_mm_setzero_si128")
+             .allowlist_function("_mm_set_epi8")
+             .allowlist_function("_mm_movemask_epi8")

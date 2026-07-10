@@ -1,0 +1,33 @@
+diff --git a/3rdparty/sol2/sol/sol.hpp b/3rdparty/sol2/sol/sol.hpp
+index 8ac08d2..e41bdf5 100644
+--- a/3rdparty/sol2/sol/sol.hpp
++++ b/3rdparty/sol2/sol/sol.hpp
+@@ -6052,10 +6052,12 @@ namespace sol {
+ 		/// \group emplace
+-		template <class... Args>
+-		T& emplace(Args&&... args) noexcept {
+-			static_assert(std::is_constructible<T, Args&&...>::value, "T must be constructible with Args");
++		template <class U = T, detail::enable_if_t<!detail::is_optional<detail::decay_t<U>>::value>* = nullptr>
++		T& emplace(U&& u) noexcept {
++			static_assert(std::is_lvalue_reference<U>::value, "U must be an lvalue");
++			static_assert(std::is_constructible<T&, U&&>::value, "T must be constructible with U");
+ 
+ 			*this = nullopt;
+-			this->construct(std::forward<Args>(args)...);
++			m_value = std::addressof(u);
++			return *m_value;
+ 		}
+ 
+ 		/// Swaps this optional with the other.
+diff --git a/src/lib/util/corestr.cpp b/src/lib/util/corestr.cpp
+index 929c948..8240f8f 100644
+--- a/src/lib/util/corestr.cpp
++++ b/src/lib/util/corestr.cpp
+@@ -13,6 +13,7 @@
+ #include <algorithm>
+ #include <iterator>
+ #include <memory>
++#include <cstdint>
+ 
+ #include <cctype>
+ #include <cstdlib>

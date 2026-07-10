@@ -33,6 +33,12 @@ else ifeq ($(BR2_aarch64),y)
 LIBRETRO_PC98_PLATFORM = unix
 endif
 
+define LIBRETRO_PC98_FIX_GCC15_CFLAGS
+	$(SED) '/^CFLAGS += $$(fpic) $$(DEFINES)/a CFLAGS += -Wno-error=incompatible-pointer-types' \
+		$(@D)/sdl2/Makefile.libretro
+endef
+LIBRETRO_PC98_POST_PATCH_HOOKS += LIBRETRO_PC98_FIX_GCC15_CFLAGS
+
 define LIBRETRO_PC98_BUILD_CMDS
 	$(TARGET_CONFIGURE_OPTS) $(MAKE) CXX="$(TARGET_CXX)" CC="$(TARGET_CC)" -C $(@D)/sdl2/ -f Makefile.libretro platform="$(LIBRETRO_PC98_PLATFORM)" \
         GIT_VERSION="-$(shell echo $(LIBRETRO_PC98_VERSION) | cut -c 1-7)"

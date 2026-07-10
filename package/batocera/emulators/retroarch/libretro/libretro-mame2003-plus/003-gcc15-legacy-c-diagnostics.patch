@@ -1,0 +1,12 @@
+diff --git a/Makefile b/Makefile
+index 9fbd52a..aa7acdb 100644
+--- a/Makefile
++++ b/Makefile
+@@ -99,6 +99,7 @@ ifeq ($(platform), unix)
+ 	TARGET = $(TARGET_NAME)_libretro.so
+ 	fpic = -fPIC
+ 	CFLAGS += $(fpic)
++	PLATCFLAGS += -Wno-error=incompatible-pointer-types -Wno-error=int-conversion -Wno-error=implicit-function-declaration
+ 	LDFLAGS += $(fpic) -shared -Wl,--version-script=link.T
+ 
+ # Linux Portable

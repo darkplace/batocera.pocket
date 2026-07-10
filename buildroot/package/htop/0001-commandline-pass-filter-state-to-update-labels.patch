@@ -1,0 +1,29 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Fri, 10 Jul 2026 00:00:00 +000
+Subject: [PATCH] CommandLine: pass filter state to MainPanel_updateLabels
+
+MainPanel_updateLabels() expects a boolean indicating whether a filter is
+active, not the filter string itself. Passing the char pointer relied on an
+implicit pointer-to-integer conversion, which newer compilers reject.
+
+Upstream: Not submitted
+Signed-off-by: suckbluefrog <suckbluefrog@proton.me>
+---
+ CommandLine.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/CommandLine.c b/CommandLine.c
+--- a/CommandLine.c
++++ b/CommandLine.c
+@@ -377,7 +377,7 @@ void CommandLine_run(int argc, char** argv) {
+    MainPanel* panel = MainPanel_new();
+    Machine_setTablesPanel(host, (Panel*) panel);
+ 
+-   MainPanel_updateLabels(panel, settings->ss->treeView, flags.commFilter);
++   MainPanel_updateLabels(panel, settings->ss->treeView, flags.commFilter != NULL);
+ 
+    State state = {
+       .host = host,
+-- 
+2.50.0

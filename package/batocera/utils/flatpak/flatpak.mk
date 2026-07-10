@@ -20,6 +20,7 @@ FLATPAK_CONF_OPTS += --with-run-media-dir="/media"
 FLATPAK_CONF_OPTS += --disable-selinux-module
 
 FLATPAK_CONF_ENV += LDFLAGS=-lpthread
+FLATPAK_CONF_ENV += CFLAGS="$(TARGET_CFLAGS) -std=gnu17"
 
 define FLATPAK_INSTALL_SCRIPTS
 	install -m 0755 \

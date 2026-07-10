@@ -1,0 +1,48 @@
+diff --git a/libretro/libretro-core.h b/libretro/libretro-core.h
+index 62fc052..d5dcdbe 100644
+--- a/libretro/libretro-core.h
++++ b/libretro/libretro-core.h
+@@ -3,7 +3,6 @@
+ 
+ #include <stdint.h>
+ #include <string.h>
+-#undef __USE_ISOC99
+ #include <math.h>
+ #include <stdlib.h>
+ #include <stdio.h>
+diff --git a/sources/src/audio.c b/sources/src/audio.c
+index 04a9c89..2fcd200 100644
+--- a/sources/src/audio.c
++++ b/sources/src/audio.c
+@@ -43,7 +43,6 @@
+ #endif
+ #include "threaddep/thread.h"
+ 
+-#undef __USE_ISOC99
+ #include <math.h>
+ 
+ #define DEBUG_AUDIO 0
+diff --git a/sources/src/custom.c b/sources/src/custom.c
+index 91ea36f..de25da3 100644
+--- a/sources/src/custom.c
++++ b/sources/src/custom.c
+@@ -13,7 +13,6 @@
+ 
+ #include <ctype.h>
+ #include <assert.h>
+-#undef __USE_ISOC99
+ #include <math.h>
+ 
+ #include "options.h"
+diff --git a/sources/src/gfxutil.c b/sources/src/gfxutil.c
+index bc3aae9..0ab3ff0 100644
+--- a/sources/src/gfxutil.c
++++ b/sources/src/gfxutil.c
+@@ -14,7 +14,6 @@
+ #include "xwin.h"
+ #include "gfxfilter.h"
+ 
+-#undef __USE_ISOC99
+ #include <math.h>
+ 
+ float getvsyncrate(int monid, float hz, int *mult)

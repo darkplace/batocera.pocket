@@ -1,0 +1,54 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Fri, 10 Jul 2026 00:00:00 +000
+Subject: [PATCH] regedit: use ncurses bool for search options
+
+ncurses may define bool as NCURSES_BOOL when it is built without stdbool
+support. regedit.h defines its search option structure before the ncurses
+headers are included, while regedit_dialog.h defines option_spec after
+including ncurses. With newer compilers this produces incompatible pointer
+types when search option fields are passed to option_spec.state.
+
+Include ncurses before declaring the search option ABI and use
+NCURSES_BOOL explicitly for the search callback and option fields.
+
+Upstream: Not submitted
+Signed-off-by: suckbluefrog <suckbluefrog@proton.me>
+---
+ source3/utils/regedit.h | 11 ++++++-----
+ 1 file changed, 6 insertions(+), 5 deletions(-)
+
+diff --git a/source3/utils/regedit.h b/source3/utils/regedit.h
+--- a/source3/utils/regedit.h
++++ b/source3/utils/regedit.h
+@@ -21,6 +21,7 @@
+ #define _REGEDIT_H_
+ 
+ struct registry_context;
++#include <ncurses.h>
+ struct security_token;
+ struct registry_key;
+ 
+@@ -59,15 +60,15 @@ WERROR reg_open_samba3(TALLOC_CTX *mem_ctx, struct registry_context **ctx);
+ 
+ int regedit_getch(void);
+ 
+-typedef bool (*regedit_search_match_fn_t)(const char *, const char *);
++typedef NCURSES_BOOL (*regedit_search_match_fn_t)(const char *, const char *);
+ 
+ struct regedit_search_opts {
+ 	const char *query;
+ 	regedit_search_match_fn_t match;
+-	bool search_key;
+-	bool search_value;
+-	bool search_recursive;
+-	bool search_case;
++	NCURSES_BOOL search_key;
++	NCURSES_BOOL search_value;
++	NCURSES_BOOL search_recursive;
++	NCURSES_BOOL search_case;
+ };
+ 
+ #define PAIR_YELLOW_CYAN 1
+-- 
+2.50.0

@@ -5,11 +5,9 @@
 ################################################################################
 
 # Use the same VERSION and SITE as target glibc
-# As in glibc.mk, generate version string using:
-#   git describe --match 'glibc-*' --abbrev=40 origin/release/MAJOR.MINOR/master | cut -d '-' -f 2-
-LOCALEDEF_VERSION = 2.40-18-g5641780762723156b0d20a0b9f7df1d76831bab0
-LOCALEDEF_SOURCE = glibc-$(LOCALEDEF_VERSION).tar.gz
-LOCALEDEF_SITE = $(call github,bminor,glibc,$(LOCALEDEF_VERSION))
+LOCALEDEF_VERSION = 2.43
+LOCALEDEF_SOURCE = glibc-$(LOCALEDEF_VERSION).tar.xz
+LOCALEDEF_SITE = $(BR2_GNU_MIRROR)/glibc
 HOST_LOCALEDEF_DL_SUBDIR = glibc
 
 HOST_LOCALEDEF_DEPENDENCIES = \

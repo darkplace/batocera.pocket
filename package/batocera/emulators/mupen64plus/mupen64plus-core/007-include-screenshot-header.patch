@@ -1,0 +1,24 @@
+diff --git a/src/main/savestates.c b/src/main/savestates.c
+index 5fdf875..dc0602e 100644
+--- a/src/main/savestates.c
++++ b/src/main/savestates.c
+@@ -49,6 +49,7 @@
+ #include "plugin/plugin.h"
+ #include "rom.h"
+ #include "savestates.h"
++#include "screenshot.h"
+ #include "util.h"
+ #include "workqueue.h"
+ 
+diff --git a/src/main/screenshot.c b/src/main/screenshot.c
+index 12a184b..f7c2afb 100644
+--- a/src/main/screenshot.c
++++ b/src/main/screenshot.c
+@@ -34,6 +34,7 @@
+ #include "main/util.h"
+ #include "osal/files.h"
+ #include "osal/preproc.h"
++#include "screenshot.h"
+ #include "osd/osd.h"
+ #include "plugin/plugin.h"
+ 

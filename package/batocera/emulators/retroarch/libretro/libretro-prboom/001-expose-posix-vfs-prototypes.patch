@@ -1,0 +1,30 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Fri, 10 Jul 2026 00:00:00 +000
+Subject: [PATCH] Expose POSIX VFS prototypes with strict C99
+
+The unix build forces -std=c99, which hides POSIX prototypes such as
+ftruncate() and fileno() with newer GCC/glibc headers. Define the POSIX
+feature level used by libretro-common's VFS code.
+
+Signed-off-by: suckbluefrog <suckbluefrog@proton.me>
+---
+ Makefile | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/Makefile b/Makefile
+index f98a532..c8c6c63 100644
+--- a/Makefile
++++ b/Makefile
+@@ -74,7 +74,7 @@ ifeq ($(platform), unix)
+    TARGET := $(TARGET_NAME)_libretro$(PLAT).$(EXT)
+    fpic := -fPIC
+    SHARED := -shared -Wl,--version-script=libretro/link.T -Wl,--no-undefined -Wl,--as-needed
+-   CFLAGS += -std=c99
++   CFLAGS += -std=c99 -D_POSIX_C_SOURCE=200809L
+ else ifeq ($(platform), linux-portable)
+ 	EXT    ?= so
+    TARGET := $(TARGET_NAME)_libretro.$(EXT)
+-- 
+2.50.0
+

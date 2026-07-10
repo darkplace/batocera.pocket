@@ -25,6 +25,11 @@ define STENZEK_SHADERC_SYNC_DEPS
 	cd $(@D) && PATH=$(BR_PATH) ./utils/git-sync-deps
 endef
 
-STENZEK_SHADERC_PRE_CONFIGURE_HOOKS += STENZEK_SHADERC_SYNC_DEPS
+define STENZEK_SHADERC_FIX_GLSLANG_CSTDINT
+	grep -q '^#include <cstdint>' $(@D)/third_party/glslang/SPIRV/SpvBuilder.h || \
+		$(SED) '/#include <stack>/a #include <cstdint>' $(@D)/third_party/glslang/SPIRV/SpvBuilder.h
+endef
+
+STENZEK_SHADERC_PRE_CONFIGURE_HOOKS += STENZEK_SHADERC_SYNC_DEPS STENZEK_SHADERC_FIX_GLSLANG_CSTDINT
 
 $(eval $(cmake-package))

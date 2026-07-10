@@ -85,6 +85,9 @@ BR2_PACKAGE_MESA3D_OPENGL_ES=y
 BR2_PACKAGE_QT6BASE_OPENGL=y
 BR2_PACKAGE_QT6BASE_OPENGL_ES2=y
 BR2_PACKAGE_SDL3_OPENGLES=y
+# FEX's guest GL thunk needs libX11 even when the launcher uses Wayland.
+BR2_PACKAGE_XORG7=y
+BR2_PACKAGE_XLIB_LIBX11=y
 
 # Prefer the same audio path as the host image when Qt multimedia is present.
 BR2_PACKAGE_QT6MULTIMEDIA_PULSEAUDIO=y

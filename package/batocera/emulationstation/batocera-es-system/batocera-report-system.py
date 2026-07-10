@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import sys
 from pathlib import Path
 from typing import Any, NotRequired, cast
 from typing_extensions import TypedDict
@@ -199,7 +200,10 @@ def _list_emulators(
         emulators_result[emulator] = result_cores
 
     if nb_variants > 0 and not default_found:
-        raise Exception(f'default core ({default_emulator}/{default_core}) not enabled for {arch}/{system}')
+        print(
+            f'WARNING: default core ({default_emulator}/{default_core}) not enabled for {arch}/{system}',
+            file=sys.stderr,
+        )
 
     return {
         'name': data['name'],

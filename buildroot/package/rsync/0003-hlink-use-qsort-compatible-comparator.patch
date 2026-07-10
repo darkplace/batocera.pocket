@@ -1,0 +1,57 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Fri, 10 Jul 2026 00:00:00 +000
+Subject: [PATCH] hlink: use qsort-compatible comparator
+
+GCC 15 rejects the old cast through int (*)() because an empty parameter list
+now denotes a function taking no arguments.  Give the comparator the prototype
+required by qsort and remove the cast.
+
+Signed-off-by: suckbluefrog <suckbluefrog@proton.me>
+Upstream: not submitted
+---
+ hlink.c | 12 +++++++-----
+ 1 file changed, 7 insertions(+), 5 deletions(-)
+
+diff --git a/hlink.c b/hlink.c
+index 8f49b72..4a914c3 100644
+--- a/hlink.c
++++ b/hlink.c
+@@ -97,27 +97,29 @@ void idev_destroy(void)
+ 	hashtable_destroy(dev_tbl);
+ }
+ 
+-static int hlink_compare_gnum(int *int1, int *int2)
++static int hlink_compare_gnum(const void *int1, const void *int2)
+ {
+-	struct file_struct *f1 = hlink_flist->sorted[*int1];
+-	struct file_struct *f2 = hlink_flist->sorted[*int2];
++	const int32 *ndx1 = int1;
++	const int32 *ndx2 = int2;
++	struct file_struct *f1 = hlink_flist->sorted[*ndx1];
++	struct file_struct *f2 = hlink_flist->sorted[*ndx2];
+ 	int32 gnum1 = F_HL_GNUM(f1);
+ 	int32 gnum2 = F_HL_GNUM(f2);
+ 
+ 	if (gnum1 != gnum2)
+ 		return gnum1 > gnum2 ? 1 : -1;
+ 
+-	return *int1 > *int2 ? 1 : -1;
++	return *ndx1 > *ndx2 ? 1 : -1;
+ }
+ 
+ static void match_gnums(int32 *ndx_list, int ndx_count)
+ {
+ 	int32 from, prev;
+ 	struct file_struct *file, *file_next;
+ 	struct ht_int32_node *node = NULL;
+ 	int32 gnum, gnum_next;
+ 
+-	qsort(ndx_list, ndx_count, sizeof ndx_list[0], (int (*)()) hlink_compare_gnum);
++	qsort(ndx_list, ndx_count, sizeof ndx_list[0], hlink_compare_gnum);
+ 
+ 	for (from = 0; from < ndx_count; from++) {
+ 		file = hlink_flist->sorted[ndx_list[from]];
+-- 
+2.50.0
+

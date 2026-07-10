@@ -1,0 +1,28 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Fri, 10 Jul 2026 00:00:00 +000
+Subject: [PATCH] HTSPVFS: include cstdint
+
+HTSPVFS.h uses uint32_t and int64_t directly. Newer toolchains do not
+guarantee these are available through unrelated transitive includes, so
+include <cstdint> explicitly.
+
+Upstream: Not submitted
+Signed-off-by: suckbluefrog <suckbluefrog@proton.me>
+---
+ src/tvheadend/HTSPVFS.h | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/src/tvheadend/HTSPVFS.h b/src/tvheadend/HTSPVFS.h
+--- a/src/tvheadend/HTSPVFS.h
++++ b/src/tvheadend/HTSPVFS.h
+@@ -7,6 +7,7 @@
+ 
+ #pragma once
+ 
++#include <cstdint>
+ #include <memory>
+ #include <string>
+ 
+-- 
+2.50.0

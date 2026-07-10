@@ -1,0 +1,42 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Fri, 10 Jul 2026 00:00:00 +000
+Subject: [PATCH] main: cast CSS provider to GtkStyleProvider
+
+gtk_style_context_add_provider() takes a GtkStyleProvider. Passing a
+GtkCssProvider directly now fails with newer GCC diagnostics:
+
+  error: passing argument 2 of 'gtk_style_context_add_provider' from
+  incompatible pointer type
+
+Use the GTK_STYLE_PROVIDER() cast for the GTK3-only CSS provider calls.
+
+Signed-off-by: suckbluefrog <suckbluefrog@proton.me>
+---
+ src/main.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/src/main.c b/src/main.c
+index f468895..4d2dd6d 100644
+--- a/src/main.c
++++ b/src/main.c
+@@ -670,7 +670,7 @@ create_dialog (void)
+ 
+ #if GTK_CHECK_VERSION(3,0,0)
+   if (css)
+-    gtk_style_context_add_provider (gtk_widget_get_style_context (dlg), css, GTK_STYLE_PROVIDER_PRIORITY_USER);
++    gtk_style_context_add_provider (gtk_widget_get_style_context (dlg), GTK_STYLE_PROVIDER (css), GTK_STYLE_PROVIDER_PRIORITY_USER);
+ #endif
+ 
+   return dlg;
+@@ -700,7 +700,7 @@ create_plug (void)
+ 
+ #if GTK_CHECK_VERSION(3,0,0)
+   if (css)
+-    gtk_style_context_add_provider (gtk_widget_get_style_context (win), css, GTK_STYLE_PROVIDER_PRIORITY_USER);
++    gtk_style_context_add_provider (gtk_widget_get_style_context (win), GTK_STYLE_PROVIDER (css), GTK_STYLE_PROVIDER_PRIORITY_USER);
+ #endif
+ 
+   gtk_widget_show_all (win);
+-- 
+2.50.0

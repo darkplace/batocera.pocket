@@ -1,0 +1,22 @@
+--- a/Source/LibJXR/image/decode/segdec.c
++++ b/Source/LibJXR/image/decode/segdec.c
+@@ -49,6 +49,19 @@
+ #define _FORCEINLINE
+ #endif // X86OPT_INLINE
+ 
++#if !defined(_BIG__ENDIAN_) && !defined(_byteswap_ulong)
++static U32 _FORCEINLINE _freeimage_byteswap_ulong(U32 bits)
++{
++    U32 r = (bits & 0xffu) << 24;
++    r |= (bits << 8) & 0xff0000u;
++    r |= ((bits >> 8) & 0xff00u);
++    r |= ((bits >> 24) & 0xffu);
++
++    return r;
++}
++#define _byteswap_ulong _freeimage_byteswap_ulong
++#endif
++
+ //================================================================
+ // Memory access functions
+ //================================================================

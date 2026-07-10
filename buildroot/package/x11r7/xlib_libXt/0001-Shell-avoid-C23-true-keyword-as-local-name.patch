@@ -1,0 +1,31 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Fri, 10 Jul 2026 00:00:00 +000
+Subject: [PATCH] Shell: avoid C23 true keyword as local name
+
+GCC 15 defaults to a C dialect where true is a keyword. Rename the local
+static Boolean used by _XtShellAncestorSensitive so libXt continues to
+build with newer compilers.
+
+Signed-off-by: suckbluefrog <suckbluefrog@proton.me>
+---
+ src/Shell.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/src/Shell.c b/src/Shell.c
+--- a/src/Shell.c
++++ b/src/Shell.c
+@@ -1002,9 +1002,9 @@ static void
+ _XtShellAncestorSensitive(Widget widget, int closure, XrmValue *value)
+ {
+-    static Boolean true = True;
++    static Boolean true_value = True;
+ 
+     if (widget->core.parent == NULL)
+-        value->addr = (XPointer) (&true);
++        value->addr = (XPointer) (&true_value);
+     else
+         _XtCopyFromParent(widget, closure, value);
+ }
+-- 
+2.50.0

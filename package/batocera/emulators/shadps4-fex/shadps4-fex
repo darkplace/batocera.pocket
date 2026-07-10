@@ -12,6 +12,8 @@ fi
 ROOTFS="/usr/share/batocera/apps/shadps4-fex-rootfs"
 APP_CONFIG_DIR="/usr/share/fex-emu/shadps4-fex"
 APP_CONFIG="${APP_CONFIG_DIR}/shadps4-fex.json"
+APP_CONFIG_QTLAUNCHER_DIR="/usr/share/fex-emu/shadps4-fex-qtlauncher"
+APP_CONFIG_QTLAUNCHER="${APP_CONFIG_QTLAUNCHER_DIR}/shadps4-fex.json"
 GUEST_BIN_DIR="/usr/bin/shadps4"
 GUEST_QTLAUNCHER_BIN="${GUEST_BIN_DIR}/shadps4-qtlauncher"
 GUEST_QTLAUNCHER_NATIVE_BIN="${GUEST_BIN_DIR}/shadPS4QtLauncher"
@@ -84,8 +86,14 @@ select_guest_bin() {
 select_guest_bin "$@"
 
 if [ -n "${GUEST_BIN}" ] && [ -x "${ROOTFS}${GUEST_BIN}" ] && [ -f "${APP_CONFIG}" ]; then
-	export FEX_APP_CONFIG_LOCATION="${APP_CONFIG_DIR}/"
-	export FEX_APP_CONFIG="${APP_CONFIG}"
+	SELECTED_APP_CONFIG="${APP_CONFIG}"
+	SELECTED_APP_CONFIG_DIR="${APP_CONFIG_DIR}"
+	if [ "$#" -eq 0 ] && { [ "${GUEST_BIN}" = "${GUEST_QTLAUNCHER_BIN}" ] || [ "${GUEST_BIN}" = "${GUEST_QTLAUNCHER_NATIVE_BIN}" ]; } && [ -f "${APP_CONFIG_QTLAUNCHER}" ]; then
+		SELECTED_APP_CONFIG="${APP_CONFIG_QTLAUNCHER}"
+		SELECTED_APP_CONFIG_DIR="${APP_CONFIG_QTLAUNCHER_DIR}"
+	fi
+	export FEX_APP_CONFIG_LOCATION="${SELECTED_APP_CONFIG_DIR}/"
+	export FEX_APP_CONFIG="${SELECTED_APP_CONFIG}"
 	export QT_QPA_PLATFORM="${QT_QPA_PLATFORM:-wayland}"
 	export SDL_VIDEODRIVER="${SDL_VIDEODRIVER:-wayland}"
 	export XDG_SESSION_TYPE="${XDG_SESSION_TYPE:-wayland}"

@@ -1,0 +1,43 @@
+From 2d8db145fe92b3d71a753ab6c66af5c00ce89ccf Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Fri, 10 Jul 2026 00:00:00 +000
+Subject: [PATCH] HACK: define C23 time bases for host-localedef
+
+Buildroot keeps _ISOC23_SOURCE and _ISOC2Y_SOURCE undefined when building
+host-localedef so localedef can run on hosts whose libc does not provide
+the newer __isoc23_* symbols.
+
+glibc 2.43 also gates TIME_MONOTONIC, TIME_ACTIVE, and
+TIME_THREAD_ACTIVE behind the C23 feature test, but its internal
+include/time.h uses those constants unconditionally in clock_from_timebase.
+Keep the internal constants available without exposing the rest of C23.
+
+Upstream: Not applicable
+
+Signed-off-by: suckbluefrog <suckbluefrog@proton.me>
+---
+ include/time.h | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/include/time.h b/include/time.h
+index d86b632c85..10d06f843d 100644
+--- a/include/time.h
++++ b/include/time.h
+@@ -537,6 +537,15 @@ time64_now (void)
+   return ts.tv_sec;
+ }
+ 
++/* host-localedef builds with _ISOC23_SOURCE undefined so it can run on
++   older host libc versions.  Keep these internal constants available for
++   clock_from_timebase without enabling the rest of C23.  */
++#ifndef TIME_MONOTONIC
++# define TIME_MONOTONIC          2
++# define TIME_ACTIVE             3
++# define TIME_THREAD_ACTIVE      4
++#endif
++
+ /* Helper that converts from C timebase to POSIX clockid_t.  */
+ static inline clockid_t
+ clock_from_timebase (int timebase)
+-- 
+2.50.1

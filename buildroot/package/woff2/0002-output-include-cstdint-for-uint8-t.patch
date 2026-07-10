@@ -1,0 +1,17 @@
+output: include cstdint for uint8_t
+
+output.h uses uint8_t directly, so include the header that defines it instead
+of relying on transitive includes from other standard headers.
+
+Signed-off-by: suckbluefrog <suckbluefrog@proton.me>
+
+--- a/include/woff2/output.h
++++ b/include/woff2/output.h
+@@ -10,6 +10,7 @@
+ 
+ #include <algorithm>
+ #include <cstring>
++#include <cstdint>
+ #include <memory>
+ #include <string>
+ 

@@ -14,13 +14,13 @@ if TYPE_CHECKING:
     from ..input import Input
 
 
-FEX_BUTTON_CODE_TO_INDEX = {
-    304: 0, 305: 1, 307: 2, 308: 3, 310: 4, 311: 5,
-    314: 6, 315: 7, 316: 8, 317: 9, 318: 10,
-    544: 11, 545: 12, 546: 13, 547: 14,
+FEX_FALLBACK_BUTTON_CODE_TO_INDEX = {
+    278: 0, 304: 1, 305: 2, 307: 3, 308: 4, 310: 5, 311: 6,
+    314: 7, 315: 8, 316: 9, 317: 10, 318: 11,
+    544: 12, 545: 13, 546: 14, 547: 15,
 }
 
-FEX_AXIS_CODE_TO_INDEX = {
+FEX_FALLBACK_AXIS_CODE_TO_INDEX = {
     0: 0, 1: 1, 2: 2, 3: 3, 4: 4, 5: 5,
 }
 
@@ -96,17 +96,53 @@ def _match_fex_sdl_joystick(controller: "Controller", devices: list[dict[str, st
     return None
 
 
-def _input_to_fex_sdl_mapping(keyname: str, input: "Input") -> str | None:
+def _capability_code(capability) -> int:
+    if isinstance(capability, tuple):
+        return int(capability[0])
+    return int(capability)
+
+
+def _controller_code_indexes(controller: "Controller") -> tuple[dict[int, int], dict[int, int]]:
+    try:
+        import evdev
+
+        capabilities = evdev.InputDevice(controller.device_path).capabilities()
+        button_codes = sorted(_capability_code(code) for code in capabilities.get(evdev.ecodes.EV_KEY, []))
+        axis_codes = sorted(
+            _capability_code(code)
+            for code in capabilities.get(evdev.ecodes.EV_ABS, [])
+            if _capability_code(code) < evdev.ecodes.ABS_HAT0X
+        )
+    except Exception:
+        return FEX_FALLBACK_BUTTON_CODE_TO_INDEX, FEX_FALLBACK_AXIS_CODE_TO_INDEX
+
+    return (
+        {code: index for index, code in enumerate(button_codes)},
+        {code: index for index, code in enumerate(axis_codes)},
+    )
+
+
+def _input_to_fex_sdl_mapping(
+    keyname: str,
+    input: "Input",
+    button_code_to_index: Mapping[int, int],
+    axis_code_to_index: Mapping[int, int],
+) -> str | None:
     if input.type == "button":
-        if input.code is not None and int(input.code) in FEX_BUTTON_CODE_TO_INDEX:
-            return f"{keyname}:b{FEX_BUTTON_CODE_TO_INDEX[int(input.code)]}"
+        if input.code is not None:
+            try:
+                code = int(input.code)
+            except ValueError:
+                code = None
+            if code is not None and code in button_code_to_index:
+                return f"{keyname}:b{button_code_to_index[code]}"
         return f"{keyname}:b{input.id}"
 
     if input.type == "hat":
         return f"{keyname}:h{input.id}.{input.value}"
 
     if input.type == "axis":
-        axis_id = FEX_AXIS_CODE_TO_INDEX.get(int(input.code), int(input.id)) if input.code is not None else int(input.id)
+        axis_id = axis_code_to_index.get(int(input.code), int(input.id)) if input.code is not None else int(input.id)
         if "joystick" in input.name:
             return f"{keyname}:a{axis_id}{'~' if int(input.value) > 0 else ''}"
         if keyname in ("dpup", "dpdown", "dpleft", "dpright"):
@@ -136,6 +172,7 @@ def generate_sdl_game_controller_config(
         config = [device["guid"], device.get("name") or controller.real_name.replace(",", "."), "platform:Linux"]
         hotkey_input = None
         mapped_button_codes: set[str] = set()
+        button_code_to_index, axis_code_to_index = _controller_code_indexes(controller)
         for input in controller.inputs.values():
             key_name = _DEFAULT_SDL_MAPPING.get(input.name)
             if key_name is None:
@@ -145,14 +182,14 @@ def generate_sdl_game_controller_config(
                 continue
             if input.type == "button" and input.code is not None:
                 mapped_button_codes.add(input.code)
-            if (sdl_config := _input_to_fex_sdl_mapping(key_name, input)) is not None:
+            if (sdl_config := _input_to_fex_sdl_mapping(key_name, input, button_code_to_index, axis_code_to_index)) is not None:
                 config.append(sdl_config)
 
         if (
             hotkey_input is not None
             and hotkey_input.code not in mapped_button_codes
             and (key_name := _DEFAULT_SDL_MAPPING.get(hotkey_input.name)) is not None
-            and (sdl_config := _input_to_fex_sdl_mapping(key_name, hotkey_input)) is not None
+            and (sdl_config := _input_to_fex_sdl_mapping(key_name, hotkey_input, button_code_to_index, axis_code_to_index)) is not None
         ):
             config.append(sdl_config)
 

@@ -1,0 +1,72 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Fri, 10 Jul 2026 00:00:00 +000
+Subject: [PATCH] rtw_br_ext: access PPPoE header payload by offset
+
+Linux 7.1 keeps the PPPoE payload layout unchanged, but hides the trailing
+flexible-array member in struct pppoe_hdr from kernel code.  Access the
+payload bytes by stepping past the fixed header instead of naming ph->tag
+directly.
+
+Also convert tag_len from network byte order when calculating the number of
+bytes to append.
+
+Signed-off-by: suckbluefrog <suckbluefrog@proton.me>
+Upstream: not submitted
+---
+ core/rtw_br_ext.c | 18 ++++++++++++++----
+ 1 file changed, 14 insertions(+), 4 deletions(-)
+
+diff --git a/core/rtw_br_ext.c b/core/rtw_br_ext.c
+index 8ee3b31..38c94c3 100644
+--- a/core/rtw_br_ext.c
++++ b/core/rtw_br_ext.c
+@@ -82,6 +82,16 @@
+   PPPoE |type|   SID   |           AC MAC            |
+ -----------------------------------------------------------------*/
+ 
++static __inline__ unsigned char *rtw_pppoe_hdr_tag(struct pppoe_hdr *ph)
++{
++	return (unsigned char *)(ph + 1);
++}
++
++static __inline__ unsigned char *rtw_pppoe_tag_data(struct pppoe_tag *tag)
++{
++	return (unsigned char *)(tag + 1);
++}
++
+ 
+ /* Find a tag in pppoe frame and return the pointer */
+ static __inline__ unsigned char *__nat25_find_pppoe_tag(struct pppoe_hdr *ph, unsigned short type)
+@@ -91,7 +101,7 @@ static __inline__ unsigned char *__nat25_find_pppoe_tag(struct pppoe_hdr *ph, un
+ 	unsigned char *cur_ptr, *start_ptr;
+ 	unsigned short tagLen, tagType;
+ 
+-	start_ptr = cur_ptr = (unsigned char *)ph->tag;
++	start_ptr = cur_ptr = rtw_pppoe_hdr_tag(ph);
+ 	while ((cur_ptr - start_ptr) < ntohs(ph->length)) {
+ 		/* prevent un-alignment access */
+ 		tagType = (unsigned short)((cur_ptr[0] << 8) + cur_ptr[1]);
+@@ -109,16 +119,16 @@ static __inline__ int __nat25_add_pppoe_tag(struct sk_buff *skb, struct pppoe_ta
+ 	struct pppoe_hdr *ph = (struct pppoe_hdr *)(skb->data + ETH_HLEN);
+ 	int data_len;
+ 
+-	data_len = tag->tag_len + TAG_HDR_LEN;
++	data_len = ntohs(tag->tag_len) + TAG_HDR_LEN;
+ 	if (skb_tailroom(skb) < data_len) {
+ 		_DEBUG_ERR("skb_tailroom() failed in add SID tag!\n");
+ 		return -1;
+ 	}
+ 
+ 	skb_put(skb, data_len);
+ 	/* have a room for new tag */
+-	memmove(((unsigned char *)ph->tag + data_len), (unsigned char *)ph->tag, ntohs(ph->length));
++	memmove(rtw_pppoe_hdr_tag(ph) + data_len, rtw_pppoe_hdr_tag(ph), ntohs(ph->length));
+ 	ph->length = htons(ntohs(ph->length) + data_len);
+-	memcpy((unsigned char *)ph->tag, tag, data_len);
++	memcpy(rtw_pppoe_hdr_tag(ph), tag, data_len);
+ 	return data_len;
+ }
+ 
+-- 
+2.50.0

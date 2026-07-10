@@ -7,7 +7,7 @@
 IKEMEN_VERSION = 799f55fbfb1f201de3bbbe52f23f8057c2a98aa86
 IKEMEN_SITE = https://github.com/ikemen-engine/Ikemen-GO
 IKEMEN_LICENSE = MIT
-IKEMEN_DEPENDENCIES = host-pkgconf ffmpeg libgtk3 libxmp mesa3d sdl2
+IKEMEN_DEPENDENCIES = host-nasm host-pkgconf host-yasm ffmpeg libgtk3 libxmp mesa3d sdl2
 
 IKEMEN_SITE_METHOD = git
 IKEMEN_GIT_SUBMODULES = YES

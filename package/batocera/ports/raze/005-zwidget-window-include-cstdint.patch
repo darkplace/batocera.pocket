@@ -1,0 +1,10 @@
+--- a/libraries/ZWidget/include/zwidget/window/window.h
++++ b/libraries/ZWidget/include/zwidget/window/window.h
+@@ -1,6 +1,7 @@
+ #pragma once
+ 
++#include <cstdint>
+ #include <memory>
+ #include <string>
+ #include <functional>
+ #include "../core/rect.h"

@@ -43,6 +43,12 @@ define LIBRETRO_SCUMMVM_DEPS
 	$(call LIBRETRO_CLONE_AND_INIT,libretro-common,70ed90c42ddea828f53dd1b984c6443ddb39dbd6)
 endef
 
+define LIBRETRO_SCUMMVM_FIX_LIBFAAD_GLIBC_STRINGS
+	$(SED) '/^# if !HAVE_STRCHR$$/,/^# endif$$/d' \
+		-e '/^char \*strchr(), \*strrchr();$$/d' \
+		$(@D)/backends/platform/libretro/deps/libretro-deps/libfaad/libfaad/common.h
+endef
+
 define LIBRETRO_SCUMMVM_BUILD_CMDS
 	$(TARGET_CONFIGURE_OPTS) $(MAKE) CXX="$(TARGET_CXX)" CC="$(TARGET_CC)" \
 	    -C $(@D)/backends/platform/libretro \
@@ -55,6 +61,6 @@ define LIBRETRO_SCUMMVM_INSTALL_TARGET_CMDS
 endef
 
 # workaround script issue
-LIBRETRO_SCUMMVM_PRE_CONFIGURE_HOOKS += LIBRETRO_SCUMMVM_DEPS
+LIBRETRO_SCUMMVM_PRE_CONFIGURE_HOOKS += LIBRETRO_SCUMMVM_DEPS LIBRETRO_SCUMMVM_FIX_LIBFAAD_GLIBC_STRINGS
 
 $(eval $(generic-package))

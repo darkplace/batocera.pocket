@@ -1,0 +1,12 @@
+diff --git a/Makefile b/Makefile
+index e3f1eb0..c20f50a 100644
+--- a/Makefile
++++ b/Makefile
+@@ -816,6 +816,7 @@ CFLAGS     += $(DEFINES) $(COMMON_DEFINES)
+ 
+ ifeq ($(FRONTEND_SUPPORTS_RGB565), 1)
+ CFLAGS += -DFRONTEND_SUPPORTS_RGB565
++CFLAGS += -std=gnu17
+ endif
+ 
+ ifeq ($(platform), osx)

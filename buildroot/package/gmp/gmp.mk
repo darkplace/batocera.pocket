@@ -25,6 +25,12 @@ ifeq ($(shell test $(GMP_HOST_GCC_MAJOR) -ge 15 2>/dev/null && echo y),y)
 HOST_GMP_CONF_ENV += CFLAGS="$(HOST_CFLAGS) -std=gnu17"
 endif
 
+# Apply the same workaround when building target gmp with a gcc 15+
+# toolchain.
+ifeq ($(BR2_TOOLCHAIN_GCC_AT_LEAST_15),y)
+GMP_CONF_ENV += CFLAGS="$(TARGET_CFLAGS) -std=gnu17"
+endif
+
 # GMP doesn't support assembly for coldfire or mips r6 ISA yet
 # Disable for ARM v7m since it has different asm constraints
 ifeq ($(BR2_m68k_cf)$(BR2_MIPS_CPU_MIPS32R6)$(BR2_MIPS_CPU_MIPS64R6)$(BR2_ARM_CPU_ARMV7M),y)

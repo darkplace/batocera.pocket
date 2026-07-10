@@ -1,0 +1,28 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Fri, 10 Jul 2026 00:00:00 +000
+Subject: [PATCH] Demote legacy C pointer diagnostics with GCC 15
+
+PicoDrive bundles older C compatibility layers which intentionally bridge
+different file and memory pointer types. GCC 15 treats incompatible pointer
+type diagnostics as build-stopping errors, so keep them as warnings for this
+legacy core.
+
+Signed-off-by: suckbluefrog <suckbluefrog@proton.me>
+---
+ Makefile.libretro | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/Makefile.libretro b/Makefile.libretro
+index e08f817..43852d8 100644
+--- a/Makefile.libretro
++++ b/Makefile.libretro
+@@ -26,5 +26,6 @@ AS ?= as
+ CC_AS ?= $(CC)
+ CFLAGS ?=
++CFLAGS += -Wno-error=incompatible-pointer-types
+ 
+ # Include root directory
+ CFLAGS += -I$(shell dirname $(realpath $(firstword $(MAKEFILE_LIST))))
+-- 
+2.50.0

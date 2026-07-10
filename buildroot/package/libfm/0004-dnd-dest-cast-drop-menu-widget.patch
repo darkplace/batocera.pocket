@@ -1,0 +1,30 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Fri, 10 Jul 2026 00:00:00 +000
+Subject: [PATCH] dnd-dest: cast drop menu widget
+
+gtk_ui_manager_get_widget() returns GtkWidget *.  The drop handler stores the
+popup in a GtkMenu * slot, so make the downcast explicit after taking the
+reference.
+
+Signed-off-by: suckbluefrog <suckbluefrog@proton.me>
+---
+ src/gtk/fm-dnd-dest.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/gtk/fm-dnd-dest.c b/src/gtk/fm-dnd-dest.c
+index 8891aba..f1db8de 100644
+--- a/src/gtk/fm-dnd-dest.c
++++ b/src/gtk/fm-dnd-dest.c
+@@ -458,7 +458,7 @@ static GdkDragAction _ask_action_on_drop(GtkWidget *widget,
+             gtk_action_set_sensitive(act, FALSE);
+         }
+     }
+-    ri.menu = g_object_ref(gtk_ui_manager_get_widget(ui, "/popup"));
++    ri.menu = GTK_MENU(g_object_ref(gtk_ui_manager_get_widget(ui, "/popup")));
+     g_signal_connect(ri.menu, "selection-done", G_CALLBACK(gtk_widget_destroy), NULL);
+     unmap_handler = g_signal_connect(ri.menu, "unmap",
+                                      G_CALLBACK(run_unmap_handler), &ri);
+-- 
+2.50.0
+

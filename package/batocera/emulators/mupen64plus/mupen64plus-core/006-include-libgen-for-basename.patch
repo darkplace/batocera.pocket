@@ -1,0 +1,12 @@
+diff --git a/src/main/main.c b/src/main/main.c
+index abcd686..3d3d247 100644
+--- a/src/main/main.c
++++ b/src/main/main.c
+@@ -30,6 +30,7 @@
+ 
+ #include <SDL.h>
+ #include <assert.h>
++#include <libgen.h>
+ #include <stdarg.h>
+ #include <stddef.h>
+ #include <stdio.h>

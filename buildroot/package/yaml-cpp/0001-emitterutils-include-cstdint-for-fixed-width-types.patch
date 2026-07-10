@@ -1,0 +1,26 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Fri, 10 Jul 2026 00:00:00 +000
+Subject: [PATCH] emitterutils: include cstdint for fixed-width types
+
+emitterutils.cpp uses uint16_t and uint32_t directly. Newer libstdc++
+headers no longer make those typedefs visible here through incidental
+includes, so GCC 15 fails the build.
+
+Signed-off-by: suckbluefrog <suckbluefrog@proton.me>
+---
+ src/emitterutils.cpp | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/src/emitterutils.cpp b/src/emitterutils.cpp
+index 4e85f53..f2562f7 100644
+--- a/src/emitterutils.cpp
++++ b/src/emitterutils.cpp
+@@ -1,4 +1,5 @@
+ #include <algorithm>
++#include <cstdint>
+ #include <iomanip>
+ #include <sstream>
+ 
+-- 
+2.50.0

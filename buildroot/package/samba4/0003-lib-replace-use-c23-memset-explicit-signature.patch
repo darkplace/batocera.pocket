@@ -1,0 +1,34 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Fri, 10 Jul 2026 00:00:00 +000
+Subject: [PATCH] lib/replace: use C23 memset_explicit signature
+
+glibc 2.43 exposes the C23 memset_explicit() API, which takes three
+arguments:
+
+  memset_explicit(void *dest, int ch, size_t len)
+
+libreplace's rep_memset_s() wrapper already validates the destination
+size and count before calling memset_explicit(), so pass the same
+arguments used by the memset() fallback.
+
+Upstream: Not submitted
+Signed-off-by: suckbluefrog <suckbluefrog@proton.me>
+---
+ lib/replace/replace.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/lib/replace/replace.c b/lib/replace/replace.c
+--- a/lib/replace/replace.c
++++ b/lib/replace/replace.c
+@@ -970,7 +970,7 @@ int rep_memset_s(void *dest, size_t destsz, int ch, size_t count)
+ 	}
+ 
+ #if defined(HAVE_MEMSET_EXPLICIT)
+-	memset_explicit(dest, destsz, ch, count);
++	memset_explicit(dest, ch, count);
+ #else /* HAVE_MEMSET_EXPLICIT */
+ 	memset(dest, ch, count);
+ # if defined(HAVE_GCC_VOLATILE_MEMORY_PROTECTION)
+-- 
+2.50.0

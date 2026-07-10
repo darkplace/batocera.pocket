@@ -36,7 +36,7 @@ fi
 NAME=thd
 DAEMON=/usr/sbin/$NAME
 PIDFILE=/var/run/$NAME.pid
-DAEMON_ARGS="--daemon --triggers ${CONFPATH} --socket /var/run/thd.socket --pidfile $PIDFILE /dev/input/event*"
+DEVICE_GLOB="/dev/input/event*"
 
 # Sanity checks
 test -x $DAEMON || exit 0
@@ -45,7 +45,9 @@ test -x $DAEMON || exit 0
 
 start() {
         printf "Starting $NAME: "
-        start-stop-daemon --start --quiet --pidfile $PIDFILE --exec $DAEMON -- $DAEMON_ARGS \
+        start-stop-daemon --start --quiet --pidfile "$PIDFILE" --exec "$DAEMON" -- \
+                --daemon --triggers "$CONFPATH" --socket /var/run/thd.socket \
+                --pidfile "$PIDFILE" --deviceglob "$DEVICE_GLOB" \
                 && echo "OK" || echo "FAIL"
 }
 

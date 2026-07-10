@@ -1,0 +1,33 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Fri, 10 Jul 2026 00:00:00 +000
+Subject: [PATCH] stdafx: include stdint.h for public integer types
+
+The installed stdafx.h header exposes typedefs based on uint8_t,
+uint16_t, uint32_t and int64_t in the non-Windows branch. Those typedefs
+must not depend on consumers defining libmodplug's private configure
+macros such as HAVE_STDINT_H.
+
+Include stdint.h in the non-Windows public-header path before the typedefs
+that use those types.
+
+Signed-off-by: suckbluefrog <suckbluefrog@proton.me>
+---
+ src/libmodplug/stdafx.h | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/src/libmodplug/stdafx.h b/src/libmodplug/stdafx.h
+index 5ca4a18..e8e2764 100644
+--- a/src/libmodplug/stdafx.h
++++ b/src/libmodplug/stdafx.h
+@@ -66,6 +66,7 @@ inline void ProcessPlugins(int n) { (void)n; }
+ 
+ #else
+ 
++#include <stdint.h>
+ #include <stdlib.h>
+ #include <stdio.h>
+ #include <string.h>
+-- 
+2.50.0
+

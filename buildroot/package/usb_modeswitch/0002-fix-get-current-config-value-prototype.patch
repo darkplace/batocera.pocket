@@ -1,0 +1,39 @@
+usb_modeswitch: fix get_current_config_value prototype
+
+C23 treats an empty parameter list as a no-argument prototype.  The header and
+definition used get_current_config_value(), while the code calls it with the
+current libusb device.  Give the function the typed parameter it already
+expects at its call sites.
+
+Signed-off-by: suckbluefrog <suckbluefrog@proton.me>
+
+--- a/usb_modeswitch.h
++++ b/usb_modeswitch.h
+@@ -52,7 +52,7 @@
+ struct libusb_device* search_devices( int *numFound, int vendor, char* productList,
+ 		int targetClass, int configuration, int mode);
+ int find_first_bulk_endpoint(int direction);
+-int get_current_config_value();
++int get_current_config_value(struct libusb_device *device);
+ int get_interface_class();
+ char* ReadParseParam(const char* FileName, char *VariableName);
+ int hex2num(char c);
+--- a/usb_modeswitch.c
++++ b/usb_modeswitch.c
+@@ -1855,13 +1855,13 @@
+ }
+ 
+ 
+-int get_current_config_value()
++int get_current_config_value(struct libusb_device *device)
+ {
+ 	SHOW_PROGRESS(output,"Get the current device configuration ...\n");
+ 	if (active_config != NULL) {
+ 		libusb_free_config_descriptor(active_config);
+ 		active_config = NULL;
+ 	}
+-	int ret = libusb_get_active_config_descriptor(dev, &active_config);
++	int ret = libusb_get_active_config_descriptor(device, &active_config);
+ 	if (ret < 0) {
+ 		SHOW_PROGRESS(output," Determining the active configuration failed (error %d). Abort\n", ret);
+ 		abortExit();

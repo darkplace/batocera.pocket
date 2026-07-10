@@ -1,0 +1,82 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Fri, 10 Jul 2026 00:00:00 +000
+Subject: [PATCH] y4mdenoise: fix template dependent region lookups
+
+GCC 15 diagnoses member lookups in Region2D's template bodies that try
+to call concrete region methods through Region2D itself. Region2D only
+documents that interface in comments; the actual Begin/End and
+DoesContainPoint implementations live in the concrete REGION type passed
+to these debug helpers.
+
+Cast to REGION before calling those implementation methods.
+
+Signed-off-by: suckbluefrog <suckbluefrog@proton.me>
+---
+ y4mdenoise/Region2D.hh | 14 ++++++++------
+ 1 file changed, 8 insertions(+), 6 deletions(-)
+
+diff --git a/y4mdenoise/Region2D.hh b/y4mdenoise/Region2D.hh
+--- a/y4mdenoise/Region2D.hh
++++ b/y4mdenoise/Region2D.hh
+@@ -436,7 +436,7 @@ Region2D<INDEX,SIZE>::UnionDebug (Status_t &a_reStatus, INDEX a_tnY,
+ 		{
+ 			if (!((rHere.m_tnY == a_tnY
+ 				&& (tnX >= a_tnXStart && tnX < a_tnXEnd))
+-			|| this->DoesContainPoint (rHere.m_tnY, tnX)))
++			|| static_cast<REGION *>(this)->DoesContainPoint (rHere.m_tnY, tnX)))
+ 				goto error;
+ 		}
+ 	}
+@@ -443,7 +443,8 @@ Region2D<INDEX,SIZE>::UnionDebug (Status_t &a_reStatus, INDEX a_tnY,
+ 
+ 	// Loop through every point in the original region, make sure
+ 	// it's in the result.
+-	for (itHere = this->Begin(); itHere != this->End(); ++itHere)
++	for (itHere = static_cast<REGION *>(this)->Begin();
++		 itHere != static_cast<REGION *>(this)->End(); ++itHere)
+ 	{
+ 		const Extent &rHere = *itHere;
+ 		for (tnX = rHere.m_tnXStart; tnX < rHere.m_tnXEnd; ++tnX)
+@@ -546,14 +547,16 @@ Region2D<INDEX,SIZE>::UnionDebug (Status_t &a_reStatus,
+ 		for (tnX = rHere.m_tnXStart; tnX < rHere.m_tnXEnd; ++tnX)
+ 		{
+ 			if (!a_rOther.DoesContainPoint (rHere.m_tnY, tnX)
+-			&& !this->DoesContainPoint (rHere.m_tnY, tnX))
++			&& !static_cast<REGION *>(this)->DoesContainPoint
++					(rHere.m_tnY, tnX))
+ 				goto error;
+ 		}
+ 	}
+ 
+ 	// Loop through every point in the first input region, make sure
+ 	// it's in the result.
+-	for (itHere = this->Begin(); itHere != this->End(); ++itHere)
++	for (itHere = static_cast<REGION *>(this)->Begin();
++		 itHere != static_cast<REGION *>(this)->End(); ++itHere)
+ 	{
+ 		const Extent &rHere = *itHere;
+ 		for (tnX = rHere.m_tnXStart; tnX < rHere.m_tnXEnd; ++tnX)
+@@ -632,8 +635,9 @@ Region2D<INDEX,SIZE>::SubtractDebug (Status_t &a_reStatus,
+ 	{
+ 		const Extent &rHere = *itHereT;
+ 		for (tnX = rHere.m_tnXStart; tnX < rHere.m_tnXEnd; ++tnX)
+ 		{
+-			if (!(this->DoesContainPoint (rHere.m_tnY, tnX)
++			if (!(static_cast<REGION *>(this)->DoesContainPoint
++					(rHere.m_tnY, tnX)
+ 			&& !a_rOther.DoesContainPoint (rHere.m_tnY, tnX)))
+ 				goto error;
+ 		}
+@@ -640,7 +643,8 @@ Region2D<INDEX,SIZE>::SubtractDebug (Status_t &a_reStatus,
+ 
+ 	// Loop through every point in the first input region, and if it's
+ 	// not in the second input region, make sure it's in the result.
+-	for (itHere = this->Begin(); itHere != this->End(); ++itHere)
++	for (itHere = static_cast<REGION *>(this)->Begin();
++		 itHere != static_cast<REGION *>(this)->End(); ++itHere)
+ 	{
+ 		const Extent &rHere = *itHere;
+ 		for (tnX = rHere.m_tnXStart; tnX < rHere.m_tnXEnd; ++tnX)
+-- 
+2.50.0

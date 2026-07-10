@@ -1,0 +1,73 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Fri, 10 Jul 2026 00:00:00 +000
+Subject: [PATCH] pipewire: use pw_registry type for newer PipeWire
+
+PipeWire now exposes pw_core_get_registry() and
+pw_registry_add_listener() with struct pw_registry *. xdg-desktop-portal
+1.18 still stores the registry as struct pw_proxy *, which fails with
+newer headers under GCC 15:
+
+  error: passing argument 1 of 'pw_registry_add_listener' from incompatible
+  pointer type
+
+Store the registry with the public type while keeping destruction through
+pw_proxy_destroy(), as PipeWire users still do for the client-side proxy.
+
+Signed-off-by: suckbluefrog <suckbluefrog@proton.me>
+---
+ src/pipewire.c | 9 +++++++--
+ src/pipewire.h | 2 +-
+ 2 files changed, 8 insertions(+), 3 deletions(-)
+
+diff --git a/src/pipewire.c b/src/pipewire.c
+index 4cc13e8..43ce415 100644
+--- a/src/pipewire.c
++++ b/src/pipewire.c
+@@ -176,6 +176,12 @@ static GSourceFuncs pipewire_source_funcs =
+   pipewire_loop_source_finalize
+ };
+ 
++static void
++registry_proxy_destroy (struct pw_registry *registry)
++{
++  pw_proxy_destroy ((struct pw_proxy *) registry);
++}
++
+ void
+ pipewire_remote_destroy (PipeWireRemote *remote)
+ {
+@@ -189,7 +195,7 @@ pipewire_remote_destroy (PipeWireRemote *remote)
+   /* This check is a workaround for older PW versions */
+   if (remote->registry)
+     spa_hook_remove (&remote->registry_listener);
+-  g_clear_pointer (&remote->registry, pw_proxy_destroy);
++  g_clear_pointer (&remote->registry, registry_proxy_destroy);
+   g_clear_pointer (&remote->globals, g_hash_table_destroy);
+   if (remote->core)
+     spa_hook_remove (&remote->core_listener);
+@@ -323,8 +329,7 @@ pipewire_remote_new_sync (struct pw_properties *pipewire_properties,
+                         &core_events,
+                         remote);
+ 
+-  remote->registry = (struct pw_proxy*) pw_core_get_registry (remote->core,
+-                                                              PW_VERSION_REGISTRY,
++  remote->registry = pw_core_get_registry (remote->core, PW_VERSION_REGISTRY,
+                                                               0);
+   pw_registry_add_listener (remote->registry,
+                             &remote->registry_listener,
+diff --git a/src/pipewire.h b/src/pipewire.h
+index 568ec19..5b4eb77 100644
+--- a/src/pipewire.h
++++ b/src/pipewire.h
+@@ -48,7 +48,7 @@ struct _PipeWireRemote
+ 
+   int sync_seq;
+ 
+-  struct pw_proxy *registry;
++  struct pw_registry *registry;
+   struct spa_hook registry_listener;
+ 
+   GHashTable *globals;
+-- 
+2.50.0

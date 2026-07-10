@@ -1,0 +1,13 @@
+diff --git a/src/floppy_ipf.c b/src/floppy_ipf.c
+index 3c7e65d..e3e9da5 100644
+--- a/src/floppy_ipf.c
++++ b/src/floppy_ipf.c
+@@ -15,6 +15,8 @@
+  */
+ const char floppy_ipf_fileid[] = "Hatari floppy_ipf.c";
+ 
++#include <ctype.h>
++
+ #include "main.h"
+ #include "file.h"
+ #include "floppy.h"

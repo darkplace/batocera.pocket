@@ -24,6 +24,7 @@ DEST_SHADPS4="${DEST_ROOT}/usr/bin/shadps4/shadps4"
 DEST_QTLAUNCHER="${DEST_ROOT}/usr/bin/shadps4/shadps4-qtlauncher"
 DEST_QTLAUNCHER_NATIVE="${DEST_ROOT}/usr/bin/shadps4/shadPS4QtLauncher"
 FEX_CONFIG_DIR="${TARGET_DIR}/usr/share/fex-emu/shadps4-fex"
+FEX_QTLAUNCHER_CONFIG_DIR="${TARGET_DIR}/usr/share/fex-emu/shadps4-fex-qtlauncher"
 LOG_DIR="${EXTERNAL_DIR}/output/build-logs"
 MANIFEST_FILE="${LOG_DIR}/${TARGET_LOWER}_shadps4_fex_rootfs_files.txt"
 
@@ -39,7 +40,8 @@ fi
 
 echo "Injecting x86-64-v3 shadPS4 FEX rootfs from ${GUEST_ROOT} to ${DEST_ROOT}"
 rm -rf "${DEST_ROOT}" || exit 1
-mkdir -p "${DEST_ROOT}" "${FEX_CONFIG_DIR}" "${LOG_DIR}" || exit 1
+rm -rf "${FEX_QTLAUNCHER_CONFIG_DIR}" || exit 1
+mkdir -p "${DEST_ROOT}" "${FEX_CONFIG_DIR}" "${FEX_QTLAUNCHER_CONFIG_DIR}" "${LOG_DIR}" || exit 1
 
 # Copy a complete enough guest rootfs for FEX dynamic linking while dropping
 # build/development payload that is not useful at runtime.
@@ -140,6 +142,29 @@ cat > "${FEX_CONFIG_DIR}/shadps4-fex.json" <<'EOF'
     "drm": 1,
     "asound": 1,
     "WaylandClient": 1
+  }
+}
+EOF
+
+# The Qt launcher fails under the game config because the local ThunksDB enables
+# the WaylandClient thunk. Keep the game path unchanged and run the launcher from
+# its own config directory without that thunk.
+cat > "${FEX_QTLAUNCHER_CONFIG_DIR}/shadps4-fex.json" <<'EOF'
+{
+  "Config": {
+    "RootFS": "/usr/share/batocera/apps/shadps4-fex-rootfs",
+    "SilentLog": "1",
+    "Multiblock": "1",
+    "TSOEnabled": "1",
+    "ThunkHostLibs": "/usr/lib/fex-emu/HostThunks",
+    "ThunkGuestLibs": "/usr/share/fex-emu/GuestThunks"
+  },
+  "ThunksDB": {
+    "EGL": 1,
+    "GL": 1,
+    "Vulkan": 1,
+    "drm": 1,
+    "asound": 1
   }
 }
 EOF

@@ -37,6 +37,10 @@ LIBSNDFILE_CONF_OPTS = \
 	--disable-alsa \
 	--disable-full-suite
 
+ifeq ($(BR2_TOOLCHAIN_GCC_AT_LEAST_15),y)
+LIBSNDFILE_CONF_ENV += CFLAGS="$(TARGET_CFLAGS) -std=gnu17"
+endif
+
 ifeq ($(BR2_PACKAGE_FLAC)$(BR2_PACKAGE_LIBVORBIS)$(BR2_PACKAGE_OPUS),yyy)
 LIBSNDFILE_DEPENDENCIES += flac host-pkgconf libvorbis opus
 LIBSNDFILE_CONF_OPTS += --enable-external-libs

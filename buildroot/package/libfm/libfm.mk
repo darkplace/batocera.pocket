@@ -11,6 +11,7 @@ LIBFM_DEPENDENCIES = menu-cache libglib2 cairo
 LIBFM_LICENSE = GPL-2.0+, LGPL-2.1+
 LIBFM_LICENSE_FILES = COPYING src/extra/fm-xml-file.c
 LIBFM_INSTALL_STAGING = YES
+LIBFM_CONF_ENV += CFLAGS="$(TARGET_CFLAGS) -std=gnu17"
 # We're patching src/modules/Makefile.am
 LIBFM_AUTORECONF = YES
 

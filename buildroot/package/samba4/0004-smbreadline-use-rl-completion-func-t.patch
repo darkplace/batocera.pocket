@@ -1,0 +1,51 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Fri, 10 Jul 2026 00:00:00 +000
+Subject: [PATCH] smbreadline: use rl_completion_func_t when available
+
+Modern readline declares rl_attempted_completion_function as an
+rl_completion_func_t pointer. Samba 4.20's compatibility wrapper checks
+for rl_completion_t and then falls back to the deprecated CPPFunction
+type, which has an incompatible prototype with current readline headers.
+
+Check for rl_completion_func_t and prefer it for the completion cast.
+
+Upstream: Not submitted
+Signed-off-by: suckbluefrog <suckbluefrog@proton.me>
+---
+ lib/replace/system/readline.h        | 2 ++
+ libcli/smbreadline/wscript_configure | 4 ++--
+ 2 files changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/lib/replace/system/readline.h b/lib/replace/system/readline.h
+--- a/lib/replace/system/readline.h
++++ b/lib/replace/system/readline.h
+@@ -46,7 +46,9 @@
+ #endif
+ 
+ #ifdef HAVE_NEW_LIBREADLINE
++#if defined(HAVE_RL_COMPLETION_FUNC_T)
++#  define RL_COMPLETION_CAST (rl_completion_func_t *)
+-#ifdef HAVE_CPPFUNCTION
++#elif defined(HAVE_CPPFUNCTION)
+ #  define RL_COMPLETION_CAST (CPPFunction *)
+ #elif defined(HAVE_RL_COMPLETION_T)
+ #  define RL_COMPLETION_CAST (rl_completion_t *)
+diff --git a/libcli/smbreadline/wscript_configure b/libcli/smbreadline/wscript_configure
+--- a/libcli/smbreadline/wscript_configure
++++ b/libcli/smbreadline/wscript_configure
+@@ -54,10 +54,10 @@ conf.CHECK_CODE('''
+ #    endif
+ #  endif
+ #endif
+-int main(void) {rl_completion_t f; return 0;}
++int main(void) {rl_completion_func_t f; return 0;}
+ ''',
+ 'HAVE_RL_COMPLETION_FUNC_T', execute=False, addmain=False,
+-msg='Checking for rl_completion_t')
++msg='Checking for rl_completion_func_t')
+ 
+ conf.CHECK_CODE('''
+ #ifdef HAVE_READLINE_READLINE_H
+-- 
+2.50.0

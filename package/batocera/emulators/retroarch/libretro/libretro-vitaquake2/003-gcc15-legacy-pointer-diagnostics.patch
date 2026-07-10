@@ -1,0 +1,13 @@
+diff --git a/Makefile b/Makefile
+index 9b47d45..121e703 100644
+--- a/Makefile
++++ b/Makefile
+@@ -295,7 +295,7 @@ else
+    CFLAGS   += -O3 -DNDEBUG
+ endif
+ 
+-CFLAGS   += -Wall -D__LIBRETRO__ $(fpic) -DREF_HARD_LINKED -DRELEASE -DGAME_HARD_LINKED -DOSTYPE=\"$(OSTYPE)\" -DARCH=\"$(ARCH)\" -fsigned-char
++CFLAGS   += -Wall -Wno-error=incompatible-pointer-types -D__LIBRETRO__ $(fpic) -DREF_HARD_LINKED -DRELEASE -DGAME_HARD_LINKED -DOSTYPE=\"$(OSTYPE)\" -DARCH=\"$(ARCH)\" -fsigned-char
+ 
+ ifeq ($(HAVE_OPENGL),1)
+ CFLAGS   += -DHAVE_OPENGL

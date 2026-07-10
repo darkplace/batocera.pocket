@@ -1,0 +1,36 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Fri, 10 Jul 2026 00:00:00 +000
+Subject: [PATCH] Cast video memory pointers returned through libretro API
+
+retro_get_memory_data returns byte-addressable memory as void *. PicoDrive's
+VRAM and CRAM arrays are stored as 16-bit words, so GCC 15 rejects assigning
+them directly to the local uint8_t pointer.
+
+Cast these two memory regions explicitly before returning them.
+
+Signed-off-by: suckbluefrog <suckbluefrog@proton.me>
+---
+ platform/libretro/libretro.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/platform/libretro/libretro.c b/platform/libretro/libretro.c
+index 6d8e7ef..dc008b2 100644
+--- a/platform/libretro/libretro.c
++++ b/platform/libretro/libretro.c
+@@ -1680,10 +1680,10 @@ void *retro_get_memory_data(unsigned type)
+             data = PicoMem.ram;
+          break;
+       case RETRO_MEMORY_VIDEO_RAM:
+-         data = PicoMem.vram;
++         data = (uint8_t *)PicoMem.vram;
+          break;
+       case 4:
+-         data = PicoMem.cram;
++         data = (uint8_t *)PicoMem.cram;
+          break;
+       default:
+          data = NULL;
+-- 
+2.50.0
+
