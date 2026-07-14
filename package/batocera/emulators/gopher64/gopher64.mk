@@ -24,6 +24,7 @@ GOPHER64_CARGO_ENV = \
 	FREETYPE2_INCLUDE_PATH="$(STAGING_DIR)/usr/include/freetype2" \
 	GOPHER64_GIT_HASH="$(GOPHER64_VERSION)" \
 	PKG_CONFIG_ALLOW_CROSS=1 \
+	RA_HARDCORE="true" \
 	RUSTFLAGS="-A unpredictable_function_pointer_comparisons -C link-arg=-ldrm -C link-arg=-lgbm -C link-arg=-lasound -C link-arg=-lvulkan -C link-arg=-lvolk -C link-arg=-lfreetype" \
 	SKIA_GN_ARGS='target_os="linux" target_cpu="$(GOPHER64_SKIA_TARGET_CPU)" cc="$(TARGET_CC)" cxx="$(TARGET_CXX)" skia_system_freetype2_include_path="$(STAGING_DIR)/usr/include/freetype2" extra_cflags=[] extra_asmflags=[]'
 

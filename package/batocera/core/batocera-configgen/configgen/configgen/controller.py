@@ -43,9 +43,11 @@ _DEFAULT_SDL_MAPPING: Final = {
     'hotkey': 'guide'
 }
 
-_ODIN3_PADDLE_KEY_CODES: Final = {
-    'paddle1': 309,  # BTN_Z, left rear paddle
-    'paddle2': 306,  # BTN_C, right rear paddle
+_ODIN3_PADDLE_KEY_CODE_CANDIDATES: Final = {
+    # Prefer the append-only codes used by new kernels. BTN_C/BTN_Z keep
+    # configgen compatible with the first live test image.
+    'paddle1': (708, 306),  # BTN_TRIGGER_HAPPY5 / BTN_C, right rear paddle
+    'paddle2': (710, 309),  # BTN_TRIGGER_HAPPY7 / BTN_Z, left rear paddle
 }
 
 
@@ -144,12 +146,12 @@ class Controller:
 
     def __post_init__(self, inputs_: InputMapping | Iterable[tuple[str, Input]] | None, /) -> None:
         self.inputs = dict(inputs_) if inputs_ is not None else {}
-        self.__add_odin3_paddle_inputs()
+        self.__normalize_odin3_button_inputs()
 
     def replace(self, /, **changes: Unpack[_ControllerChanges]) -> Self:
         return replace(self, **changes, inputs_={name: input.replace() for name, input in self.inputs.items()})
 
-    def __add_odin3_paddle_inputs(self) -> None:
+    def __normalize_odin3_button_inputs(self) -> None:
         if self.type != 'joystick' or self.real_name != 'AYN Odin3 Gamepad':
             return
 
@@ -160,10 +162,33 @@ class Controller:
         except (ImportError, OSError):
             return
 
-        key_codes = set(caps.get(evdev.ecodes.EV_KEY, ()))
-        for name, code in _ODIN3_PADDLE_KEY_CODES.items():
-            if name not in self.inputs and code in key_codes:
-                self.inputs[name] = Input(name=name, type='button', id='', value='1', code=str(code))
+        key_codes = sorted(set(caps.get(evdev.ecodes.EV_KEY, ())))
+        button_ids = {code: str(index) for index, code in enumerate(key_codes)}
+
+        # SDL numbers evdev buttons in ascending key-code order. Reconcile the
+        # embedded profile by code so configgen also handles the initial
+        # BTN_C/BTN_Z test kernel, where the paddles shifted existing IDs.
+        for name, input_ in tuple(self.inputs.items()):
+            if input_.type != 'button' or not input_.code:
+                continue
+            try:
+                code = int(input_.code)
+            except (TypeError, ValueError):
+                continue
+            if (button_id := button_ids.get(code)) is not None and input_.id != button_id:
+                self.inputs[name] = input_.replace(id=button_id)
+
+        for name, candidates in _ODIN3_PADDLE_KEY_CODE_CANDIDATES.items():
+            if name in self.inputs:
+                continue
+            if (code := next((code for code in candidates if code in button_ids), None)) is not None:
+                self.inputs[name] = Input(
+                    name=name,
+                    type='button',
+                    id=button_ids[code],
+                    value='1',
+                    code=str(code),
+                )
 
     def generate_sdl_game_db_line(self, sdl_mapping: Mapping[str, str] = _DEFAULT_SDL_MAPPING, /, ignore_buttons: list[str] | None = None) -> str:
         """Returns an SDL_GAMECONTROLLERCONFIG-formatted string for the given configuration."""

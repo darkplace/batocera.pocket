@@ -1,0 +1,37 @@
+Odin 3 Qualcomm Sensor Core data
+
+The sensor registry inputs in this directory were recovered from the stock
+Odin 3 Android BSP. They select the CQ8725S/Pakala QMI8658 profile while
+leaving calibration state writable and persistent under /userdata.
+
+Stock ADSP firmware revision: LPAIDSP.HT.1.1-01147.1-PAKALA-1
+SoC ID: 706
+
+Runtime path
+------------
+
+The ADSP/QSH firmware owns the QMI8658. hexagonrpcd exposes the QSH file
+services, libqmi/libssc receives SSC reports over QRTR, and ssccli provides a
+raw accelerometer/gyroscope smoke test. The generated registry and learned
+per-unit calibration live under /userdata/system/qcom-sensors/odin3 and are
+never overwritten automatically.
+
+Run `batocera-qcom-sensors-test 5` on an Odin 3 to validate both streams.
+
+Future emulator attachment points
+---------------------------------
+
+Batocera continues to use evmapy for its normal controller mapping. No input
+daemon or emulator hook is enabled by this bring-up.
+
+The least invasive follow-up is a launch-scoped libssc bridge with two optional
+outputs:
+
+* DSU/Cemuhook UDP on localhost for Cemu and Azahar. Their motion source is
+  separate from their normal SDL button source, so evmapy need not be replaced.
+* A uinput motion-only device with INPUT_PROP_ACCELEROMETER, ABS_X/Y/Z for
+  acceleration and ABS_RX/RY/RZ for angular velocity. RPCS3 already accepts a
+  separate evdev "buddy device" and Dolphin has equivalent evdev motion maps.
+
+Configgen should start that bridge only for a motion-enabled game, configure
+the corresponding motion source, and stop the bridge on emulator exit.

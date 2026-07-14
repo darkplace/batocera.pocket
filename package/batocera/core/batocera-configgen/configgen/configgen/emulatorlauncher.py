@@ -380,7 +380,7 @@ def start_rom(args: argparse.Namespace, maxnbplayers: int, rom: Path, original_r
                 if args.systemname == "steam" and cpu_limit_adaptive:
                     addCpuLimitSteamGamescopeStats(cmd)
                 if args.systemname == "steam":
-                    disableMangoHud(cmd)
+                    stripSteamMangoHudWrapper(cmd)
 
                 hud_level = getHudLevel(system)
                 disable_mangohud = str(cmd.env.get("DISABLE_MANGOHUD", "")).lower() in ("1", "true", "yes")
@@ -773,11 +773,12 @@ def addCpuLimitSteamGamescopeStats(cmd: Command) -> None:
     cmd.env["BATOCERA_STEAM_GS_STATS_PATH"] = str(CPU_LIMIT_GAMESCOPE_FPS_PIPE)
 
 
-def disableMangoHud(cmd: Command) -> None:
+def stripSteamMangoHudWrapper(cmd: Command) -> None:
+    # Steam's Gamescope MangoApp is controlled by BATOCERA_STEAM_GS_MANGOAPP.
+    # Strip only a generic MangoHud wrapper inherited from the launcher so it
+    # cannot replace Steam's config with the adaptive CPU collector's hidden
+    # /var/run/hud.config.
     cmd.env["DISABLE_MANGOHUD"] = "1"
-    cmd.env["BATOCERA_STEAM_FORCE_DISABLE_MANGOAPP"] = "1"
-    cmd.env["BATOCERA_STEAM_GS_MANGOAPP"] = "0"
-    cmd.env["BATOCERA_STEAM_GS_MANGOAPP_LEVEL"] = "0"
     stripMangoHud(cmd.array, cmd.env)
 
 

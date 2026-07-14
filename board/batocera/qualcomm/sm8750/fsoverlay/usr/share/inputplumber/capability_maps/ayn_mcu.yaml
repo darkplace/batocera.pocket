@@ -138,7 +138,7 @@ mapping:
     source_events:
       - evdev:
           event_type: KEY
-          event_code: BTN_C
+          event_code: BTN_TRIGGER_HAPPY5
           value_type: button
     target_event:
       gamepad:
@@ -148,7 +148,7 @@ mapping:
     source_events:
       - evdev:
           event_type: KEY
-          event_code: BTN_Z
+          event_code: BTN_TRIGGER_HAPPY7
           value_type: button
     target_event:
       gamepad:

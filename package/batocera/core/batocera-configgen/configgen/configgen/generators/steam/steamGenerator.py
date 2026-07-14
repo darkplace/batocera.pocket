@@ -220,7 +220,6 @@ class SteamGenerator(Generator):
         steam_user = _normalize_steam_user(system.config.get_str("steam_user", "auto"))
         steam_gamepadui = system.config.get_bool("steam_gamepadui", True, return_values=("1", "0"))
         use_gamescope = system.config.get_bool("gamescope", True)
-        default_mangoapp = False
 
         if normalized_mode_override is not None or normalized_core is not None:
             if mode == "desktop":
@@ -247,6 +246,8 @@ class SteamGenerator(Generator):
         if is_aarch64 and mode != "steamos" and normalized_gamescope is None:
             use_gamescope = False
 
+        steam_mangoapp_control = is_aarch64 and mode == "steamos" and use_gamescope
+
         if is_aarch64 and mode == "steamos" and use_gamescope and not command_override:
             commandArray = ["steam-direct-session.sh"]
             if gameId is not None:
@@ -257,10 +258,13 @@ class SteamGenerator(Generator):
         if system.config.get_bool("steam_noshaders", False):
             steam_extra_args = _append_unique_arg(steam_extra_args, "-noshaders")
         hud_level = _normalize_hud_level(system.config.get_str("hud_level", ""))
-        mangoapp_enabled = system.config.get_bool("gamescope_mangoapp", default_mangoapp)
+        mangoapp_requested = system.config.get_bool("gamescope_mangoapp", False)
         if hud_level is not None:
-            mangoapp_enabled = hud_level > 0
-        mangoapp_level = hud_level if hud_level is not None else (2 if mangoapp_enabled else 0)
+            mangoapp_requested = hud_level > 0
+        # Native ARM SteamOS needs MangoApp running even when the Batocera HUD
+        # level is zero so Steam's own performance-overlay slider can unhide it.
+        mangoapp_enabled = steam_mangoapp_control or mangoapp_requested
+        mangoapp_level = hud_level if hud_level is not None else (2 if mangoapp_requested else 0)
 
         env = {
             "SDL_JOYSTICK_HIDAPI_XBOX": "0",

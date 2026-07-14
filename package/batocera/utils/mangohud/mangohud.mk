@@ -22,7 +22,7 @@ ifeq ($(BR2_PACKAGE_XSERVER_XORG_SERVER),y)
     MANGOHUD_DEPENDENCIES += xserver_xorg-server
 endif
 
-MANGOHUD_CONF_OPTS = -Dwith_xnvctrl=disabled
+MANGOHUD_CONF_OPTS = -Dwith_xnvctrl=disabled -Dmangohudctl=true
 
 ifeq ($(BR2_PACKAGE_XORG7):$(BR2_PACKAGE_LIBGLFW),y:y)
     MANGOHUD_DEPENDENCIES += libglfw

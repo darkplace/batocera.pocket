@@ -1,0 +1,138 @@
+#!/bin/sh
+
+STATIC_ROOT="/usr/share/qcom/sm8750/AYN/odin3"
+STATE_DIR="/userdata/system/qcom-sensors/odin3"
+RPC_ROOT="${STATE_DIR}/root"
+REGISTRY="${STATE_DIR}/registry"
+REGISTRY_MARKER="${STATE_DIR}/registry.version"
+REGISTRY_VERSION="1"
+ROOT_PID="/var/run/hexagonrpcd-adsp-root.pid"
+SENSORS_PID="/var/run/hexagonrpcd-adsp-sensors.pid"
+LOG_DIR="/userdata/system/logs"
+LOG_FILE="${LOG_DIR}/qcom-sensors.log"
+
+log_msg() {
+	echo "[$(date '+%F %T')] $*" >> "${LOG_FILE}"
+}
+
+registry_ready() {
+	registry_dir="${1:-${REGISTRY}}"
+	[ -s "${registry_dir}/qmi8658_0_platform.config" ] &&
+		[ -s "${registry_dir}/qmi8658_0_platform.orient" ]
+}
+
+prepare_registry() {
+	mkdir -p "${STATE_DIR}" "${REGISTRY}" "${RPC_ROOT}/sensors" \
+		"${RPC_ROOT}/dsp/adsp" "${LOG_DIR}"
+
+	ln -snf "${STATIC_ROOT}/sensors/config" "${RPC_ROOT}/sensors/config"
+	ln -snf "${STATIC_ROOT}/sensors/sns_reg.conf" "${RPC_ROOT}/sensors/sns_reg.conf"
+	ln -snf "${REGISTRY}" "${RPC_ROOT}/sensors/registry"
+	ln -snf /sys/devices/soc0 "${RPC_ROOT}/socinfo"
+
+	if [ "$(cat "${REGISTRY_MARKER}" 2>/dev/null)" = "${REGISTRY_VERSION}" ]; then
+		if registry_ready; then
+			return 0
+		fi
+		log_msg "Persistent sensor registry is incomplete; refusing to overwrite calibration"
+		return 1
+	fi
+
+	# Never replace an existing registry automatically: it contains calibration
+	# learned by this individual unit. Generate only when the state is new.
+	if find "${REGISTRY}" -mindepth 1 -maxdepth 1 -type f -print -quit 2>/dev/null | grep -q .; then
+		if registry_ready; then
+			log_msg "Existing unversioned sensor registry retained"
+			echo "${REGISTRY_VERSION}" > "${REGISTRY_MARKER}"
+			return 0
+		fi
+		log_msg "Existing unversioned sensor registry is incomplete; refusing to overwrite it"
+		return 1
+	fi
+
+	if [ -r /sys/devices/soc0/soc_id ]; then
+		soc_id=$(tr -d '\000\r\n ' < /sys/devices/soc0/soc_id)
+	else
+		soc_id=""
+	fi
+	[ -n "${soc_id}" ] || soc_id=706
+
+	registry_tmp="${STATE_DIR}/registry.new.$$"
+	rm -rf "${registry_tmp}"
+	mkdir -p "${registry_tmp}"
+
+	if ! sscregistrygen -p MTP -s "${soc_id}" \
+		"${STATIC_ROOT}/sensors/config" "${registry_tmp}" >> "${LOG_FILE}" 2>&1; then
+		rm -rf "${registry_tmp}"
+		log_msg "sscregistrygen failed"
+		return 1
+	fi
+
+	if ! registry_ready "${registry_tmp}"; then
+		rm -rf "${registry_tmp}"
+		log_msg "QMI8658 registry profile was not generated (SoC ${soc_id})"
+		return 1
+	fi
+
+	mv "${registry_tmp}"/* "${REGISTRY}"/
+	rmdir "${registry_tmp}"
+	echo "${REGISTRY_VERSION}" > "${REGISTRY_MARKER}"
+	log_msg "Generated persistent QMI8658 registry for SoC ${soc_id}"
+}
+
+wait_for_fastrpc() {
+	i=0
+	while [ ! -e /dev/fastrpc-adsp ] && [ "${i}" -lt 100 ]; do
+		sleep 0.1
+		i=$((i + 1))
+	done
+	[ -e /dev/fastrpc-adsp ]
+}
+
+start_daemons() {
+	[ -x /usr/bin/hexagonrpcd ] || return 0
+	prepare_registry || return 1
+
+	if ! wait_for_fastrpc; then
+		log_msg "/dev/fastrpc-adsp did not appear"
+		return 1
+	fi
+
+	start-stop-daemon --start --quiet --background --make-pidfile \
+		--pidfile "${ROOT_PID}" --exec /usr/bin/hexagonrpcd \
+		--output "${LOG_FILE}" -- \
+		-f /dev/fastrpc-adsp -d adsp -R "${RPC_ROOT}"
+
+	start-stop-daemon --start --quiet --background --make-pidfile \
+		--pidfile "${SENSORS_PID}" --exec /usr/bin/hexagonrpcd \
+		--output "${LOG_FILE}" -- \
+		-f /dev/fastrpc-adsp -d adsp -s -R "${RPC_ROOT}"
+
+	log_msg "Started ADSP RootPD and SensorsPD FastRPC listeners"
+}
+
+stop_daemons() {
+	start-stop-daemon --stop --quiet --remove-pidfile \
+		--pidfile "${SENSORS_PID}" --retry TERM/3/KILL/2 || true
+	start-stop-daemon --stop --quiet --remove-pidfile \
+		--pidfile "${ROOT_PID}" --retry TERM/3/KILL/2 || true
+}
+
+case "${1:-}" in
+	start)
+		start_daemons
+		;;
+	stop)
+		stop_daemons
+		;;
+	restart)
+		stop_daemons
+		start_daemons
+		;;
+	*)
+		echo "Usage: $0 {start|stop|restart}" >&2
+		exit 1
+		;;
+esac
+
+exit $?

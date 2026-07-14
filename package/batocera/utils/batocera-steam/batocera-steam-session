@@ -1146,8 +1146,51 @@ aarch64_host() {
     return 1
 }
 
+strip_mangohud_loader_entries() {
+    local name="$1"
+    local value
+    local item
+    local filtered=""
+
+    value="$(printenv "${name}" 2>/dev/null || true)"
+    [[ -n "${value}" ]] || return 0
+    value="${value//:/ }"
+    for item in ${value}; do
+        case "${item,,}" in
+            *mangohud*|*mangoapp*)
+                continue
+                ;;
+        esac
+        filtered+="${filtered:+:}${item}"
+    done
+
+    if [[ -n "${filtered}" ]]; then
+        printf -v "${name}" '%s' "${filtered}"
+        export "${name}"
+    else
+        unset "${name}"
+    fi
+}
+
+sanitize_inherited_mangohud_environment() {
+    local inherited=0
+
+    if [[ -n "${MANGOHUD:-}${MANGOHUD_CONFIG:-}${MANGOHUD_CONFIGFILE:-}${MANGOHUD_DLSYM:-}${MANGOAPP_CONFIG:-}" ]] ||
+       [[ "${LD_PRELOAD:-}${LD_AUDIT:-}" == *[Mm]ango[Hh]ud* ]]; then
+        inherited=1
+    fi
+
+    unset MANGOHUD MANGOHUD_CONFIG MANGOHUD_CONFIGFILE MANGOHUD_DLSYM MANGOAPP_CONFIG
+    strip_mangohud_loader_entries LD_PRELOAD
+    strip_mangohud_loader_entries LD_AUDIT
+
+    if [[ "${inherited}" == "1" ]]; then
+        echo "Steam gamescope: discarded inherited generic MangoHud environment." >> "${log}"
+    fi
+}
+
 prepare_mangoapp_config() {
-    local config_path level
+    local config_path level preset
     local visible="${BATOCERA_STEAM_GS_MANGOAPP_VISIBLE:-auto}"
 
     level="${BATOCERA_STEAM_GS_MANGOAPP_LEVEL:-}"
@@ -1178,60 +1221,34 @@ prepare_mangoapp_config() {
             ;;
     esac
 
-    config_path="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/batocera-steam-mangoapp.conf"
+    # Steam writes its performance-overlay preset here and then invokes
+    # `mangohudctl toggle reload_config`. MangoApp must read that same file;
+    # pointing it at a private runtime file leaves the slider writing and
+    # reloading a different configuration, permanently preserving no_display.
+    config_path="${STEAM_ROOT:-${HOME}/.local/share/Steam}/config/mangohud.conf"
     mkdir -p "$(dirname "${config_path}")" 2>/dev/null || true
-    {
-        printf '%s\n' "control=mangohud"
-        printf '%s\n' "mangoapp_steam"
-        printf '%s\n' "fsr_steam_sharpness=5"
-        printf '%s\n' "preset=2"
-        printf '%s\n' "legacy_layout=0"
+    if [[ ! -s "${config_path}" ]]; then
         case "${level}" in
+            0)
+                preset=0
+                ;;
             1)
-                printf '%s\n' "background_alpha=0"
-                printf '%s\n' "fps=1"
+                preset=1
                 ;;
             2)
-                printf '%s\n' "position=top-left"
-                printf '%s\n' "background_alpha=0.35"
-                printf '%s\n' "horizontal=1"
-                printf '%s\n' "hud_no_margin=1"
-                printf '%s\n' "fps=1"
-                printf '%s\n' "frame_timing=1"
-                printf '%s\n' "cpu_stats=1"
-                printf '%s\n' "gpu_stats=1"
-                printf '%s\n' "ram=1"
-                printf '%s\n' "battery=1"
+                preset=2
                 ;;
-            3)
-                printf '%s\n' "background_alpha=0.75"
-                printf '%s\n' "fps=1"
-                printf '%s\n' "frame_timing=1"
-                printf '%s\n' "cpu_stats=1"
-                printf '%s\n' "cpu_temp=1"
-                printf '%s\n' "gpu_stats=1"
-                printf '%s\n' "gpu_temp=1"
-                printf '%s\n' "ram=1"
-                ;;
-            *)
-                printf '%s\n' "background_alpha=0.9"
-                printf '%s\n' "fps=1"
-                printf '%s\n' "frame_timing=1"
-                printf '%s\n' "frametime=1"
-                printf '%s\n' "cpu_stats=1"
-                printf '%s\n' "cpu_temp=1"
-                printf '%s\n' "core_load=1"
-                printf '%s\n' "gpu_stats=1"
-                printf '%s\n' "gpu_temp=1"
-                printf '%s\n' "gpu_name=1"
-                printf '%s\n' "engine_version=1"
-                printf '%s\n' "vulkan_driver=1"
-                printf '%s\n' "resolution=1"
-                printf '%s\n' "ram=1"
-                printf '%s\n' "battery=1"
+            3|4)
+                preset=4
                 ;;
         esac
-    } > "${config_path}" || return 0
+        {
+            printf '%s\n' "control=mangohud"
+            printf '%s\n' "fsr_steam_sharpness=5"
+            printf '%s\n' "nis_steam_sharpness=10"
+            printf 'preset=%s\n' "${preset}"
+        } > "${config_path}" || return 0
+    fi
 
     export MANGOHUD_CONFIGFILE="${config_path}"
     echo "Steam MangoApp config: ${config_path} (level ${level})" >> "${log}"
@@ -1333,6 +1350,7 @@ if command -v gamescope >/dev/null 2>&1 && [[ "${BATOCERA_STEAM_USE_GAMESCOPE:-1
     use_gamescope_icd=0
     gs_env=()
     gamescope_cmd=()
+    sanitize_inherited_mangohud_environment
 
     if [[ "${BATOCERA_STEAM_GS_USE_COMPAT_ICD:-1}" != "0" && -f "${gamescope_icd}" ]]; then
         if [[ -x /usr/bin/batocera-steam-gamescope-child ]]; then
@@ -1389,6 +1407,7 @@ if command -v gamescope >/dev/null 2>&1 && [[ "${BATOCERA_STEAM_USE_GAMESCOPE:-1
         append_gamescope_flag "--force-composition-pipeline" "--force-composition"
     fi
 
+    prepare_mangoapp_config
     if [[ "${BATOCERA_STEAM_GS_MANGOAPP:-0}" != "0" || -n "${MANGOHUD_CONFIGFILE:-}" || "${MANGOHUD:-0}" == "1" ]]; then
         append_gamescope_flag "--mangoapp"
     fi
@@ -1451,7 +1470,6 @@ if command -v gamescope >/dev/null 2>&1 && [[ "${BATOCERA_STEAM_USE_GAMESCOPE:-1
         export GAMESCOPE_FAKE_OUTPUT_MM="${BATOCERA_STEAM_GS_FAKE_OUTPUT_MM:-508x286}"
     fi
 
-    prepare_mangoapp_config
     echo "Steam gamescope args: ${gs_args[*]} fake_output_mm=${GAMESCOPE_FAKE_OUTPUT_MM:-unset}" >> "${log}"
     start_steam_install_callouts
     start_nightmode_watch

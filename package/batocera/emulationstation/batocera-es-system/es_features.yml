@@ -19390,7 +19390,8 @@ freej2me:
         5x: 5
         6x: 6
 gopher64:
-  features: []
+  features:
+  - cheevos
   shared:
   - powermode
   - cpu_max_freq
@@ -21015,38 +21016,163 @@ shadps4:
       choices:
         Enabled (Default): true
         Disabled: false
-    shadps4_hdr:
-      submenu: VIDEO
-      prompt: HDR
-      description: Enable High Dynamic Range if your display supports it.
+    shadps4_trophy_position:
+      submenu: SYSTEM
+      prompt: TROPHY MESSAGE POSITION
+      description: Choose where trophy notifications appear. This only applies when
+        trophy messages are enabled.
       choices:
-        Disabled: false
+        Right (Default): right
+        Left: left
+        Top: top
+        Bottom: bottom
+    shadps4_trophy_duration:
+      submenu: SYSTEM
+      prompt: TROPHY MESSAGE DURATION
+      description: Set how long each trophy notification remains on screen.
+      choices:
+        3 Seconds: 3
+        6 Seconds (Default): 6
+        10 Seconds: 10
+    shadps4_fsr:
+      submenu: GRAPHICS
+      prompt: FSR UPSCALING
+      description: Use AMD FidelityFX Super Resolution to upscale a game image that is
+        already below the display resolution. This can improve scaling quality, but it
+        does not lower the game's render resolution or unlock its FPS cap and adds a
+        small GPU cost.
+      choices:
+        Disabled (Default): false
+        Enabled: true
+    shadps4_rcas:
+      submenu: GRAPHICS
+      prompt: RCAS SHARPENING
+      description: Sharpen the FSR-upscaled image. It has no effect when FSR is
+        disabled and may add halos or emphasize image noise.
+      choices:
+        Disabled (Default): false
+        Enabled: true
+    shadps4_hdr:
+      submenu: GRAPHICS
+      prompt: HDR
+      description: Request HDR output from ShadPS4. Enable this only when the display
+        and compositor support HDR; otherwise brightness and colors may be incorrect.
+      choices:
+        Disabled (Default): false
+        Enabled: true
+    shadps4_present_mode:
+      submenu: DISPLAY
+      prompt: PRESENT MODE
+      description: Choose how completed frames reach the display. Mailbox favors low
+        latency without tearing, FIFO synchronizes every frame, and Immediate has the
+        lowest wait but can tear.
+      choices:
+        Mailbox (Default): Mailbox
+        FIFO / VSync: Fifo
+        Immediate / Allow Tearing: Immediate
+    shadps4_vblank_freq:
+      submenu: DISPLAY
+      prompt: VBLANK FREQUENCY
+      description: Set the emulated PS4 vertical-blank rate. 120 Hz can unlock higher
+        frame rates in compatible games, but unsupported games may run too fast or
+        develop timing problems. It does not bypass a hard-coded game frame-rate cap.
+      choices:
+        60 Hz (Default): 60
+        120 Hz: 120
+    shadps4_show_fps:
+      submenu: DISPLAY
+      prompt: FPS COUNTER
+      description: Show ShadPS4's on-screen frame-rate counter while a game is running.
+      choices:
+        Disabled (Default): false
         Enabled: true
     shadps4_ps4pro:
       submenu: SYSTEM
       prompt: PS4 PRO MODE
-      description: Report the emulated console as a PS4 Pro for games with Pro enhancements.
+      description: Report the emulated console as a PS4 Pro (Neo). Games with a Pro
+        profile may enable higher resolution or performance modes, sometimes with a
+        higher GPU cost.
       choices:
         Disabled (Default): false
         Enabled: true
     shadps4_show_splash:
       submenu: SYSTEM
       prompt: SHOW BOOT SPLASH
-      description: Show the PlayStation boot splash when supported by the game.
+      description: Show the PlayStation boot splash before a game starts when that
+        title supports it. This is cosmetic and does not change compatibility.
       choices:
         Disabled (Default): false
         Enabled: true
+    shadps4_motion_controls:
+      submenu: INPUT
+      prompt: MOTION CONTROLS
+      description: Pass gyroscope and accelerometer data from a supported controller
+        to PS4 games. This enables ShadPS4's motion path but does not create a gyro
+        source when the controller or input stack lacks one.
+      choices:
+        Enabled (Default): true
+        Disabled: false
     shadps4_copy_gpu_buffers:
-      submenu: RENDERING
+      submenu: ADVANCED
       prompt: COPY GPU BUFFERS
-      description: May fix missing graphics or effects at the cost of performance.
+      description: Make extra copies of GPU buffers for compatibility. This can fix
+        missing graphics or effects in some games, at the cost of memory bandwidth
+        and performance.
       choices:
         Disabled (Default): false
         Enabled: true
     shadps4_patch_shaders:
-      submenu: RENDERING
+      submenu: ADVANCED
       prompt: PATCH SHADERS
-      description: Apply shader patching. Recommended for compatibility unless a game regresses.
+      description: Apply game-specific shader patches recognized by ShadPS4. Keep this
+        enabled for compatibility, but disable it per game if a patch causes a visual
+        regression.
+      choices:
+        Enabled (Default): true
+        Disabled: false
+    shadps4_readbacks_mode:
+      submenu: ADVANCED
+      prompt: GPU READBACK MODE
+      description: Control how accurately the CPU reads data written by the GPU.
+        Relaxed or Precise can fix missing effects and other rendering errors in games
+        that need readbacks; Precise has the largest performance cost.
+      choices:
+        Disabled (Default): 0
+        Relaxed: 1
+        Precise: 2
+    shadps4_dma:
+      submenu: ADVANCED
+      prompt: DIRECT MEMORY ACCESS
+      description: Enable ShadPS4's direct-memory GPU path. It can fix rendering in
+        games that require it, but may increase memory pressure or expose driver
+        problems; leave it disabled unless a game needs it.
+      choices:
+        Disabled (Default): false
+        Enabled: true
+    shadps4_pipeline_cache:
+      submenu: ADVANCED
+      prompt: PIPELINE CACHE
+      description: Save and preload compiled Vulkan pipelines between launches to
+        reduce recurring shader stutter. It uses storage and may make startup longer
+        while a large cache is loaded.
+      choices:
+        Enabled (Default): true
+        Disabled: false
+    shadps4_pipeline_cache_archive:
+      submenu: ADVANCED
+      prompt: COMPRESS PIPELINE CACHE
+      description: Store each game's pipeline cache in one compressed archive instead
+        of many files. This reduces storage use and file count but adds CPU work while
+        loading and saving; it only matters when Pipeline Cache is enabled.
+      choices:
+        Disabled (Default): false
+        Enabled: true
+    shadps4_logging:
+      submenu: ADVANCED
+      prompt: EMULATOR LOGGING
+      description: Write ShadPS4's diagnostic log. Keep this enabled for troubleshooting
+        and useful crash reports; disabling it reduces storage writes but removes that
+        evidence.
       choices:
         Enabled (Default): true
         Disabled: false
@@ -21087,6 +21213,123 @@ shadps4:
         Turkish: 19
         Ukrainian: 30
         Vietnamese: 28
+    lsfg_vk:
+      archs_include:
+      - x86_64
+      - x86-64-v3
+      - qcs6490
+      - sm8250
+      - sm8550
+      - sm8750
+      submenu: LSFG-VK
+      prompt: LSFG-VK FRAME GENERATION
+      description: Inject the Lossless Scaling frame-generation Vulkan layer into
+        ShadPS4 to synthesize extra displayed frames. It requires Lossless.dll from a
+        purchased Lossless Scaling install and is most useful for a game holding a
+        stable 30 FPS cap with GPU headroom. It adds GPU load, artifacts, and latency;
+        it does not increase the game's simulation or input-sampling rate.
+      choices:
+        Disabled (Default): 0
+        Enabled: 1
+    lsfg_vk_dll:
+      archs_include:
+      - x86_64
+      - x86-64-v3
+      - qcs6490
+      - sm8250
+      - sm8550
+      - sm8750
+      submenu: LSFG-VK
+      prompt: LOSSLESS.DLL PATH
+      description: Select Lossless.dll from a purchased Lossless Scaling install. The
+        default location is /userdata/system/wine/lossless-scaling/Lossless.dll; the
+        LSFG-VK layer and architecture-specific library path are selected automatically.
+      preset: input
+    lsfg_vk_multiplier:
+      archs_include:
+      - x86_64
+      - x86-64-v3
+      - qcs6490
+      - sm8250
+      - sm8550
+      - sm8750
+      submenu: LSFG-VK
+      prompt: GENERATED FRAME MULTIPLIER
+      description: Set the number of displayed frames for each frame rendered by the
+        game. Higher multipliers increase apparent smoothness but require more GPU time
+        and make artifacts or input latency more noticeable.
+      choices:
+        2x (Default): 2
+        3x: 3
+        4x: 4
+    lsfg_vk_flow_scale:
+      archs_include:
+      - x86_64
+      - x86-64-v3
+      - qcs6490
+      - sm8250
+      - sm8550
+      - sm8750
+      submenu: LSFG-VK
+      prompt: OPTICAL FLOW QUALITY
+      description: Set the resolution used for motion estimation. 1.0 gives the best
+        quality at the highest GPU cost; lower values improve speed but can create more
+        artifacts. ARM handhelds default to 0.75.
+      choices:
+        1.0 (Default x86): '1.0'
+        0.75 (Default ARM): '0.75'
+        0.5: '0.5'
+        0.25: '0.25'
+    lsfg_vk_performance:
+      archs_include:
+      - x86_64
+      - x86-64-v3
+      - qcs6490
+      - sm8250
+      - sm8550
+      - sm8750
+      submenu: LSFG-VK
+      prompt: PERFORMANCE MODE
+      description: Use LSFG's faster, lower-cost processing path. It is enabled by
+        default on ARM handhelds and disabled by default on x86; disabling it may improve
+        generated-frame quality when GPU headroom is available.
+      choices:
+        Quality (Default x86): 0
+        Performance (Default ARM): 1
+    lsfg_vk_hdr:
+      archs_include:
+      - x86_64
+      - x86-64-v3
+      - qcs6490
+      - sm8250
+      - sm8550
+      - sm8750
+      submenu: LSFG-VK
+      prompt: LSFG HDR MODE
+      description: Process generated frames as HDR. Enable this only when ShadPS4 HDR
+        and HDR display output are also enabled; using it with SDR can produce incorrect
+        brightness or colors.
+      choices:
+        Disabled (Default): 0
+        Enabled: 1
+    lsfg_vk_present_mode:
+      archs_include:
+      - x86_64
+      - x86-64-v3
+      - qcs6490
+      - sm8250
+      - sm8550
+      - sm8750
+      submenu: LSFG-VK
+      prompt: LSFG PRESENT MODE
+      description: Override how LSFG presents generated frames. Auto keeps the layer's
+        default, FIFO avoids tearing, Mailbox favors lower latency, and Immediate can
+        tear but waits the least.
+      choices:
+        Auto (Default): ''
+        FIFO / VSync: fifo
+        Mailbox: mailbox
+        Immediate / Allow Tearing: immediate
 dhewm3:
   features:
   - padtokeyboard

@@ -19,6 +19,7 @@ if TYPE_CHECKING:
 _GOPHER64_CONFIG_DIR = CONFIGS / "gopher64"
 _GOPHER64_HOME_DIR = _GOPHER64_CONFIG_DIR / "home"
 _GOPHER64_CONFIG_FILE = _GOPHER64_CONFIG_DIR / "config.json"
+_GOPHER64_RETROACHIEVEMENTS_FILE = _GOPHER64_CONFIG_DIR / "retroachievements.json"
 _GOPHER64_DEFAULT_CONFIG = Path("/usr/share/gopher64/config.json")
 _GOPHER64_PROFILE_SIZE = 19
 _GOPHER64_BATOCERA_PROFILE = "batocera"
@@ -260,6 +261,25 @@ def _ensure_default_config() -> None:
         shutil.copy2(_GOPHER64_DEFAULT_CONFIG, _GOPHER64_CONFIG_FILE)
 
 
+def _write_retroachievements_config(config: Any) -> None:
+    enabled = config.get_bool("retroachievements", False)
+    retroachievements = {
+        "username": config.get_str("retroachievements.username", "").strip(),
+        "token": config.get_str("retroachievements.token", "").strip(),
+        "enabled": enabled,
+        "hardcore": enabled and config.get_bool("retroachievements.hardcore", False),
+        "challenge": enabled and config.get_bool("retroachievements.challenge_indicators", False),
+        "leaderboard": enabled and config.get_bool("retroachievements.leaderboards", False),
+        "rich_presence": enabled and config.get_bool("retroachievements.richpresence", False),
+    }
+
+    temporary_file = _GOPHER64_RETROACHIEVEMENTS_FILE.with_suffix(".json.tmp")
+    with temporary_file.open("w", encoding="utf-8") as config_file:
+        json.dump(retroachievements, config_file, indent=2)
+        config_file.write("\n")
+    temporary_file.replace(_GOPHER64_RETROACHIEVEMENTS_FILE)
+
+
 def _set_nested(mapping: dict[str, Any], *keys: str, value: Any) -> None:
     current = mapping
     for key in keys[:-1]:
@@ -298,6 +318,7 @@ class Gopher64Generator(Generator):
 
     def generate(self, system, rom, playersControllers, metadata, guns, wheels, gameResolution):
         _ensure_default_config()
+        _write_retroachievements_config(system.config)
 
         with _GOPHER64_CONFIG_FILE.open(encoding="utf-8") as config_file:
             config: dict[str, Any] = json.load(config_file)

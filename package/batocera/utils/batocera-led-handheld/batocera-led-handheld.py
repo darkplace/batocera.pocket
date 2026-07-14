@@ -41,6 +41,7 @@ CONFIG_FILE='/userdata/system/configs/leds.conf'
 BLOCK_FILE='/var/run/led-handheld-block'
 CHARGE_LIMIT_SETTING='system.battery.charge_limit'
 CHARGE_TARGET_REACHED_COLOR='0000FF'
+STATUS_LED_ENABLED_SETTING='led.status.enabled'
 ANIMATED_LED_MODES = ("rainbow", "chroma", "pulse")
 PID_FILE='/var/run/led-handheld.pid'
 
@@ -211,6 +212,13 @@ def charge_target_reached(led, bt, ch):
     return target < 100 and capacity >= target and charger_online()
 
 def get_status_colour_for_battery(led, ledconfig, bt, ch):
+    # A split battery/status LED is system-owned.  Third-party accent-LED tools
+    # must not be able to disable it by replacing leds.conf with an all-OFF map.
+    # Keep a deliberate native escape hatch for users who really do want only
+    # the status LED disabled while leaving the accent LEDs enabled.
+    if is_split_status_led_device(led) and not status_led_runtime_enabled():
+        return "OFF"
+
     if charge_target_reached(led, bt, ch):
         return CHARGE_TARGET_REACHED_COLOR
 
@@ -233,6 +241,18 @@ def leds_runtime_enabled():
         if val is not None and val.strip() == "0":
             return False
     return True
+
+def status_led_runtime_enabled():
+    enabled = batoled.batoconf(STATUS_LED_ENABLED_SETTING)
+    return enabled is None or enabled.strip() != "0"
+
+def config_disables_all_status_states(configlist):
+    values = []
+    for entry in configlist:
+        _threshold, separator, value = entry.partition("=")
+        if separator:
+            values.append(value.strip().upper())
+    return bool(values) and all(value == "OFF" for value in values)
 
 def current_led_mode():
     mode = batoled.batoconf("led.mode") or "static"
@@ -308,7 +328,17 @@ def led_check(led):
     ledconfig = default_led_config_for(led)
     tmpconfig = load_config(CONFIG_FILE)
     if len(tmpconfig) > 0:
-        ledconfig = tmpconfig
+        # leds.conf remains fully customizable, including OFF for individual
+        # battery ranges.  On devices with a separate system status LED, an
+        # all-OFF file is ignored unless led.status.enabled=0 was explicitly
+        # selected.  This prevents joystick/accent utilities from silently
+        # taking ownership of the battery indicator.
+        if (is_split_status_led_device(led)
+                and config_disables_all_status_states(tmpconfig)
+                and status_led_runtime_enabled()):
+            print(f"Ignoring all-OFF {CONFIG_FILE} for the system status LED")
+        else:
+            ledconfig = tmpconfig
     if (DEBUG):
         print(ledconfig)
     prevblock = 0

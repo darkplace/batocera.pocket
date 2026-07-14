@@ -14,7 +14,7 @@ LIBQMI_INSTALL_STAGING = YES
 LIBQMI_DEPENDENCIES = libglib2
 LIBQMI_CONF_OPTS = -Dman=false -Dfuzzer=false
 
-ifeq ($(BR2_PACKAGE_GOBJECT_INTROSPECTION),y)
+ifeq ($(BR2_PACKAGE_LIBQMI_INTROSPECTION),y)
 LIBQMI_DEPENDENCIES += gobject-introspection
 LIBQMI_CONF_OPTS += -Dintrospection=true
 else

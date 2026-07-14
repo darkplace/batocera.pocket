@@ -27,7 +27,7 @@ import toml
 from ... import Command
 from ...batoceraPaths import CONFIGS, configure_emulator, mkdir_if_not_exists
 from ...controller import generate_sdl_game_controller_config
-from ...utils import fex_sdl, vulkan
+from ...utils import fex_sdl, lsfg, vulkan
 from ..Generator import Generator
 
 if TYPE_CHECKING:
@@ -269,7 +269,20 @@ class shadPS4Generator(Generator):
         general_config["enableDiscordRPC"] = False
         general_config["userName"] = "Batocera"
         trophy_notifications_enabled = system.config.get_bool("shadps4_achievements", True)
+        trophy_notification_side = system.config.get_str("shadps4_trophy_position", "right")
+        if trophy_notification_side not in {"left", "right", "top", "bottom"}:
+            trophy_notification_side = "right"
+        trophy_notification_duration = system.config.get_int("shadps4_trophy_duration", 6)
+        trophy_notification_duration = min(max(trophy_notification_duration, 1), 10)
+        ps4_pro_enabled = system.config.get_bool("shadps4_ps4pro", False)
+        show_splash = system.config.get_bool("shadps4_show_splash", False)
+        show_fps = system.config.get_bool("shadps4_show_fps", False)
+        console_language = system.config.get_int("shadps4_console_lang", 1)
         general_config["isTrophyPopupDisabled"] = not trophy_notifications_enabled
+        general_config["trophyNotificationDuration"] = float(trophy_notification_duration)
+        general_config["sideTrophy"] = trophy_notification_side
+        general_config["isPS4Pro"] = ps4_pro_enabled
+        general_config["showSplash"] = show_splash
 
         _prepare_ps3_trophy_sound(userConfigPath)
 
@@ -279,6 +292,36 @@ class shadPS4Generator(Generator):
         gpu_config["FullscreenMode"] = "Fullscreen (Borderless)"
         gpu_config["screenWidth"] = int(gameResolution["width"])
         gpu_config["screenHeight"] = int(gameResolution["height"])
+
+        hdr_enabled = system.config.get_bool("shadps4_hdr", False)
+        copy_gpu_buffers = system.config.get_bool("shadps4_copy_gpu_buffers", False)
+        patch_shaders = system.config.get_bool("shadps4_patch_shaders", True)
+        fsr_enabled = system.config.get_bool("shadps4_fsr", False)
+        rcas_enabled = system.config.get_bool("shadps4_rcas", False)
+        present_mode = system.config.get_str("shadps4_present_mode", "Mailbox")
+        if present_mode not in {"Mailbox", "Fifo", "Immediate"}:
+            present_mode = "Mailbox"
+        vblank_frequency = system.config.get_int("shadps4_vblank_freq", 60)
+        if not 30 <= vblank_frequency <= 360:
+            vblank_frequency = 60
+        readbacks_mode = system.config.get_int("shadps4_readbacks_mode", 0)
+        if readbacks_mode not in {0, 1, 2}:
+            readbacks_mode = 0
+        direct_memory_access = system.config.get_bool("shadps4_dma", False)
+        pipeline_cache_enabled = system.config.get_bool("shadps4_pipeline_cache", True)
+        pipeline_cache_archived = system.config.get_bool("shadps4_pipeline_cache_archive", False)
+        motion_controls_enabled = system.config.get_bool("shadps4_motion_controls", True)
+        logging_enabled = system.config.get_bool("shadps4_logging", True)
+
+        gpu_config["allowHDR"] = hdr_enabled
+        gpu_config["copyGPUBuffers"] = copy_gpu_buffers
+        gpu_config["patchShaders"] = patch_shaders
+        gpu_config["fsrEnabled"] = fsr_enabled
+        gpu_config["rcasEnabled"] = rcas_enabled
+        gpu_config["presentMode"] = present_mode
+        gpu_config["vblankFrequency"] = vblank_frequency
+        gpu_config["readbacksMode"] = readbacks_mode
+        gpu_config["directMemoryAccess"] = direct_memory_access
 
         # GUI
         gui_config = config.setdefault("GUI", {})
@@ -292,21 +335,24 @@ class shadPS4Generator(Generator):
         gui_config["pkgDirs"] = [str(romDir)]
 
         # Vulkan - Set the detected GPU ID
-        config.setdefault("Vulkan", {})["gpuId"] = int(discrete_index)
+        vulkan_config = config.setdefault("Vulkan", {})
+        vulkan_config["gpuId"] = int(discrete_index)
+        vulkan_config["pipelineCacheEnable"] = pipeline_cache_enabled
+        vulkan_config["pipelineCacheArchive"] = pipeline_cache_archived
 
         input_config = config.setdefault("Input", {})
         input_config["useUnifiedInputConfig"] = True
         input_config["backgroundControllerInput"] = True
+        input_config["isMotionControlsEnabled"] = motion_controls_enabled
 
-        # Options
-        if system.config.get_bool("shadps4_hdr"):
-            gpu_config["allowHDR"] = True
-        else:
-            gpu_config["allowHDR"] = False
-        if system.config.get("shadps4_console_lang"):
-            config["Settings"]["consoleLanguage"] = int(system.config["shadps4_console_lang"])
-        else:
-            config["Settings"]["consoleLanguage"] = 1
+        debug_config = config.setdefault("Debug", {})
+        debug_config["showFpsCounter"] = show_fps
+
+        log_config = config.setdefault("Log", {})
+        log_config["enable"] = logging_enabled
+
+        settings_config = config.setdefault("Settings", {})
+        settings_config["consoleLanguage"] = console_language
 
         # Create necessary directories if they do not exist
         mkdir_if_not_exists(toml_file.parent)
@@ -319,11 +365,45 @@ class shadPS4Generator(Generator):
             json_file,
             {
                 "General": {
+                    "addon_install_dir": str(dlcPath),
+                    "discord_rpc_enabled": False,
+                    "home_dir": str(savesPath),
+                    "install_dirs": [{"enabled": True, "path": str(romDir)}],
+                    "neo_mode": ps4_pro_enabled,
+                    "show_fps_counter": show_fps,
+                    "show_splash": show_splash,
+                    "console_language": console_language,
+                    "trophy_notification_duration": float(trophy_notification_duration),
+                    "trophy_notification_side": trophy_notification_side,
                     "trophy_popup_disabled": not trophy_notifications_enabled,
                 },
                 "Input": {
-                    "use_unified_input_config": True,
                     "background_controller_input": True,
+                    "motion_controls_enabled": motion_controls_enabled,
+                    "use_unified_input_config": True,
+                },
+                "GPU": {
+                    "copy_gpu_buffers": copy_gpu_buffers,
+                    "direct_memory_access_enabled": direct_memory_access,
+                    "fsr_enabled": fsr_enabled,
+                    "full_screen": True,
+                    "full_screen_mode": "Fullscreen (Borderless)",
+                    "hdr_allowed": hdr_enabled,
+                    "patch_shaders": patch_shaders,
+                    "present_mode": present_mode,
+                    "rcas_enabled": rcas_enabled,
+                    "readbacks_mode": readbacks_mode,
+                    "vblank_frequency": vblank_frequency,
+                    "window_height": int(gameResolution["height"]),
+                    "window_width": int(gameResolution["width"]),
+                },
+                "Log": {
+                    "enable": logging_enabled,
+                },
+                "Vulkan": {
+                    "gpu_id": int(discrete_index),
+                    "pipeline_cache_archived": pipeline_cache_archived,
+                    "pipeline_cache_enabled": pipeline_cache_enabled,
                 },
             },
         )
@@ -369,6 +449,8 @@ class shadPS4Generator(Generator):
                 "SDL_JOYSTICK_DIRECTINPUT": "0",
                 "SDL_DIRECTINPUT_ENABLED": "0",
             })
+
+        lsfg.apply_lsfg_vk(system, environment)
 
         return Command.Command(
             array=commandArray,

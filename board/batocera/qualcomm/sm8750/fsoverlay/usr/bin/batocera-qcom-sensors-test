@@ -1,0 +1,70 @@
+#!/bin/sh
+
+seconds="${1:-5}"
+
+case "${seconds}" in
+	*[!0-9]*|'')
+		echo "Usage: $0 [seconds]" >&2
+		exit 2
+		;;
+esac
+
+failed=0
+tmp_prefix="/var/run/qcom-sensors-test.$$"
+trap 'rm -f "${tmp_prefix}."*' EXIT HUP INT TERM
+
+check_pidfile() {
+	name="$1"
+	pidfile="$2"
+	pid=$(cat "${pidfile}" 2>/dev/null)
+	if [ -n "${pid}" ] && kill -0 "${pid}" 2>/dev/null; then
+		echo "PASS: ${name} is running"
+	else
+		echo "FAIL: ${name} is not running"
+		failed=1
+	fi
+}
+
+test_stream() {
+	sensor="$1"
+	label="$2"
+	pattern="$3"
+	output="${tmp_prefix}.${sensor}"
+
+	echo "Testing ${label} stream for ${seconds}s..."
+	status=0
+	timeout "$((seconds + 5))" ssccli --sensor "${sensor}" --timeout "${seconds}" \
+		> "${output}" 2>&1 || status=$?
+	cat "${output}"
+	if [ "${status}" -eq 0 ] && grep -q "${pattern}" "${output}"; then
+		echo "PASS: ${label} stream produced samples"
+	else
+		echo "FAIL: ${label} stream did not produce samples"
+		failed=1
+	fi
+}
+
+if [ -e /dev/fastrpc-adsp ]; then
+	echo "PASS: /dev/fastrpc-adsp exists"
+else
+	echo "FAIL: /dev/fastrpc-adsp is missing"
+	failed=1
+fi
+
+check_pidfile "FastRPC RootPD listener" "/var/run/hexagonrpcd-adsp-root.pid"
+check_pidfile "FastRPC SensorsPD listener" "/var/run/hexagonrpcd-adsp-sensors.pid"
+
+registry="/userdata/system/qcom-sensors/odin3/registry/qmi8658_0_platform.config"
+if [ -s "${registry}" ]; then
+	echo "PASS: persistent QMI8658 registry exists"
+else
+	echo "FAIL: persistent QMI8658 registry is missing"
+	failed=1
+fi
+
+test_stream "accelerometer" "accelerometer" "Accelerometer sensor measurement:"
+test_stream "gyroscope" "gyroscope" "Gyroscope sensor measurement:"
+
+echo "INFO: controller/emulator motion bridging is intentionally not enabled"
+
+exit "${failed}"

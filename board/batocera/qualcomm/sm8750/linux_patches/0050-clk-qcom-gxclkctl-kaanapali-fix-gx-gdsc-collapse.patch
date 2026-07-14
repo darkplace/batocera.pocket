@@ -1,0 +1,70 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Mon, 13 Jul 2026 00:00:00 +000
+Subject: [PATCH] clk: qcom: gxclkctl-kaanapali: fix GX GDSC collapse
+
+GX GDSC is managed by GMU firmware during normal operation. Add a
+specialized power-off callback that only collapses the hardware domain
+when GMU recovery has set the synced_poweroff hint.
+---
+ drivers/clk/qcom/gdsc.c                 | 22 ++++++++++++++++++++++
+ drivers/clk/qcom/gdsc.h                 |  1 +
+ drivers/clk/qcom/gxclkctl-kaanapali.c  |  1 +
+ 3 files changed, 24 insertions(+)
+
+diff --git a/drivers/clk/qcom/gdsc.c b/drivers/clk/qcom/gdsc.c
+index 95aa071..ab5d741 100644
+--- a/drivers/clk/qcom/gdsc.c
++++ b/drivers/clk/qcom/gdsc.c
+@@ -675,3 +675,25 @@ int gdsc_gx_do_nothing_enable(struct generic_pm_domain *domain)
+ 	return ret;
+ }
+ EXPORT_SYMBOL_GPL(gdsc_gx_do_nothing_enable);
++
++/*
++ * GX GDSC is a special power domain. Normally, its disable sequence
++ * is managed by the GMU firmware, and high level OS must not attempt
++ * to disable it. The only exception is during GMU recovery, where the
++ * GMU driver can set GenPD's synced_poweroff flag to allow explicitly
++ * disabling GX GDSC in hardware.
++ */
++int gdsc_gx_disable(struct generic_pm_domain *domain)
++{
++	struct gdsc *sc = domain_to_gdsc(domain);
++
++	if (domain->synced_poweroff)
++		return gdsc_disable(domain);
++
++	/* Remove parent-supply placed in enable */
++	if (sc->rsupply)
++		return regulator_disable(sc->rsupply);
++
++	return 0;
++}
++EXPORT_SYMBOL_GPL(gdsc_gx_disable);
+diff --git a/drivers/clk/qcom/gdsc.h b/drivers/clk/qcom/gdsc.h
+index dd843e8..495daeb 100644
+--- a/drivers/clk/qcom/gdsc.h
++++ b/drivers/clk/qcom/gdsc.h
+@@ -88,6 +88,7 @@ int gdsc_register(struct gdsc_desc *desc, struct reset_controller_dev *,
+ 		  struct regmap *);
+ void gdsc_unregister(struct gdsc_desc *desc);
+ int gdsc_gx_do_nothing_enable(struct generic_pm_domain *domain);
++int gdsc_gx_disable(struct generic_pm_domain *domain);
+ #else
+ static inline int gdsc_register(struct gdsc_desc *desc,
+ 				struct reset_controller_dev *rcdev,
+diff --git a/drivers/clk/qcom/gxclkctl-kaanapali.c b/drivers/clk/qcom/gxclkctl-kaanapali.c
+index 40d8563..d7cf683 100644
+--- a/drivers/clk/qcom/gxclkctl-kaanapali.c
++++ b/drivers/clk/qcom/gxclkctl-kaanapali.c
+@@ -26,6 +26,7 @@ static struct gdsc gx_clkctl_gx_gdsc = {
+ 	.pd = {
+ 		.name = "gx_clkctl_gx_gdsc",
+ 		.power_on = gdsc_gx_do_nothing_enable,
++		.power_off = gdsc_gx_disable,
+ 	},
+ 	.pwrsts = PWRSTS_OFF_ON,
+ 	.flags = POLL_CFG_GDSCR | RETAIN_FF_ENABLE,
+-- 
+2.52.0

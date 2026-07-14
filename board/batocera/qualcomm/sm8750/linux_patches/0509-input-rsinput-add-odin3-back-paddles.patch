@@ -7,52 +7,51 @@ The Odin3 rear paddles are wired as GPIO inputs, not as part of the MCU
 status packet. Expose them through the same rsinput input device so ES and
 evmapy can treat hotkey+paddle as a same-controller combo.
 
-The key codes match the existing sm8750 InputPlumber source map:
-BTN_Z for the left paddle and BTN_C for the right paddle.
+AYN's Android keydetect driver requests legacy GPIOs 515 and 519. These
+are TLMM base 512 plus offsets 3 and 7, not PM8550 GPIOs 3 and 7. Using
+the PMIC GPIO controller causes the SPMI arbiter to reject configuration
+writes. Configure the SoC TLMM lines as active-low inputs instead.
+
+Use the same BTN_TRIGGER_HAPPY assignments SDL uses for the first right
+and left Xbox Elite paddles. These key codes sort after the existing
+rsinput buttons, so adding the paddles does not renumber every face,
+shoulder, menu, stick, and D-pad button exposed through SDL.
 ---
- arch/arm64/boot/dts/qcom/cq8725s-ayn-common.dtsi |  20 ++++-
+ arch/arm64/boot/dts/qcom/cq8725s-ayn-common.dtsi |   4 +-
+ arch/arm64/boot/dts/qcom/cq8725s-ayn-odin3.dts   |   7 ++
  drivers/input/joystick/rsinput.c                 | 118 +++++++++++++++++++++++
- 2 files changed, 137 insertions(+), 1 deletion(-)
+ 3 files changed, 128 insertions(+), 1 deletion(-)
 
 diff --git a/arch/arm64/boot/dts/qcom/cq8725s-ayn-common.dtsi b/arch/arm64/boot/dts/qcom/cq8725s-ayn-common.dtsi
-index 03f2c21..4a8fdff 100644
+index 03f2c21..596925e 100644
 --- a/arch/arm64/boot/dts/qcom/cq8725s-ayn-common.dtsi
 +++ b/arch/arm64/boot/dts/qcom/cq8725s-ayn-common.dtsi
-@@ -987,6 +987,22 @@
- 		input-enable;
- 		power-source = <1>;
- 	};
-+
-+	paddle_left_n: paddle-left-n-state {
-+		pins = "gpio3";
-+		function = "normal";
-+		bias-pull-up;
-+		input-enable;
-+		power-source = <1>;
-+	};
-+
-+	paddle_right_n: paddle-right-n-state {
-+		pins = "gpio7";
-+		function = "normal";
-+		bias-pull-up;
-+		input-enable;
-+		power-source = <1>;
-+	};
- };
- 
- &pm8550_pwm {
-@@ -1205,8 +1221,10 @@
+@@ -1205,8 +1205,10 @@
  
  		vdd-supply = <&vdd_mcu_3v3>;
  		enable-gpios = <&tlmm 85 GPIO_ACTIVE_HIGH>;
 -		pinctrl-0 = <&mcu_en_default>;
-+		paddle-left-gpios = <&pm8550_gpios 3 GPIO_ACTIVE_LOW>;
-+		paddle-right-gpios = <&pm8550_gpios 7 GPIO_ACTIVE_LOW>;
++		paddle-left-gpios = <&tlmm 3 GPIO_ACTIVE_LOW>;
++		paddle-right-gpios = <&tlmm 7 GPIO_ACTIVE_LOW>;
  		pinctrl-names = "default";
-+		pinctrl-0 = <&mcu_en_default>, <&paddle_left_n>, <&paddle_right_n>;
++		pinctrl-0 = <&mcu_en_default>, <&paddle_keys_default>;
  	};
  };
  
+diff --git a/arch/arm64/boot/dts/qcom/cq8725s-ayn-odin3.dts b/arch/arm64/boot/dts/qcom/cq8725s-ayn-odin3.dts
+index 8d92b2c..b9db339 100644
+--- a/arch/arm64/boot/dts/qcom/cq8725s-ayn-odin3.dts
++++ b/arch/arm64/boot/dts/qcom/cq8725s-ayn-odin3.dts
+@@ -369,1 +369,8 @@
++
++	paddle_keys_default: paddle-keys-default-state {
++		pins = "gpio3", "gpio7";
++		function = "gpio";
++		bias-pull-up;
++		drive-strength = <2>;
++	};
+ };
+
 diff --git a/drivers/input/joystick/rsinput.c b/drivers/input/joystick/rsinput.c
 index ca43a19..da75bc0 100644
 --- a/drivers/input/joystick/rsinput.c
@@ -69,8 +68,8 @@ index ca43a19..da75bc0 100644
  module_param(axis_righty_antideadzone,int,0660);
  
  #define INT_SIGN(X) ((X > 0) - (X < 0))
-+#define RSINPUT_PADDLE_LEFT_CODE BTN_Z
-+#define RSINPUT_PADDLE_RIGHT_CODE BTN_C
++#define RSINPUT_PADDLE_LEFT_CODE BTN_TRIGGER_HAPPY7
++#define RSINPUT_PADDLE_RIGHT_CODE BTN_TRIGGER_HAPPY5
 +
 +struct rsinput_driver;
 +

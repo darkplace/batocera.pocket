@@ -1,0 +1,192 @@
+#!/usr/bin/python3
+"""Reconcile packaged launchers without replacing user gamelist metadata."""
+
+from __future__ import annotations
+
+import copy
+import hashlib
+import os
+from pathlib import Path
+import shutil
+import stat
+import sys
+import xml.etree.ElementTree as ET
+
+
+LAUNCHER_DIRECTORIES = (
+    "roms/apps",
+    "roms/emulator",
+    "roms/heroic",
+    "roms/lutris",
+    "roms/steam",
+)
+ASSET_DIRECTORIES = ("roms/apps", "roms/emulator", "roms/steam")
+LAUNCHER_SUFFIXES = (".sh", ".steam", ".keys")
+ASSET_SUFFIXES = (".png", ".svg")
+STAMP_RELATIVE_PATH = Path("system/datainit-managed.sha256")
+FINGERPRINT_SCHEMA = b"batocera-datainit-managed-v1\0"
+
+
+def iter_managed_files(source_root: Path) -> list[Path]:
+    managed: set[Path] = set()
+
+    for relative_directory in LAUNCHER_DIRECTORIES:
+        directory = source_root / relative_directory
+        if not directory.is_dir():
+            continue
+        managed.update(
+            path
+            for path in directory.iterdir()
+            if path.is_file() and path.suffix.lower() in LAUNCHER_SUFFIXES
+        )
+
+    for relative_directory in ASSET_DIRECTORIES:
+        directory = source_root / relative_directory
+        if not directory.is_dir():
+            continue
+        for path in directory.rglob("*"):
+            if not path.is_file():
+                continue
+            relative_path = path.relative_to(directory)
+            if len(relative_path.parts) > 2:
+                continue
+            if path.name == "gamelist.xml" or path.suffix.lower() in ASSET_SUFFIXES:
+                managed.add(path)
+
+    return sorted(managed, key=lambda path: path.relative_to(source_root).as_posix())
+
+
+def file_digest(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def managed_fingerprint(source_root: Path, managed_files: list[Path]) -> str:
+    digest = hashlib.sha256(FINGERPRINT_SCHEMA)
+    for path in managed_files:
+        relative_path = path.relative_to(source_root).as_posix()
+        mode = stat.S_IMODE(path.stat().st_mode)
+        record = f"{mode:o} {file_digest(path)} {relative_path}\n"
+        digest.update(record.encode("utf-8"))
+    return digest.hexdigest()
+
+
+def atomic_copy(source: Path, destination: Path, mode: int) -> None:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary = destination.with_name(destination.name + ".datainit.tmp")
+    try:
+        shutil.copyfile(source, temporary)
+        temporary.chmod(mode)
+        os.replace(temporary, destination)
+    finally:
+        try:
+            temporary.unlink()
+        except FileNotFoundError:
+            pass
+
+
+def files_match(source: Path, destination: Path, mode: int) -> bool:
+    try:
+        if stat.S_IMODE(destination.stat().st_mode) != mode:
+            return False
+        return file_digest(source) == file_digest(destination)
+    except (FileNotFoundError, OSError):
+        return False
+
+
+def merge_gamelist(source: Path, destination: Path) -> None:
+    if not destination.exists():
+        atomic_copy(source, destination, 0o644)
+        return
+
+    source_tree = ET.parse(source)
+    destination_tree = ET.parse(destination)
+    source_root = source_tree.getroot()
+    destination_root = destination_tree.getroot()
+    if source_root.tag != "gameList" or destination_root.tag != "gameList":
+        raise ValueError(f"cannot merge non-gameList XML: {destination}")
+
+    known_paths = {
+        path
+        for game in destination_root.findall("game")
+        if (path := game.findtext("path"))
+    }
+    changed = False
+    for game in source_root.findall("game"):
+        path = game.findtext("path")
+        if path and path not in known_paths:
+            destination_root.append(copy.deepcopy(game))
+            known_paths.add(path)
+            changed = True
+
+    if not changed:
+        return
+
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary = destination.with_name(destination.name + ".datainit.tmp")
+    destination_mode = stat.S_IMODE(destination.stat().st_mode)
+    try:
+        ET.indent(destination_tree, space="  ")
+        destination_tree.write(temporary, encoding="utf-8", xml_declaration=True)
+        temporary.chmod(destination_mode)
+        os.replace(temporary, destination)
+    finally:
+        try:
+            temporary.unlink()
+        except FileNotFoundError:
+            pass
+
+
+def sync_managed(source_root: Path, destination_root: Path, force: bool) -> int:
+    managed_files = iter_managed_files(source_root)
+    fingerprint = managed_fingerprint(source_root, managed_files)
+    stamp = destination_root / STAMP_RELATIVE_PATH
+    try:
+        previous_fingerprint = stamp.read_text(encoding="utf-8").strip()
+    except OSError:
+        previous_fingerprint = ""
+
+    if not force and previous_fingerprint == fingerprint:
+        return 0
+
+    try:
+        for source in managed_files:
+            relative_path = source.relative_to(source_root)
+            destination = destination_root / relative_path
+            if source.name == "gamelist.xml":
+                merge_gamelist(source, destination)
+                continue
+
+            mode = 0o755 if source.suffix.lower() == ".sh" else 0o644
+            if not files_match(source, destination, mode):
+                print(f"Updating {destination}")
+                atomic_copy(source, destination, mode)
+
+        stamp.parent.mkdir(parents=True, exist_ok=True)
+        temporary_stamp = stamp.with_name(stamp.name + ".tmp")
+        temporary_stamp.write_text(fingerprint + "\n", encoding="utf-8")
+        temporary_stamp.chmod(0o644)
+        os.replace(temporary_stamp, stamp)
+    except (OSError, ET.ParseError, ValueError) as error:
+        print(f"Managed datainit sync failed: {error}", file=sys.stderr)
+        return 1
+
+    return 0
+
+
+def main() -> int:
+    if len(sys.argv) != 4:
+        print(f"usage: {sys.argv[0]} SOURCE_ROOT DESTINATION_ROOT FORCE", file=sys.stderr)
+        return 2
+
+    source_root = Path(sys.argv[1])
+    destination_root = Path(sys.argv[2])
+    force = sys.argv[3] == "1"
+    return sync_managed(source_root, destination_root, force)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

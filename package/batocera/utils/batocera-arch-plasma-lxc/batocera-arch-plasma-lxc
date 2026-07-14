@@ -12,6 +12,8 @@ LOG="${BATOCERA_ARCH_PLASMA_LOG:-/userdata/system/logs/arch-plasma-lxc.log}"
 HOST_RUNTIME_DIR="${BATOCERA_ARCH_PLASMA_RUNTIME:-/userdata/system/.runtime-arch-plasma}"
 HOST_RESOLV_CONF="${HOST_RUNTIME_DIR}/resolv.conf"
 CONTAINER_RUNTIME_DIR="/batocera-runtime"
+CONTAINER_HOST_LIB_DIR="/batocera-host/usr/lib"
+HOST_GPU_DIR="${HOST_RUNTIME_DIR}/host-gpu"
 HOST_USERDATA_DIR="${BATOCERA_ARCH_PLASMA_HOST_USERDATA:-/userdata}"
 CONTAINER_HOST_USERDATA="${BATOCERA_ARCH_PLASMA_CONTAINER_HOST_USERDATA:-/host/userdata}"
 ES_SERVICE="/etc/init.d/S31emulationstation"
@@ -322,7 +324,7 @@ ensure_runtime_dir() {
     chmod 700 "${HOST_RUNTIME_DIR}" 2>/dev/null || true
     chmod 755 "${HOST_RUNTIME_DIR}/pulse" 2>/dev/null || true
 
-    start_thor_touch_mouse_bridge
+    prepare_host_gpu_bridge
     sync_udev_database
 
     # Batocera's PipeWire runs as root. Widen the session sockets so the
@@ -330,6 +332,35 @@ ensure_runtime_dir() {
     chmod 777 /run/pipewire-0 /run/pipewire-0-manager /run/pulse/native 2>/dev/null || true
     chmod 777 /run/seatd.sock 2>/dev/null || true
     chmod -R a+rwX /dev/dri /dev/input /dev/snd 2>/dev/null || true
+}
+
+prepare_host_gpu_bridge() {
+    local source name linked=0
+
+    mkdir -p "${HOST_GPU_DIR}"
+    find "${HOST_GPU_DIR}" -mindepth 1 -maxdepth 1 -type l -delete 2>/dev/null || true
+
+    # Keep the container desktop on the exact Mesa userspace shipped with the
+    # Batocera kernel. Distribution Mesa can lag newly supported handheld GPUs
+    # even when its nominal version is newer.
+    for source in \
+        /usr/lib/libEGL_mesa.so.0 \
+        /usr/lib/libgbm.so.1 \
+        /usr/lib/libdrm.so.2 \
+        /usr/lib/libdrm_*.so.? \
+        /usr/lib/libgallium-*.so \
+        /usr/lib/libLLVM*.so* \
+        /usr/lib/libSPIRV-Tools*.so*
+    do
+        [ -e "${source}" ] || continue
+        name="$(basename "${source}")"
+        ln -sfn "${CONTAINER_HOST_LIB_DIR}/${name}" "${HOST_GPU_DIR}/${name}"
+        linked=1
+    done
+
+    if [ "${linked}" = "1" ]; then
+        log "prepared host Mesa bridge for ${PLASMA_LABEL}"
+    fi
 }
 
 touch_calibration_matrix() {
@@ -842,6 +873,15 @@ configure_lxc() {
     cat >> "${cfg}" <<EOF
 
 # BEGIN batocera arch plasma
+# Bubblewrap needs uncovered proc/sys mounts so an unprivileged user namespace
+# can remount them. Do not include LXC's nesting.conf: Batocera builds LXC
+# without AppArmor support, so its lxc.apparmor.profile line is invalid here.
+# Flatpak also asks Bubblewrap to disable deeper user namespaces from inside its
+# first user namespace. That requires proc/sys/user to be writable there;
+# LXC's default proc:mixed mount makes the sysctl read-only.
+lxc.mount.auto = proc:rw
+lxc.mount.entry = proc dev/.lxc/proc proc create=dir,optional 0 0
+lxc.mount.entry = sys dev/.lxc/sys sysfs create=dir,optional 0 0
 lxc.cap.drop =
 lxc.cgroup2.devices.allow = c 4:* rwm
 lxc.cgroup2.devices.allow = c 10:* rwm
@@ -857,6 +897,7 @@ lxc.mount.entry = /dev/fuse dev/fuse none bind,optional,create=file 0 0
 lxc.mount.entry = ${HOST_RESOLV_CONF} etc/resolv.conf none bind,ro,optional,create=file 0 0
 lxc.mount.entry = /tmp/.X11-unix tmp/.X11-unix none rbind,optional,create=dir 0 0
 lxc.mount.entry = ${HOST_RUNTIME_DIR} ${CONTAINER_RUNTIME_DIR#/} none rbind,optional,create=dir 0 0
+lxc.mount.entry = /usr/lib ${CONTAINER_HOST_LIB_DIR#/} none rbind,ro,optional,create=dir 0 0
 lxc.mount.entry = ${HOST_USERDATA_DIR} ${CONTAINER_HOST_USERDATA#/} none rbind,optional,create=dir 0 0
 lxc.mount.entry = /run/seatd.sock ${CONTAINER_RUNTIME_DIR#/}/seatd.sock none bind,optional,create=file 0 0
 lxc.mount.entry = /run/pipewire-0 ${CONTAINER_RUNTIME_DIR#/}/pipewire-0 none bind,optional,create=file 0 0
@@ -867,18 +908,22 @@ EOF
 }
 
 configure_container_dns() {
-    local rootfs resolv tmp_resolv
+    local rootfs resolv
 
     rootfs="$(container_rootfs)"
-    tmp_resolv="${HOST_RESOLV_CONF}.new"
 
     mkdir -p "$(dirname "${HOST_RESOLV_CONF}")"
+    # Keep this inode stable while it is bind-mounted into a running
+    # container. Replacing it with mv leaves LXC attached to a deleted inode,
+    # which makes nested Bubblewrap mounts (including Flatpak extra-data
+    # helpers such as Chrome's apply_extra) fail.
     {
         printf 'nameserver 1.1.1.1\n'
         printf 'nameserver 8.8.8.8\n'
-    } > "${tmp_resolv}" 2>>"${LOG}" || true
-    chmod 0644 "${tmp_resolv}" 2>/dev/null || true
-    mv -f "${tmp_resolv}" "${HOST_RESOLV_CONF}" 2>>"${LOG}" || true
+        printf 'nameserver 10.0.3.1\n'
+        printf 'options timeout:2 attempts:5 single-request-reopen\n'
+    } > "${HOST_RESOLV_CONF}" 2>>"${LOG}" || true
+    chmod 0644 "${HOST_RESOLV_CONF}" 2>/dev/null || true
 
     [ -d "${rootfs}/etc" ] || return 0
 
@@ -899,7 +944,9 @@ download_rootfs_image() {
         [ -n "${url}" ] || continue
         log "downloading ${PLASMA_DIST} rootfs from ${url}"
         rm -f "${image_tmp}"
-        if curl -fL --retry 3 --retry-delay 2 --connect-timeout 30 "${url}" -o "${image_tmp}" >>"${LOG}" 2>&1; then
+        if curl -fL --retry 3 --retry-delay 2 --connect-timeout 30 \
+                --speed-time 60 --speed-limit 1024 \
+                "${url}" -o "${image_tmp}" >>"${LOG}" 2>&1; then
             if unsquashfs -s "${image_tmp}" >/dev/null 2>&1; then
                 return 0
             fi
@@ -914,6 +961,7 @@ download_rootfs_image() {
         rm -f "${index_tmp}"
         log "resolving latest ${PLASMA_DIST} rootfs from ${PLASMA_ROOTFS_INDEX_URL}"
         if curl -fL --retry 3 --retry-delay 2 --connect-timeout 30 \
+            --speed-time 60 --speed-limit 1024 \
             "${PLASMA_ROOTFS_INDEX_URL}" -o "${index_tmp}" >>"${LOG}" 2>&1; then
             latest_dir="$(sed -n 's/.*href="\([^"]*\)\/".*/\1/p' "${index_tmp}" | \
                 grep -E '^20[0-9]{6}_[0-9]{2}(%3A|:)[0-9]{2}$' | sort | tail -n 1 || true)"
@@ -922,6 +970,7 @@ download_rootfs_image() {
                 log "downloading latest ${PLASMA_DIST} rootfs from ${dynamic_url}"
                 rm -f "${image_tmp}"
                 if curl -fL --retry 3 --retry-delay 2 --connect-timeout 30 \
+                    --speed-time 60 --speed-limit 1024 \
                     "${dynamic_url}" -o "${image_tmp}" >>"${LOG}" 2>&1 && \
                     unsquashfs -s "${image_tmp}" >/dev/null 2>&1; then
                     rm -f "${index_tmp}"
@@ -1032,7 +1081,7 @@ start_container() {
 container_has_session_mounts() {
     container_running || return 1
     lxc-attach -P "${LXC_PATH}" -n "${CONTAINER}" -- /bin/sh -lc \
-        "[ -e /dev/dri/card0 ] && [ -d /dev/input ] && [ -d /dev/snd ] && [ -S /batocera-runtime/seatd.sock ] && [ -d ${CONTAINER_HOST_USERDATA} ]" \
+        "[ -e /dev/dri/card0 ] && [ -d /dev/input ] && [ -d /dev/snd ] && [ -S /batocera-runtime/seatd.sock ] && [ -d /dev/.lxc/proc ] && [ -d /dev/.lxc/sys ] && [ -d ${CONTAINER_HOST_LIB_DIR} ] && [ -d ${CONTAINER_HOST_USERDATA} ] && [ /etc/resolv.conf -ef ${CONTAINER_RUNTIME_DIR}/resolv.conf ]" \
         >/dev/null 2>&1
 }
 
@@ -1153,8 +1202,26 @@ export LANG=C
 export LC_ALL=C
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/bin:/usr/sbin:/bin:/sbin
 
+run_bounded() {
+    local seconds="$1"
+    shift
+
+    if command -v timeout >/dev/null 2>&1; then
+        timeout --foreground --signal=TERM --kill-after=15s "${seconds}s" "$@"
+    else
+        "$@"
+    fi
+}
+
 if command -v apt-get >/dev/null 2>&1; then
     export DEBIAN_FRONTEND=noninteractive
+    apt_get() {
+        apt-get \
+            -o Acquire::Retries=3 \
+            -o Acquire::http::Timeout=30 \
+            -o Acquire::https::Timeout=30 \
+            "$@"
+    }
     archive_keyring=debian-archive-keyring
     if grep -q '^ID=ubuntu' /etc/os-release 2>/dev/null; then
         archive_keyring=ubuntu-keyring
@@ -1171,15 +1238,15 @@ EOS
         policy_rc_d_created=1
     fi
     apt_update_log=/tmp/batocera-apt-update.log
-    if ! apt-get update --allow-releaseinfo-change 2>&1 | tee "${apt_update_log}"; then
+    if ! apt_get update --allow-releaseinfo-change 2>&1 | tee "${apt_update_log}"; then
         # A downloaded Debian rootfs can outlive an archive signing-key
         # rotation. Bootstrap only Debian's archive keyring, then immediately
         # restore normal signed repository verification.
         if grep -Eiq 'NO_PUBKEY|EXPKEYSIG|The following signatures|not signed' "${apt_update_log}"; then
             printf 'APT archive-keyring refresh failed; bootstrapping %s once\n' "${archive_keyring}"
-            apt-get -o Acquire::AllowInsecureRepositories=true update
-            apt-get -o APT::Get::AllowUnauthenticated=true install -y --reinstall "${archive_keyring}"
-            apt-get update --allow-releaseinfo-change
+            apt_get -o Acquire::AllowInsecureRepositories=true update
+            apt_get -o APT::Get::AllowUnauthenticated=true install -y --reinstall "${archive_keyring}"
+            apt_get update --allow-releaseinfo-change
         else
             exit 1
         fi
@@ -1187,28 +1254,30 @@ EOS
     rm -f "${apt_update_log}"
     # Keep trust current on every provisioning run, not just when a rootfs is
     # first created. This is Debian's equivalent of refreshing pacman keyrings.
-    apt-get install -y --reinstall "${archive_keyring}" ca-certificates
-    apt-get update --allow-releaseinfo-change
-    apt-get dist-upgrade -y
+    apt_get install -y --reinstall "${archive_keyring}" ca-certificates
+    apt_get update --allow-releaseinfo-change
+    apt_get dist-upgrade -y
     required_packages=(
-        bash sudo passwd util-linux openssh-server dbus dbus-broker seatd libseat1 polkitd polkit-kde-agent-1 xwayland
+        bash sudo passwd util-linux procps file iproute2 openssh-server dbus dbus-broker seatd libseat1 polkitd pkexec polkit-kde-agent-1 xwayland
         fuse3 libfuse2t64 zlib1g-dev
-        xauth x11-xserver-utils kwin-x11
-        plasma-desktop plasma-workspace plasma-pa systemsettings plasma-discover plasma-discover-backend-flatpak
+        xauth x11-xserver-utils kwin-x11 kwin-wayland plasma-session-wayland
+        plasma-desktop plasma-workspace plasma-integration plasma-pa plasma-nm network-manager systemsettings
+        plasma-discover plasma-discover-backend-flatpak plasma-mobile kactivitymanagerd kglobalacceld
         dolphin konsole kate ark gwenview okular kde-spectacle kcalc
         plasma-systemmonitor kscreen kio-extras packagekit flatpak
+        xdg-desktop-portal xdg-desktop-portal-kde xdg-user-dirs
         pipewire pipewire-pulse pipewire-alsa pipewire-jack wireplumber
         ffmpeg tesseract-ocr-eng tesseract-ocr-osd
         mesa-utils mesa-vulkan-drivers fonts-noto-core fonts-dejavu-core
     )
     optional_packages=(
-        plasma-keyboard maliit-keyboard squeekboard
+        plasma-keyboard maliit-keyboard squeekboard plasma-settings
         vulkan-tools
     )
-    apt-get install -y --no-install-recommends "${required_packages[@]}"
+    apt_get install -y --no-install-recommends "${required_packages[@]}"
     for package in "${optional_packages[@]}"; do
         if apt-cache show "${package}" >/dev/null 2>&1; then
-            apt-get install -y --no-install-recommends "${package}"
+            apt_get install -y --no-install-recommends "${package}"
         fi
     done
     if [ "${policy_rc_d_created}" = "1" ]; then
@@ -1223,11 +1292,70 @@ if [ -f /etc/pacman.conf ]; then
         -e 's/^[#[:space:]]*DisableSandboxSyscalls/DisableSandboxSyscalls/' \
         /etc/pacman.conf
 
+enable_arch_multilib() {
+    local config=/etc/pacman.conf
+
+    [ "$(uname -m)" = "x86_64" ] || return 0
+    sed -i -E '/^[[:space:]]*#?\[multilib\][[:space:]]*$/,/^[[:space:]]*$/ {
+        s/^[[:space:]]*#\[multilib\][[:space:]]*$/[multilib]/
+        s/^[[:space:]]*#Include[[:space:]]*=/Include =/
+    }' "${config}"
+    if ! grep -q '^[[:space:]]*\[multilib\][[:space:]]*$' "${config}"; then
+        printf '\n[multilib]\nInclude = /etc/pacman.d/mirrorlist\n' >> "${config}"
+    fi
+}
+
+enable_arch_multilib
+
+write_pacman_mirrorlist() {
+    case "${1:-1}" in
+        1)
+            cat > /etc/pacman.d/mirrorlist <<'MIRRORS'
+Server = http://mirror.archlinuxarm.org/$arch/$repo
+Server = http://ca.us.mirror.archlinuxarm.org/$arch/$repo
+Server = http://de3.mirror.archlinuxarm.org/$arch/$repo
+MIRRORS
+            ;;
+        2)
+            cat > /etc/pacman.d/mirrorlist <<'MIRRORS'
+Server = http://fl.us.mirror.archlinuxarm.org/$arch/$repo
+Server = http://fr.mirror.archlinuxarm.org/$arch/$repo
+Server = http://tw2.mirror.archlinuxarm.org/$arch/$repo
+Server = http://mirror.archlinuxarm.org/$arch/$repo
+MIRRORS
+            ;;
+        *)
+            cat > /etc/pacman.d/mirrorlist <<'MIRRORS'
+Server = http://dk.mirror.archlinuxarm.org/$arch/$repo
+Server = http://de.mirror.archlinuxarm.org/$arch/$repo
+Server = http://tw.mirror.archlinuxarm.org/$arch/$repo
+Server = http://mirror.archlinuxarm.org/$arch/$repo
+MIRRORS
+            ;;
+    esac
+}
+
+pacman_retry() {
+    local attempt
+
+    for attempt in 1 2 3; do
+        write_pacman_mirrorlist "${attempt}"
+        printf 'pacman transaction attempt %s/3\n' "${attempt}"
+        if pacman "$@"; then
+            return 0
+        fi
+        rm -f /var/cache/pacman/pkg/*.part /var/lib/pacman/sync/*.part 2>/dev/null || true
+        sleep "$((attempt * 2))"
+    done
+
+    return 1
+}
+
 if ! pacman-key --list-keys >/dev/null 2>&1; then
     pacman-key --init
 fi
 pacman-key --populate archlinux archlinuxarm >/dev/null 2>&1 || true
-if ! pacman -Sy --noconfirm --needed archlinux-keyring archlinuxarm-keyring; then
+if ! pacman_retry -Sy --noconfirm --needed archlinux-keyring archlinuxarm-keyring; then
     # An old downloaded rootfs can have a keyring that predates the current
     # Arch or Arch Linux ARM signing keys. Bootstrap only those keyrings, then
     # return to normal signature verification for every other package.
@@ -1237,42 +1365,163 @@ if ! pacman -Sy --noconfirm --needed archlinux-keyring archlinuxarm-keyring; the
     if ! grep -q '^[[:space:]]*SigLevel[[:space:]]*=[[:space:]]*Never' /tmp/batocera-pacman-keyring.conf; then
         sed -i '/^\[options\]$/a SigLevel = Never' /tmp/batocera-pacman-keyring.conf
     fi
-    pacman -Sy --noconfirm --needed --config /tmp/batocera-pacman-keyring.conf archlinux-keyring archlinuxarm-keyring
+    pacman_retry -Sy --noconfirm --needed --config /tmp/batocera-pacman-keyring.conf archlinux-keyring archlinuxarm-keyring
     rm -f /tmp/batocera-pacman-keyring.conf
     pacman-key --populate archlinux archlinuxarm
 fi
 required_packages=(
-    bash sudo shadow openssh dbus dbus-broker polkit polkit-kde-agent xorg-xwayland
+    bash sudo shadow procps-ng iproute2 openssh dbus dbus-broker polkit polkit-kde-agent xorg-xwayland
     xorg-xauth xorg-xrdb kwin-x11
-    plasma-desktop plasma-workspace plasma-pa systemsettings discover
+    plasma-desktop plasma-workspace plasma-pa plasma-nm networkmanager systemsettings discover plasma-mobile
     dolphin konsole kate ark gwenview okular spectacle kcalc
     plasma-systemmonitor kscreen kio-extras packagekit packagekit-qt6
-    flatpak
+    flatpak xdg-desktop-portal xdg-desktop-portal-kde xdg-user-dirs
     pipewire pipewire-pulse pipewire-alsa pipewire-jack wireplumber
     qt6-multimedia-ffmpeg tesseract-data-eng tesseract-data-osd
     mesa noto-fonts ttf-dejavu fuse2 zlib
 )
 optional_packages=(
-    plasma-keyboard maliit-keyboard squeekboard
+    plasma-keyboard maliit-keyboard squeekboard plasma-settings
     vulkan-freedreno vulkan-radeon vulkan-intel vulkan-mesa-layers
 )
 
-pacman -Syu --noconfirm --needed "${required_packages[@]}"
+pacman_retry -Syu --noconfirm --needed "${required_packages[@]}"
 for package in "${optional_packages[@]}"; do
     if pacman -Si "${package}" >/dev/null 2>&1; then
-        pacman -S --noconfirm --needed "${package}"
+        pacman_retry -S --noconfirm --needed "${package}"
     fi
 done
 fi
 
 if command -v flatpak >/dev/null 2>&1; then
-    flatpak remote-add --if-not-exists --system --title=Flathub flathub https://dl.flathub.org/repo/flathub.flatpakrepo || true
+    run_bounded 120 flatpak remote-add --if-not-exists --system --title=Flathub flathub https://dl.flathub.org/repo/flathub.flatpakrepo || true
     flatpak remote-modify --system --enable flathub || true
+    # Batocera's host GBM path is valid for native container applications, but
+    # Flatpak intentionally does not expose /batocera-host inside its sandbox.
+    # Do not pass that host-only path through to Flatpak Mesa.
+    flatpak override --system --unset-env=GBM_BACKENDS_PATH || true
     for attempt in 1 2 3; do
-        flatpak update --appstream --system -y && break
+        if run_bounded 180 flatpak update --appstream --system -y; then
+            break
+        fi
+        printf 'Flathub AppStream refresh attempt %s/3 failed or timed out; continuing setup retry\n' "${attempt}"
         sleep "$((attempt * 2))"
     done
 fi
+
+configure_network_manager() {
+    local network_iface connection_name="Batocera LXC"
+    local -a networkd_units=()
+
+    command -v nmcli >/dev/null 2>&1 || return 0
+    command -v systemctl >/dev/null 2>&1 || return 0
+
+    network_iface="$(ip -o route show default 2>/dev/null | awk '{ print $5; exit }')"
+    if [ -z "${network_iface}" ]; then
+        network_iface="$(find /sys/class/net -mindepth 1 -maxdepth 1 -printf '%f\n' 2>/dev/null | grep -vx lo | head -n 1 || true)"
+    fi
+    [ -n "${network_iface}" ] || {
+        printf '%s\n' 'warning: no LXC network interface found for NetworkManager'
+        return 0
+    }
+
+    install -d -m 0755 /etc/NetworkManager/conf.d
+    # Ubuntu's 10-globally-managed-devices.conf marks every non-Wi-Fi device
+    # strictly unmanaged. A per-device managed=1 setting cannot override that
+    # keyfile rule, so add a later exception for the container veth itself.
+    cat > /etc/NetworkManager/conf.d/90-batocera-lxc.conf <<EOF_NM
+[main]
+dns=none
+rc-manager=unmanaged
+
+[keyfile]
+unmanaged-devices=*,except:interface-name:${network_iface}
+
+[device-batocera-lxc]
+match-device=interface-name:${network_iface}
+managed=1
+EOF_NM
+
+    systemctl enable NetworkManager.service >/dev/null 2>&1 || true
+    # nmcli talks to the running daemon. Fresh distribution images have the
+    # package installed but the service is still inactive at this point.
+    if ! run_bounded 30 systemctl restart NetworkManager.service; then
+        printf '%s\n' 'warning: NetworkManager failed to start; retaining the working LXC network configuration'
+        systemctl status NetworkManager.service --no-pager -l 2>&1 || true
+        return 0
+    fi
+    for _ in $(seq 1 15); do
+        nmcli general status >/dev/null 2>&1 && break
+        sleep 1
+    done
+    if ! nmcli general status >/dev/null 2>&1; then
+        printf '%s\n' 'warning: NetworkManager did not become ready; retaining the working LXC network configuration'
+        return 0
+    fi
+
+    if nmcli -t -f NAME connection show 2>/dev/null | grep -Fxq "${connection_name}"; then
+        if ! nmcli connection modify "${connection_name}" \
+            connection.interface-name "${network_iface}" \
+            connection.autoconnect yes \
+            ipv4.method auto ipv4.ignore-auto-dns yes \
+            ipv6.method auto ipv6.ignore-auto-dns yes >/dev/null; then
+            printf 'warning: NetworkManager could not update %s\n' "${connection_name}"
+            return 0
+        fi
+    else
+        if ! nmcli connection add type ethernet ifname "${network_iface}" \
+            con-name "${connection_name}" \
+            connection.autoconnect yes \
+            ipv4.method auto ipv4.ignore-auto-dns yes \
+            ipv6.method auto ipv6.ignore-auto-dns yes >/dev/null; then
+            printf 'warning: NetworkManager could not create %s\n' "${connection_name}"
+            return 0
+        fi
+    fi
+
+    # Downloaded LXC images can initially use networkd. Once NetworkManager owns
+    # the veth, leave only one DHCP client active so the two services cannot
+    # race for the same interface and make Plasma report intermittent outages.
+    # Recent systemd releases can reactivate networkd through several varlink
+    # and resolver sockets. Mask every concrete networkd unit so it cannot
+    # race NetworkManager for the same veth after provisioning or reboot.
+    mapfile -t networkd_units < <(
+        SYSTEMD_COLORS=0 systemctl list-unit-files 'systemd-networkd*' \
+            --no-legend --no-pager 2>/dev/null | awk '$1 !~ /@/ { print $1 }'
+    )
+    if [ "${#networkd_units[@]}" -gt 0 ]; then
+        systemctl disable "${networkd_units[@]}" >/dev/null 2>&1 || true
+        systemctl mask "${networkd_units[@]}" >/dev/null 2>&1 || true
+        systemctl stop "${networkd_units[@]}" >/dev/null 2>&1 || true
+    fi
+    nmcli device set "${network_iface}" managed yes >/dev/null 2>&1 || true
+
+    for _ in $(seq 1 15); do
+        if nmcli connection up "${connection_name}" >/dev/null 2>&1; then
+            nmcli general status || true
+            return 0
+        fi
+        sleep 1
+    done
+
+    printf 'warning: NetworkManager could not activate %s on %s\n' \
+        "${connection_name}" "${network_iface}"
+    return 0
+}
+
+configure_network_manager
+
+install -d -m 0755 /etc/profile.d
+cat > /etc/profile.d/90-batocera-flatpak.sh <<'EOS'
+flatpak_data_dirs="${HOME}/.local/share/flatpak/exports/share:/var/lib/flatpak/exports/share"
+if [ -n "${XDG_DATA_DIRS:-}" ]; then
+    export XDG_DATA_DIRS="${flatpak_data_dirs}:${XDG_DATA_DIRS}"
+else
+    export XDG_DATA_DIRS="${flatpak_data_dirs}:/usr/local/share:/usr/share"
+fi
+unset flatpak_data_dirs
+EOS
+chmod 0644 /etc/profile.d/90-batocera-flatpak.sh
 
 if ! id "${PLASMA_USER}" >/dev/null 2>&1; then
     existing_uid_user="$(getent passwd 1000 | cut -d: -f1 || true)"
@@ -1306,6 +1555,32 @@ install -d -m 0750 /etc/sudoers.d
 printf '%s ALL=(ALL) NOPASSWD: ALL\n' "${PLASMA_USER}" > /etc/sudoers.d/90-batocera-plasma
 chmod 0440 /etc/sudoers.d/90-batocera-plasma
 
+plasma_home="/home/${PLASMA_USER}"
+install -d -m 0755 -o "${PLASMA_USER}" -g "${PLASMA_USER}" \
+    "${plasma_home}/Desktop" \
+    "${plasma_home}/Documents" \
+    "${plasma_home}/Downloads" \
+    "${plasma_home}/Music" \
+    "${plasma_home}/Pictures" \
+    "${plasma_home}/Public" \
+    "${plasma_home}/Templates" \
+    "${plasma_home}/Videos" \
+    "${plasma_home}/.config"
+if [ ! -s "${plasma_home}/.config/user-dirs.dirs" ]; then
+    cat > "${plasma_home}/.config/user-dirs.dirs" <<'EOS'
+XDG_DESKTOP_DIR="$HOME/Desktop"
+XDG_DOWNLOAD_DIR="$HOME/Downloads"
+XDG_TEMPLATES_DIR="$HOME/Templates"
+XDG_PUBLICSHARE_DIR="$HOME/Public"
+XDG_DOCUMENTS_DIR="$HOME/Documents"
+XDG_MUSIC_DIR="$HOME/Music"
+XDG_PICTURES_DIR="$HOME/Pictures"
+XDG_VIDEOS_DIR="$HOME/Videos"
+EOS
+    chown "${PLASMA_USER}:${PLASMA_USER}" "${plasma_home}/.config/user-dirs.dirs"
+    chmod 0644 "${plasma_home}/.config/user-dirs.dirs"
+fi
+
 install -d -m 0755 /etc/polkit-1/rules.d
 cat > /etc/polkit-1/rules.d/50-batocera-plasma-discover.rules <<'EOS'
 polkit.addRule(function(action, subject) {
@@ -1317,7 +1592,9 @@ polkit.addRule(function(action, subject) {
 
     if (action.id.indexOf("org.freedesktop.Flatpak.") === 0 ||
         action.id.indexOf("org.freedesktop.packagekit.") === 0 ||
-        action.id.indexOf("org.freedesktop.fwupd.") === 0) {
+        action.id.indexOf("org.freedesktop.fwupd.") === 0 ||
+        action.id.indexOf("org.freedesktop.NetworkManager.") === 0 ||
+        action.id.indexOf("org.kde.plasma.mobileshell.") === 0) {
         return polkit.Result.YES;
     }
 
@@ -1325,6 +1602,36 @@ polkit.addRule(function(action, subject) {
 });
 EOS
 chmod 0644 /etc/polkit-1/rules.d/50-batocera-plasma-discover.rules
+
+# Some LXC extraction/filesystem combinations drop the package's setuid bit.
+# Polkit validates this mode before it will authenticate any desktop prompt.
+if [ -f /usr/lib/polkit-1/polkit-agent-helper-1 ]; then
+    chown root:root /usr/lib/polkit-1/polkit-agent-helper-1
+    chmod 4755 /usr/lib/polkit-1/polkit-agent-helper-1
+fi
+
+# runuser is the session boundary for direct DRM launches. Minimal Debian and
+# Ubuntu rootfs images omit pam_systemd from that PAM stack, leaving the
+# desktop without a logind session and preventing polkit agents from
+# registering. Add it once; Arch already carries it on some image revisions.
+if [ -f /etc/pam.d/runuser ] && ! grep -q 'pam_systemd\.so' /etc/pam.d/runuser; then
+    printf 'session\t\toptional\tpam_systemd.so\n' >> /etc/pam.d/runuser
+fi
+
+# The container system bus starts before Plasma/polkit packages are installed.
+# Reload its ownership policy, then start polkit only after our rules and admin
+# user exist. Otherwise polkitd repeatedly loses org.freedesktop.PolicyKit1.
+if command -v busctl >/dev/null 2>&1; then
+    busctl call org.freedesktop.DBus /org/freedesktop/DBus \
+        org.freedesktop.DBus ReloadConfig >/dev/null 2>&1 || true
+elif command -v systemctl >/dev/null 2>&1; then
+    systemctl reload dbus.service >/dev/null 2>&1 || true
+fi
+if command -v systemctl >/dev/null 2>&1 && \
+        systemctl list-unit-files polkit.service >/dev/null 2>&1; then
+    systemctl reset-failed polkit.service >/dev/null 2>&1 || true
+    systemctl restart polkit.service
+fi
 
 install -d -m 0755 /etc/ssh/sshd_config.d
 cat > /etc/ssh/sshd_config.d/90-batocera-plasma.conf <<'EOS'
@@ -1336,6 +1643,27 @@ EOS
 ssh-keygen -A >/dev/null 2>&1 || true
 systemctl enable --now sshd.service >/dev/null 2>&1 || \
     systemctl enable --now ssh.service >/dev/null 2>&1 || true
+
+install -d -m 0755 /usr/local/share/batocera-plasma
+cat > /usr/local/share/batocera-plasma/session.conf <<'EOS'
+<!DOCTYPE busconfig PUBLIC "-//freedesktop//DTD D-Bus Bus Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd">
+<busconfig>
+  <type>session</type>
+  <auth>EXTERNAL</auth>
+  <auth>ANONYMOUS</auth>
+  <allow_anonymous/>
+  <listen>unix:tmpdir=/tmp</listen>
+  <standard_session_servicedirs/>
+  <policy context="default">
+    <allow user="*"/>
+    <allow own="*"/>
+    <allow send_destination="*" eavesdrop="true"/>
+    <allow eavesdrop="true"/>
+  </policy>
+</busconfig>
+EOS
+chmod 0644 /usr/local/share/batocera-plasma/session.conf
 
 cat > /usr/local/bin/batocera-start-plasma <<'EOS'
 #!/bin/bash
@@ -1349,9 +1677,27 @@ export LIBSEAT_BACKEND="${LIBSEAT_BACKEND:-seatd}"
 export SEATD_SOCK="${SEATD_SOCK:-/batocera-runtime/seatd.sock}"
 export PIPEWIRE_REMOTE="${PIPEWIRE_REMOTE:-pipewire-0}"
 export PULSE_SERVER="${PULSE_SERVER:-unix:${XDG_RUNTIME_DIR}/pulse/native}"
+export XDG_DATA_DIRS="${HOME}/.local/share/flatpak/exports/share:/var/lib/flatpak/exports/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
 
 mkdir -p "${HOME}/.config" "${HOME}/.local/share" "${XDG_RUNTIME_DIR}" "${XDG_RUNTIME_DIR}/pulse"
 chmod 700 "${XDG_RUNTIME_DIR}" 2>/dev/null || true
+
+# runuser/PAM starts systemd --user in /run/user/$UID, while KWin and Plasma
+# intentionally share Batocera's private runtime and D-Bus. Expose only the
+# user-manager control socket in the private runtime so systemctl --user works
+# from Konsole without moving the desktop off its shared session bus.
+standard_runtime="/run/user/$(id -u)"
+if [ "${XDG_RUNTIME_DIR}" != "${standard_runtime}" ] && \
+        [ ! -e "${XDG_RUNTIME_DIR}/systemd" ] && \
+        [ ! -L "${XDG_RUNTIME_DIR}/systemd" ]; then
+    ln -s "${standard_runtime}/systemd" "${XDG_RUNTIME_DIR}/systemd" 2>/dev/null || true
+fi
+
+if [ -e /batocera-runtime/host-gpu/libEGL_mesa.so.0 ]; then
+    export LD_LIBRARY_PATH="/batocera-runtime/host-gpu${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
+    export LIBGL_DRIVERS_PATH=/batocera-host/usr/lib/dri
+    export GBM_BACKENDS_PATH=/batocera-host/usr/lib/gbm
+fi
 
 case "${session_type}" in
     wayland)
@@ -1440,19 +1786,27 @@ unset WAYLAND_DISPLAY
 unset XAUTHORITY
 unset DBUS_SESSION_BUS_ADDRESS
 
+if [ -e /batocera-runtime/host-gpu/libEGL_mesa.so.0 ]; then
+    export LD_LIBRARY_PATH="/batocera-runtime/host-gpu${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
+    export LIBGL_DRIVERS_PATH=/batocera-host/usr/lib/dri
+    export GBM_BACKENDS_PATH=/batocera-host/usr/lib/gbm
+fi
+
 apply_static_output_scale() {
     local scale="${BATOCERA_ARCH_PLASMA_OUTPUT_SCALE:-}"
+    local user_home="/home/${user}"
 
     [ -n "${scale}" ] || return 0
     [[ "${scale}" =~ ^[0-9]+([.][0-9]+)?$ ]] || return 0
 
-    install -d -m 0700 /root/.config
-    if [ -f /root/.config/kwinoutputconfig.json ]; then
-        sed -i -E "s/(\"scale\": )[0-9]+([.][0-9]+)?/\1${scale}/g" /root/.config/kwinoutputconfig.json 2>/dev/null || true
+    install -d -m 0700 -o "${uid}" -g "${gid}" "${user_home}/.config"
+    if [ -f "${user_home}/.config/kwinoutputconfig.json" ]; then
+        sed -i -E "s/(\"scale\": )[0-9]+([.][0-9]+)?/\1${scale}/g" "${user_home}/.config/kwinoutputconfig.json" 2>/dev/null || true
     fi
 
     if command -v kwriteconfig6 >/dev/null 2>&1; then
-        kwriteconfig6 --file /root/.config/kwinrc --group Xwayland --key Scale "${scale}" >/dev/null 2>&1 || true
+        runuser -u "${user}" -- kwriteconfig6 --file "${user_home}/.config/kwinrc" \
+            --group Xwayland --key Scale "${scale}" >/dev/null 2>&1 || true
     fi
 }
 
@@ -1468,9 +1822,49 @@ fi
 
 apply_static_output_scale
 
-if [ "${BATOCERA_ARCH_PLASMA_KWIN_DBUS_SESSION:-0}" = "1" ] && command -v dbus-run-session >/dev/null 2>&1; then
-    exec dbus-run-session -- kwin_wayland --drm --xwayland --socket wayland-0 --no-lockscreen "${inputmethod_args[@]}" \
+if [ "${BATOCERA_ARCH_PLASMA_KWIN_DBUS_SESSION:-1}" = "1" ] && command -v dbus-daemon >/dev/null 2>&1; then
+    bus_socket="${runtime_dir}/batocera-session-bus"
+    bus_config=/usr/local/share/batocera-plasma/session.conf
+    rm -f "${bus_socket}"
+    # PAM gives runuser the standard /run/user/$UID runtime. If the private
+    # bus inherits that value, D-Bus-activated flatpak-portal looks for the
+    # caller's bwrapinfo.json in the wrong .flatpak directory and Zypak cannot
+    # resolve Chrome's requesting PID. Override the post-PAM environment so
+    # every service activated on this bus shares Plasma's private runtime.
+    bus_info="$(runuser -u "${user}" -- /usr/bin/env \
+        HOME="/home/${user}" USER="${user}" LOGNAME="${user}" \
+        PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin \
+        XDG_RUNTIME_DIR="${runtime_dir}" \
+        XDG_CURRENT_DESKTOP=KDE XDG_SESSION_TYPE=wayland \
+        DBUS_SESSION_BUS_ADDRESS="unix:path=${bus_socket}" \
+        dbus-daemon --config-file="${bus_config}" \
+        --address="unix:path=${bus_socket}" \
+        --fork --print-address=1 --print-pid=1)"
+    bus_address="$(printf '%s\n' "${bus_info}" | sed -n '1p')"
+    bus_pid="$(printf '%s\n' "${bus_info}" | sed -n '2p')"
+    [ -n "${bus_address}" ] && [[ "${bus_pid}" =~ ^[0-9]+$ ]] && [ -S "${bus_socket}" ] || {
+        printf '%s\n' 'failed to start the shared Plasma session bus' >&2
+        exit 1
+    }
+
+    # KWin must remain root on these DRM stacks, while Plasma applications run
+    # as the desktop user. This bus is owned by that user, accepts both local
+    # UIDs, and is confined by the mode-0700 runtime directory.
+    export DBUS_SESSION_BUS_ADDRESS="${bus_address}"
+    export BATOCERA_PLASMA_SHARED_DBUS=1
+    cleanup_session_bus() {
+        kill "${bus_pid}" 2>/dev/null || true
+        rm -f "${bus_socket}" 2>/dev/null || true
+    }
+    trap cleanup_session_bus EXIT INT TERM
+    set +e
+    kwin_wayland --drm --xwayland --socket wayland-0 --no-lockscreen "${inputmethod_args[@]}" \
         --exit-with-session /usr/local/bin/batocera-plasma-session-wrapper
+    rc="$?"
+    set -e
+    trap - EXIT INT TERM
+    cleanup_session_bus
+    exit "${rc}"
 fi
 
 exec kwin_wayland --drm --xwayland --socket wayland-0 --no-lockscreen "${inputmethod_args[@]}" \
@@ -1493,8 +1887,13 @@ wayland_display="${WAYLAND_DISPLAY:-wayland-0}"
 [ -n "${runuser_cmd}" ] || { printf '%s\n' 'runuser is required to start the Plasma user session' >&2; exit 127; }
 
 export WAYLAND_DISPLAY="${wayland_display}"
-install -d -m 0755 "${runtime_parent}"
-install -d -m 0700 -o "${uid}" -g "${gid}" "${runtime_dir}"
+if [ "$(id -u)" = "${uid}" ]; then
+    mkdir -p "${runtime_dir}"
+    chmod 0700 "${runtime_dir}" 2>/dev/null || true
+else
+    install -d -m 0755 "${runtime_parent}"
+    install -d -m 0700 -o "${uid}" -g "${gid}" "${runtime_dir}"
+fi
 
 for _ in $(seq 1 50); do
     [ -S "${runtime_dir}/${wayland_display}" ] && break
@@ -1739,39 +2138,52 @@ if [ -n "${DISPLAY:-}" ]; then
     chmod 777 "/tmp/.X11-unix/X${display_number}" 2>/dev/null || true
 fi
 
-exec "${runuser_cmd}" -u "${user}" -- /usr/bin/env \
-    PATH=/usr/local/sbin:/usr/local/bin:/usr/bin:/usr/sbin:/bin:/sbin \
-    USER="${user}" \
-    LOGNAME="${user}" \
-    HOME="/home/${user}" \
-    LANG="${LANG:-C.UTF-8}" \
-    XDG_RUNTIME_DIR="${runtime_dir}" \
-    XDG_SESSION_TYPE=wayland \
-    XDG_CURRENT_DESKTOP=KDE \
-    XDG_SESSION_DESKTOP=KDE \
-    XDG_MENU_PREFIX=plasma- \
-    DESKTOP_SESSION=plasmawayland \
-    KDE_FULL_SESSION=true \
-    NO_AT_BRIDGE=1 \
-    QT_QPA_PLATFORM=wayland \
-    GDK_BACKEND=wayland,x11 \
-    SDL_VIDEODRIVER=wayland \
-    CLUTTER_BACKEND=wayland \
-    MOZ_ENABLE_WAYLAND=1 \
-    WAYLAND_DISPLAY="${WAYLAND_DISPLAY}" \
-    DISPLAY="${DISPLAY:-}" \
-    XAUTHORITY="${XAUTHORITY:-}" \
-    PIPEWIRE_REMOTE="${PIPEWIRE_REMOTE:-/batocera-runtime/pipewire-0}" \
-    PULSE_SERVER="${PULSE_SERVER:-unix:/batocera-runtime/pulse/native}" \
-    BATOCERA_ARCH_PLASMA_OUTPUT_SCALE="${BATOCERA_ARCH_PLASMA_OUTPUT_SCALE:-}" \
-    BATOCERA_ARCH_PLASMA_FORCE_OUTPUT="${BATOCERA_ARCH_PLASMA_FORCE_OUTPUT:-}" \
-    BATOCERA_ARCH_PLASMA_FORCE_OUTPUT_MODE="${BATOCERA_ARCH_PLASMA_FORCE_OUTPUT_MODE:-}" \
-    BATOCERA_ARCH_PLASMA_FORCE_OUTPUT_MODE_FALLBACK="${BATOCERA_ARCH_PLASMA_FORCE_OUTPUT_MODE_FALLBACK:-}" \
-    BATOCERA_ARCH_PLASMA_DISABLE_OTHER_OUTPUTS="${BATOCERA_ARCH_PLASMA_DISABLE_OTHER_OUTPUTS:-}" \
-    BATOCERA_ARCH_PLASMA_TOUCH_OUTPUT_NAME="${BATOCERA_ARCH_PLASMA_TOUCH_OUTPUT_NAME:-}" \
-    BATOCERA_ARCH_PLASMA_TOUCH_KWIN_CALIBRATION_MATRIX="${BATOCERA_ARCH_PLASMA_TOUCH_KWIN_CALIBRATION_MATRIX:-}" \
-    BATOCERA_ARCH_PLASMA_POINTER_ACCEL="${BATOCERA_ARCH_PLASMA_POINTER_ACCEL:-}" \
+xdg_data_dirs="/home/${user}/.local/share/flatpak/exports/share:/var/lib/flatpak/exports/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
+session_env=(
+    "PATH=/usr/local/sbin:/usr/local/bin:/usr/bin:/usr/sbin:/bin:/sbin"
+    "USER=${user}"
+    "LOGNAME=${user}"
+    "HOME=/home/${user}"
+    "LANG=${LANG:-C.UTF-8}"
+    "XDG_DATA_DIRS=${xdg_data_dirs}"
+    "XDG_RUNTIME_DIR=${runtime_dir}"
+    "XDG_SESSION_TYPE=wayland"
+    "XDG_CURRENT_DESKTOP=KDE"
+    "XDG_SESSION_DESKTOP=KDE"
+    "XDG_MENU_PREFIX=plasma-"
+    "DESKTOP_SESSION=plasmawayland"
+    "KDE_FULL_SESSION=true"
+    "NO_AT_BRIDGE=1"
+    "QT_QPA_PLATFORM=wayland"
+    "GDK_BACKEND=wayland,x11"
+    "SDL_VIDEODRIVER=wayland"
+    "CLUTTER_BACKEND=wayland"
+    "MOZ_ENABLE_WAYLAND=1"
+    "WAYLAND_DISPLAY=${WAYLAND_DISPLAY}"
+    "DISPLAY=${DISPLAY:-}"
+    "XAUTHORITY=${XAUTHORITY:-}"
+    "PIPEWIRE_REMOTE=${PIPEWIRE_REMOTE:-/batocera-runtime/pipewire-0}"
+    "PULSE_SERVER=${PULSE_SERVER:-unix:/batocera-runtime/pulse/native}"
+    "LD_LIBRARY_PATH=${LD_LIBRARY_PATH:-}"
+    "LIBGL_DRIVERS_PATH=${LIBGL_DRIVERS_PATH:-}"
+    "GBM_BACKENDS_PATH=${GBM_BACKENDS_PATH:-}"
+    "BATOCERA_ARCH_PLASMA_OUTPUT_SCALE=${BATOCERA_ARCH_PLASMA_OUTPUT_SCALE:-}"
+    "BATOCERA_ARCH_PLASMA_FORCE_OUTPUT=${BATOCERA_ARCH_PLASMA_FORCE_OUTPUT:-}"
+    "BATOCERA_ARCH_PLASMA_FORCE_OUTPUT_MODE=${BATOCERA_ARCH_PLASMA_FORCE_OUTPUT_MODE:-}"
+    "BATOCERA_ARCH_PLASMA_FORCE_OUTPUT_MODE_FALLBACK=${BATOCERA_ARCH_PLASMA_FORCE_OUTPUT_MODE_FALLBACK:-}"
+    "BATOCERA_ARCH_PLASMA_DISABLE_OTHER_OUTPUTS=${BATOCERA_ARCH_PLASMA_DISABLE_OTHER_OUTPUTS:-}"
+    "BATOCERA_ARCH_PLASMA_TOUCH_OUTPUT_NAME=${BATOCERA_ARCH_PLASMA_TOUCH_OUTPUT_NAME:-}"
+    "BATOCERA_ARCH_PLASMA_TOUCH_KWIN_CALIBRATION_MATRIX=${BATOCERA_ARCH_PLASMA_TOUCH_KWIN_CALIBRATION_MATRIX:-}"
+    "BATOCERA_ARCH_PLASMA_POINTER_ACCEL=${BATOCERA_ARCH_PLASMA_POINTER_ACCEL:-}"
+    "DBUS_SESSION_BUS_ADDRESS=${DBUS_SESSION_BUS_ADDRESS:-}"
+    "BATOCERA_PLASMA_SHARED_DBUS=${BATOCERA_PLASMA_SHARED_DBUS:-0}"
     /usr/local/bin/batocera-plasma-session-payload
+)
+
+if [ "$(id -u)" = "${uid}" ]; then
+    exec /usr/bin/env "${session_env[@]}"
+fi
+exec "${runuser_cmd}" -u "${user}" -- /usr/bin/env "${session_env[@]}"
 EOS
 chmod 0755 /usr/local/bin/batocera-plasma-session-wrapper
 
@@ -1915,8 +2327,23 @@ cat > /usr/local/bin/batocera-plasma-session-payload <<'EOS'
 #!/bin/bash
 set -euo pipefail
 
-unset DBUS_SESSION_BUS_ADDRESS
+if [ "${BATOCERA_PLASMA_SHARED_DBUS:-0}" != "1" ] && \
+        [ "${1:-}" != "--inside-dbus" ] && command -v dbus-run-session >/dev/null 2>&1; then
+    # runuser/PAM may inject the systemd user bus without importing this raw
+    # KWin session's Wayland environment. Services activated on that stale bus
+    # then start without a display and Plasma aborts loading the desktop.
+    unset DBUS_SESSION_BUS_ADDRESS
+    exec dbus-run-session -- "$0" --inside-dbus
+fi
 
+export LANG="${LANG:-C.UTF-8}"
+if [ "${LANG}" = "C" ] || [ "${LANG}" = "POSIX" ]; then
+    export LANG=C.UTF-8
+fi
+export LC_ALL="${LC_ALL:-${LANG}}"
+if [ "${LC_ALL}" = "C" ] || [ "${LC_ALL}" = "POSIX" ]; then
+    export LC_ALL="${LANG}"
+fi
 export KDE_FULL_SESSION=true
 export NO_AT_BRIDGE=1
 export XDG_SESSION_TYPE=wayland
@@ -1934,6 +2361,17 @@ export PULSE_SERVER="${PULSE_SERVER:-unix:/batocera-runtime/pulse/native}"
 
 mkdir -p "${HOME}/.config" "${HOME}/.local/share" "${XDG_RUNTIME_DIR}" "${XDG_RUNTIME_DIR}/pulse"
 chmod 700 "${XDG_RUNTIME_DIR}" 2>/dev/null || true
+
+# runuser/PAM starts systemd --user in /run/user/$UID, while KWin and Plasma
+# intentionally share Batocera's private runtime and D-Bus. Expose only the
+# user-manager control socket in the private runtime so systemctl --user works
+# from Konsole without moving the desktop off its shared session bus.
+standard_runtime="/run/user/$(id -u)"
+if [ "${XDG_RUNTIME_DIR}" != "${standard_runtime}" ] && \
+        [ ! -e "${XDG_RUNTIME_DIR}/systemd" ] && \
+        [ ! -L "${XDG_RUNTIME_DIR}/systemd" ]; then
+    ln -s "${standard_runtime}/systemd" "${XDG_RUNTIME_DIR}/systemd" 2>/dev/null || true
+fi
 
 seed_input_defaults() {
     local pointer_accel="${BATOCERA_ARCH_PLASMA_POINTER_ACCEL:-}"
@@ -1955,12 +2393,60 @@ run_if_available() {
     "$@" &
 }
 
+run_first_available() {
+    local candidate
+
+    for candidate in "$@"; do
+        if [ -x "${candidate}" ] || command -v "${candidate}" >/dev/null 2>&1; then
+            "${candidate}" &
+            return 0
+        fi
+    done
+}
+
+wait_for_session_bus_name() {
+    local name="$1"
+
+    [ -n "${DBUS_SESSION_BUS_ADDRESS:-}" ] || return 1
+    command -v busctl >/dev/null 2>&1 || return 1
+    for _ in $(seq 1 50); do
+        if busctl --address="${DBUS_SESSION_BUS_ADDRESS}" --no-pager list 2>/dev/null | \
+                awk -v wanted="${name}" '$1 == wanted { found=1 } END { exit !found }'; then
+            return 0
+        fi
+        sleep 0.1
+    done
+    return 1
+}
+
+start_portal_services() {
+    # These binaries live outside PATH on both Arch and Ubuntu. Start the KDE
+    # backend first, on the same private bus and Wayland display as Plasma, so
+    # the frontend discovers Settings/FileChooser/OpenURI at initialization.
+    run_first_available \
+        /usr/lib/xdg-desktop-portal-kde \
+        /usr/libexec/xdg-desktop-portal-kde \
+        /usr/lib/*-linux-gnu/libexec/xdg-desktop-portal-kde \
+        /usr/lib/*/libexec/xdg-desktop-portal-kde \
+        xdg-desktop-portal-kde
+    wait_for_session_bus_name org.freedesktop.impl.portal.desktop.kde || true
+    run_first_available \
+        /usr/lib/xdg-desktop-portal \
+        /usr/libexec/xdg-desktop-portal \
+        /usr/lib/*-linux-gnu/libexec/xdg-desktop-portal \
+        /usr/lib/*/libexec/xdg-desktop-portal \
+        xdg-desktop-portal
+    wait_for_session_bus_name org.freedesktop.portal.Desktop || true
+}
+
 start_polkit_agent() {
     local agent
 
     for agent in \
         /usr/lib/polkit-kde-authentication-agent-1 \
         /usr/libexec/polkit-kde-authentication-agent-1 \
+        /usr/lib/*-linux-gnu/libexec/polkit-kde-authentication-agent-1 \
+        /usr/lib/*/libexec/polkit-kde-authentication-agent-1 \
         polkit-kde-authentication-agent-1
     do
         if [ -x "${agent}" ] || command -v "${agent}" >/dev/null 2>&1; then
@@ -1971,55 +2457,46 @@ start_polkit_agent() {
 }
 
 start_plasma_shell_session() {
+    local initial_shell_pid missing_count=0
+
+    start_portal_services
     start_polkit_agent
     run_if_available kded6
-    run_if_available kactivitymanagerd
-    run_if_available kglobalacceld
-    run_if_available xdg-desktop-portal
-    run_if_available xdg-desktop-portal-kde
-    run_if_available krunner
+    run_first_available kactivitymanagerd /usr/lib/kactivitymanagerd /usr/libexec/kactivitymanagerd \
+        /usr/lib/*-linux-gnu/libexec/kactivitymanagerd /usr/lib/*/libexec/kactivitymanagerd
+    run_first_available kglobalacceld /usr/lib/kglobalacceld /usr/libexec/kglobalacceld \
+        /usr/lib/*-linux-gnu/libexec/kglobalacceld /usr/lib/*/libexec/kglobalacceld
     run_if_available batocera-force-plasma-output
 
-    exec plasmashell
+    # Plasma Mobile is available through the desktop shortcut, but every new
+    # session must start with the conventional desktop shell.
+    plasmashell -p org.kde.plasma.desktop &
+    initial_shell_pid="$!"
+
+    # KWin's --exit-with-session watches this payload. Keep it alive while a
+    # replacement desktop/mobile plasmashell owns the session, and exit only
+    # after every plasmashell has been gone for a short grace period.
+    while :; do
+        if [ -e "${XDG_RUNTIME_DIR}/batocera-return-to-es" ]; then
+            break
+        fi
+        if pgrep -u "$(id -u)" -x plasmashell >/dev/null 2>&1; then
+            missing_count=0
+        else
+            missing_count=$((missing_count + 1))
+            [ "${missing_count}" -lt 10 ] || break
+        fi
+        sleep 0.2
+    done
+
+    wait "${initial_shell_pid}" 2>/dev/null || true
 }
 
 trap 'jobs -pr | xargs -r kill 2>/dev/null || true' EXIT INT TERM
 
+rm -f "${XDG_RUNTIME_DIR}/batocera-return-to-es" 2>/dev/null || true
 seed_input_defaults
 
-if command -v dbus-run-session >/dev/null 2>&1; then
-    exec dbus-run-session -- /bin/bash -lc '
-        run_if_available() {
-            command -v "$1" >/dev/null 2>&1 || return 0
-            "$@" &
-        }
-        start_polkit_agent() {
-            local agent
-
-            for agent in \
-                /usr/lib/polkit-kde-authentication-agent-1 \
-                /usr/libexec/polkit-kde-authentication-agent-1 \
-                polkit-kde-authentication-agent-1
-            do
-                if [ -x "${agent}" ] || command -v "${agent}" >/dev/null 2>&1; then
-                    "${agent}" &
-                    return 0
-                fi
-            done
-        }
-        trap "jobs -pr | xargs -r kill 2>/dev/null || true" EXIT INT TERM
-        start_polkit_agent
-        run_if_available kded6
-        run_if_available kactivitymanagerd
-        run_if_available kglobalacceld
-        run_if_available xdg-desktop-portal
-        run_if_available xdg-desktop-portal-kde
-        run_if_available krunner
-        run_if_available batocera-force-plasma-output
-        export XDG_MENU_PREFIX=plasma-
-        exec plasmashell
-    '
-fi
 start_plasma_shell_session
 EOS
 chmod 0755 /usr/local/bin/batocera-plasma-session-payload
@@ -2029,11 +2506,89 @@ cat > /usr/local/bin/batocera-return-to-es <<'EOS'
 set +e
 
 uid="$(id -u)"
+marker="${XDG_RUNTIME_DIR:-/run/user/${uid}}/batocera-return-to-es"
+: > "${marker}" 2>/dev/null || true
 pkill -TERM -u "${uid}" -x plasmashell 2>/dev/null || true
-sleep 1
-pkill -TERM -u "${uid}" -f 'dbus-run-session -- /bin/bash -lc|batocera-plasma-session-payload' 2>/dev/null || true
+for _ in $(seq 1 50); do
+    pgrep -u "${uid}" -f 'batocera-plasma-session-payload' >/dev/null 2>&1 || exit 0
+    sleep 0.1
+done
+pkill -TERM -u "${uid}" -f 'batocera-plasma-session-payload' 2>/dev/null || true
 EOS
 chmod 0755 /usr/local/bin/batocera-return-to-es
+
+cat > /usr/local/bin/batocera-plasma-shell-mode <<'EOS'
+#!/bin/bash
+set -euo pipefail
+
+mode="${1:-}"
+mobile_config="${HOME}/.config/plasma-mobile"
+log_file="${XDG_RUNTIME_DIR:-/tmp}/batocera-plasma-shell-mode.log"
+
+strip_mobile_config_dir() {
+    local value entry result="" old_ifs
+
+    value="${XDG_CONFIG_DIRS:-/etc/xdg}"
+    old_ifs="${IFS}"
+    IFS=:
+    for entry in ${value}; do
+        [ -n "${entry}" ] || continue
+        [ "${entry}" = "${mobile_config}" ] && continue
+        result="${result:+${result}:}${entry}"
+    done
+    IFS="${old_ifs}"
+    printf '%s\n' "${result:-/etc/xdg}"
+}
+
+command -v plasmashell >/dev/null 2>&1 || exit 127
+desktop_config_dirs="$(strip_mobile_config_dir)"
+
+case "${mode}" in
+    mobile)
+        [ -d /usr/share/plasma/shells/org.kde.plasma.mobileshell ] || {
+            command -v kdialog >/dev/null 2>&1 && kdialog --error 'Plasma Mobile is not installed.'
+            exit 1
+        }
+        install -d -m 0700 "${mobile_config}"
+        mobile_config_dirs="${mobile_config}:${desktop_config_dirs}"
+        if command -v plasma-mobile-envmanager >/dev/null 2>&1; then
+            env QT_QPA_PLATFORM=offscreen \
+                XDG_CONFIG_DIRS="${mobile_config_dirs}" \
+                plasma-mobile-envmanager --apply-settings >>"${log_file}" 2>&1 || true
+        fi
+        nohup env \
+            QT_QPA_PLATFORMTHEME=KDE \
+            EGL_PLATFORM=wayland \
+            QT_QUICK_CONTROLS_STYLE=org.kde.breeze \
+            QT_ENABLE_GLYPH_CACHE_WORKAROUND=1 \
+            QT_QUICK_CONTROLS_MOBILE=true \
+            PLASMA_INTEGRATION_USE_PORTAL=1 \
+            PLASMA_PLATFORM=phone:handset \
+            PLASMA_DEFAULT_SHELL=org.kde.plasma.mobileshell \
+            XDG_CONFIG_DIRS="${mobile_config_dirs}" \
+            plasmashell -p org.kde.plasma.mobileshell --replace >>"${log_file}" 2>&1 &
+        ;;
+    desktop)
+        [ -d /usr/share/plasma/shells/org.kde.plasma.desktop ] || exit 1
+        nohup env \
+            -u EGL_PLATFORM \
+            -u QT_QUICK_CONTROLS_STYLE \
+            -u QT_ENABLE_GLYPH_CACHE_WORKAROUND \
+            -u QT_QUICK_CONTROLS_MOBILE \
+            -u PLASMA_INTEGRATION_USE_PORTAL \
+            -u PLASMA_PLATFORM \
+            QT_QPA_PLATFORMTHEME=KDE \
+            PLASMA_DEFAULT_SHELL=org.kde.plasma.desktop \
+            XDG_CONFIG_DIRS="${desktop_config_dirs}" \
+            plasmashell -p org.kde.plasma.desktop --replace >>"${log_file}" 2>&1 &
+        ;;
+    *)
+        printf 'usage: %s {mobile|desktop}\n' "$0" >&2
+        exit 2
+        ;;
+esac
+EOS
+chmod 0755 /usr/local/bin/batocera-plasma-shell-mode
 
 install -d -m 0755 /usr/share/applications /host
 install -d -m 0755 -o "${PLASMA_USER}" -g "${PLASMA_USER}" "/home/${PLASMA_USER}/Desktop"
@@ -2058,6 +2613,32 @@ cp -f /usr/share/applications/batocera-return-to-es.desktop "/home/${PLASMA_USER
 chmod 0755 /usr/share/applications/batocera-return-to-es.desktop "/home/${PLASMA_USER}/Desktop/Return to Batocera.desktop"
 chown "${PLASMA_USER}:${PLASMA_USER}" "/home/${PLASMA_USER}/Desktop/Return to Batocera.desktop" 2>/dev/null || true
 
+cat > /usr/share/applications/batocera-switch-plasma-mobile.desktop <<'EOS'
+[Desktop Entry]
+Type=Application
+Name=Switch to Plasma Mobile
+Comment=Replace the desktop shell with the touch-first Plasma Mobile shell
+Exec=/usr/local/bin/batocera-plasma-shell-mode mobile
+Icon=phone
+Terminal=false
+Categories=System;
+EOS
+cat > /usr/share/applications/batocera-switch-plasma-desktop.desktop <<'EOS'
+[Desktop Entry]
+Type=Application
+Name=Return to Plasma Desktop
+Comment=Replace the Plasma Mobile shell with the standard desktop shell
+Exec=/usr/local/bin/batocera-plasma-shell-mode desktop
+Icon=computer
+Terminal=false
+Categories=System;
+EOS
+for switcher in batocera-switch-plasma-mobile.desktop batocera-switch-plasma-desktop.desktop; do
+    cp -f "/usr/share/applications/${switcher}" "/home/${PLASMA_USER}/Desktop/${switcher}"
+    chmod 0755 "/usr/share/applications/${switcher}" "/home/${PLASMA_USER}/Desktop/${switcher}"
+    chown "${PLASMA_USER}:${PLASMA_USER}" "/home/${PLASMA_USER}/Desktop/${switcher}" 2>/dev/null || true
+done
+
 for desktop_file in \
     systemsettings.desktop \
     org.kde.dolphin.desktop \
@@ -2078,18 +2659,63 @@ do
 done
 
 touch /var/lib/batocera-arch-plasma-ready
+touch /var/lib/batocera-plasma-ready-v8
 EOF
 }
 
 container_ready() {
     container_exists || return 1
 
-    if [ -f "$(container_rootfs)/var/lib/batocera-arch-plasma-ready" ]; then
+    if [ -f "$(container_rootfs)/var/lib/batocera-plasma-ready-v8" ]; then
         return 0
     fi
 
     container_running && \
-        lxc-attach -P "${LXC_PATH}" -n "${CONTAINER}" -- test -f /var/lib/batocera-arch-plasma-ready >/dev/null 2>&1
+        lxc-attach -P "${LXC_PATH}" -n "${CONTAINER}" -- test -f /var/lib/batocera-plasma-ready-v8 >/dev/null 2>&1
+}
+
+ensure_private_session_bus_wrapper() {
+    local rootfs payload real_payload
+
+    rootfs="$(container_rootfs)"
+    payload="${rootfs}/usr/local/bin/batocera-plasma-session-payload"
+    real_payload="${rootfs}/usr/local/bin/batocera-plasma-session-payload.real"
+    [ -x "${payload}" ] || return 0
+
+    if grep -qF 'batocera-shared-session-bus-wrapper-v2' "${payload}" 2>/dev/null; then
+        return 0
+    fi
+
+    if ! grep -qF 'batocera-private-session-bus-wrapper-v1' "${payload}" 2>/dev/null || \
+            [ ! -x "${real_payload}" ]; then
+        cp -f "${payload}" "${real_payload}"
+    fi
+    chmod 0755 "${real_payload}"
+    cat > "${payload}" <<'EOS'
+#!/bin/bash
+# batocera-shared-session-bus-wrapper-v2
+set -e
+if [ "${BATOCERA_PLASMA_SHARED_DBUS:-0}" = "1" ] && \
+        [ -n "${DBUS_SESSION_BUS_ADDRESS:-}" ]; then
+    exec /usr/local/bin/batocera-plasma-session-payload.real --inside-dbus "$@"
+fi
+unset DBUS_SESSION_BUS_ADDRESS
+if command -v dbus-run-session >/dev/null 2>&1; then
+    exec dbus-run-session -- /usr/local/bin/batocera-plasma-session-payload.real --inside-dbus "$@"
+fi
+exec /usr/local/bin/batocera-plasma-session-payload.real --inside-dbus "$@"
+EOS
+    chmod 0755 "${payload}"
+    log "installed shared Plasma session-bus wrapper in ${CONTAINER}"
+}
+
+ensure_polkit_helper_permissions() {
+    local helper
+
+    helper="$(container_rootfs)/usr/lib/polkit-1/polkit-agent-helper-1"
+    [ -f "${helper}" ] || return 0
+    chown root:root "${helper}" 2>/dev/null || true
+    chmod 4755 "${helper}" 2>/dev/null || true
 }
 
 install_or_update_container() {
@@ -2487,6 +3113,11 @@ launch_plasma_session() {
     [ -n "${gid}" ] || gid="${uid}"
 
     ensure_runtime_dir
+    # The pointer bridge grabs the gamepad while Plasma owns the display. Do
+    # not start it during provisioning, or ES loses controller input when the
+    # setup window returns to the frontend.
+    start_thor_touch_mouse_bridge
+    sync_udev_database
     if [ "${PLASMA_SESSION_TYPE}" = "wayland" ]; then
         runtime_dir="/run/batocera-plasma/${uid}"
     else
@@ -2531,7 +3162,7 @@ launch_plasma_session() {
             -v "BATOCERA_ARCH_PLASMA_TOUCH_KEEP_PATTERN=${BATOCERA_ARCH_PLASMA_TOUCH_KEEP_PATTERN:-}" \
             -v "BATOCERA_ARCH_PLASMA_TOUCH_OUTPUT_NAME=${BATOCERA_ARCH_PLASMA_TOUCH_OUTPUT_NAME:-}" \
             -v "BATOCERA_ARCH_PLASMA_TOUCH_KWIN_CALIBRATION_MATRIX=${BATOCERA_ARCH_PLASMA_TOUCH_KWIN_CALIBRATION_MATRIX:-}" \
-            -v "BATOCERA_ARCH_PLASMA_KWIN_DBUS_SESSION=${BATOCERA_ARCH_PLASMA_KWIN_DBUS_SESSION:-0}" \
+            -v "BATOCERA_ARCH_PLASMA_KWIN_DBUS_SESSION=${BATOCERA_ARCH_PLASMA_KWIN_DBUS_SESSION:-1}" \
             -v "BATOCERA_ARCH_PLASMA_ENABLE_INPUTMETHOD=${BATOCERA_ARCH_PLASMA_ENABLE_INPUTMETHOD:-1}" \
             -v "BATOCERA_ARCH_PLASMA_POINTER_ACCEL=${BATOCERA_ARCH_PLASMA_POINTER_ACCEL:-}" \
             -- /usr/local/bin/batocera-start-plasma-root >>"${LOG}" 2>&1
@@ -2588,6 +3219,9 @@ run_session() {
         die "container is not installed yet; run the setup launcher once"
     fi
 
+    ensure_polkit_helper_permissions
+    ensure_private_session_bus_wrapper
+
     detach_from_frontend_session --session
 
     trap cleanup_session EXIT INT TERM
@@ -2601,17 +3235,32 @@ terminal_setup_then_launch() {
     load_state
     prompt_credentials
     if ! run_with_visible_log install_or_update_container; then
-        printf '\n%s\n' "${PLASMA_LABEL} LXC setup failed."
-        printf '%s\n' "The last log lines are shown above and saved in ${LOG}."
-        printf '%s' "Press Enter to close..."
-        read -r _ || true
+        if command -v dialog >/dev/null 2>&1 && have_tty; then
+            dialog --title "${PLASMA_LABEL} LXC" --msgbox \
+                "Setup failed.\n\nReview ${LOG} for details." 9 62
+        elif command -v yad >/dev/null 2>&1 && [ -n "${DISPLAY:-}" ]; then
+            yad --center --on-top --title="${PLASMA_LABEL} LXC" \
+                --text="Setup failed.\n\nReview ${LOG} for details." \
+                --button=OK:0 --width=520 2>/dev/null || true
+        else
+            printf '\n%s\n' "${PLASMA_LABEL} LXC setup failed."
+            printf '%s\n' "The last log lines are shown above and saved in ${LOG}."
+            printf '%s' "Press Enter to close..."
+            read -r _ || true
+        fi
         return 1
     fi
     install_launcher
 
+    # First-run setup normally runs inside a fullscreen xterm. Use dialog on
+    # that terminal so the completion prompt cannot be stacked behind it.
     if command -v dialog >/dev/null 2>&1 && have_tty; then
         dialog --title "${PLASMA_LABEL} LXC" --msgbox \
             "Setup complete.\n\nRelaunch ${PLASMA_LABEL} LXC to start the desktop." 9 62
+    elif command -v yad >/dev/null 2>&1 && [ -n "${DISPLAY:-}" ]; then
+        yad --center --on-top --title="${PLASMA_LABEL} LXC" \
+            --text="Setup complete.\n\nRelaunch ${PLASMA_LABEL} LXC to start the desktop." \
+            --button=OK:0 --width=520 2>/dev/null || true
     else
         printf '%s\n' "Setup complete. Relaunch ${PLASMA_LABEL} LXC to start the desktop."
     fi

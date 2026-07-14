@@ -4,7 +4,7 @@
 #
 ################################################################################
 
-BATOCERA_ARCH_PLASMA_LXC_VERSION = 1.05
+BATOCERA_ARCH_PLASMA_LXC_VERSION = 1.16
 BATOCERA_ARCH_PLASMA_LXC_SOURCE =
 BATOCERA_ARCH_PLASMA_LXC_DEPENDENCIES = \
 	bash \

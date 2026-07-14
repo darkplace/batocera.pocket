@@ -1,0 +1,259 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Sat, 11 Jul 2026 00:00:00 +000
+Subject: [PATCH] batocera-settings: lock and atomically replace config writes
+
+Serialize concurrent writers, reject corrupt NUL-containing input, and replace
+the configuration through a synced temporary file so interrupted writes cannot
+leave a partially written batocera.conf.
+
+---
+diff --git a/mini_settings_set_main.c b/mini_settings_set_main.c
+index 2064d07..5585830 100644
+--- a/mini_settings_set_main.c
++++ b/mini_settings_set_main.c
+@@ -1,8 +1,14 @@
++#define _GNU_SOURCE
++
+ #include <errno.h>
++#include <fcntl.h>
+ #include <stdbool.h>
+ #include <stdio.h>
+ #include <stdlib.h>
+ #include <string.h>
++#include <sys/file.h>
++#include <sys/stat.h>
++#include <unistd.h>
+ 
+ #include "mini_settings_read_file.h"
+ #include "mini_settings_set.h"
+@@ -34,6 +40,130 @@ static const char kUsage[] =
+     "By default, reads from " DEFAULT_CONFIG_IN_PATH
+     " and writes to " DEFAULT_CONFIG_OUT_PATH "\n";
+ 
++static int lock_config(const char *config_path) {
++  const size_t lock_path_size = strlen(config_path) + sizeof(".lock");
++  char *lock_path = malloc(lock_path_size);
++  if (lock_path == NULL) {
++    errno = ENOMEM;
++    return -1;
++  }
++  snprintf(lock_path, lock_path_size, "%s.lock", config_path);
++
++  const int lock_fd = open(lock_path, O_CREAT | O_CLOEXEC | O_RDWR, 0600);
++  const int open_errno = errno;
++  free(lock_path);
++  if (lock_fd < 0) {
++    errno = open_errno;
++    return -1;
++  }
++  if (flock(lock_fd, LOCK_EX) != 0) {
++    const int lock_errno = errno;
++    close(lock_fd);
++    errno = lock_errno;
++    return -1;
++  }
++  return lock_fd;
++}
++
++static void unlock_config(int lock_fd) {
++  if (lock_fd < 0) return;
++  flock(lock_fd, LOCK_UN);
++  close(lock_fd);
++}
++
++static void fsync_parent_directory(const char *path) {
++  char *copy = strdup(path);
++  if (copy == NULL) return;
++  char *slash = strrchr(copy, '/');
++  const char *directory = ".";
++  if (slash != NULL) {
++    if (slash == copy) {
++      slash[1] = '\0';
++    } else {
++      *slash = '\0';
++    }
++    directory = copy;
++  }
++  const int directory_fd = open(directory, O_RDONLY | O_CLOEXEC | O_DIRECTORY);
++  if (directory_fd >= 0) {
++    fsync(directory_fd);
++    close(directory_fd);
++  }
++  free(copy);
++}
++
++static bool atomic_write_file(const char *path, const char *contents,
++                              size_t contents_size) {
++  const size_t template_size = strlen(path) + sizeof(".tmp.XXXXXX");
++  char *template = malloc(template_size);
++  if (template == NULL) {
++    errno = ENOMEM;
++    return false;
++  }
++  snprintf(template, template_size, "%s.tmp.XXXXXX", path);
++
++  const int fd = mkstemp(template);
++  if (fd < 0) {
++    const int saved_errno = errno;
++    free(template);
++    errno = saved_errno;
++    return false;
++  }
++
++  struct stat current;
++  if (stat(path, &current) == 0) {
++    if (fchown(fd, current.st_uid, current.st_gid) != 0 && errno != EPERM) {
++      goto write_failed;
++    }
++    if (fchmod(fd, current.st_mode & 07777) != 0) goto write_failed;
++  } else if (errno == ENOENT) {
++    if (fchmod(fd, 0600) != 0) goto write_failed;
++  } else {
++    goto write_failed;
++  }
++
++  FILE *file = fdopen(fd, "wb");
++  if (file == NULL) goto write_failed;
++  if (contents_size > 0 &&
++      fwrite(contents, sizeof(char), contents_size, file) != contents_size) {
++    const int saved_errno = errno != 0 ? errno : EIO;
++    fclose(file);
++    errno = saved_errno;
++    goto closed_file_failed;
++  }
++  if (fflush(file) != 0 || fsync(fileno(file)) != 0) {
++    const int saved_errno = errno;
++    fclose(file);
++    errno = saved_errno;
++    goto closed_file_failed;
++  }
++  if (fclose(file) != 0) goto closed_file_failed;
++
++  if (rename(template, path) != 0) goto closed_file_failed;
++  fsync_parent_directory(path);
++  free(template);
++  return true;
++
++write_failed: {
++    const int saved_errno = errno;
++    close(fd);
++    errno = saved_errno;
++  }
++closed_file_failed: {
++    const int saved_errno = errno;
++    unlink(template);
++    free(template);
++    errno = saved_errno;
++    return false;
++  }
++}
++
++static bool supports_transactional_write(const char *config_in_path,
++                                         const char *config_out_path) {
++  return strcmp(config_in_path, config_out_path) == 0 &&
++         strncmp(config_out_path, "/dev/", sizeof("/dev/") - 1) != 0;
++}
++
+ int main(int argc, char *argv[]) {
+   if (argc < 2 || strcmp(argv[1], "--help") == 0) {
+     fprintf(stderr, kUsage, argv[0]);
+@@ -42,7 +172,7 @@ int main(int argc, char *argv[]) {
+   bool validate = false;
+   const char *config_in_path = DEFAULT_CONFIG_IN_PATH;
+   const char *config_out_path = DEFAULT_CONFIG_OUT_PATH;
+-  unsigned i = 1;
++  int i = 1;
+   for (; i < argc && argv[i][0] == '-'; ++i) {
+     if (strcmp(argv[i], "-f") == 0) {
+       if (i + 1 >= argc) {
+@@ -76,6 +206,17 @@ int main(int argc, char *argv[]) {
+     return EXIT_FAILURE;
+   }
+ 
++  int lock_fd = -1;
++  const bool transactional =
++      supports_transactional_write(config_in_path, config_out_path);
++  if (transactional) {
++    lock_fd = lock_config(config_out_path);
++    if (lock_fd < 0) {
++      perror("failed to lock config file");
++      return EXIT_FAILURE;
++    }
++  }
++
+   char *config_contents;
+   size_t config_contents_size;
+ 
+@@ -86,10 +227,19 @@ int main(int argc, char *argv[]) {
+       config_contents_size = 0;
+     } else {
+       perror(config_in_path);
++      unlock_config(lock_fd);
+       return EXIT_FAILURE;
+     }
+   }
+ 
++  if (validate && config_contents_size > 0 &&
++      memchr(config_contents, '\0', config_contents_size) != NULL) {
++    fprintf(stderr, "Invalid config file: embedded NUL byte\n");
++    free(config_contents);
++    unlock_config(lock_fd);
++    return EXIT_FAILURE;
++  }
++
+   struct mini_settings_set_result_t result = mini_settings_set(
+       config_contents, config_contents_size, kvs, kvs_size, validate);
+   if (result.error != NULL) {
+@@ -99,24 +249,41 @@ int main(int argc, char *argv[]) {
+     goto set_failed;
+   }
+ 
+-  FILE *config_file = fopen(config_out_path, "w");
+-  if (config_file == NULL) {
+-    perror(config_out_path);
+-    goto set_failed;
+-  }
+-  fwrite(result.contents, sizeof(char), result.contents_size, config_file);
+-  if (ferror(config_file)) {
+-    perror("write error");
+-    goto set_failed;
++  if (transactional) {
++    if (!atomic_write_file(config_out_path, result.contents,
++                           result.contents_size)) {
++      perror("atomic config write");
++      goto set_failed;
++    }
++  } else {
++    FILE *config_file = fopen(config_out_path, "w");
++    if (config_file == NULL) {
++      perror(config_out_path);
++      goto set_failed;
++    }
++    if (result.contents_size > 0 &&
++        fwrite(result.contents, sizeof(char), result.contents_size,
++               config_file) != result.contents_size) {
++      const int saved_errno = errno != 0 ? errno : EIO;
++      fclose(config_file);
++      errno = saved_errno;
++      perror("write error");
++      goto set_failed;
++    }
++    if (fclose(config_file) != 0) {
++      perror("close error");
++      goto set_failed;
++    }
+   }
+-  fclose(config_file);
+ 
+   free(result.contents);
+   free(config_contents);
++  unlock_config(lock_fd);
+   return EXIT_SUCCESS;
+ 
+ set_failed:
+   free(result.contents);
+   free(config_contents);
++  unlock_config(lock_fd);
+   return EXIT_FAILURE;
+ }
