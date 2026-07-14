@@ -308,14 +308,14 @@ apply_uclamp() {{
     local pid=$1
     if [ -d "/proc/$pid" ]; then
         # Main process
-        echo $UCLAMP_MIN > /proc/$pid/sched_util_min 2>/dev/null
-        echo $UCLAMP_MAX > /proc/$pid/sched_util_max 2>/dev/null
+        printf '%s\\n' "$UCLAMP_MIN" 2>/dev/null > "/proc/$pid/sched_util_min" || true
+        printf '%s\\n' "$UCLAMP_MAX" 2>/dev/null > "/proc/$pid/sched_util_max" || true
         
         # All threads
-        for tid in /proc/$pid/task/*/; do
-            tid=$(basename "$tid")
-            echo $UCLAMP_MIN > /proc/$pid/task/$tid/sched_util_min 2>/dev/null
-            echo $UCLAMP_MAX > /proc/$pid/task/$tid/sched_util_max 2>/dev/null
+        for task_dir in "/proc/$pid/task/"*/; do
+            [ -d "$task_dir" ] || continue
+            printf '%s\\n' "$UCLAMP_MIN" 2>/dev/null > "${{task_dir}}sched_util_min" || true
+            printf '%s\\n' "$UCLAMP_MAX" 2>/dev/null > "${{task_dir}}sched_util_max" || true
         done
     fi
 }}
@@ -327,6 +327,7 @@ apply_uclamp $EMU_PID
 (
     while kill -0 $EMU_PID 2>/dev/null; do
         sleep 2
+        kill -0 $EMU_PID 2>/dev/null || break
         apply_uclamp $EMU_PID
     done
 ) &
@@ -338,6 +339,7 @@ EXIT_CODE=$?
 
 # Cleanup monitor
 kill $MONITOR_PID 2>/dev/null
+wait $MONITOR_PID 2>/dev/null || true
 
 exit $EXIT_CODE
 '''
@@ -509,6 +511,9 @@ exit $EXIT_CODE
 
         # ---------- Controls ----------
         set_eden_controllers(c, system, playersControllers)
+        # Batocera supplies SDL mappings. Eden's separate hidraw Joy-Con scanner is
+        # unnecessary here and can take ownership of controller/NFC polling paths.
+        set_override("Controls", "enable_joycon_driver", "false")
 
         # ---------- Telemetry ----------
         if not c.has_section("WebService"):

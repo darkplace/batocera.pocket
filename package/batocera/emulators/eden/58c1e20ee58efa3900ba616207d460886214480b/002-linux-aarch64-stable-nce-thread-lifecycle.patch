@@ -1,0 +1,89 @@
+From 1b57794d9796c67c8d4e5614d6f55455c567ef01 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Tue, 14 Jul 2026 00:00:00 +000
+Subject: [PATCH] nce: restore stable thread-context lifecycle on Linux ARM64
+
+Eden inherited two commits explicitly labelled "WIP: DO-NOT-MERGE: NCE
+experiments" which reordered the lifetime of is_running, native_context,
+m_running_thread, and the guest TLS state.  The reordered stores race with
+SignalInterrupt() on native Linux ARM64 and can leave a guest CPU thread
+running after an exception or interrupt.
+
+Restore the ordering used by the known-good Linux ARM64 Yuzu NCE path.  Keep
+Eden's newer patcher, per-process fault memory, split-module support, and all
+other NCE improvements unchanged.
+
+Signed-off-by: suckbluefrog <suckbluefrog@proton.me>
+---
+ src/core/arm/nce/arm_nce.cpp | 37 ++++++++++---------------------------
+ 1 file changed, 10 insertions(+), 27 deletions(-)
+
+diff --git a/src/core/arm/nce/arm_nce.cpp b/src/core/arm/nce/arm_nce.cpp
+index 63d5638fce..4044f9c2e1 100644
+--- a/src/core/arm/nce/arm_nce.cpp
++++ b/src/core/arm/nce/arm_nce.cpp
+@@ -189,9 +189,6 @@ void ArmNce::LockThread(Kernel::KThread* thread) {
+ 
+ void ArmNce::UnlockThread(Kernel::KThread* thread) {
+     auto* thread_params = &thread->GetNativeExecutionParameters();
+-    m_guest_ctx.tpidr_el0 = thread_params->tpidr_el0;
+-    m_guest_ctx.tpidrro_el0 = thread_params->tpidrro_el0;
+-    thread_params->native_context = nullptr;
+     UnlockThreadParameters(thread_params);
+ }
+ 
+@@ -203,23 +200,16 @@ HaltReason ArmNce::RunThread(Kernel::KThread* thread) {
+         return hr;
+     }
+ 
+-    // Pre-fetch thread context data to improve cache locality
++    // Get the thread context.
+     auto* thread_params = &thread->GetNativeExecutionParameters();
+     auto* process = thread->GetOwnerProcess();
+ 
+-    // Move non-critical operations outside the locked section
+-    const u64 tpidr_el0_cache = m_guest_ctx.tpidr_el0;
+-    const u64 tpidrro_el0_cache = m_guest_ctx.tpidrro_el0;
+-
+-    // Critical section begins - minimize operations here
++    // Assign current members.
+     m_running_thread = thread;
+     m_guest_ctx.parent = this;
+     thread_params->native_context = &m_guest_ctx;
+-    thread_params->tpidr_el0 = tpidr_el0_cache;
+-    thread_params->tpidrro_el0 = tpidrro_el0_cache;
+-
+-    // Memory barrier to ensure visibility of changes
+-    std::atomic_thread_fence(std::memory_order_release);
++    thread_params->tpidr_el0 = m_guest_ctx.tpidr_el0;
++    thread_params->tpidrro_el0 = m_guest_ctx.tpidrro_el0;
+     thread_params->is_running = true;
+ 
+     // TODO: finding and creating the post handler needs to be locked
+@@ -231,19 +221,12 @@ HaltReason ArmNce::RunThread(Kernel::KThread* thread) {
+         hr = ReturnToRunCodeByExceptionLevelChange(m_thread_id, thread_params);  // Android: Use "process handle SIGUSR2 -n true -p true -s false" (and SIGURG) in LLDB when debugging
+     }
+ 
+-    // Critical section for thread cleanup
+-    std::atomic_thread_fence(std::memory_order_acquire);
+-
+-    // Cache values before releasing thread
+-    const u64 final_tpidr_el0 = thread_params->tpidr_el0;
+-
+-    // Minimize critical section
+-    thread_params->is_running = false;
+-    thread_params->native_context = nullptr;
++    // Unload members. The thread does not change, so the old reference
++    // remains valid while its native context is copied back.
+     m_running_thread = nullptr;
+-
+-    // Non-critical updates can happen after releasing the thread
+-    m_guest_ctx.tpidr_el0 = final_tpidr_el0;
++    m_guest_ctx.tpidr_el0 = thread_params->tpidr_el0;
++    thread_params->native_context = nullptr;
++    thread_params->is_running = false;
+ 
+     // Return the halt reason.
+     return hr;
+-- 
+2.50.1

@@ -1,9 +1,9 @@
 # From upstream release assets:
-# - VacuumTube v1.6.1
-# - Brave AppImage stable 1.89.143
-# - Firefox 149.0 linux-aarch64 en-US
-# - PeaZip 11.1.0 Flathub aarch64 Qt6 app layer
-sha256  e2cfdbee43968ae025c43c248ccaaf9c9f95883639506e90273de94e074371ee  VacuumTube-arm64.AppImage
-sha256  9dd780923a6ee4a246652d18cf73f504de096c793b4c06d77acc7c452ce72c11  Brave-Web-Browser-stable-1.89.143-aarch64.AppImage
-sha256  a862748867f9c6df7e9868608deffee20111905299854514b7f442205948a5e8  firefox-149.0.tar.xz
-sha256  55c350a4837001622bfecc5a5b173d17390a48313d90a0a659b57f542b79a377  peazip-flatpak-aarch64-11.1.0.tar.gz
+# - VacuumTube v1.8.1
+# - Brave AppImage stable 1.92.139
+# - Firefox 152.0.5 linux-aarch64 en-US
+# - PeaZip 11.2.0 Flathub aarch64 Qt6 app layer
+sha256  f479b1864f6b43720c8a73f50feccbf8fdba40b62322f666fdb32deb9fddc5ea  VacuumTube-arm64.AppImage
+sha256  0b4f3df389f5d438cf445a302b77c5c278a3fd1c37179b97ffb20cc5979720ef  Brave-Web-Browser-stable-1.92.139-aarch64.AppImage
+sha256  6ea600b7c20a38042157817bd18c921e15de3508d0f073377c179d5f1b3e8c2d  firefox-152.0.5.tar.xz
+sha256  7c8ce0df04f0ed08776e18c5747ce2d800b028445a9b231f4ea09e39cbf6c544  peazip-flatpak-aarch64-11.2.0.tar.gz

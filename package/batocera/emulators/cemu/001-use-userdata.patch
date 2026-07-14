@@ -1,21 +1,20 @@
-diff --git a/src/gui/wxgui/input/HotkeySettings.cpp b/src/gui/wxgui/input/HotkeySettings.cpp
-index 0bf5902..399870a 100644
---- a/src/gui/wxgui/input/HotkeySettings.cpp
-+++ b/src/gui/wxgui/input/HotkeySettings.cpp
-@@ -18,7 +18,7 @@
- 
- std::optional<fs::path> GenerateScreenshotFilename(bool isDRC)
- {
--	fs::path screendir = ActiveSettings::GetUserDataPath("screenshots");
-+	fs::path screendir = "/userdata/screenshots";
- 	// build screenshot name with format Screenshot_YYYY-MM-DD_HH-MM-SS[_GamePad].png
- 	// if the file already exists add a suffix counter (_2.png, _3.png etc)
- 	std::time_t time_t = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+From 86ef9ba39cc91d47e0de51948be598458bf9ad09 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Tue, 14 Jul 2026 11:00:00 +000
+Subject: [PATCH] cemu: use Batocera userdata paths
+
+---
+ src/Cemu/Logging/CemuLogging.cpp                       | 2 +-
+ src/Common/ExceptionHandler/ExceptionHandler_win32.cpp | 2 +-
+ src/gui/wxgui/CemuApp.cpp                              | 8 +++-----
+ src/gui/wxgui/input/HotkeySettings.cpp                 | 2 +-
+ 4 files changed, 6 insertions(+), 8 deletions(-)
+
 diff --git a/src/Cemu/Logging/CemuLogging.cpp b/src/Cemu/Logging/CemuLogging.cpp
-index 28a86427f6..a4f78b6d94 100644
+index f2d9ac0..50fade3 100644
 --- a/src/Cemu/Logging/CemuLogging.cpp
 +++ b/src/Cemu/Logging/CemuLogging.cpp
-@@ -94,7 +94,7 @@ void cemuLog_thread()
+@@ -151,7 +151,7 @@ void cemuLog_thread()
  
  fs::path cemuLog_GetLogFilePath()
  {
@@ -25,10 +24,10 @@ index 28a86427f6..a4f78b6d94 100644
  
  void cemuLog_createLogFile(bool triggeredByCrash)
 diff --git a/src/Common/ExceptionHandler/ExceptionHandler_win32.cpp b/src/Common/ExceptionHandler/ExceptionHandler_win32.cpp
-index 565f4f8fc4..00e15c51f3 100644
+index 6b205d2..74120a4 100644
 --- a/src/Common/ExceptionHandler/ExceptionHandler_win32.cpp
 +++ b/src/Common/ExceptionHandler/ExceptionHandler_win32.cpp
-@@ -360,7 +360,7 @@ void createCrashlog(EXCEPTION_POINTERS* e, PCONTEXT context)
+@@ -235,7 +235,7 @@ void createCrashlog(EXCEPTION_POINTERS* e, PCONTEXT context)
  		p /= fmt::format("log_{:04d}{:02d}{:02d}_{:02d}{:02d}{:02d}.txt", 1900 + time.tm_year, time.tm_mon + 1, time.tm_mday, time.tm_year, time.tm_hour, time.tm_min, time.tm_sec);
  
  		std::error_code ec;
@@ -38,21 +37,35 @@ index 565f4f8fc4..00e15c51f3 100644
  
  	exit(0);
 diff --git a/src/gui/wxgui/CemuApp.cpp b/src/gui/wxgui/CemuApp.cpp
-index 2c766f5bab..425a125e5a 100644
+index bb7b6c7..073ad54 100644
 --- a/src/gui/wxgui/CemuApp.cpp
 +++ b/src/gui/wxgui/CemuApp.cpp
-@@ -146,10 +146,9 @@
+@@ -160,12 +160,10 @@ void CemuApp::DeterminePaths(std::set<fs::path>& failedWriteAccess) // for Linux
+ 				return defaultValue;
  			return dir;
  		};
- 		wxString homeDir = wxFileName::GetHomeDir();
+-		wxString homeDir = wxFileName::GetHomeDir();
 -		user_data_path = (getEnvDir(wxS("XDG_DATA_HOME"), homeDir + wxS("/.local/share")) + "/" + appName).ToStdString();
 -		config_path = (getEnvDir(wxS("XDG_CONFIG_HOME"), homeDir + wxS("/.config")) + "/" + appName).ToStdString();
-+		user_data_path = (getEnvDir(wxS("XDG_DATA_HOME"), wxS("/userdata/saves")) + "/" + "wiiu").ToStdString();
++		user_data_path = (getEnvDir(wxS("XDG_DATA_HOME"), wxS("/userdata/saves")) + "/wiiu").ToStdString();
 +		config_path = (getEnvDir(wxS("XDG_CONFIG_HOME"), wxS("/userdata/system/configs")) + "/" + appName.Lower()).ToStdString();
  		data_path = standardPaths.GetDataDir().ToStdString();
 -		cache_path = standardPaths.GetUserDir(wxStandardPaths::Dir::Dir_Cache).ToStdString();
 -		cache_path /= appName.ToStdString();
-+		cache_path = (getEnvDir(wxS("XDG_CACHE_HOME"), wxS("userdata/system/cache")) + "/" + appName.Lower()).ToStdString();
++		cache_path = (getEnvDir(wxS("XDG_CACHE_HOME"), wxS("/userdata/system/cache")) + "/" + appName.Lower()).ToStdString();
  	}
-	ActiveSettings::SetPaths(isPortable, exePath, user_data_path, config_path, cache_path, data_path, failedWriteAccess);
-}
+ 	ActiveSettings::SetPaths(isPortable, exePath, user_data_path, config_path, cache_path, data_path, failedWriteAccess);
+ }
+diff --git a/src/gui/wxgui/input/HotkeySettings.cpp b/src/gui/wxgui/input/HotkeySettings.cpp
+index d84ffa1..c8f41a0 100644
+--- a/src/gui/wxgui/input/HotkeySettings.cpp
++++ b/src/gui/wxgui/input/HotkeySettings.cpp
+@@ -19,7 +19,7 @@
+ 
+ std::optional<fs::path> GenerateScreenshotFilename(bool isDRC)
+ {
+-	fs::path screendir = ActiveSettings::GetUserDataPath("screenshots");
++	fs::path screendir = "/userdata/screenshots";
+ 	// build screenshot name with format Screenshot_YYYY-MM-DD_HH-MM-SS[_GamePad].png
+ 	// if the file already exists add a suffix counter (_2.png, _3.png etc)
+ 	std::time_t time_t = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());

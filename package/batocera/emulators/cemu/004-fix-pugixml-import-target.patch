@@ -1,9 +1,17 @@
+From 0947cb5c0f48e0fd7a8e18616a3fd5da0680f8c8 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Tue, 14 Jul 2026 11:02:00 +000
+Subject: [PATCH] cemu: support unnamespaced pugixml target
+
+---
+ CMakeLists.txt | 4 ++++
+ 1 file changed, 4 insertions(+)
+
 diff --git a/CMakeLists.txt b/CMakeLists.txt
-index 3fdadfe..f77c4c0 100644
+index 644032c..71788d1 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
-@@ -151,6 +151,10 @@ option(ENABLE_WXWIDGETS "Build with wxWidgets UI (Currently required)" ON)
- 
+@@ -152,6 +152,10 @@ option(ENABLE_WXWIDGETS "Build with wxWidgets UI (Currently required)" ON)
  find_package(Threads REQUIRED)
  find_package(CURL REQUIRED)
  find_package(pugixml REQUIRED)

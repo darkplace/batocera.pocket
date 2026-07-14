@@ -1,0 +1,86 @@
+From 43b7ae134bddc8faaf6def5a36585fa612e8861b Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Tue, 14 Jul 2026 00:00:00 +000
+Subject: [PATCH] kernel: keep fiber-sensitive TLS accessors out of LTO
+
+Guest KThread fibers can resume on a different host CPU thread after a
+blocking SVC.  The kernel's thread-local host core ID and current thread
+therefore have to be reloaded after any call that can schedule.
+
+Upstream marked these TLS accessors noinline for non-MSVC LTO for exactly
+that reason.  Eden commit 2dc6d773eefcd0575cf8df3ea20bfba66f3a47b5
+removed those barriers.  With ThinLTO enabled, the old host core ID can then
+survive a fiber migration: CpuManager selects the previous PhysicalCore while
+SVC dispatch uses the new host core.  NCE consequently runs stale per-core
+guest registers and SVC state.
+
+Use Eden's existing portable noinline marker on every accessor that was
+previously protected.  This preserves Eden's coalesced TLS storage while
+forcing each post-schedule access to resolve against the current host thread.
+
+Signed-off-by: suckbluefrog <suckbluefrog@proton.me>
+---
+ src/core/hle/kernel/kernel.cpp | 16 ++++++++--------
+ 1 file changed, 8 insertions(+), 8 deletions(-)
+
+diff --git a/src/core/hle/kernel/kernel.cpp b/src/core/hle/kernel/kernel.cpp
+index 3fb5f7eb6f..a0d5c60254 100644
+--- a/src/core/hle/kernel/kernel.cpp
++++ b/src/core/hle/kernel/kernel.cpp
+@@ -356,7 +356,7 @@ struct KernelCore::Impl {
+     }
+ 
+     /// Sets the host thread ID for the caller.
+-    u32 SetHostThreadId(std::size_t core_id) {
++    YUZU_NO_INLINE u32 SetHostThreadId(std::size_t core_id) {
+         // This should only be called during core init.
+         ASSERT(tls_data.host_thread_id == UINT8_MAX);
+ 
+@@ -367,14 +367,14 @@ struct KernelCore::Impl {
+     }
+ 
+     /// Gets the host thread ID for the caller
+-    u32 GetHostThreadId() const {
++    YUZU_NO_INLINE u32 GetHostThreadId() const {
+         return tls_data.host_thread_id;
+     }
+ 
+     // Gets the dummy KThread for the caller, allocating a new one if this is the first time
+-    KThread* GetHostDummyThread(ThreadLocalData& t, KThread* existing_thread) {
++    YUZU_NO_INLINE KThread* GetHostDummyThread(ThreadLocalData& t, KThread* existing_thread) {
+         if (t.thread == nullptr) {
+-            auto const initialize{[](KThread* thread) {
++            auto const initialize{[](KThread* thread) YUZU_NO_INLINE {
+                 ASSERT(KThread::InitializeDummyThread(thread, nullptr).IsSuccess());
+                 return thread;
+             }};
+@@ -406,10 +406,10 @@ struct KernelCore::Impl {
+     }
+ 
+     // Forces singlecore
+-    bool IsPhantomModeForSingleCore() const {
++    YUZU_NO_INLINE bool IsPhantomModeForSingleCore() const {
+         return tls_data.is_phantom_mode_for_singlecore;
+     }
+-    void SetIsPhantomModeForSingleCore(bool value) {
++    YUZU_NO_INLINE void SetIsPhantomModeForSingleCore(bool value) {
+         ASSERT(!is_multicore);
+         tls_data.is_phantom_mode_for_singlecore = value;
+     }
+@@ -418,12 +418,12 @@ struct KernelCore::Impl {
+         return is_shutting_down.load(std::memory_order_relaxed);
+     }
+ 
+-    KThread* GetCurrentEmuThread() {
++    YUZU_NO_INLINE KThread* GetCurrentEmuThread() {
+         auto& t = tls_data;
+         return t.current_thread ? t.current_thread : (t.current_thread = GetHostDummyThread(t, nullptr));
+     }
+ 
+-    void SetCurrentEmuThread(KThread* thread) {
++    YUZU_NO_INLINE void SetCurrentEmuThread(KThread* thread) {
+         tls_data.current_thread = thread;
+     }
+ 
+-- 
+2.50.1

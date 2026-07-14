@@ -3,7 +3,7 @@
 # xenia-edge
 #
 ################################################################################
-XENIA_EDGE_VERSION = 07021f019cf55105bc26c0474e0b0835808353e2
+XENIA_EDGE_VERSION = 70ad7c527e502193eb3f2a458987ca312ac4e9e3
 XENIA_EDGE_SITE = https://github.com/has207/xenia-edge.git
 XENIA_EDGE_SITE_METHOD = git
 XENIA_EDGE_GIT_SUBMODULES = YES
@@ -11,6 +11,13 @@ XENIA_EDGE_LICENSE = BSD
 XENIA_EDGE_LICENSE_FILE = LICENSE
 XENIA_EDGE_EMULATOR_INFO = xenia-edge.emulator.yml
 XENIA_EDGE_SUPPORTS_IN_SOURCE_BUILD = NO
+
+# Vulkan shader compilation uses Slang at configure time. Keep this pinned to
+# the version expected by xenia-build.py rather than downloading during build.
+XENIA_EDGE_SLANG_VERSION = 2026.8
+XENIA_EDGE_SLANG_SOURCE = slang-$(XENIA_EDGE_SLANG_VERSION)-linux-x86_64.tar.gz
+XENIA_EDGE_EXTRA_DOWNLOADS = \
+	https://github.com/shader-slang/slang/releases/download/v$(XENIA_EDGE_SLANG_VERSION)/$(XENIA_EDGE_SLANG_SOURCE)
 
 XENIA_EDGE_DEPENDENCIES = host-wayland sdl2 vulkan-headers vulkan-loader lz4 alsa-lib python-toml \
     qt6base qt6declarative
@@ -20,6 +27,9 @@ XENIA_EDGE_CONF_OPTS += -DXENIA_BUILD_TESTS=OFF
 XENIA_EDGE_CONF_OPTS += -DXENIA_BUILD_MISC=OFF
 XENIA_EDGE_CONF_OPTS += -DXENIA_ENABLE_LTO=OFF
 XENIA_EDGE_CONF_OPTS += -DXENIA_USE_HOST_SHADER_CC=ON
+# Locale catalogs are not used by Xenia and require a host msgfmt binary.
+# Keeping them disabled also makes cross-builds independent of host gettext.
+XENIA_EDGE_CONF_OPTS += -DwxBUILD_LOCALES=OFF
 XENIA_EDGE_CONF_ENV += QT_DIR=$(STAGING_DIR)/usr
 
 define XENIA_EDGE_GEN_VERSION_H
@@ -48,7 +58,16 @@ define XENIA_EDGE_BUILD_HOST_SHADER_CC
 	    $(@D)/build/host_tools/Release/xenia-shader-cc.exe
 endef
 
+define XENIA_EDGE_INSTALL_SLANG
+	rm -rf $(@D)/.slang
+	mkdir -p $(@D)/.slang/$(XENIA_EDGE_SLANG_VERSION)
+	$(TAR) -xf $(DL_DIR)/$(XENIA_EDGE_DL_SUBDIR)/$(XENIA_EDGE_SLANG_SOURCE) \
+		-C $(@D)/.slang/$(XENIA_EDGE_SLANG_VERSION)
+	chmod +x $(@D)/.slang/$(XENIA_EDGE_SLANG_VERSION)/bin/slangc
+endef
+
 XENIA_EDGE_PRE_CONFIGURE_HOOKS += XENIA_EDGE_GEN_VERSION_H
+XENIA_EDGE_PRE_CONFIGURE_HOOKS += XENIA_EDGE_INSTALL_SLANG
 XENIA_EDGE_PRE_CONFIGURE_HOOKS += XENIA_EDGE_BUILD_HOST_SHADER_CC
 
 define XENIA_EDGE_GENERATE_WX_WAYLAND_PROTOCOLS

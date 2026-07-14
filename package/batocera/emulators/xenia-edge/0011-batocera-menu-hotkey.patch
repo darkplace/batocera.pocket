@@ -1,5 +1,6 @@
-From: Batocera Linux Team <batocera@batocera.linux>
-Date: Sun, 31 May 2026 00:00:00 +0000
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Sun, 31 May 2026 00:00:00 +000
 Subject: [PATCH] input: reserve guide button for Batocera hotkeys
 
 ---
@@ -7,11 +8,12 @@ Subject: [PATCH] input: reserve guide button for Batocera hotkeys
  1 file changed, 6 insertions(+), 19 deletions(-)
 
 diff --git a/src/xenia/app/emulator_window.cc b/src/xenia/app/emulator_window.cc
+index f1136b28b..4a7ff3298 100644
 --- a/src/xenia/app/emulator_window.cc
 +++ b/src/xenia/app/emulator_window.cc
-@@ -1118,6 +1118,12 @@ void EmulatorWindow::OnKeyDown(ui::KeyEvent& e) {
-     case ui::VirtualKey::kF7: {
-       TogglePerformanceTuningDialog();
+@@ -1595,6 +1595,12 @@ void EmulatorWindow::OnKeyDown(ui::KeyEvent& e) {
+     case ui::VirtualKey::kF8: {
+       ToggleDebugSettingsDialog();
      } break;
 +    case ui::VirtualKey::kF10: {
 +      if (!e.is_shift_pressed()) {
@@ -22,7 +24,7 @@ diff --git a/src/xenia/app/emulator_window.cc b/src/xenia/app/emulator_window.cc
      case ui::VirtualKey::kF11: {
        ToggleFullscreen();
      } break;
-@@ -2118,11 +2124,7 @@ EmulatorWindow::ControllerHotKey EmulatorWindow::ProcessControllerHotkey(
+@@ -3211,11 +3217,7 @@ EmulatorWindow::ControllerHotKey EmulatorWindow::ProcessControllerHotkey(
    // Default return value
    EmulatorWindow::ControllerHotKey Unknown_hotkey = {};
  
@@ -34,7 +36,7 @@ diff --git a/src/xenia/app/emulator_window.cc b/src/xenia/app/emulator_window.cc
      return Unknown_hotkey;
    }
  
-@@ -2143,18 +2145,7 @@ EmulatorWindow::ControllerHotKey EmulatorWindow::ProcessControllerHotkey(
+@@ -3236,18 +3238,7 @@ EmulatorWindow::ControllerHotKey EmulatorWindow::ProcessControllerHotkey(
      }
    }
  
@@ -54,3 +56,5 @@ diff --git a/src/xenia/app/emulator_window.cc b/src/xenia/app/emulator_window.cc
  
    auto it = controller_hotkey_map.find(buttons);
    if (it == controller_hotkey_map.end()) {
+-- 
+2.50.1

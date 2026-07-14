@@ -1,21 +1,33 @@
+From 72aa662071ece7317efe283dadf978e9d0a756b7 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Tue, 14 Jul 2026 11:01:00 +000
+Subject: [PATCH] cemu: use Batocera Wii U keys path
+
+---
+ src/Cafe/Filesystem/FST/KeyCache.cpp | 8 ++++++--
+ 1 file changed, 6 insertions(+), 2 deletions(-)
+
 diff --git a/src/Cafe/Filesystem/FST/KeyCache.cpp b/src/Cafe/Filesystem/FST/KeyCache.cpp
-index 5d8d51c..92678e4 100644
+index f85d2b5..732891c 100644
 --- a/src/Cafe/Filesystem/FST/KeyCache.cpp
 +++ b/src/Cafe/Filesystem/FST/KeyCache.cpp
-@@ -59,7 +59,15 @@ void KeyCache_Prepare()
+@@ -60,7 +60,11 @@ void KeyCache_Prepare()
  	sKeyCachePrepared = true;
  	g_keyCache.clear();
  	// load keys
 -	auto keysPath = ActiveSettings::GetUserDataPath("keys.txt");
-+	// Use /userdata/bios/cemu for the keys.txt directory, to match batocera
-+	// documentation at https://wiki.batocera.org/systems:wiiu#keystxt
-+
-+	std::string keysDir = "/userdata/bios/cemu";
-+	// Let's first make sure the parent directory exists.
++	// Keep keys.txt in Batocera's documented Wii U BIOS directory.
++	const fs::path keysDir = "/userdata/bios/cemu";
 +	std::error_code err;
 +	fs::create_directories(keysDir, err);
-+
-+	auto keysPath = keysDir + "/keys.txt";
-	FileStream* fs_keys = FileStream::openFile2(keysPath);
-	if( !fs_keys )
-	{
++	auto keysPath = keysDir / "keys.txt";
+ 	FileStream* fs_keys = FileStream::openFile2(keysPath);
+ 	if( !fs_keys )
+ 	{
+@@ -126,4 +130,4 @@ void KeyCache_Prepare()
+ 	}
+ 	delete fs_keys;
+ 	mtxKeyCache.unlock();
+-}
+\ No newline at end of file
++}

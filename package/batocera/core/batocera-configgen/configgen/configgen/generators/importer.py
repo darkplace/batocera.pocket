@@ -75,7 +75,6 @@ _GENERATOR_MAP: Final[dict[str, tuple[str, str]]] = {
     'yabasanshiro-sa': ('yabasanshiro.yabasanshiroGenerator', 'YabaSanshiroGenerator'),
     'aethersx2': ('aethersx2.aethersx2Generator', 'AetherSX2Generator'),
     'armsx2': ('armsx2.armsx2Generator', 'Armsx2Generator'),
-    'armsx2-masies': ('armsx2_masies.armsx2MasiesGenerator', 'Armsx2MasiesGenerator'),
     'ares': ('ares.aresGenerator', 'AresGenerator'),
     'yquake2': ('yquake2.yquake2Generator', 'YQuake2Generator'),
     'sh': ('sh.shGenerator', 'ShGenerator'),

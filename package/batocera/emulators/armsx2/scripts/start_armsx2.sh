@@ -4,7 +4,8 @@ set -eu
 
 ROM="$1"
 CONFIG_HOME="${XDG_CONFIG_HOME:-/userdata/system/configs}"
-DATA_ROOT="${CONFIG_HOME}/PCSX2"
+# Must match ARMSX2's Linux XDG data-root name.
+DATA_ROOT="${CONFIG_HOME}/ARMSX2"
 INI="${DATA_ROOT}/inis/PCSX2.ini"
 
 mkdir -p \
@@ -60,6 +61,21 @@ Textures = textures
 InputProfiles = inputprofiles
 Videos = ../../../saves/ps2/pcsx2/videos
 EOF
+
+BIOS_NAME=""
+if [ -f /userdata/bios/ps2/ps2-0230a-20080220.bin ]; then
+	BIOS_NAME="ps2-0230a-20080220.bin"
+else
+	for BIOS_PATH in /userdata/bios/ps2/*.bin /userdata/bios/ps2/*.rom; do
+		[ -f "${BIOS_PATH}" ] || continue
+		BIOS_NAME="${BIOS_PATH##*/}"
+		break
+	done
+fi
+
+if [ -n "${BIOS_NAME}" ]; then
+	printf '\n[Filenames]\nBIOS = %s\n' "${BIOS_NAME}" >> "${INI}"
+fi
 fi
 
 if [ ! -f "${DATA_ROOT}/game_controller_db.txt" ]; then

@@ -68,6 +68,14 @@ EDEN_OPT_FLAGS = -DARCHITECTURE_arm64=1
 EDEN_LINK_FLAGS = $(TARGET_LDFLAGS)
 EDEN_INTERPROCEDURAL_OPTIMIZATION = OFF
 
+# Keep Eden's native code on the CPU features exposed by each BSP.  In
+# particular, cortex-x3 enables SVE/SVE2, which neither target exposes.
+ifeq ($(BR2_PACKAGE_BATOCERA_TARGET_SM8750),y)
+EDEN_CPU_FLAGS = -mcpu=oryon-1
+else ifeq ($(BR2_PACKAGE_BATOCERA_TARGET_SM8550),y)
+EDEN_CPU_FLAGS = -mcpu=cortex-a715+nosve+nosve2
+endif
+
 ifeq ($(BR2_PACKAGE_BATOCERA_TARGET_SM8X50),y)
 EDEN_OPT_FLAGS += \
 	-O3 \
@@ -76,7 +84,7 @@ EDEN_OPT_FLAGS += \
 	-fomit-frame-pointer \
 	-ffp-contract=fast \
 	-flto=thin \
-	-mcpu=cortex-x3
+	$(EDEN_CPU_FLAGS)
 
 EDEN_LINK_FLAGS += \
 	-fuse-ld=lld \

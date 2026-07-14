@@ -19,9 +19,10 @@ STEAM_PROTON11_ARM64_APPID="${BATOCERA_STEAM_PROTON11_ARM64_APPID:-4628740}"
 STEAM_PROTON11_ARM64_DIR_NAME="Proton 11.0 (ARM64)"
 DECKY_HOME="${BATOCERA_DECKY_HOME:-/userdata/system/homebrew}"
 DECKY_PLUGINLOADER="${DECKY_HOME}/services/PluginLoader"
-BATOCERA_CONTROL_VERSION="${BATOCERA_CONTROL_VERSION:-0.2.9}"
-BATOCERA_CONTROL_URL="${BATOCERA_CONTROL_URL:-https://github.com/suckbluefrog/decky-bcc/releases/download/v${BATOCERA_CONTROL_VERSION}/decky-bcc-${BATOCERA_CONTROL_VERSION}.tar.gz}"
-BATOCERA_CONTROL_SHA256="${BATOCERA_CONTROL_SHA256:-24abab373ecab2ee9103f7c92169f39b17eb1512f9ba3a0c7712c095b0acc5cf}"
+BATOCERA_CONTROL_RELEASES_URL="${BATOCERA_CONTROL_RELEASES_URL:-https://github.com/suckbluefrog/decky-bcc/releases}"
+BATOCERA_CONTROL_VERSION="${BATOCERA_CONTROL_VERSION:-}"
+BATOCERA_CONTROL_URL="${BATOCERA_CONTROL_URL:-}"
+BATOCERA_CONTROL_SHA256="${BATOCERA_CONTROL_SHA256:-}"
 TOOL_NAME="$(basename "$0")"
 
 steam_tools_mode() {
@@ -1610,6 +1611,81 @@ download_verified_archive() {
     verify_sha256_file "$output" "$expected_sha"
 }
 
+valid_batocera_control_version() {
+    [[ "$1" =~ ^[0-9]+\.[0-9]+\.[0-9]+([._-][0-9A-Za-z][0-9A-Za-z._-]*)?$ ]]
+}
+
+parse_batocera_control_manifest() {
+    local manifest="$1"
+    local requested_version="${2:-}"
+    local sha filename extra version
+
+    while read -r sha filename extra; do
+        filename="${filename#\*}"
+        [[ -z "$extra" && "$sha" =~ ^[0-9A-Fa-f]{64}$ ]] || continue
+        if [[ "$filename" =~ ^decky-bcc-([0-9]+\.[0-9]+\.[0-9]+([._-][0-9A-Za-z][0-9A-Za-z._-]*)?)\.tar\.gz$ ]]; then
+            version="${BASH_REMATCH[1]}"
+            [[ -z "$requested_version" || "$version" == "$requested_version" ]] || continue
+            printf '%s\t%s\t%s\n' "$version" "${sha,,}" "$filename"
+            return 0
+        fi
+    done < "$manifest"
+
+    return 1
+}
+
+resolve_batocera_control_release() {
+    local tmp="$1"
+    local requested_version="$BATOCERA_CONTROL_VERSION"
+    local manifest manifest_url resolved_version resolved_sha archive_name
+
+    if [[ -n "$BATOCERA_CONTROL_URL" || -n "$BATOCERA_CONTROL_SHA256" ]]; then
+        if [[ -z "$requested_version" || -z "$BATOCERA_CONTROL_URL" || -z "$BATOCERA_CONTROL_SHA256" ]]; then
+            msg_box "A custom Batocera Control release requires VERSION, URL, and SHA256 overrides together."
+            return 1
+        fi
+        if ! valid_batocera_control_version "$requested_version" ||
+           [[ ! "$BATOCERA_CONTROL_SHA256" =~ ^[0-9A-Fa-f]{64}$ ]]; then
+            msg_box "The custom Batocera Control version or SHA256 is invalid."
+            return 1
+        fi
+        BATOCERA_CONTROL_SHA256="${BATOCERA_CONTROL_SHA256,,}"
+        return 0
+    fi
+
+    if [[ -n "$requested_version" ]] && ! valid_batocera_control_version "$requested_version"; then
+        msg_box "The requested Batocera Control version is invalid: ${requested_version}"
+        return 1
+    fi
+
+    manifest="${tmp}/SHA256SUMS"
+    if [[ -n "$requested_version" ]]; then
+        manifest_url="${BATOCERA_CONTROL_RELEASES_URL}/download/v${requested_version}/SHA256SUMS"
+    else
+        manifest_url="${BATOCERA_CONTROL_RELEASES_URL}/latest/download/SHA256SUMS"
+    fi
+
+    info_box "Resolving the latest Batocera Control release..."
+    if ! wget --tries=4 --timeout=30 --https-only --no-cache --no-cookies -q -O "$manifest" "$manifest_url" ||
+       [[ ! -s "$manifest" ]]; then
+        clear_screen
+        msg_box "Unable to resolve the latest Batocera Control release.\n\n${manifest_url}"
+        return 1
+    fi
+    clear_screen
+
+    if ! IFS=$'\t' read -r resolved_version resolved_sha archive_name < <(
+        parse_batocera_control_manifest "$manifest" "$requested_version"
+    ); then
+        msg_box "The Batocera Control release manifest did not contain a valid tar.gz archive."
+        return 1
+    fi
+
+    BATOCERA_CONTROL_VERSION="$resolved_version"
+    BATOCERA_CONTROL_SHA256="$resolved_sha"
+    BATOCERA_CONTROL_URL="${BATOCERA_CONTROL_RELEASES_URL}/download/v${resolved_version}/${archive_name}"
+}
+
 install_decky_loader_menu() {
     if ! command -v batocera-steam-decky-install >/dev/null 2>&1; then
         msg_box "Decky installer is not available in this image.\n\nInstall or enable Batocera Steam support first."
@@ -1631,9 +1707,17 @@ install_decky_batocera_control_menu() {
     require_commands wget tar sha256sum bash || return 1
     ensure_decky_loader_installed || return 1
 
-    yes_no "Install or update Batocera Control ${BATOCERA_CONTROL_VERSION}?\n\nThis unified Decky plugin includes global and per-game LSFG-VK controls, using Batocera's system layers plus /userdata/system/wine/lossless-scaling/Lossless.dll. Per-game activation applies on the next game launch; only all-games mode needs a Steam restart. No plugin runtime or proprietary DLL is downloaded." || return 1
-
     tmp=$(mktemp -d)
+    if ! resolve_batocera_control_release "$tmp"; then
+        rm -rf "$tmp"
+        return 1
+    fi
+
+    yes_no "Install or update Batocera Control ${BATOCERA_CONTROL_VERSION}?\n\nThis unified Decky plugin includes global and per-game LSFG-VK controls, using Batocera's system layers plus /userdata/system/wine/lossless-scaling/Lossless.dll. Per-game activation applies on the next game launch; only all-games mode needs a Steam restart. No plugin runtime or proprietary DLL is downloaded." || {
+        rm -rf "$tmp"
+        return 1
+    }
+
     archive="${tmp}/decky-bcc-${BATOCERA_CONTROL_VERSION}.tar.gz"
     extract="${tmp}/extract"
     mkdir -p "$extract"

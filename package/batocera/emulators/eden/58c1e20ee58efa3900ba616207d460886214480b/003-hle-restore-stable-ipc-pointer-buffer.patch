@@ -1,0 +1,176 @@
+From 97ef1355a94a51cd75524b011730a470932c9ab4 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Tue, 14 Jul 2026 00:00:00 +000
+Subject: [PATCH] hle: restore stable IPC pointer-buffer behavior
+
+Eden's dynamic pointer-buffer implementation reads a supposed heap size
+from main.npdm offset 0x28. That offset is inside the 16-byte application
+name in the NPDM META header, so the resulting value is unrelated to the
+guest heap. Command 5 is also not part of the established IpcController
+interface used by the stable Yuzu implementation.
+
+Restore the known-good behavior: return the standard 0x8000 pointer-buffer
+size from QueryPointerBufferSize, and remove the invalid NPDM parsing and
+per-process state.
+
+Signed-off-by: suckbluefrog <suckbluefrog@proton.me>
+---
+ src/core/hle/kernel/k_process.h         |  9 ------
+ src/core/hle/service/sm/sm_controller.cpp | 35 +---------------------
+ src/core/hle/service/sm/sm_controller.h |  1 -
+ src/core/loader/nca.cpp                 | 38 -------------------------
+ 4 files changed, 2 insertions(+), 81 deletions(-)
+
+diff --git a/src/core/loader/nca.cpp b/src/core/loader/nca.cpp
+--- a/src/core/loader/nca.cpp
++++ b/src/core/loader/nca.cpp
+@@ -23,16 +23,6 @@
+ 
+ namespace Loader {
+ 
+-static u32 CalculatePointerBufferSize(size_t heap_size) {
+-    if (heap_size > 1073741824) { // Games with 1 GiB
+-        return 0x10000;
+-    } else if (heap_size > 536870912) { // Games with 512 MiB
+-        return 0xC000;
+-    } else {
+-        return 0x8000; // Default for all other games
+-    }
+-}
+-
+ AppLoader_NCA::AppLoader_NCA(FileSys::VirtualFile file_)
+     : AppLoader(std::move(file_)), nca(std::make_unique<FileSys::NCA>(file)) {}
+ 
+@@ -82,36 +72,12 @@
+ 
+     directory_loader = std::make_unique<AppLoader_DeconstructedRomDirectory>(exefs, true);
+ 
+-    // Read heap size from main.npdm in ExeFS
+-    u64 heap_size = 0;
+-
+-    if (exefs) {
+-        const auto npdm_file = exefs->GetFile("main.npdm");
+-        if (npdm_file) {
+-            auto npdm_data = npdm_file->ReadAllBytes();
+-            if (npdm_data.size() >= 0x30) {
+-                heap_size = *reinterpret_cast<const u64*>(&npdm_data[0x28]);
+-                LOG_INFO(Loader, "Read heap size {:#x} bytes from main.npdm", heap_size);
+-            } else {
+-                LOG_WARNING(Loader, "main.npdm too small to read heap size!");
+-            }
+-        } else {
+-            LOG_WARNING(Loader, "No main.npdm found in ExeFS!");
+-        }
+-    }
+-
+-    // Set pointer buffer size based on heap size
+-    process.SetPointerBufferSize(CalculatePointerBufferSize(heap_size));
+-
+     // Load modules
+     const auto load_result = directory_loader->Load(process, system);
+     if (load_result.first != ResultStatus::Success) {
+         return load_result;
+     }
+ 
+-    LOG_INFO(Loader, "Set pointer buffer size to {:#x} bytes for ProgramID {:#018x} (Heap size: {:#x})",
+-             process.GetPointerBufferSize(), nca->GetTitleId(), heap_size);
+-
+     // Register the process in the file system controller
+     system.GetFileSystemController().RegisterProcess(
+         process.GetProcessId(), nca->GetTitleId(),
+diff --git a/src/core/hle/service/sm/sm_controller.cpp b/src/core/hle/service/sm/sm_controller.cpp
+--- a/src/core/hle/service/sm/sm_controller.cpp
++++ b/src/core/hle/service/sm/sm_controller.cpp
+@@ -71,43 +71,11 @@
+ }
+ 
+ void Controller::QueryPointerBufferSize(HLERequestContext& ctx) {
+-    LOG_DEBUG(Service, "called");
+-
+-    auto* process = Kernel::GetCurrentProcessPointer(kernel);
+-    ASSERT(process != nullptr);
+-
+-    u32 buffer_size = process->GetPointerBufferSize();
+-    if (buffer_size > (std::numeric_limits<u16>::max)()) {
+-        LOG_WARNING(Service, "Pointer buffer size exceeds u16 max, clamping");
+-        buffer_size = (std::numeric_limits<u16>::max)();
+-    }
++    LOG_WARNING(Service, "(STUBBED) called");
+ 
+     IPC::ResponseBuilder rb{ctx, 3};
+     rb.Push(ResultSuccess);
+-    rb.Push<u16>(static_cast<u16>(buffer_size));
+-}
+-
+-void Controller::SetPointerBufferSize(HLERequestContext& ctx) {
+-    LOG_DEBUG(Service, "called");
+-
+-    auto* process = Kernel::GetCurrentProcessPointer(kernel);
+-    ASSERT(process != nullptr);
+-
+-    IPC::RequestParser rp{ctx};
+-
+-    u32 requested_size = rp.PopRaw<u32>();
+-
+-    if (requested_size > (std::numeric_limits<u16>::max)()) {
+-        LOG_WARNING(Service, "Requested pointer buffer size too large, clamping to 0xFFFF");
+-        requested_size = (std::numeric_limits<u16>::max)();
+-    }
+-
+-    process->SetPointerBufferSize(requested_size);
+-
+-    LOG_INFO(Service, "Pointer buffer size dynamically updated to {:#x} bytes by process", requested_size);
+-
+-    IPC::ResponseBuilder rb{ctx, 2};
+-    rb.Push(ResultSuccess);
++    rb.Push<u16>(0x8000);
+ }
+ 
+ 
+@@ -119,7 +87,6 @@
+         {2, &Controller::CloneCurrentObject, "CloneCurrentObject"},
+         {3, &Controller::QueryPointerBufferSize, "QueryPointerBufferSize"},
+         {4, &Controller::CloneCurrentObjectEx, "CloneCurrentObjectEx"},
+-        {5, &Controller::SetPointerBufferSize, "SetPointerBufferSize"}, //TODO: where does this come from
+     };
+     RegisterHandlers(functions);
+ }
+diff --git a/src/core/hle/service/sm/sm_controller.h b/src/core/hle/service/sm/sm_controller.h
+--- a/src/core/hle/service/sm/sm_controller.h
++++ b/src/core/hle/service/sm/sm_controller.h
+@@ -21,7 +21,6 @@
+     void CloneCurrentObject(HLERequestContext& ctx);
+     void CloneCurrentObjectEx(HLERequestContext& ctx);
+     void QueryPointerBufferSize(HLERequestContext& ctx);
+-    void SetPointerBufferSize(HLERequestContext& ctx);
+ };
+ 
+ } // namespace Service::SM
+diff --git a/src/core/hle/kernel/k_process.h b/src/core/hle/kernel/k_process.h
+--- a/src/core/hle/kernel/k_process.h
++++ b/src/core/hle/kernel/k_process.h
+@@ -98,7 +98,6 @@
+     KConditionVariable m_cond_var;
+     KAddressArbiter m_address_arbiter;
+     std::array<u64, 4> m_entropy{};
+-    u32 m_pointer_buffer_size = 0x8000;  // Default pointer buffer size (can be game-specific later)
+     std::array<char, 13> m_name{};
+     Svc::CreateProcessFlag m_flags{};
+     KMemoryManager::Pool m_memory_pool{};
+@@ -247,14 +246,6 @@
+         m_is_suspended = suspended;
+     }
+ 
+-    u32 GetPointerBufferSize() const {
+-        return m_pointer_buffer_size;
+-    }
+-
+-    void SetPointerBufferSize(u32 size) {
+-        m_pointer_buffer_size = size;
+-    }
+-
+     Result Terminate();
+ 
+     bool IsTerminated() const {
+-- 
+2.50.1

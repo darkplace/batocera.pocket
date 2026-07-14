@@ -4,7 +4,7 @@
 #
 ################################################################################
 
-XENIA_CANARY_VERSION = 9478cda5d643f31ce5eddaa3a698282887515439
+XENIA_CANARY_VERSION = 22d91c86e81092bcaa361529b7a6e84a0fef2092
 XENIA_CANARY_SITE = https://github.com/xenia-canary/xenia-canary.git
 XENIA_CANARY_SITE_METHOD = git
 XENIA_CANARY_GIT_SUBMODULES = YES
@@ -12,12 +12,12 @@ XENIA_CANARY_LICENSE = BSD
 XENIA_CANARY_LICENSE_FILE = LICENSE
 XENIA_CANARY_SUPPORTS_IN_SOURCE_BUILD = NO
 
-XENIA_CANARY_WINDOWS_VERSION = 505697f
-XENIA_CANARY_WINDOWS_SOURCE = xenia_canary_windows.zip
+XENIA_CANARY_WINDOWS_VERSION = 22d91c8
+XENIA_CANARY_WINDOWS_SOURCE = xenia_canary_windows.7z
 XENIA_CANARY_EXTRA_DOWNLOADS = \
 	https://github.com/xenia-canary/xenia-canary/releases/download/$(XENIA_CANARY_WINDOWS_VERSION)/$(XENIA_CANARY_WINDOWS_SOURCE)
 
-XENIA_CANARY_DEPENDENCIES = host-pkgconf alsa-lib fontconfig libgtk3 lz4 python-toml \
+XENIA_CANARY_DEPENDENCIES = host-p7zip host-pkgconf alsa-lib fontconfig libgtk3 lz4 python-toml \
 	sdl2 vulkan-headers vulkan-loader xlib_libX11 libxcb
 
 XENIA_CANARY_CONF_OPTS += -DCMAKE_BUILD_TYPE=Release
@@ -44,7 +44,7 @@ define XENIA_CANARY_INSTALL_TARGET_CMDS
 	mkdir -p $(TARGET_DIR)/usr/xenia-canary
 	rm -rf $(@D)/windows-package
 	mkdir -p $(@D)/windows-package
-	$(UNZIP) -q -o -d $(@D)/windows-package \
+	$(HOST_DIR)/usr/bin/7zr x -y -o$(@D)/windows-package \
 		$(DL_DIR)/$(XENIA_CANARY_DL_SUBDIR)/$(XENIA_CANARY_WINDOWS_SOURCE)
 	rsync -a --exclude=".*" $(@D)/windows-package/ $(TARGET_DIR)/usr/xenia-canary/
 	find $(@D) -maxdepth 6 -name "xenia_canary" -type f -perm /111 \

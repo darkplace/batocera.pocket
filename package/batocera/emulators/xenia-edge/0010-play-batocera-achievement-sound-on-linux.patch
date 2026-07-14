@@ -1,6 +1,6 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: suckbluefrog <suckbluefrog@proton.me>
-Date: Wed, 27 May 2026 00:00:00 +0000
+Date: Wed, 27 May 2026 00:00:00 +000
 Subject: [PATCH] ui: prefer Batocera audio players for achievement sounds
 
 Batocera stores RetroAchievements sounds as shared OGG assets. Prefer
@@ -8,9 +8,11 @@ PipeWire/PulseAudio playback on Linux before falling back to Xenia Edge's
 miniaudio path so the configured Batocera achievement sound works
 consistently on handheld builds.
 ---
- src/xenia/ui/audio_helper.cc | 48 ++++++++++++++++++++++++++++++++++++
- 1 file changed, 48 insertions(+)
+ src/xenia/ui/audio_helper.cc | 53 ++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 53 insertions(+)
 
+diff --git a/src/xenia/ui/audio_helper.cc b/src/xenia/ui/audio_helper.cc
+index d1a846253..5696d2db1 100644
 --- a/src/xenia/ui/audio_helper.cc
 +++ b/src/xenia/ui/audio_helper.cc
 @@ -9,10 +9,15 @@
@@ -29,9 +31,9 @@ consistently on handheld builds.
  #include "xenia/base/string.h"
  
  #define MINIAUDIO_IMPLEMENTATION
-@@ -20,6 +25,46 @@
- 
- DECLARE_path(achievement_sound_path);
+@@ -23,6 +28,46 @@ DEFINE_path(achievement_sound_path, "",
+             "Supports WAV, MP3, OGG, FLAC, and other common formats.",
+             "UI");
  
 +#if XE_PLATFORM_LINUX
 +namespace {
@@ -76,7 +78,7 @@ consistently on handheld builds.
  namespace xe {
  namespace ui {
  
-@@ -92,6 +137,14 @@
+@@ -95,6 +140,14 @@ void AudioHelper::Shutdown() {
  }
  
  void AudioHelper::PlayAchievementSound() {

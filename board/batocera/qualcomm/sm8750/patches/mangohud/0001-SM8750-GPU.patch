@@ -1,6 +1,6 @@
 From 4cbe2951d40e3f57a0807d8ac392c51c23f261dc Mon Sep 17 00:00:00 2001
-From: John Williams <porschemad911@gmail.com>
-Date: Tue, 12 May 2026 10:15:03 +1000
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Tue, 14 Jul 2026 00:00:00 +000
 Subject: [PATCH] SM8750 GPU
 
 ---
@@ -14,7 +14,7 @@ index c4d63f5..054161b 100644
 @@ -178,7 +178,7 @@ void GPU_fdinfo::find_hwmon_sensors()
      std::string hwmon;
  
-     if (module == "msm")
+     if (module == "msm" || module == "msm_dpu")
 -        hwmon = find_hwmon_sensor_dir("gpu");
 +        hwmon = find_hwmon_sensor_dir("gpuss0_thermal");
      else if (module == "panfrost" || module == "panthor")

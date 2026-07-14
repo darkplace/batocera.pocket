@@ -6,11 +6,13 @@ from pathlib import Path
 from typing import Final
 
 from ...batoceraPaths import BATOCERA_SHARE_DIR, BIOS, CACHE, CHEATS, CONFIGS, SAVES, SCREENSHOTS, ensure_parents_and_open
+from ...controller import generate_sdl_game_controller_config, write_sdl_controller_db
 from ...utils.configparser import CaseSensitiveConfigParser
 from ..aethersx2.aethersx2Generator import AetherSX2Generator
 
 _AETHERSX2_INI: Final = Path("/userdata/system/.config/aethersx2/inis/PCSX2.ini")
-_ARMSX2_CONFIG: Final = CONFIGS / "PCSX2"
+# Upstream ARMSX2 appends "ARMSX2" to XDG_CONFIG_HOME.
+_ARMSX2_CONFIG: Final = CONFIGS / "ARMSX2"
 _ARMSX2_INI: Final = _ARMSX2_CONFIG / "inis" / "PCSX2.ini"
 _ACHIEVEMENT_SOUND_ROOT: Final = Path("/usr/share/libretro/assets/sounds")
 
@@ -64,6 +66,22 @@ def _retroachievements_sound_disabled(sound: str) -> bool:
     return sound.lower() in ("", "0", "false", "none")
 
 
+def _get_armsx2_bios_name() -> str | None:
+    bios_dir = BIOS / "ps2"
+    if not bios_dir.exists():
+        return None
+
+    preferred = bios_dir / "ps2-0230a-20080220.bin"
+    if preferred.is_file():
+        return preferred.name
+
+    for candidate in sorted(bios_dir.iterdir()):
+        if candidate.is_file() and candidate.suffix.lower() in {".bin", ".rom"}:
+            return candidate.name
+
+    return None
+
+
 def _normalize_controller_bindings(ini: CaseSensitiveConfigParser) -> None:
     face_bindings = {
         "Triangle": "FaceNorth",
@@ -89,7 +107,7 @@ def _prepare_armsx2_settings(system) -> None:
     if _ARMSX2_INI.exists():
         ini.read(_ARMSX2_INI)
 
-    for section in ("UI", "Achievements", "EmuCore/GS", "Folders", "Logging"):
+    for section in ("UI", "Achievements", "EmuCore/GS", "Folders", "Filenames", "Logging"):
         if not ini.has_section(section):
             ini.add_section(section)
 
@@ -172,6 +190,9 @@ def _prepare_armsx2_settings(system) -> None:
     ini.set("Folders", "InputProfiles", "inputprofiles")
     ini.set("Folders", "Videos", "../../../saves/ps2/pcsx2/videos")
 
+    if bios_name := _get_armsx2_bios_name():
+        ini.set("Filenames", "BIOS", bios_name)
+
     ini.set("Logging", "EnableSystemConsole", "false")
     ini.set("Logging", "EnableFileLogging", "false")
 
@@ -194,6 +215,7 @@ class Armsx2Generator(AetherSX2Generator):
         if _AETHERSX2_INI.exists():
             shutil.copyfile(_AETHERSX2_INI, _ARMSX2_INI)
         _prepare_armsx2_settings(system)
+        write_sdl_controller_db(playersControllers, _ARMSX2_CONFIG / "game_controller_db.txt")
         command.array = ["/usr/bin/start_armsx2.sh", str(Path(rom))]
         command.env["XDG_CONFIG_HOME"] = str(CONFIGS)
         command.env["XDG_DATA_HOME"] = "/userdata/system"
@@ -201,4 +223,5 @@ class Armsx2Generator(AetherSX2Generator):
         command.env["DISABLE_MANGOHUD"] = "1"
         command.env["DISABLE_LSFG"] = "1"
         command.env["VK_LOADER_LAYERS_DISABLE"] = "~implicit~"
+        command.env["SDL_GAMECONTROLLERCONFIG"] = generate_sdl_game_controller_config(playersControllers)
         return command

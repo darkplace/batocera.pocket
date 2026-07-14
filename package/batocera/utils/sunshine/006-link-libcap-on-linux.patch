@@ -1,0 +1,17 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Tue, 14 Jul 2026 00:00:00 +000
+Subject: [PATCH] cmake: link libcap on Linux
+
+---
+--- a/cmake/compile_definitions/linux.cmake
++++ b/cmake/compile_definitions/linux.cmake
+@@ -100,7 +100,7 @@ if(LIBDRM_FOUND)
+ endif()
+ 
+ # Capabilities
+-if(LINUX)
++if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+     find_package(LIBCAP REQUIRED)
+     include_directories(SYSTEM ${LIBCAP_INCLUDE_DIRS})
+     list(APPEND PLATFORM_LIBRARIES ${LIBCAP_LIBRARIES})

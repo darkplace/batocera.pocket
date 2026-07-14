@@ -1,17 +1,32 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Tue, 14 Jul 2026 00:00:00 +000
+Subject: [PATCH] build: use a native shader compiler while cross-compiling
+
+Buildroot cannot execute the target-aarch64 xenia-shader-cc on the x86_64
+build host. Add an explicit host-tool-only configuration and allow the target
+configuration to import that native tool.
+
+Signed-off-by: suckbluefrog <suckbluefrog@proton.me>
+---
+ CMakeLists.txt             | 7 +++++++
+ third_party/CMakeLists.txt | 8 +++++++-
+ 2 files changed, 14 insertions(+), 1 deletion(-)
+
 diff --git a/CMakeLists.txt b/CMakeLists.txt
-index 8f54c6a0d..8acb10666 100644
+index b3c9437c4..6ec2a177f 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
-@@ -57,6 +57,8 @@ message(STATUS "Target architecture: XE_TARGET_AARCH64=${XE_TARGET_AARCH64} XE_T
+@@ -77,6 +77,8 @@ message(STATUS "Target architecture: XE_TARGET_AARCH64=${XE_TARGET_AARCH64} XE_T
  
  option(XENIA_BUILD_TESTS "Build test suites" OFF)
  option(XENIA_BUILD_MISC "Build misc subprojects (trace viewers, shader compiler, vfs-dump, demos)" OFF)
 +option(XENIA_BUILD_HOST_SHADER_CC_ONLY "Only build the native shader compiler host tool" OFF)
 +option(XENIA_USE_HOST_SHADER_CC "Use a prebuilt native xenia-shader-cc during cross builds" OFF)
  option(XENIA_ENABLE_LTO "Enable link-time optimization in Release (slow link)" ON)
- 
- get_property(_is_multi_config GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
-@@ -128,6 +130,11 @@ add_compile_definitions(
+ option(XENIA_ENABLE_PROFILER "Enable profiler (UI is Debug-only)" OFF)
+ option(XENIA_ENABLE_ITRACE "Enable JIT per-instruction tracing to the log (slow)" OFF)
+@@ -181,6 +183,11 @@ add_compile_definitions(
  # Prevent ASan error from ImGUI
  add_compile_definitions($<$<NOT:$<CONFIG:Checked>>:IMGUI_USE_STB_SPRINTF>)
  
@@ -21,13 +36,14 @@ index 8f54c6a0d..8acb10666 100644
 +endif()
 +
  # ==============================================================================
- # Qt6 (optional, gated on the QT_DIR env var)
+ # Platform-specific global settings
  # ==============================================================================
 diff --git a/third_party/CMakeLists.txt b/third_party/CMakeLists.txt
-index 1bbf1fb31..7b1f09c20 100644
+index 8bda10e16..ea0b3cc78 100644
 --- a/third_party/CMakeLists.txt
 +++ b/third_party/CMakeLists.txt
-@@ -179,6 +179,8 @@ target_include_directories(glslang-spirv PUBLIC glslang)
+@@ -188,7 +188,9 @@ target_include_directories(glslang-spirv PUBLIC glslang)
+ # (Windows-on-ARM runs x64 fine via Prism, and macOS handles its own
  # x86_64↔arm64 via Rosetta — both directions are unaffected).
  set(_xe_use_host_shader_cc FALSE)
 -if(WIN32 AND CMAKE_CROSSCOMPILING AND XE_TARGET_AARCH64
@@ -37,7 +53,7 @@ index 1bbf1fb31..7b1f09c20 100644
      AND CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "AMD64|x86_64")
    set(_xe_use_host_shader_cc TRUE)
  endif()
-@@ -339,6 +341,10 @@ set_target_properties(xenia-shader-cc PROPERTIES
+@@ -455,6 +457,10 @@ set_target_properties(xenia-shader-cc PROPERTIES
  
  endif()
  
@@ -48,3 +64,5 @@ index 1bbf1fb31..7b1f09c20 100644
  # ==============================================================================
  # imgui
  # ==============================================================================
+-- 
+2.50.1

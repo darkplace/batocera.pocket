@@ -1,0 +1,115 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Fri, 10 Jul 2026 00:00:00 +000
+Subject: [PATCH] soc: qcom: pmic-glink-altmode: add owner test logging
+
+On SM8750/Odin 3, Type-C PD/UCSI can report an attached partner while
+DRM DP remains disconnected and no DisplayPort altmode/HPD notification
+is visible. Add enough logging to see whether the PMIC-GLINK altmode
+client is receiving PAN notifications, and add an opt-in owner override
+for testing firmware that reports altmode events on the USBC owner.
+
+Default behavior is unchanged. Boot with:
+
+  pmic_glink_altmode.force_owner=32779
+
+to test PMIC_GLINK_OWNER_USBC instead of the default PAN owner 32780.
+
+Signed-off-by: suckbluefrog <suckbluefrog@proton.me>
+---
+ drivers/soc/qcom/pmic_glink_altmode.c | 33 +++++++++++++++++++++++++++++++-
+ 1 file changed, 32 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/soc/qcom/pmic_glink_altmode.c b/drivers/soc/qcom/pmic_glink_altmode.c
+index 619bad2c27ee..8f70cdeec5da 100644
+--- a/drivers/soc/qcom/pmic_glink_altmode.c
++++ b/drivers/soc/qcom/pmic_glink_altmode.c
+@@ -140,6 +140,11 @@
+ 	struct pmic_glink_altmode_port ports[PMIC_GLINK_MAX_PORTS];
+ };
+ 
++static uint altmode_force_owner;
++module_param_named(force_owner, altmode_force_owner, uint, 0444);
++MODULE_PARM_DESC(force_owner,
++		 "Force PMIC GLINK altmode owner id (32779=USBC, 32780=USBC_PAN)");
++
+ static int pmic_glink_altmode_request(struct pmic_glink_altmode *altmode, u32 cmd, u32 arg)
+ {
+ 	struct usbc_write_req req = {};
+@@ -158,6 +163,9 @@
+ 	req.cmd = cpu_to_le32(cmd);
+ 	req.arg = cpu_to_le32(arg);
+ 
++	dev_info(altmode->dev, "altmode request owner=%u cmd=%#x arg=%u\n",
++		 altmode->owner_id, cmd, arg);
++
+ 	ret = pmic_glink_send(altmode->client, &req, sizeof(req));
+ 	if (ret) {
+ 		dev_err(altmode->dev, "failed to send altmode request: %#x (%d)\n", cmd, ret);
+@@ -351,6 +359,12 @@
+ 	struct pmic_glink_altmode *altmode = alt_port->altmode;
+ 	enum drm_connector_status conn_status;
+ 
++	dev_info(altmode->dev,
++		 "altmode worker owner=%u port=%u svid=0x%04x orientation=%u mux=%u mode=%u hpd=%u irq=%u\n",
++		 altmode->owner_id, alt_port->index, alt_port->svid,
++		 alt_port->orientation, alt_port->mux_ctrl, alt_port->mode,
++		 alt_port->hpd_state, alt_port->hpd_irq);
++
+ 	typec_switch_set(alt_port->typec_switch, alt_port->orientation);
+ 
+ 	/*
+@@ -450,6 +464,12 @@
+ 	alt_port->mode = mode;
+ 	alt_port->hpd_state = hpd_state;
+ 	alt_port->hpd_irq = hpd_irq;
++
++	dev_info(altmode->dev,
++		 "legacy altmode notify owner=%u port=%u svid=0x%04x orientation=%u mux=%u mode=%u hpd=%u irq=%u\n",
++		 altmode->owner_id, port, svid, orientation, mux, mode,
++		 hpd_state, hpd_irq);
++
+ 	schedule_work(&alt_port->work);
+ }
+ 
+@@ -501,6 +521,11 @@
+ 		alt_port->tbt_data = *tbt;
+ 	}
+ 
++	dev_info(altmode->dev,
++		 "altmode notify owner=%u port=%u svid=0x%04x orientation=%u mux=%u mode=%u hpd=%u irq=%u len=%zu\n",
++		 altmode->owner_id, port, svid, orientation, notify->mux_ctrl,
++		 alt_port->mode, alt_port->hpd_state, alt_port->hpd_irq, len);
++
+ 	schedule_work(&alt_port->work);
+ }
+ 
+@@ -516,6 +541,8 @@
+ 
+ 	switch (opcode) {
+ 	case USBC_CMD_WRITE_REQ:
++		dev_info(altmode->dev, "altmode request ack owner=%u len=%zu\n",
++			 altmode->owner_id, len);
+ 		complete(&altmode->pan_ack);
+ 		break;
+ 	case USBC_NOTIFY_IND:
+@@ -583,11 +610,16 @@
+ 	altmode->dev = dev;
+ 
+ 	match = of_match_device(pmic_glink_altmode_of_quirks, dev->parent);
+-	if (match)
++	if (altmode_force_owner)
++		altmode->owner_id = altmode_force_owner;
++	else if (match)
+ 		altmode->owner_id = (unsigned long)match->data;
+ 	else
+ 		altmode->owner_id = PMIC_GLINK_OWNER_USBC_PAN;
+ 
++	dev_info(dev, "using PMIC GLINK owner %u for altmode\n",
++		 altmode->owner_id);
++
+ 	INIT_WORK(&altmode->enable_work, pmic_glink_altmode_enable_worker);
+ 	init_completion(&altmode->pan_ack);
+ 	mutex_init(&altmode->lock);
+-- 
+2.43.0

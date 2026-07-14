@@ -4,19 +4,19 @@
 #
 ################################################################################
 
-BATOCERA_APPS_AARCH64_VERSION = 1.0
+BATOCERA_APPS_AARCH64_VERSION = 1.1
 BATOCERA_APPS_AARCH64_LICENSE = Various
 BATOCERA_APPS_AARCH64_STRIP = NO
 BATOCERA_APPS_AARCH64_TOOLCHAIN = manual
 
-BATOCERA_APPS_AARCH64_SITE = https://github.com/shy1132/VacuumTube/releases/download/v1.6.1
+BATOCERA_APPS_AARCH64_SITE = https://github.com/shy1132/VacuumTube/releases/download/v1.8.1
 BATOCERA_APPS_AARCH64_SOURCE = VacuumTube-arm64.AppImage
-BATOCERA_APPS_AARCH64_BRAVE_SOURCE = Brave-Web-Browser-stable-1.89.143-aarch64.AppImage
-BATOCERA_APPS_AARCH64_FIREFOX_SOURCE = firefox-149.0.tar.xz
-BATOCERA_APPS_AARCH64_PEAZIP_SOURCE = peazip-flatpak-aarch64-11.1.0.tar.gz
+BATOCERA_APPS_AARCH64_BRAVE_SOURCE = Brave-Web-Browser-stable-1.92.139-aarch64.AppImage
+BATOCERA_APPS_AARCH64_FIREFOX_SOURCE = firefox-152.0.5.tar.xz
+BATOCERA_APPS_AARCH64_PEAZIP_SOURCE = peazip-flatpak-aarch64-11.2.0.tar.gz
 BATOCERA_APPS_AARCH64_EXTRA_DOWNLOADS = \
 	https://github.com/ivan-hc/Brave-appimage/releases/download/continuous-stable/$(BATOCERA_APPS_AARCH64_BRAVE_SOURCE) \
-	https://download-installer.cdn.mozilla.net/pub/firefox/releases/149.0/linux-aarch64/en-US/$(BATOCERA_APPS_AARCH64_FIREFOX_SOURCE) \
+	https://download-installer.cdn.mozilla.net/pub/firefox/releases/152.0.5/linux-aarch64/en-US/$(BATOCERA_APPS_AARCH64_FIREFOX_SOURCE) \
 	file+file://$(BATOCERA_APPS_AARCH64_PKGDIR)/dist/$(BATOCERA_APPS_AARCH64_PEAZIP_SOURCE)
 
 BATOCERA_APPS_AARCH64_DEPENDENCIES = \
@@ -46,7 +46,7 @@ define BATOCERA_APPS_AARCH64_INSTALL_TARGET_CMDS
 	cp -a $(@D)/firefox $(TARGET_DIR)/usr/share/batocera/apps/
 	rm -rf $(TARGET_DIR)/usr/share/batocera/apps/peazip
 	mkdir -p $(TARGET_DIR)/usr/share/batocera/apps/peazip
-	cp -a $(@D)/peazip-flatpak-aarch64-11.1.0/. \
+	cp -a $(@D)/peazip-flatpak-aarch64-11.2.0/. \
 		$(TARGET_DIR)/usr/share/batocera/apps/peazip/
 
 	install -D -m 0755 \

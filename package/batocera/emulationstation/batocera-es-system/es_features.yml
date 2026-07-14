@@ -16498,12 +16498,12 @@ eden:
     eden_accuracy:
       submenu: RENDERING
       prompt: ACCURACY LEVEL
-      description: GPU emulation accuracy. Most games render fine with Normal. High
-        is required to ensure particles render correctly.
+      description: GPU emulation accuracy. Medium is the balanced default. High can
+        fix rendering or startup issues in games that require stricter GPU synchronization.
       choices:
-        Normal: 0
-        High: 1
-        Extreme: 2
+        Low: 0
+        Medium (Default): 1
+        High: 2
     eden_cpuaccuracy:
       submenu: CPU
       prompt: CPU ACCURACY
@@ -23064,7 +23064,3 @@ aethersx2:
 armsx2:
   cores:
     'armsx2': *aethersx2_core_features
-
-armsx2-masies:
-  cores:
-    'armsx2-masies': *aethersx2_core_features

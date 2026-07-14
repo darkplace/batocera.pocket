@@ -1,25 +1,31 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Tue, 14 Jul 2026 00:00:00 +000
+Subject: [PATCH] wlgrab: apply the Wayland output transform
+
+---
 --- a/src/platform/linux/wayland.h
 +++ b/src/platform/linux/wayland.h
-@@ -115,7 +115,7 @@
-
-     void xdg_done(zxdg_output_v1 *) {}
-
+@@ -262,7 +262,7 @@ namespace wl {
+      * @param model Monitor model string reported by Wayland.
+      * @param transform Wayland output transform value.
+      */
 -    void wl_geometry(wl_output *wl_output, std::int32_t x, std::int32_t y, std::int32_t physical_width, std::int32_t physical_height, std::int32_t subpixel, const char *make, const char *model, std::int32_t transform) {}
 +    void wl_geometry(wl_output *wl_output, std::int32_t x, std::int32_t y, std::int32_t physical_width, std::int32_t physical_height, std::int32_t subpixel, const char *make, const char *model, std::int32_t transform);
 
-     void wl_mode(wl_output *wl_output, std::uint32_t flags, std::int32_t width, std::int32_t height, std::int32_t refresh);
-
-@@ -126,6 +126,7 @@
-     wl_output *output;
-     std::string name;
-     std::string description;
-+    std::int32_t transform;
-     platf::touch_port_t viewport;
-     wl_output_listener wl_listener;
-     zxdg_output_v1_listener xdg_listener;
+     /**
+      * @brief Store the active pixel mode reported by wl-output.
+@@ -293,6 +293,7 @@ namespace wl {
+     wl_output *output;  ///< Wayland output associated with this monitor.
+     std::string name;  ///< xdg-output name used for display selection.
+     std::string description;  ///< xdg-output description used for logs and UI.
++    std::int32_t transform;  ///< Wayland output transform used by wlgrab.
+     platf::touch_port_t viewport;  ///< Logical monitor bounds used to scale absolute input.
+     wl_output_listener wl_listener;  ///< Callback table for wl-output events.
+     zxdg_output_v1_listener xdg_listener;  ///< Callback table for xdg-output events.
 --- a/src/platform/linux/wayland.cpp
 +++ b/src/platform/linux/wayland.cpp
-@@ -109,6 +109,7 @@
+@@ -116,6 +116,7 @@ namespace wl {
 
    inline monitor_t::monitor_t(wl_output *output):
        output {output},
@@ -27,7 +33,7 @@
        wl_listener {
          &CLASS_CALL(monitor_t, wl_geometry),
          &CLASS_CALL(monitor_t, wl_mode),
-@@ -149,6 +150,21 @@
+@@ -156,6 +157,21 @@ namespace wl {
      BOOST_LOG(info) << "[wayland] Logical size: "sv << width << 'x' << height;
    }
 
@@ -62,7 +68,7 @@
 
  // local includes
  #include "cuda.h"
-@@ -26,6 +29,36 @@
+@@ -32,6 +35,36 @@ namespace wl {
      }
    };
 
@@ -96,10 +102,10 @@
 +    }
 +  }
 +
-   class wlr_t: public platf::display_t {
-   public:
-     int init(platf::mem_type_e hwdevice_type, const std::string &display_name, const ::video::config_t &config) {
-@@ -92,10 +125,17 @@
+   /**
+    * @brief Wayland screencopy capture backend shared by RAM and VRAM paths.
+    */
+@@ -106,10 +139,17 @@ namespace wl {
 
        output = monitor->output;
 
@@ -119,7 +125,7 @@
 
        this->env_width = ::wl::env_width;
        this->env_height = ::wl::env_height;
-@@ -103,6 +143,15 @@
+@@ -117,6 +157,15 @@ namespace wl {
        this->logical_width = monitor->viewport.logical_width;
        this->logical_height = monitor->viewport.logical_height;
 
@@ -135,7 +141,7 @@
        int desktop_logical_width = 0;
        int desktop_logical_height = 0;
        for (auto &monitor_entry : interface.monitors) {
-@@ -118,6 +167,7 @@
+@@ -132,6 +181,7 @@ namespace wl {
        BOOST_LOG(debug) << "[wlgrab] Offset: "sv << offset_x << 'x' << offset_y;
        BOOST_LOG(debug) << "[wlgrab] Resolution: "sv << width << 'x' << height;
        BOOST_LOG(debug) << "[wlgrab] Logical Resolution: "sv << logical_width << 'x' << logical_height;
@@ -143,7 +149,7 @@
        BOOST_LOG(debug) << "[wlgrab] Desktop Resolution: "sv << env_width << 'x' << env_height;
        BOOST_LOG(debug) << "[wlgrab] Logical Desktop Resolution: "sv << env_logical_width << 'x' << env_logical_height;
 
-@@ -144,8 +194,8 @@
+@@ -173,8 +223,8 @@ namespace wl {
 
        if (
          dmabuf.status == dmabuf_t::REINIT ||
@@ -154,17 +160,17 @@
        ) {
          return platf::capture_e::reinit;
        }
-@@ -162,6 +212,9 @@
-     dmabuf_t dmabuf;
+@@ -191,6 +241,9 @@ namespace wl {
+     dmabuf_t dmabuf;  ///< DMA-BUF feedback and format state advertised by the compositor.
 
-     wl_output *output;
+     wl_output *output;  ///< Wayland output selected for capture.
 +    int source_width {};
 +    int source_height {};
 +    std::int32_t output_transform {WL_OUTPUT_TRANSFORM_NORMAL};
    };
 
-   class wlr_ram_t: public wlr_t {
-@@ -238,7 +291,14 @@
+   /**
+@@ -279,7 +332,14 @@ namespace wl {
        gl::ctx.GetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &h);
        BOOST_LOG(debug) << "[wlgrab] width and height: w "sv << w << " h "sv << h;
 

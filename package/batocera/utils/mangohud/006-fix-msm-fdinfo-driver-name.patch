@@ -1,0 +1,84 @@
+From 9c4f980b2aa2d4ad53ecec4ec8b640a5aefea6bc Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Tue, 14 Jul 2026 00:00:00 +000
+Subject: [PATCH] gpu_fdinfo: fix MSM DRM telemetry discovery
+
+On Qualcomm platforms the render node's platform-driver symlink is named
+msm_dpu, while DRM's stable fdinfo driver name is msm.  GPU_fdinfo used the
+platform-driver name for an exact fdinfo match, so it rejected every MSM DRM
+client and permanently reported zero GPU load.
+
+Keep msm_dpu for device discovery and metric selection, but translate it to
+msm only when matching the drm-driver fdinfo field.  Also use the existing
+Qualcomm devfreq and thermal nodes for core clock and temperature metrics.
+---
+ src/gpu_fdinfo.cpp | 13 ++++++++++---
+ src/gpu_fdinfo.h   |  1 +
+ 2 files changed, 11 insertions(+), 3 deletions(-)
+
+diff --git a/src/gpu_fdinfo.cpp b/src/gpu_fdinfo.cpp
+index c5a118f..c399531 100644
+--- a/src/gpu_fdinfo.cpp
++++ b/src/gpu_fdinfo.cpp
+@@ -11,6 +11,10 @@ void GPU_fdinfo::find_fd()
+     fdinfo.clear();
+     fdinfo_data.clear();
+ 
++    // The Qualcomm platform driver is named msm_dpu, but DRM exposes "msm"
++    // in the stable drm-driver fdinfo field.
++    const std::string fdinfo_driver = module == "msm_dpu" ? "msm" : module;
++
+     auto dir = std::string("/proc/") + std::to_string(pid) + "/fdinfo";
+     auto path = fs::path(dir);
+ 
+@@ -48,7 +52,7 @@ void GPU_fdinfo::find_fd()
+                 client_id = val;
+         }
+ 
+-        if (!driver.empty() && driver == module) {
++        if (!driver.empty() && driver == fdinfo_driver) {
+             total++;
+             SPDLOG_TRACE(
+                 "driver = \"{}\", pdev = \"{}\", "
+@@ -61,7 +65,7 @@ void GPU_fdinfo::find_fd()
+ 
+         if (
+             driver.empty() || client_id.empty() ||
+-            driver != module || pdev != pci_dev ||
++            driver != fdinfo_driver || pdev != pci_dev ||
+             client_ids.find(client_id) != client_ids.end()
+         )
+             continue;
+@@ -175,7 +179,7 @@ void GPU_fdinfo::find_hwmon_sensors()
+ {
+     std::string hwmon;
+ 
+-    if (module == "msm")
++    if (module == "msm" || module == "msm_dpu")
+         hwmon = find_hwmon_sensor_dir("gpu");
+     else if (module == "panfrost" || module == "panthor")
+         hwmon = find_hwmon_sensor_dir("gpu_thermal");
+@@ -549,6 +553,9 @@ int GPU_fdinfo::get_gpu_clock()
+     if (clock_str.empty())
+         return 0;
+ 
++    if (module == "msm_dpu")
++        return std::round(std::stoull(clock_str) / 1'000'000.f);
++
+     return std::stoi(clock_str);
+ }
+ 
+diff --git a/src/gpu_fdinfo.h b/src/gpu_fdinfo.h
+index 10ddced..427606d 100644
+--- a/src/gpu_fdinfo.h
++++ b/src/gpu_fdinfo.h
+@@ -146,6 +146,7 @@ public:
+         } else if (module == "msm_dpu") {
+             // msm driver does not report vram usage
+             drm_engine_type = "drm-engine-gpu";
++            gpu_clock_stream.open("/sys/class/devfreq/3d00000.gpu/cur_freq");
+         } else if (module == "msm_drm") {
+             init_kgsl();
+         } else if (module == "panfrost") {
+-- 
+2.50.1

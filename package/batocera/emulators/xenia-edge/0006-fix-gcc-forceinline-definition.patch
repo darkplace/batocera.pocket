@@ -1,10 +1,21 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Tue, 14 Jul 2026 00:00:00 +000
+Subject: [PATCH] base: make XE_FORCEINLINE valid on GCC
+
+GCC needs inline on out-of-line uses of the always_inline attribute.
+
+Signed-off-by: suckbluefrog <suckbluefrog@proton.me>
+---
+ src/xenia/base/platform.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
 diff --git a/src/xenia/base/platform.h b/src/xenia/base/platform.h
-index 6ef345e62..31fbbf9d0 100644
+index 2b35ae5b5..af19ce1f3 100644
 --- a/src/xenia/base/platform.h
 +++ b/src/xenia/base/platform.h
 @@ -122,7 +122,7 @@
- #define XE_LIKELY(...) (!!(__VA_ARGS__))
- #define XE_UNLIKELY(...) (!!(__VA_ARGS__))
+ #define XE_MSVC_ASSUME(...) __assume(__VA_ARGS__)
  #define XE_NOALIAS __declspec(noalias)
  #elif XE_COMPILER_HAS_GNU_EXTENSIONS == 1
 -#define XE_FORCEINLINE __attribute__((always_inline))
@@ -12,3 +23,5 @@ index 6ef345e62..31fbbf9d0 100644
  #define XE_NOINLINE __attribute__((noinline))
  #define XE_COLD __attribute__((cold))
  #define XE_LIKELY(...) __builtin_expect(!!(__VA_ARGS__), true)
+-- 
+2.50.1
