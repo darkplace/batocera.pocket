@@ -52,7 +52,7 @@ Extra libraries (e.g. `libcups`) included for better AppImage compatibility
 ## Qualcomm Builds (QCS8550, CQ8725S, QCS6490)
 Includes additional emulators where supported:
 - AetherSX2  
-- ARMSX2 (+Masies' fork with newer aarch64 JIT engine)
+- ARMSX2 
 - RPCS3
 - Vita3K
 - Cemu (now upstream)
@@ -74,7 +74,7 @@ Includes additional emulators where supported:
 - Docker *(enable in Services menu)*
 - Waydroid (Not on CQ8725S until drivers mature)
 - Hotkey + touchscreen support for on-screen keyboard  
-- Arch Plasma LXC Desktop
+- Arch Plasma & Ubuntu LXC Desktop
 
 https://github.com/user-attachments/assets/4c939a09-1fd7-4ea7-a014-4050a58c632f
 
