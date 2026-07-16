@@ -1,0 +1,28 @@
+#!/bin/sh
+
+LOG="/userdata/system/logs/qcom-motion-calibrator.log"
+SERVICE="${QCOM_MOTION_SERVICE:-/etc/init.d/S29qcom-motion}"
+APP="${QCOM_MOTION_APP:-/usr/share/batocera/qcom-motion/motion-calibrator.py}"
+
+mkdir -p "$(dirname "${LOG}")"
+
+if ! grep -aq "ayn,odin3" /proc/device-tree/compatible 2>/dev/null; then
+	echo "Motion calibration is available only on the AYN Odin 3" >> "${LOG}"
+	batocera-flash-screen 5 "#ffffff" "Odin 3 motion sensor not found." 20 >/dev/null 2>&1 || true
+	exit 1
+fi
+
+export HOME="/userdata/system"
+export XDG_DATA_HOME="${HOME}/.local/share"
+export XDG_CONFIG_HOME="${HOME}/.config"
+export XDG_CACHE_HOME="${HOME}/.cache"
+export PYTHONDONTWRITEBYTECODE=1
+
+if [ -z "${WAYLAND_DISPLAY:-}" ] && [ -z "${DISPLAY:-}" ] && command -v getLocalXDisplay >/dev/null 2>&1; then
+	export DISPLAY="$(getLocalXDisplay)"
+fi
+
+status=0
+python3 "${APP}" >> "${LOG}" 2>&1 || status=$?
+"${SERVICE}" start >/dev/null 2>&1 || true
+exit "${status}"

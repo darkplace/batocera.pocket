@@ -16,22 +16,51 @@ raw accelerometer/gyroscope smoke test. The generated registry and learned
 per-unit calibration live under /userdata/system/qcom-sensors/odin3 and are
 never overwritten automatically.
 
-Run `batocera-qcom-sensors-test 5` on an Odin 3 to validate both streams.
+The startup service prefers /dev/fastrpc-adsp when the kernel exposes it and
+falls back to /dev/fastrpc-adsp-secure, which is the working node on the
+current SM8750 kernel. It starts SensorsPD before RootPD and keeps both
+listeners running.
 
-Future emulator attachment points
----------------------------------
+Motion bridge
+-------------
 
-Batocera continues to use evmapy for its normal controller mapping. No input
-daemon or emulator hook is enabled by this bring-up.
+S29qcom-motion exposes the built-in accelerometer and gyroscope as DSU/Cemuhook
+slot 0 on 127.0.0.1:26760. It leaves the normal SDL/evmapy controller path
+untouched. Configgen uses /var/run/batocera-qcom-motion.ready to enable the
+motion source only when the bridge is healthy.
 
-The least invasive follow-up is a launch-scoped libssc bridge with two optional
-outputs:
+The bridge emits the DualShock/Cemuhook coordinate convention used by the
+configured console emulators. The Odin 3's horizontal accelerometer axis is
+reflected so lowering the right edge produces a rightward tilt; gyro yaw and
+roll are reflected as the matching pair while pitch remains unchanged. Both
+sensors are requested at 100 Hz and packets are emitted after
+the matching gyroscope report, avoiding the 20 Hz one-sample phase lag produced
+by libssc's default rate selection. The saved gyroscope zero remains the cold
+start baseline; after one second of confirmed stillness the bridge refines it
+in memory to follow the QMI8658's temperature-dependent bias without rewriting
+userdata. Refinement stops as soon as the first DSU client connects, so an
+emulator never has its neutral point changed in the middle of a session.
 
-* DSU/Cemuhook UDP on localhost for Cemu and Azahar. Their motion source is
-  separate from their normal SDL button source, so evmapy need not be replaced.
-* A uinput motion-only device with INPUT_PROP_ACCELEROMETER, ABS_X/Y/Z for
-  acceleration and ABS_RX/RY/RZ for angular velocity. RPCS3 already accepts a
-  separate evdev "buddy device" and Dolphin has equivalent evdev motion maps.
+The built-in config generators attach this DSU source to Azahar, Cemu,
+Dolphin, Eden, Yuzu and Ryujinx. Buttons remain on their normal SDL/evmapy
+controller, and the console sensor is assigned only to player 1.
 
-Configgen should start that bridge only for a motion-enabled game, configure
-the corresponding motion source, and stop the bridge on emulator exit.
+Run `batocera-qcom-motion --check` for a DSU packet check, or
+`batocera-qcom-sensors-test 5` to validate the complete sensor stack.
+
+Calibration
+-----------
+
+Launch "Motion Sensor Calibration" from the Tools system with the Odin
+unplugged and resting on a level surface. The controller-friendly guide first
+zeros stationary gyroscope drift, then shows crude device diagrams for five
+accelerometer poses: face up, both side edges and both end edges. Opposing
+edge pairs provide the zero offset, so no awkward screen-down pose is needed.
+It rejects movement and poses that are too far from the pictured orientation.
+The fit is constrained to per-axis offset and gain rather than a general affine
+matrix, so small hand-held pose errors cannot introduce shear between gravity
+and gyroscope axes.
+
+The final screen provides live 45 and 90 degree tilt feedback. Calibration is
+stored in /userdata/system/qcom-sensors/odin3/motion-calibration.ini and loaded
+by the bridge on each boot. Re-running the tool replaces the previous values.

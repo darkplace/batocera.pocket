@@ -10,6 +10,7 @@ from ...batoceraPaths import CACHE, CONFIGS, SAVES, ensure_parents_and_open
 from ...controller import Controller, generate_sdl_game_controller_config
 from ...utils import vulkan
 from ...utils.configparser import CaseSensitiveRawConfigParser
+from ...utils.motion import get_builtin_dsu_server
 from ..Generator import Generator
 
 if TYPE_CHECKING:
@@ -302,6 +303,17 @@ class AzaharGenerator(Generator):
             for x in azaharAxis:
                 azaharConfig.set("Controls", f"profiles\\1\\{x}", f'"{AzaharGenerator.setAxis(azaharAxis[x], controller.guid, controller.inputs)}"')
                 azaharConfig.set("Controls", f"profiles\\1\\{x}\\default", "false")
+
+        if dsu_server := get_builtin_dsu_server():
+            host, port = dsu_server
+            motion_settings = {
+                "motion_device": "engine:cemuhookudp",
+                "udp_input_address": host,
+                "udp_input_port": str(port),
+            }
+            for key, value in motion_settings.items():
+                azaharConfig.set("Controls", f"profiles\\1\\{key}", value)
+                azaharConfig.set("Controls", f"profiles\\1\\{key}\\default", "false")
 
         ## Update the configuration file
         with ensure_parents_and_open(azaharConfigFile, 'w') as configfile:

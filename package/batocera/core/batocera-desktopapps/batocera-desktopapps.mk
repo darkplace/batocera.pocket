@@ -220,13 +220,6 @@ ifeq ($(BR2_PACKAGE_YUZU),y)
   BATOCERA_DESKTOPAPPS_ICONS   += yuzu.png
 endif
 
-# citron
-ifeq ($(BR2_PACKAGE_CITRON),y)
-  BATOCERA_DESKTOPAPPS_SCRIPTS += batocera-config-citron
-  BATOCERA_DESKTOPAPPS_APPS    += citron-config.desktop
-  BATOCERA_DESKTOPAPPS_ICONS   += citron.png
-endif
-
 # eden
 ifeq ($(BR2_PACKAGE_EDEN),y)
   BATOCERA_DESKTOPAPPS_SCRIPTS += batocera-config-eden

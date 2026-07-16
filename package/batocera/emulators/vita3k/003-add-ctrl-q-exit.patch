@@ -1,0 +1,50 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Thu, 16 Jul 2026 00:00:00 +000
+Subject: [PATCH] qt: add Ctrl+Q exit handling
+
+---
+diff --git a/vita3k/gui-qt/src/main_window.cpp b/vita3k/gui-qt/src/main_window.cpp
+index 752be7a..4701380 100644
+--- a/vita3k/gui-qt/src/main_window.cpp
++++ b/vita3k/gui-qt/src/main_window.cpp
+@@ -84,6 +84,7 @@
+ #include <QCloseEvent>
+ #include <QDragEnterEvent>
+ #include <QDropEvent>
++#include <QKeyEvent>
+ #include <QFileInfo>
+ #include <QHBoxLayout>
+ #include <QLineEdit>
+@@ -419,6 +420,8 @@ void MainWindow::initialize() {
+ 
+     setup_toolbar();
+ 
++    qApp->installEventFilter(this);
++
+     connect(m_ui->welcome_dialog_action, &QAction::triggered, this, [this]() {
+         auto *welcome = new WelcomeDialog(emuenv, true, this);
+         welcome->open();
+@@ -1245,6 +1248,22 @@ void MainWindow::on_live_area_closed() {
+ }
+ 
+ bool MainWindow::eventFilter(QObject *watched, QEvent *event) {
++    if (event->type() == QEvent::KeyPress) {
++        auto *key_event = static_cast<QKeyEvent *>(event);
++        if (key_event->key() == Qt::Key_Q && key_event->modifiers().testFlag(Qt::ControlModifier)) {
++            close_auxiliary_windows();
++
++            // Close the game window without prompting before exiting.
++            if (m_game_window) {
++                m_app_session.set_pause_reason(app::AppSessionPauseReason::User, false);
++                on_game_closed();
++            }
++
++            close();
++            return true;
++        }
++    }
++
+     if (watched == m_live_area_widget) {
+         if (event->type() == QEvent::Close) {
+             event->ignore();

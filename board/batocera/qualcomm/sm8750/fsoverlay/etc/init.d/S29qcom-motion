@@ -1,0 +1,64 @@
+#!/bin/sh
+
+PID_FILE="/var/run/batocera-qcom-motion.pid"
+READY_FILE="/var/run/batocera-qcom-motion.ready"
+LOG_DIR="/userdata/system/logs"
+LOG_FILE="${LOG_DIR}/qcom-motion.log"
+BRIDGE="${QCOM_MOTION_BRIDGE:-/usr/bin/batocera-qcom-motion}"
+CALIBRATION_FILE=""
+
+configure_device() {
+	if grep -aq "ayn,odin3" /proc/device-tree/compatible 2>/dev/null; then
+		CALIBRATION_FILE="/userdata/system/qcom-sensors/odin3/motion-calibration.ini"
+	elif grep -aq "ayn,thor" /proc/device-tree/compatible 2>/dev/null; then
+		CALIBRATION_FILE="/userdata/system/qcom-sensors/thor/motion-calibration.ini"
+	else
+		return 1
+	fi
+
+	if [ -n "${QCOM_MOTION_CALIBRATION_FILE:-}" ]; then
+		CALIBRATION_FILE="${QCOM_MOTION_CALIBRATION_FILE}"
+	fi
+}
+
+start_bridge() {
+	configure_device || return 0
+	[ -x "${BRIDGE}" ] || return 0
+
+	pid=$(cat "${PID_FILE}" 2>/dev/null)
+	if [ -n "${pid}" ] && kill -0 "${pid}" 2>/dev/null; then
+		return 0
+	fi
+
+	mkdir -p "${LOG_DIR}"
+	rm -f "${READY_FILE}" "${PID_FILE}"
+	start-stop-daemon --start --quiet --background --make-pidfile \
+		--pidfile "${PID_FILE}" --exec "${BRIDGE}" \
+		--output "${LOG_FILE}" -- \
+		--port 26760 --calibration-file "${CALIBRATION_FILE}"
+}
+
+stop_bridge() {
+	start-stop-daemon --stop --quiet --remove-pidfile \
+		--pidfile "${PID_FILE}" --retry TERM/3/KILL/2 || true
+	rm -f "${READY_FILE}"
+}
+
+case "${1:-}" in
+	start)
+		start_bridge
+		;;
+	stop)
+		stop_bridge
+		;;
+	restart)
+		stop_bridge
+		start_bridge
+		;;
+	*)
+		echo "Usage: $0 {start|stop|restart}" >&2
+		exit 1
+		;;
+esac
+
+exit $?

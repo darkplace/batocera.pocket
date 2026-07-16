@@ -1,0 +1,62 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Thu, 16 Jul 2026 00:00:00 +000
+Subject: [PATCH] qt: hide the main window while a game is active
+
+---
+diff --git a/vita3k/gui-qt/src/main_window.cpp b/vita3k/gui-qt/src/main_window.cpp
+index 4701380..6fcfe65 100644
+--- a/vita3k/gui-qt/src/main_window.cpp
++++ b/vita3k/gui-qt/src/main_window.cpp
+@@ -253,6 +253,7 @@ void MainWindow::closeEvent(QCloseEvent *event) {
+ 
+     save_window_state();
+     QMainWindow::closeEvent(event);
++    qApp->quit();
+ }
+ 
+ void MainWindow::paintEvent(QPaintEvent *event) {
+@@ -420,6 +421,7 @@ void MainWindow::initialize() {
+ 
+     setup_toolbar();
+ 
++    qApp->setQuitOnLastWindowClosed(false);
+     qApp->installEventFilter(this);
+ 
+     connect(m_ui->welcome_dialog_action, &QAction::triggered, this, [this]() {
+@@ -1048,6 +1050,9 @@ std::optional<AppLaunchRequest> MainWindow::boot_game_once(const AppLaunchReques
+         m_settings_dialog->set_storage_path_locked(true);
+     refresh_emulation_actions();
+     refresh_status_bar();
++
++    // Only show the game window while a game is running.
++    hide();
+     return std::nullopt;
+ }
+ 
+@@ -1092,6 +1097,7 @@ void MainWindow::on_game_closed() {
+     refresh_status_bar();
+ 
+     if (!m_is_app_closing) {
++        show();
+         raise();
+         activateWindow();
+     }
+@@ -1211,6 +1217,9 @@ void MainWindow::show_live_area(const std::string &title_id) {
+     m_ui->toolbar_fullscreen->setIcon(m_fullscreen ? m_icon_fullscreen_off : m_icon_fullscreen_on);
+     m_ui->toolbar_fullscreen->setText(m_fullscreen ? tr("Exit Fullscreen") : tr("Fullscreen"));
+ 
++    // Only show the LiveArea window while it is active.
++    hide();
++
+     connect(m_live_area_widget, &LiveAreaWidget::play_clicked,
+         this, &MainWindow::on_live_area_play);
+ }
+@@ -1240,6 +1249,7 @@ void MainWindow::on_live_area_closed() {
+         delete closed_window;
+ 
+     if (!m_is_app_closing) {
++        show();
+         raise();
+         activateWindow();
+     }

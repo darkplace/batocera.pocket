@@ -3,6 +3,8 @@
 
 BR2_PACKAGE_SHADPS4=y
 BR2_PACKAGE_SHADPS4_QTLAUNCHER=y
+# Qt Network/OpenSSL needs system roots for GitHub API downloads.
+BR2_PACKAGE_CA_CERTIFICATES=y
 
 # Match the SM8X50 host display path: Wayland client + Qt Wayland + SDL3 Wayland.
 BR2_PACKAGE_BATOCERA_WAYLAND=y

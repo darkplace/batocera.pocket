@@ -1,0 +1,160 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Thu, 16 Jul 2026 00:00:00 +000
+Subject: [PATCH] rwops: use SDL2 callback signatures
+
+SDL_sound 1.0.3 predates SDL2 and declares its RWops callbacks with the
+SDL1 int-based signatures. GCC 14 and newer reject assigning those callbacks
+to SDL2's Sint64/size_t function pointers.
+
+Match the SDL2 callback ABI, preserve 64-bit seek offsets, and safely bridge
+SDL2's size_t read/write arguments to the legacy 32-bit PhysicsFS API.
+
+---
+--- a/extra_rwops.c
++++ b/extra_rwops.c
+@@ -43,7 +43,7 @@
+ 
+ 
+ /* Just pass through to the actual SDL_RWops's method... */
+-static int refcounter_seek(SDL_RWops *rw, int offset, int whence)
++static Sint64 SDLCALL refcounter_seek(SDL_RWops *rw, Sint64 offset, int whence)
+ {
+     RWRefCounterData *data = (RWRefCounterData *) rw->hidden.unknown.data1;
+     return(data->rw->seek(data->rw, offset, whence));
+@@ -51,7 +51,8 @@
+ 
+ 
+ /* Just pass through to the actual SDL_RWops's method... */
+-static int refcounter_read(SDL_RWops *rw, void *ptr, int size, int maxnum)
++static size_t SDLCALL refcounter_read(SDL_RWops *rw, void *ptr, size_t size,
++                                     size_t maxnum)
+ {
+     RWRefCounterData *data = (RWRefCounterData *) rw->hidden.unknown.data1;
+     return(data->rw->read(data->rw, ptr, size, maxnum));
+@@ -59,7 +60,8 @@
+ 
+ 
+ /* Just pass through to the actual SDL_RWops's method... */
+-static int refcounter_write(SDL_RWops *rw, const void *ptr, int size, int num)
++static size_t SDLCALL refcounter_write(SDL_RWops *rw, const void *ptr,
++                                      size_t size, size_t num)
+ {
+     RWRefCounterData *data = (RWRefCounterData *) rw->hidden.unknown.data1;
+     return(data->rw->write(data->rw, ptr, size, num));
+@@ -70,7 +72,7 @@
+  * Decrement the reference count. If there are no more references, pass
+  *   through to the actual SDL_RWops's method, and then clean ourselves up.
+  */
+-static int refcounter_close(SDL_RWops *rw)
++static int SDLCALL refcounter_close(SDL_RWops *rw)
+ {
+     int retval = 0;
+     RWRefCounterData *data = (RWRefCounterData *) rw->hidden.unknown.data1;
+--- a/playsound/physfsrwops.c
++++ b/playsound/physfsrwops.c
+@@ -24,10 +24,10 @@
+ #include <stdio.h>  /* used for SEEK_SET, SEEK_CUR, SEEK_END ... */
+ #include "physfsrwops.h"
+ 
+-static int physfsrwops_seek(SDL_RWops *rw, int offset, int whence)
++static Sint64 SDLCALL physfsrwops_seek(SDL_RWops *rw, Sint64 offset, int whence)
+ {
+     PHYSFS_file *handle = (PHYSFS_file *) rw->hidden.unknown.data1;
+-    int pos = 0;
++    Sint64 pos = 0;
+ 
+     if (whence == SEEK_SET)
+     {
+@@ -44,12 +44,7 @@
+             return(-1);
+         } /* if */
+ 
+-        pos = (int) current;
+-        if ( ((PHYSFS_sint64) pos) != current )
+-        {
+-            SDL_SetError("Can't fit current file position in an int!");
+-            return(-1);
+-        } /* if */
++        pos = (Sint64) current;
+ 
+         if (offset == 0)  /* this is a "tell" call. We're done. */
+             return(pos);
+@@ -66,12 +61,7 @@
+             return(-1);
+         } /* if */
+ 
+-        pos = (int) len;
+-        if ( ((PHYSFS_sint64) pos) != len )
+-        {
+-            SDL_SetError("Can't fit end-of-file position in an int!");
+-            return(-1);
+-        } /* if */
++        pos = (Sint64) len;
+ 
+         pos += offset;
+     } /* else if */
+@@ -98,32 +88,54 @@
+ } /* physfsrwops_seek */
+ 
+ 
+-static int physfsrwops_read(SDL_RWops *rw, void *ptr, int size, int maxnum)
++static size_t SDLCALL physfsrwops_read(SDL_RWops *rw, void *ptr, size_t size,
++                                      size_t maxnum)
+ {
+     PHYSFS_file *handle = (PHYSFS_file *) rw->hidden.unknown.data1;
+-    PHYSFS_sint64 rc = PHYSFS_read(handle, ptr, size, maxnum);
+-    if (rc != maxnum)
++    PHYSFS_sint64 rc;
++
++    if (((size_t) ((PHYSFS_uint32) size) != size) ||
++        ((size_t) ((PHYSFS_uint32) maxnum) != maxnum))
++    {
++        SDL_SetError("PhysicsFS read parameters exceed 32-bit limits.");
++        return(0);
++    } /* if */
++
++    rc = PHYSFS_read(handle, ptr, (PHYSFS_uint32) size,
++                     (PHYSFS_uint32) maxnum);
++    if ((rc < 0) || ((size_t) rc != maxnum))
+     {
+         if (!PHYSFS_eof(handle)) /* not EOF? Must be an error. */
+             SDL_SetError("PhysicsFS error: %s", PHYSFS_getLastError());
+     } /* if */
+ 
+-    return((int) rc);
++    return((rc < 0) ? 0 : (size_t) rc);
+ } /* physfsrwops_read */
+ 
+ 
+-static int physfsrwops_write(SDL_RWops *rw, const void *ptr, int size, int num)
++static size_t SDLCALL physfsrwops_write(SDL_RWops *rw, const void *ptr,
++                                       size_t size, size_t num)
+ {
+     PHYSFS_file *handle = (PHYSFS_file *) rw->hidden.unknown.data1;
+-    PHYSFS_sint64 rc = PHYSFS_write(handle, ptr, size, num);
+-    if (rc != num)
++    PHYSFS_sint64 rc;
++
++    if (((size_t) ((PHYSFS_uint32) size) != size) ||
++        ((size_t) ((PHYSFS_uint32) num) != num))
++    {
++        SDL_SetError("PhysicsFS write parameters exceed 32-bit limits.");
++        return(0);
++    } /* if */
++
++    rc = PHYSFS_write(handle, ptr, (PHYSFS_uint32) size,
++                      (PHYSFS_uint32) num);
++    if ((rc < 0) || ((size_t) rc != num))
+         SDL_SetError("PhysicsFS error: %s", PHYSFS_getLastError());
+ 
+-    return((int) rc);
++    return((rc < 0) ? 0 : (size_t) rc);
+ } /* physfsrwops_write */
+ 
+ 
+-static int physfsrwops_close(SDL_RWops *rw)
++static int SDLCALL physfsrwops_close(SDL_RWops *rw)
+ {
+     PHYSFS_file *handle = (PHYSFS_file *) rw->hidden.unknown.data1;
+     if (!PHYSFS_close(handle))

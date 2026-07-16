@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 from ...exceptions import BatoceraException
 from ...utils.configparser import CaseSensitiveConfigParser
+from ...utils.motion import get_builtin_dsu_server
 from .dolphinPaths import DOLPHIN_CONFIG
 
 if TYPE_CHECKING:
@@ -66,6 +67,7 @@ def generateControllerConfig(system: Emulator, playersControllers: Controllers, 
         else:
             generateControllerConfig_realwiimotes("WiimoteNew.ini", "Wiimote")
             generateControllerConfig_gamecube(system, playersControllers, {}, rom)           # You can use the gamecube pads on the wii together with wiimotes
+        write_dsu_client_config()
     elif system.name == "gamecube":
         used_wheels: DeviceInfoMapping = {}
         if system.config.use_wheels and wheels:
@@ -79,6 +81,19 @@ def generateControllerConfig(system: Emulator, playersControllers: Controllers, 
         generateControllerConfig_triforce(system, playersControllers, rom)
     else:
         raise BatoceraException(f"Invalid system name: '{system.name}'")
+
+
+def write_dsu_client_config() -> None:
+    if not (dsu_server := get_builtin_dsu_server()):
+        return
+
+    host, port = dsu_server
+    configFileName = DOLPHIN_CONFIG / "DSUClient.ini"
+    with codecs.open(str(configFileName), "w", encoding="utf_8_sig") as f:
+        f.write("[Server]\n")
+        f.write("Enabled = True\n")
+        f.write(f"Entries = odin3:{host}:{port};\n")
+
 
 # https://docs.libretro.com/library/dolphin/
 
@@ -688,6 +703,20 @@ def generateControllerConfig_any_auto(f: codecs.StreamReaderWriter, pad: Control
                     currentMapping[anyReplacements["joystick2down"]] = anyReverseAxes[currentMapping["joystick2up"]]
                 if x == "joystick2left":
                     currentMapping[anyReplacements["joystick2right"]] = anyReverseAxes[currentMapping["joystick2left"]]
+
+    if system.name == "wii" and nplayer == 1 and get_builtin_dsu_server():
+        f.write("IMUGyroscope/Pitch Up = `DSUClient/0/odin3:Gyro Pitch Up`\n")
+        f.write("IMUGyroscope/Pitch Down = `DSUClient/0/odin3:Gyro Pitch Down`\n")
+        f.write("IMUGyroscope/Roll Left = `DSUClient/0/odin3:Gyro Roll Left`\n")
+        f.write("IMUGyroscope/Roll Right = `DSUClient/0/odin3:Gyro Roll Right`\n")
+        f.write("IMUGyroscope/Yaw Left = `DSUClient/0/odin3:Gyro Yaw Left`\n")
+        f.write("IMUGyroscope/Yaw Right = `DSUClient/0/odin3:Gyro Yaw Right`\n")
+        f.write("IMUAccelerometer/Left = `DSUClient/0/odin3:Accel Left`\n")
+        f.write("IMUAccelerometer/Right = `DSUClient/0/odin3:Accel Right`\n")
+        f.write("IMUAccelerometer/Forward = `DSUClient/0/odin3:Accel Forward`\n")
+        f.write("IMUAccelerometer/Backward = `DSUClient/0/odin3:Accel Backward`\n")
+        f.write("IMUAccelerometer/Up = `DSUClient/0/odin3:Accel Up`\n")
+        f.write("IMUAccelerometer/Down = `DSUClient/0/odin3:Accel Down`\n")
 
     for x in pad.inputs:
         input = pad.inputs[x]

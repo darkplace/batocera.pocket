@@ -1,0 +1,19 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Thu, 16 Jul 2026 00:00:00 +000
+Subject: [PATCH] qt: reserve the PS button for Batocera hotkeys
+
+---
+diff --git a/vita3k/gui-qt/src/main_window.cpp b/vita3k/gui-qt/src/main_window.cpp
+index 8ddd8da..737dc8d 100644
+--- a/vita3k/gui-qt/src/main_window.cpp
++++ b/vita3k/gui-qt/src/main_window.cpp
+@@ -1335,7 +1335,7 @@ void MainWindow::on_stop_triggered() {
+ }
+ 
+ void MainWindow::on_ps_button() {
+-    on_pause_triggered();
++    // on_pause_triggered();
+ }
+ 
+ void MainWindow::refresh_emulation_actions() {

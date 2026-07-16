@@ -1,7 +1,16 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Thu, 16 Jul 2026 00:00:00 +000
+Subject: [PATCH] fbcon: fix wait callback types for modern GCC
+
 src/video/dbcon/SDL_fbvideo.c: Patch to improve fbcon driver for SDL (from pssc)
 See https://github.com/raspberrypi/firmware/issues/354
 
+Keep the wait callbacks void to match SDL_fbvideo.h. GCC 14 and newer
+reject the incompatible function-pointer assignments as errors.
+
 Signed-off-by: Laurent Merckx
+---
 --- sdl-1.2.15/src/video/fbcon/SDL_fbvideo.c	2012-01-19 07:30:06.000000000 +0100
 +++ sdl-1.2.15.o/src/video/fbcon/SDL_fbvideo.c	2016-01-02 21:37:26.897619161 +0100
 @@ -49,6 +49,7 @@
@@ -61,11 +70,9 @@ Signed-off-by: Laurent Merckx
  static int FB_LockHWSurface(_THIS, SDL_Surface *surface);
  static void FB_UnlockHWSurface(_THIS, SDL_Surface *surface);
  static void FB_FreeHWSurface(_THIS, SDL_Surface *surface);
--static void FB_WaitVBL(_THIS);
--static void FB_WaitIdle(_THIS);
-+static int FB_WaitVBL(_THIS);
-+static int FB_WaitIdle(_THIS);
-+static int FB_NULL(_THIS);
+ static void FB_WaitVBL(_THIS);
+ static void FB_WaitIdle(_THIS);
++static void FB_NULL(_THIS);
  static int FB_FlipHWSurface(_THIS, SDL_Surface *surface);
  
  /* Internal palette functions */
@@ -340,8 +347,7 @@ Signed-off-by: Laurent Merckx
  	}
  }
  
--static void FB_WaitVBL(_THIS)
-+static int FB_WaitVBL(_THIS)
+ static void FB_WaitVBL(_THIS)
  {
 -#ifdef FBIOWAITRETRACE /* Heheh, this didn't make it into the main kernel */
 -	ioctl(console_fd, FBIOWAITRETRACE, 0);
@@ -351,25 +357,25 @@ Signed-off-by: Laurent Merckx
 +		printf("ioctl(FBIO_WAITFORVSYNC) failed");
  #endif
 -	return;
-+		return -1;
++		return;
 +	}
-+        return 0;
++        return;
  }
  
 -static void FB_WaitIdle(_THIS)
-+static int FB_NULL(_THIS)
++static void FB_NULL(_THIS)
  {
 -	return;
-+	return 0;
++	return;
 +}
 +
-+static int FB_WaitIdle(_THIS)
++static void FB_WaitIdle(_THIS)
 +{
 +#ifdef FBCON_DEBUG
 +	printf("FB_WaitIdle Not implmented");
 +#endif
 +	SDL_SetError("Not implmented");
-+	return(-1);
++	return;
  }
  
  static int FB_FlipHWSurface(_THIS, SDL_Surface *surface)

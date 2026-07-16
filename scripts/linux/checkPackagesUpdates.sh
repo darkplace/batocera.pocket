@@ -146,7 +146,6 @@ PACKAGES_EMULATORS="amiberry
                     azahar
                     bigpemu
                     cemu
-                    citron
                     clk
                     hypseus-singe
                     dolphin-emu

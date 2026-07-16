@@ -19,6 +19,7 @@ from ... import Command
 from ...batoceraPaths import BIOS, CACHE, CONFIGS, ROMS, SAVES, configure_emulator, mkdir_if_not_exists
 from ...controller import Controller, generate_sdl_game_controller_config
 from ...utils import lsfg
+from ...utils.motion import get_builtin_dsu_server
 from ..Generator import Generator
 
 if TYPE_CHECKING:
@@ -605,6 +606,19 @@ class RyujinxGenerator(Generator):
             ctrlConf["deadzone_right"] = system.config.get_float("ryujinx_deadzone_right", 0)
             ctrlConf["rumble"]["enable_rumble"] = system.config.get_bool("ryujinx_rumble", True)
             ctrlConf["motion"]["enable_motion"] = system.config.get_bool("ryujinx_motion", True)
+            if nplayer == 1 and (dsu_server := get_builtin_dsu_server()):
+                host, port = dsu_server
+                ctrlConf["motion"] = {
+                    "motion_backend": "CemuHook",
+                    "sensitivity": 100,
+                    "gyro_deadzone": 1,
+                    "enable_motion": system.config.get_bool("ryujinx_motion", True),
+                    "slot": 0,
+                    "alt_slot": 0,
+                    "mirror_input": True,
+                    "dsu_server_host": host,
+                    "dsu_server_port": port,
+                }
 
             if system.config.get_bool("ryujinx_gamepadbuttons"):
                 ctrlConf["right_joycon"]["button_a"] = "A"

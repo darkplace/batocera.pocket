@@ -9,7 +9,7 @@ Upstream: not submitted
 
 --- a/layer.c
 +++ b/layer.c
-@@ -17,8 +17,8 @@ liftoff_layer_create(struct liftoff_output *output)
+@@ -17,7 +17,7 @@ liftoff_layer_create(struct liftoff_output *output)
  	}
  	layer->output = output;
 -	layer->candidate_planes = calloc(sizeof(layer->candidate_planes[0]),

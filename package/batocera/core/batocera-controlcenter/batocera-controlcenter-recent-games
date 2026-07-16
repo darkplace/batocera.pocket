@@ -19,7 +19,7 @@ BCC_RECENT_LAUNCH_SETTLE_SECONDS = 0.5
 EMULATOR_LAUNCHER_PATTERN = r"(^|/)emulatorlauncher([[:space:]]|$)"
 EMULATOR_PATTERNS = (
     EMULATOR_LAUNCHER_PATTERN,
-    r"(^|/)(retroarch|duckstation-qt|pcsx2-qt|rpcs3|xenia|xenia_canary|xenia-canary|xenia-edge|dolphin-emu|azahar|eden|citron|scummvm)([[:space:]]|$)",
+    r"(^|/)(retroarch|duckstation-qt|pcsx2-qt|rpcs3|xenia|xenia_canary|xenia-canary|xenia-edge|dolphin-emu|azahar|eden|scummvm)([[:space:]]|$)",
     r"(^|/)(wineserver|winedevice\.exe|services\.exe|wine-preloader)([[:space:]]|$)",
 )
 

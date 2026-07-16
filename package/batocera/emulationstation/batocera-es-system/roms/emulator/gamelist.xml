@@ -31,11 +31,6 @@
     <image>./images/azahar.png</image>
   </game>
   <game>
-    <path>./Configure_Citron.sh</path>
-    <name>Configure Citron</name>
-    <image>./images/citron.png</image>
-  </game>
-  <game>
     <path>./Configure_Eden.sh</path>
     <name>Configure Eden</name>
     <image>./images/eden.png</image>

@@ -41,9 +41,9 @@ diff --git a/Quake/net_udp.c b/Quake/net_udp.c
  
  	if (name[0] >= '0' && name[0] <= '9')
 @@ -731,7 +731,7 @@
-	struct addrinfo *pos;
-	struct addrinfo	 udp6hint;
-	int				 error;
+ 	struct addrinfo *pos;
+ 	struct addrinfo	 udp6hint;
+ 	int				 error;
 -	char			*port;
 +	const char		*port;
  	char			 dupbase[256];

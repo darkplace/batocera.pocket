@@ -1,15 +1,37 @@
 #!/bin/sh
 
-STATIC_ROOT="/usr/share/qcom/sm8750/AYN/odin3"
-STATE_DIR="/userdata/system/qcom-sensors/odin3"
-RPC_ROOT="${STATE_DIR}/root"
-REGISTRY="${STATE_DIR}/registry"
-REGISTRY_MARKER="${STATE_DIR}/registry.version"
-REGISTRY_VERSION="1"
 ROOT_PID="/var/run/hexagonrpcd-adsp-root.pid"
 SENSORS_PID="/var/run/hexagonrpcd-adsp-sensors.pid"
 LOG_DIR="/userdata/system/logs"
 LOG_FILE="${LOG_DIR}/qcom-sensors.log"
+FASTRPC_DEVICE=""
+
+configure_device() {
+	if grep -aq "ayn,odin3" /proc/device-tree/compatible 2>/dev/null; then
+		STATIC_ROOT="/usr/share/qcom/sm8750/AYN/odin3"
+		STATE_DIR="/userdata/system/qcom-sensors/odin3"
+		REGISTRY_CONFIG="qmi8658_0_platform.config"
+		REGISTRY_ORIENT="qmi8658_0_platform.orient"
+		REGISTRY_LABEL="QMI8658"
+		HW_PLATFORM="MTP"
+		FALLBACK_SOC_ID="706"
+	elif grep -aq "ayn,thor" /proc/device-tree/compatible 2>/dev/null; then
+		STATIC_ROOT="/usr/share/qcom/sm8550/AYN/thor"
+		STATE_DIR="/userdata/system/qcom-sensors/thor"
+		REGISTRY_CONFIG="sh5001_0_platform.config"
+		REGISTRY_ORIENT="sh5001_0_platform.orient"
+		REGISTRY_LABEL="SH5001"
+		HW_PLATFORM="HDK"
+		FALLBACK_SOC_ID="603"
+	else
+		return 1
+	fi
+
+	RPC_ROOT="${STATE_DIR}/root"
+	REGISTRY="${STATE_DIR}/registry"
+	REGISTRY_MARKER="${STATE_DIR}/registry.version"
+	REGISTRY_VERSION="1"
+}
 
 log_msg() {
 	echo "[$(date '+%F %T')] $*" >> "${LOG_FILE}"
@@ -17,13 +39,19 @@ log_msg() {
 
 registry_ready() {
 	registry_dir="${1:-${REGISTRY}}"
-	[ -s "${registry_dir}/qmi8658_0_platform.config" ] &&
-		[ -s "${registry_dir}/qmi8658_0_platform.orient" ]
+	[ -s "${registry_dir}/${REGISTRY_CONFIG}" ] &&
+		[ -s "${registry_dir}/${REGISTRY_ORIENT}" ]
 }
 
 prepare_registry() {
 	mkdir -p "${STATE_DIR}" "${REGISTRY}" "${RPC_ROOT}/sensors" \
 		"${RPC_ROOT}/dsp/adsp" "${LOG_DIR}"
+
+	if [ ! -d "${STATIC_ROOT}/sensors/config" ] ||
+	    [ ! -r "${STATIC_ROOT}/sensors/sns_reg.conf" ]; then
+		log_msg "Static sensor profile is missing from ${STATIC_ROOT}"
+		return 1
+	fi
 
 	ln -snf "${STATIC_ROOT}/sensors/config" "${RPC_ROOT}/sensors/config"
 	ln -snf "${STATIC_ROOT}/sensors/sns_reg.conf" "${RPC_ROOT}/sensors/sns_reg.conf"
@@ -55,13 +83,13 @@ prepare_registry() {
 	else
 		soc_id=""
 	fi
-	[ -n "${soc_id}" ] || soc_id=706
+	[ -n "${soc_id}" ] || soc_id="${FALLBACK_SOC_ID}"
 
 	registry_tmp="${STATE_DIR}/registry.new.$$"
 	rm -rf "${registry_tmp}"
 	mkdir -p "${registry_tmp}"
 
-	if ! sscregistrygen -p MTP -s "${soc_id}" \
+	if ! sscregistrygen -p "${HW_PLATFORM}" -s "${soc_id}" \
 		"${STATIC_ROOT}/sensors/config" "${registry_tmp}" >> "${LOG_FILE}" 2>&1; then
 		rm -rf "${registry_tmp}"
 		log_msg "sscregistrygen failed"
@@ -70,45 +98,98 @@ prepare_registry() {
 
 	if ! registry_ready "${registry_tmp}"; then
 		rm -rf "${registry_tmp}"
-		log_msg "QMI8658 registry profile was not generated (SoC ${soc_id})"
+		log_msg "${REGISTRY_LABEL} registry profile was not generated (platform ${HW_PLATFORM}, SoC ${soc_id})"
 		return 1
 	fi
 
 	mv "${registry_tmp}"/* "${REGISTRY}"/
 	rmdir "${registry_tmp}"
 	echo "${REGISTRY_VERSION}" > "${REGISTRY_MARKER}"
-	log_msg "Generated persistent QMI8658 registry for SoC ${soc_id}"
+	log_msg "Generated persistent ${REGISTRY_LABEL} registry for platform ${HW_PLATFORM}, SoC ${soc_id}"
+}
+
+select_fastrpc_device() {
+	# Upstream DTs normally mark ADSP FastRPC non-secure, but SM8750's
+	# signed ADSP channel is currently exposed only through the secure node.
+	# SensorsPD works on either node, so prefer the conventional one and fall
+	# back without requiring a kernel/DT change.
+	for device in /dev/fastrpc-adsp /dev/fastrpc-adsp-secure; do
+		if [ -e "${device}" ]; then
+			FASTRPC_DEVICE="${device}"
+			return 0
+		fi
+	done
+
+	return 1
 }
 
 wait_for_fastrpc() {
 	i=0
-	while [ ! -e /dev/fastrpc-adsp ] && [ "${i}" -lt 100 ]; do
+	while ! select_fastrpc_device && [ "${i}" -lt 100 ]; do
 		sleep 0.1
 		i=$((i + 1))
 	done
-	[ -e /dev/fastrpc-adsp ]
+
+	select_fastrpc_device
+}
+
+wait_for_pidfile() {
+	pid_file="$1"
+	i=0
+	while [ "${i}" -lt 50 ]; do
+		pid=$(cat "${pid_file}" 2>/dev/null)
+		if [ -n "${pid}" ] && kill -0 "${pid}" 2>/dev/null; then
+			return 0
+		fi
+		sleep 0.1
+		i=$((i + 1))
+	done
+
+	return 1
 }
 
 start_daemons() {
+	configure_device || return 0
 	[ -x /usr/bin/hexagonrpcd ] || return 0
 	prepare_registry || return 1
 
 	if ! wait_for_fastrpc; then
-		log_msg "/dev/fastrpc-adsp did not appear"
+		log_msg "No ADSP FastRPC device appeared"
 		return 1
 	fi
-
-	start-stop-daemon --start --quiet --background --make-pidfile \
-		--pidfile "${ROOT_PID}" --exec /usr/bin/hexagonrpcd \
-		--output "${LOG_FILE}" -- \
-		-f /dev/fastrpc-adsp -d adsp -R "${RPC_ROOT}"
+	log_msg "Using ${FASTRPC_DEVICE}"
 
 	start-stop-daemon --start --quiet --background --make-pidfile \
 		--pidfile "${SENSORS_PID}" --exec /usr/bin/hexagonrpcd \
 		--output "${LOG_FILE}" -- \
-		-f /dev/fastrpc-adsp -d adsp -s -R "${RPC_ROOT}"
+		-f "${FASTRPC_DEVICE}" -d adsp -s -R "${RPC_ROOT}"
+	if ! wait_for_pidfile "${SENSORS_PID}"; then
+		log_msg "ADSP SensorsPD FastRPC listener failed to start"
+		return 1
+	fi
 
-	log_msg "Started ADSP RootPD and SensorsPD FastRPC listeners"
+	# SensorsPD and RootPD share one FastRPC node. Give SensorsPD time to
+	# finish creating its signed process before RootPD opens the channel.
+	sleep 1
+
+	start-stop-daemon --start --quiet --background --make-pidfile \
+		--pidfile "${ROOT_PID}" --exec /usr/bin/hexagonrpcd \
+		--output "${LOG_FILE}" -- \
+		-f "${FASTRPC_DEVICE}" -d adsp -R "${RPC_ROOT}"
+	if ! wait_for_pidfile "${ROOT_PID}"; then
+		log_msg "ADSP RootPD FastRPC listener failed to start"
+		return 1
+	fi
+
+	sleep 1
+	root_pid=$(cat "${ROOT_PID}" 2>/dev/null)
+	if [ -z "${root_pid}" ] || ! kill -0 "${root_pid}" 2>/dev/null; then
+		rm -f "${ROOT_PID}"
+		log_msg "ADSP RootPD FastRPC listener exited during startup"
+		return 1
+	fi
+
+	log_msg "Started ADSP SensorsPD and RootPD FastRPC listeners"
 }
 
 stop_daemons() {

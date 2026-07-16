@@ -4008,8 +4008,6 @@ switch:
   theme: switch
   extensions: [xci, nsp, qlaunch]
   emulators:
-    citron:
-      citron: { requireAnyOf: [BR2_PACKAGE_CITRON] }
     eden:
       eden: { requireAnyOf: [BR2_PACKAGE_EDEN] }
     ryujinx:

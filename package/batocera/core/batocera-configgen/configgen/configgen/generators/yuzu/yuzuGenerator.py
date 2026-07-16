@@ -12,6 +12,7 @@ from ... import Command
 from ...batoceraPaths import BIOS, mkdir_if_not_exists, ensure_parents_and_open
 from ...utils import lsfg, vulkan
 from ...utils.configparser import CaseSensitiveRawConfigParser
+from ...utils.motion import configure_switch_dsu_motion
 from ..Generator import Generator
 from ..eden.edenController import build_eden_sdl_game_controller_config
 from .yuzuController import set_yuzu_controllers
@@ -630,6 +631,7 @@ exit $EXIT_CODE
 
         # Generate per-player pad bindings from ES controller mappings.
         set_yuzu_controllers(c, system, players_controllers)
+        configure_switch_dsu_motion(c)
 
         # ---------- System ----------
         if not c.has_section("System"):

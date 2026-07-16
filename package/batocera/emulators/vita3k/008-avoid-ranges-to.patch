@@ -1,0 +1,27 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Thu, 16 Jul 2026 00:00:00 +000
+Subject: [PATCH] util: avoid C++23 ranges::to
+
+---
+diff --git a/vita3k/util/src/string_utils.cpp b/vita3k/util/src/string_utils.cpp
+--- a/vita3k/util/src/string_utils.cpp
++++ b/vita3k/util/src/string_utils.cpp
+@@ -38,12 +38,11 @@ std::string wide_to_utf(const std::wstring &str) {
+ }
+ 
+ std::string trim_copy(std::string_view str) {
+-    return str
+-        | std::views::drop_while([](unsigned char ch) { return std::isspace(ch); })
+-        | std::views::reverse
+-        | std::views::drop_while([](unsigned char ch) { return std::isspace(ch); })
+-        | std::views::reverse
+-        | std::ranges::to<std::string>();
++    const auto is_space = [](unsigned char ch) { return std::isspace(ch); };
++    const auto first = std::find_if_not(str.begin(), str.end(), is_space);
++    const auto last = std::find_if_not(str.rbegin(), str.rend(), is_space).base();
++
++    return first < last ? std::string(first, last) : std::string{};
+ }
+ 
+ std::string remove_special_chars(std::string str) {

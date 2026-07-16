@@ -60,6 +60,9 @@ BR2_ENABLE_LOCALE_PURGE=n
 # x86-64-v3 shadPS4 guest payload for FEX on SM8X50 hosts.
 
 BR2_PACKAGE_SHADPS4=y
+BR2_PACKAGE_SHADPS4_QTLAUNCHER=y
+# Qt Network/OpenSSL needs system roots for GitHub API downloads.
+BR2_PACKAGE_CA_CERTIFICATES=y
 
 # Match the SM8X50 host display path: Wayland client + Qt Wayland + SDL3 Wayland.
 BR2_PACKAGE_BATOCERA_WAYLAND=y
@@ -84,6 +87,9 @@ BR2_PACKAGE_MESA3D_OPENGL_ES=y
 BR2_PACKAGE_QT6BASE_OPENGL=y
 BR2_PACKAGE_QT6BASE_OPENGL_ES2=y
 BR2_PACKAGE_SDL3_OPENGLES=y
+# FEX's guest GL thunk needs libX11 even when the launcher uses Wayland.
+BR2_PACKAGE_XORG7=y
+BR2_PACKAGE_XLIB_LIBX11=y
 
 # Prefer the same audio path as the host image when Qt multimedia is present.
 BR2_PACKAGE_QT6MULTIMEDIA_PULSEAUDIO=y

@@ -1,6 +1,6 @@
 --- a/source/linux/registryclass.h
 +++ b/source/linux/registryclass.h
-@@ -1,6 +1,7 @@
+@@ -1,5 +1,6 @@
  #pragma once
  
 +#include <cstdint>

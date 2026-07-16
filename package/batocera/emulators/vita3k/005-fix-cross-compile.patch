@@ -1,18 +1,16 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Thu, 16 Jul 2026 00:00:00 +000
+Subject: [PATCH] xxhash: detect the target architecture when cross compiling
+
+---
 diff --git a/external/xxHash/cmake_unofficial/CMakeLists.txt b/external/xxHash/cmake_unofficial/CMakeLists.txt
-index e8fbb53..52351a5 100644
+index 89242ec6..d55a725a 100644
 --- a/external/xxHash/cmake_unofficial/CMakeLists.txt
 +++ b/external/xxHash/cmake_unofficial/CMakeLists.txt
-@@ -75,17 +75,10 @@ mark_as_advanced(XXHASH_BUNDLED_MODE)
- include(CMakeDependentOption)
- CMAKE_DEPENDENT_OPTION(BUILD_SHARED_LIBS "Build shared libraries" ON "NOT XXHASH_BUNDLED_MODE" OFF)
+@@ -76,9 +76,9 @@ CMAKE_HOST_SYSTEM_INFORMATION(RESULT PLATFORM QUERY OS_PLATFORM)
+ message(STATUS "Architecture: ${PLATFORM}")
  
--if("${CMAKE_VERSION}" VERSION_LESS "3.10")
--  # Can not enable DISPATCH mode since it fails to recognize architecture.
--else()
--  CMAKE_HOST_SYSTEM_INFORMATION(RESULT PLATFORM QUERY OS_PLATFORM)
--  message(STATUS "Architecture: ${PLATFORM}")
--endif()
--
  # libxxhash
 -if((DEFINED DISPATCH) AND (DEFINED PLATFORM))
 +if((DEFINED DISPATCH))

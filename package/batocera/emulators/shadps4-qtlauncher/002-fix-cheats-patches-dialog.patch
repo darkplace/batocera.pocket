@@ -1,0 +1,38 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Thu, 16 Jul 2026 00:00:00 +000
+Subject: [PATCH] qtlauncher: keep the cheats dialog attached and focused
+
+---
+diff --git a/src/qt_gui/cheats_patches.cpp b/src/qt_gui/cheats_patches.cpp
+index 2a524d6..f17c1d8 100644
+--- a/src/qt_gui/cheats_patches.cpp
++++ b/src/qt_gui/cheats_patches.cpp
+@@ -39,6 +39,7 @@ CheatsPatches::CheatsPatches(std::shared_ptr<gui_settings> gui_settings,
+                              const QString& gameSerial, const QString& gameVersion,
+                              const QString& gameSize, const QPixmap& gameImage, QWidget* parent)
+-    : QWidget(parent), m_gameName(gameName), m_gameSerial(gameSerial), m_gameVersion(gameVersion),
++    : QWidget(parent, Qt::Dialog), m_gameName(gameName), m_gameSerial(gameSerial),
++      m_gameVersion(gameVersion),
+       m_gameSize(gameSize), m_gameImage(gameImage), m_gui_settings(std::move(gui_settings)),
+       m_ipc_client(ipc_client), manager(new QNetworkAccessManager(this)) {
+     setupUI();
+diff --git a/src/qt_gui/gui_context_menus.h b/src/qt_gui/gui_context_menus.h
+index c0702c2..6913ac7 100644
+--- a/src/qt_gui/gui_context_menus.h
++++ b/src/qt_gui/gui_context_menus.h
+@@ -391,10 +391,11 @@ public:
+             QPixmap gameImage(iconPath);
+             CheatsPatches* cheatsPatches =
+                 new CheatsPatches(m_gui_settings, m_ipc_client, gameName, gameSerial, gameVersion,
+-                                  gameSize, gameImage);
++                                  gameSize, gameImage, widget->window());
++            cheatsPatches->setAttribute(Qt::WA_DeleteOnClose);
+             cheatsPatches->show();
+-            connect(widget->parent(), &QWidget::destroyed, cheatsPatches,
+-                    [cheatsPatches]() { cheatsPatches->deleteLater(); });
++            cheatsPatches->raise();
++            cheatsPatches->activateWindow();
+         }
+ 
+         if (selected == &openTrophyViewer) {

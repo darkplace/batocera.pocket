@@ -1,0 +1,19 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Thu, 16 Jul 2026 00:00:00 +000
+Subject: [PATCH] cmake: allow Qt 6.10
+
+---
+diff --git a/cmake/qt6.cmake b/cmake/qt6.cmake
+index bb42e15..f404ef5 100644
+--- a/cmake/qt6.cmake
++++ b/cmake/qt6.cmake
+@@ -2,7 +2,7 @@
+ # Provides the vita3k::qt6 INTERFACE target.
+ add_library(vita3k_qt6 INTERFACE)
+ 
+-set(VITA3K_QT_MIN_VER 6.11.0)
++set(VITA3K_QT_MIN_VER 6.10.0)
+ 
+ set(VITA3K_QT_COMPONENTS Core Gui Widgets Network Concurrent Svg Multimedia LinguistTools)
+ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")

@@ -85,6 +85,30 @@ define BATOCERA_ES_SYSTEM_INSTALL_GAMEPAD_CALIBRATION_TOOL
 endef
 endif
 
+ifeq ($(BR2_PACKAGE_BATOCERA_QCOM_MOTION),y)
+define BATOCERA_ES_SYSTEM_INSTALL_MOTION_SENSOR_CALIBRATION_TOOL
+	$(INSTALL) -D -m 0755 \
+		$(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/utils/batocera-qcom-motion/src/Motion_Sensor_Calibration.sh \
+		$(TARGET_DIR)/usr/share/batocera/datainit/roms/emulator/Motion_Sensor_Calibration.sh
+	$(INSTALL) -D -m 0644 \
+		$(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/utils/batocera-qcom-motion/src/motion-sensor-calibration.svg \
+		$(TARGET_DIR)/usr/share/batocera/datainit/roms/emulator/images/motion-sensor-calibration.svg
+	gamelist="$(TARGET_DIR)/usr/share/batocera/datainit/roms/emulator/gamelist.xml"; \
+	if [ -f "$${gamelist}" ] && ! grep -q './Motion_Sensor_Calibration.sh' "$${gamelist}"; then \
+		awk '/<\/gameList>/ { \
+			print "  <game>"; \
+			print "    <path>./Motion_Sensor_Calibration.sh</path>"; \
+			print "    <name>Motion Sensor Calibration</name>"; \
+			print "    <desc>Calibrate the built-in gyroscope and accelerometer for motion controls.</desc>"; \
+			print "    <image>./images/motion-sensor-calibration.svg</image>"; \
+			print "    <thumbnail>./images/motion-sensor-calibration.svg</thumbnail>"; \
+			print "  </game>"; \
+		} { print }' "$${gamelist}" > "$${gamelist}.tmp" && \
+		mv "$${gamelist}.tmp" "$${gamelist}"; \
+	fi
+endef
+endif
+
 define BATOCERA_ES_SYSTEM_BUILD_CMDS
 	$(HOST_DIR)/bin/python \
 		$(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/emulationstation/batocera-es-system/batocera-es-system.py \
@@ -132,6 +156,7 @@ define BATOCERA_ES_SYSTEM_INSTALL_TARGET_CMDS
 	$(BATOCERA_ES_SYSTEM_INSTALL_WINE_TOOLS)
 	$(BATOCERA_ES_SYSTEM_INSTALL_STEAM_TOOLS)
 	$(BATOCERA_ES_SYSTEM_INSTALL_GAMEPAD_CALIBRATION_TOOL)
+	$(BATOCERA_ES_SYSTEM_INSTALL_MOTION_SENSOR_CALIBRATION_TOOL)
 endef
 
 $(eval $(generic-package))

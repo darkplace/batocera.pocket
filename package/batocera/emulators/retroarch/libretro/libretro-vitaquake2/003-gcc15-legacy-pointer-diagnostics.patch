@@ -1,13 +1,19 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Thu, 16 Jul 2026 00:00:00 +000
+Subject: [PATCH] libretro: tolerate legacy pointer diagnostics on GCC 15
+
+---
 diff --git a/Makefile b/Makefile
 index 9b47d45..121e703 100644
 --- a/Makefile
 +++ b/Makefile
-@@ -295,7 +295,7 @@ else
-    CFLAGS   += -O3 -DNDEBUG
- endif
+@@ -296,7 +296,7 @@
+ OBJECTS := $(SOURCES_C:.c=.o)
  
 -CFLAGS   += -Wall -D__LIBRETRO__ $(fpic) -DREF_HARD_LINKED -DRELEASE -DGAME_HARD_LINKED -DOSTYPE=\"$(OSTYPE)\" -DARCH=\"$(ARCH)\" -fsigned-char
 +CFLAGS   += -Wall -Wno-error=incompatible-pointer-types -D__LIBRETRO__ $(fpic) -DREF_HARD_LINKED -DRELEASE -DGAME_HARD_LINKED -DOSTYPE=\"$(OSTYPE)\" -DARCH=\"$(ARCH)\" -fsigned-char
+ CXXFLAGS += -Wall -D__LIBRETRO__ $(fpic) -fpermissive
  
  ifeq ($(HAVE_OPENGL),1)
  CFLAGS   += -DHAVE_OPENGL
