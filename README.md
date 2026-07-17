@@ -11,7 +11,11 @@ https://drive.proton.me/urls/RRPFQ38NX8#LmFz5AIaV2aI
   <img width="1175" height="881" alt="image" src="https://github.com/user-attachments/assets/57433181-374b-4015-980f-18938350a717" />
   <img width="715" height="953" alt="o3-steam" src="https://github.com/user-attachments/assets/e16680ca-393e-4c8e-b0d5-a9308c00a8a3" />
 
-- Odin2 / Thor Series  
+- AYN Odin2 (validated)
+- AYN Odin 2 Portal (Validated)
+- AYN Odin 2 Mini (Not validated)
+- AYN Thor
+- Retroid Pocket 6 (Not Validated)
 
 - Radxa Dragon Q6A  
 
