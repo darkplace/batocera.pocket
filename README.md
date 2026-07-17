@@ -1,4 +1,4 @@
-# BATOCERA ENHANCED QUALLCOM BUILDS  
+# BATOCERA ENHANCED QUALCOMM BUILDS  
 **Unofficial Community Builds**
 
 **Download:**  
