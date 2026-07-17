@@ -1,0 +1,305 @@
+From: suckbluefrog <suckbluefrog@proton.me>
+Subject: [PATCH] input: bridge Odin rsinput rumble to PMIC haptics
+
+The Odin controller MCU provides buttons and axes while its single LRA is
+driven by the PMIH0108 HAP530 block. Add FF_RUMBLE support to the native
+HAP530 driver and forward rsinput force-feedback callbacks to it so SDL
+and emulators see rumble on the gamepad device.
+
+--- /dev/null
++++ b/include/linux/input/qcom-spmi-haptics.h
+@@ -0,0 +1,37 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++#ifndef _LINUX_INPUT_QCOM_SPMI_HAPTICS_H
++#define _LINUX_INPUT_QCOM_SPMI_HAPTICS_H
++
++#include <linux/errno.h>
++#include <linux/input.h>
++#include <linux/kconfig.h>
++
++#if IS_REACHABLE(CONFIG_INPUT_QCOM_SPMI_HAPTICS)
++int qcom_spmi_haptics_upload(struct ff_effect *effect,
++			     struct ff_effect *old);
++int qcom_spmi_haptics_playback(int effect_id, int val);
++int qcom_spmi_haptics_erase(int effect_id);
++void qcom_spmi_haptics_set_gain(u16 gain);
++#else
++static inline int qcom_spmi_haptics_upload(struct ff_effect *effect,
++					   struct ff_effect *old)
++{
++	return -ENODEV;
++}
++
++static inline int qcom_spmi_haptics_playback(int effect_id, int val)
++{
++	return -ENODEV;
++}
++
++static inline int qcom_spmi_haptics_erase(int effect_id)
++{
++	return -ENODEV;
++}
++
++static inline void qcom_spmi_haptics_set_gain(u16 gain)
++{
++}
++#endif
++
++#endif
+
+--- a/drivers/input/misc/qcom-spmi-haptics.c
++++ b/drivers/input/misc/qcom-spmi-haptics.c
+@@ -6,7 +6,9 @@
+ #include <linux/bitfield.h>
+ #include <linux/bits.h>
+ #include <linux/device.h>
++#include <linux/export.h>
+ #include <linux/input.h>
++#include <linux/input/qcom-spmi-haptics.h>
+ #include <linux/interrupt.h>
+ #include <linux/list.h>
+ #include <linux/math64.h>
+@@ -219,6 +221,9 @@
+ 	struct qcom_haptics_effect effects[HAPTICS_MAX_EFFECTS];
+ };
+ 
++/* Odin-family systems contain one PMIC haptics engine. */
++static struct qcom_haptics *primary_haptics;
++
+ static int cfg_write(struct qcom_haptics *h, u32 off, u32 val)
+ {
+ 	return regmap_write(h->regmap, h->cfg_base + off, val);
+@@ -709,9 +714,12 @@
+ 
+ 	guard(mutex)(&h->play_lock);
+ 
+-	/* No valid request available */
+-	if (req == NULL)
++	/* A duration re-arm with no queued request means the effect expired. */
++	if (req == NULL) {
++		if (h->active_effect_id != -1)
++			haptics_stop_locked(h, false);
+ 		return;
++	}
+ 
+ 	if (req->play) {
+ 		ret = haptics_start_locked(h, req->effect_id);
+@@ -852,14 +860,28 @@
+ 	if (id < 0 || id >= HAPTICS_MAX_EFFECTS)
+ 		return -EINVAL;
+ 
+-	if (id == h->active_effect_id) {
+-		dev_err(h->dev, "effect %d is under playing\n", id);
+-		return -EBUSY;
+-	}
+-
+ 	priv = &h->effects[id];
+ 
++	if (id == h->active_effect_id && effect->type != FF_RUMBLE) {
++		dev_err(h->dev, "effect %d is under playing\n", id);
++		return -EBUSY;
++	}
++
+ 	switch (effect->type) {
++	case FF_RUMBLE:
++		/*
++		 * SDL updates a live rumble effect in place before issuing the
++		 * next EV_FF play event. The existing direct-play buffer is safe
++		 * to replace; playback will immediately restart and re-arm it.
++		 */
++		haptics_clear_effect(h, priv);
++		level = max(effect->u.rumble.strong_magnitude,
++			    effect->u.rumble.weak_magnitude);
++		priv->amplitude = (u8)mult_frac(level, 255, 0xFFFF);
++		priv->length_us = effect->replay.length * USEC_PER_MSEC;
++		priv->mode = HAPTICS_DIRECT_PLAY;
++		return 0;
++
+ 	case FF_CONSTANT:
+ 		haptics_clear_effect(h, priv);
+ 		level = effect->u.constant.level <= 0 ? 0 : effect->u.constant.level;
+@@ -932,16 +954,5 @@
+-	if (val > 0)
+-		/*
+-		 * Queue the play.  If a duration re-arm is already pending this
+-		 * is a no-op, so the new play waits for the current effect to
+-		 * finish before the worker dequeues it.
+-		 */
+-		schedule_delayed_work(&h->play_work, 0);
+-	else
+-		/*
+-		 * Run the worker now, cancelling any pending duration re-arm,
+-		 * so an explicit stop takes effect immediately.
+-		 */
+-		mod_delayed_work(system_percpu_wq, &h->play_work, 0);
++	/* A single-channel motor must process every replacement or stop now. */
++	mod_delayed_work(system_wq, &h->play_work, 0);
+ 
+ 	return 0;
+ }
+@@ -971,6 +982,49 @@
+ 	atomic_set(&h->gain, gain);
+ }
+ 
++int qcom_spmi_haptics_upload(struct ff_effect *effect,
++			     struct ff_effect *old)
++{
++	struct qcom_haptics *h = READ_ONCE(primary_haptics);
++
++	if (!h)
++		return -ENODEV;
++
++	return haptics_upload_effect(h->input, effect, old);
++}
++EXPORT_SYMBOL_GPL(qcom_spmi_haptics_upload);
++
++int qcom_spmi_haptics_playback(int effect_id, int val)
++{
++	struct qcom_haptics *h = READ_ONCE(primary_haptics);
++
++	if (!h)
++		return -ENODEV;
++
++	return haptics_playback(h->input, effect_id, val);
++}
++EXPORT_SYMBOL_GPL(qcom_spmi_haptics_playback);
++
++int qcom_spmi_haptics_erase(int effect_id)
++{
++	struct qcom_haptics *h = READ_ONCE(primary_haptics);
++
++	if (!h)
++		return -ENODEV;
++
++	return haptics_erase(h->input, effect_id);
++}
++EXPORT_SYMBOL_GPL(qcom_spmi_haptics_erase);
++
++void qcom_spmi_haptics_set_gain(u16 gain)
++{
++	struct qcom_haptics *h = READ_ONCE(primary_haptics);
++
++	if (h)
++		haptics_set_gain(h->input, gain);
++}
++EXPORT_SYMBOL_GPL(qcom_spmi_haptics_set_gain);
++
+ static int qcom_haptics_probe(struct platform_device *pdev)
+ {
+ 	struct qcom_haptics *h;
+@@ -1061,6 +1121,7 @@
+ 	h->input = input;
+ 
+ 	input_set_capability(input, EV_FF, FF_CONSTANT);
++	input_set_capability(input, EV_FF, FF_RUMBLE);
+ 	input_set_capability(input, EV_FF, FF_PERIODIC);
+ 	input_set_capability(input, EV_FF, FF_CUSTOM);
+ 	input_set_capability(input, EV_FF, FF_GAIN);
+@@ -1081,6 +1142,8 @@
+ 		return dev_err_probe(h->dev, ret, "failed to register input device\n");
+ 	}
+ 
++	WRITE_ONCE(primary_haptics, h);
++
+ 	return 0;
+ }
+ 
+@@ -1088,6 +1151,9 @@
+ {
+ 	struct qcom_haptics *h = platform_get_drvdata(pdev);
+ 
++	if (READ_ONCE(primary_haptics) == h)
++		WRITE_ONCE(primary_haptics, NULL);
++
+ 	/*
+ 	 * Unregister the input device explicitly at the beginning
+ 	 * to avoid the input device being used after the resources
+
+--- a/drivers/input/joystick/rsinput.c
++++ b/drivers/input/joystick/rsinput.c
+@@ -12,6 +12,7 @@
+ #include <linux/init.h>
+ #include <linux/jiffies.h>
+ #include <linux/input.h>
++#include <linux/input/qcom-spmi-haptics.h>
+ #include <linux/interrupt.h>
+ #include <linux/kernel.h>
+ #include <linux/module.h>
+@@ -22,6 +23,12 @@
+ #include <linux/slab.h>
+ #include <uapi/linux/sched/types.h>
+ 
++#define RSINPUT_FF_EFFECTS 8
++
++static bool rumble_enable = true;
++module_param(rumble_enable, bool, 0660);
++MODULE_PARM_DESC(rumble_enable, "Enable the PMIC haptics rumble bridge");
++
+ static int update_params=0;
+ 
+ static int trigger_left_max=0x610;
+@@ -538,6 +545,38 @@
+     .receive_buf = rsinput_rx,
+ };
+ 
++static int rsinput_rumble_upload(struct input_dev *dev,
++                                 struct ff_effect *effect,
++                                 struct ff_effect *old)
++{
++    if (!rumble_enable)
++        return 0;
++
++    return qcom_spmi_haptics_upload(effect, old);
++}
++
++static int rsinput_rumble_playback(struct input_dev *dev, int effect_id, int val)
++{
++    if (!rumble_enable)
++        return 0;
++
++    return qcom_spmi_haptics_playback(effect_id, val);
++}
++
++static int rsinput_rumble_erase(struct input_dev *dev, int effect_id)
++{
++    if (!rumble_enable)
++        return 0;
++
++    return qcom_spmi_haptics_erase(effect_id);
++}
++
++static void rsinput_rumble_set_gain(struct input_dev *dev, u16 gain)
++{
++    if (rumble_enable)
++        qcom_spmi_haptics_set_gain(gain);
++}
++
+ static int rsinput_probe(struct serdev_device *serdev) {
+     struct rsinput_driver *drv;
+     u32 gamepad_bus = 0;
+@@ -680,9 +719,24 @@
+     input_set_abs_params(drv->input, ABS_Z, 0, trigger_left_max - trigger_left_antideadzone, 0, 30);
+     input_set_abs_params(drv->input, ABS_RZ, 0, trigger_right_max - trigger_right_antideadzone, 0, 30);
+ 
+-    error = input_register_device(drv->input);
++    input_set_capability(drv->input, EV_FF, FF_RUMBLE);
++    input_set_capability(drv->input, EV_FF, FF_GAIN);
++
++    error = input_ff_create(drv->input, RSINPUT_FF_EFFECTS);
+     if (error)
++        return dev_err_probe(&serdev->dev, error,
++                             "Unable to create force-feedback device\n");
++
++    drv->input->ff->upload = rsinput_rumble_upload;
++    drv->input->ff->playback = rsinput_rumble_playback;
++    drv->input->ff->erase = rsinput_rumble_erase;
++    drv->input->ff->set_gain = rsinput_rumble_set_gain;
++
++    error = input_register_device(drv->input);
++    if (error) {
++        input_ff_destroy(drv->input);
+         return error;
++    }
+ 
+     error = rsinput_request_paddle_irq(serdev, &drv->paddle_left);
+     if (error)
