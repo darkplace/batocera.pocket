@@ -1,4 +1,4 @@
-# BATOCERA ENHANCED ARM64 BUILDS  
+# BATOCERA ENHANCED QUALLCOM BUILDS  
 **Unofficial Community Builds**
 
 **Download:**  
@@ -19,13 +19,7 @@ https://drive.proton.me/urls/RRPFQ38NX8#LmFz5AIaV2aI
 
 - Dragon Q6A  
 
-## Legacy Devices
-- R36s  
-- BattleXP G350  
-- Anbernic RG-DS (Beta)
-<img width="559" height="746" alt="image" src="https://github.com/user-attachments/assets/2f539866-4174-4c5c-b03c-2676ad81bd74" />
-<img width="481" height="642" alt="image" src="https://github.com/user-attachments/assets/2ac8e6a1-769b-4ddb-b0ea-f04324146561" />
----
+
 
 ## Core Features beyond upstream (All ARM64 Builds)
 - Flatpak enabled (with DBus + Wayland fixes)  
@@ -115,7 +109,7 @@ https://github.com/user-attachments/assets/4c939a09-1fd7-4ea7-a014-4050a58c632f
 
 ---
 
-## Rockchip / Allwinner Devices
+## Legacy Rockchip devices
 
 Development is no longer in the scope of this project for these handhelds. Older images will remain available of the drive for the time being.
 
