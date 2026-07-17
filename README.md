@@ -12,12 +12,8 @@ https://drive.proton.me/urls/RRPFQ38NX8#LmFz5AIaV2aI
   <img width="715" height="953" alt="o3-steam" src="https://github.com/user-attachments/assets/e16680ca-393e-4c8e-b0d5-a9308c00a8a3" />
 
 - Odin2 / Thor Series  
-- Powkiddy X55
 
-
-
-
-- Dragon Q6A  
+- Radxa Dragon Q6A  
 
 
 
@@ -51,10 +47,10 @@ Includes additional emulators where supported:
 - Vita3K
 - Cemu (now upstream)
 - ShadPS4 (heavy games too heavy even for odin 3 gpu)
-- Xenia
+- Xenia-Canary & Xenia-Edge (Edge is now upstream v44)
   <img width="661" height="881" alt="image" src="https://github.com/user-attachments/assets/ce658ce6-7753-47fd-a56e-caaeddf29c67" />
 - SkyEmu  
-- NanoBoy Advance
+- NanoBoy Advance (now upstream v44)
 - Gopher 64
 - Yaba Sanshiro Standlone
 - And more emulators
