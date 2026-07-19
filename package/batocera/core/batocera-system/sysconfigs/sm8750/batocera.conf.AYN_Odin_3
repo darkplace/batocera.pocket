@@ -10,7 +10,7 @@ display.rotate.DSI=1
 display.rotate.DSI-1=1
 
 # Default audio profile
-audio.profile=pro-audio@alsa_card._sys_devices_platform_sound_sound_card0
+audio.profile=HiFi@alsa_card._sys_devices_platform_sound_sound_card0
 
 # Default settings
 display.brightness=60
