@@ -13,6 +13,7 @@ DSU_DEFAULT_PORT = 26760
 DSU_READY_FILE = Path("/var/run/batocera-qcom-motion.ready")
 DSU_PID_FILE = Path("/var/run/batocera-qcom-motion.pid")
 DSU_SWITCH_GUID = "00000000-0000-0000-0000-00007f000001"
+DSU_DOLPHIN_NAME = "batocera-motion"
 
 
 def get_builtin_dsu_server() -> tuple[str, int] | None:

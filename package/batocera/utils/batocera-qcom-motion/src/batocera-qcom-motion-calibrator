@@ -6,12 +6,21 @@ APP="${QCOM_MOTION_APP:-/usr/share/batocera/qcom-motion/motion-calibrator.py}"
 
 mkdir -p "$(dirname "${LOG}")"
 
-if ! grep -aq "ayn,odin3" /proc/device-tree/compatible 2>/dev/null; then
-	echo "Motion calibration is available only on the AYN Odin 3" >> "${LOG}"
-	batocera-flash-screen 5 "#ffffff" "Odin 3 motion sensor not found." 20 >/dev/null 2>&1 || true
+if grep -aq "ayn,odin3" /proc/device-tree/compatible 2>/dev/null; then
+	export QCOM_MOTION_DEVICE="odin3"
+	export QCOM_MOTION_DEVICE_NAME="AYN Odin 3"
+	default_calibration="/userdata/system/qcom-sensors/odin3/motion-calibration.ini"
+elif grep -aq "ayn,thor" /proc/device-tree/compatible 2>/dev/null; then
+	export QCOM_MOTION_DEVICE="thor"
+	export QCOM_MOTION_DEVICE_NAME="AYN Thor"
+	default_calibration="/userdata/system/qcom-sensors/thor/motion-calibration.ini"
+else
+	echo "No supported Qualcomm motion sensor profile was found" >> "${LOG}"
+	batocera-flash-screen 5 "#ffffff" "Supported motion sensor not found." 20 >/dev/null 2>&1 || true
 	exit 1
 fi
 
+export QCOM_MOTION_CALIBRATION_FILE="${QCOM_MOTION_CALIBRATION_FILE:-${default_calibration}}"
 export HOME="/userdata/system"
 export XDG_DATA_HOME="${HOME}/.local/share"
 export XDG_CONFIG_HOME="${HOME}/.config"

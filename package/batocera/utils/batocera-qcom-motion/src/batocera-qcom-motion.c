@@ -15,6 +15,8 @@
 #include <fcntl.h>
 #include <glib-unix.h>
 #include <glib.h>
+#include <linux/input.h>
+#include <linux/uinput.h>
 #include <libssc.h>
 #include <math.h>
 #include <poll.h>
@@ -22,6 +24,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -59,10 +62,14 @@
 #define GYRO_REFINEMENT_ACCEL_TOLERANCE_G 0.015f
 #define MOTION_DEFAULT_SAMPLE_RATE_HZ 100.0
 #define READY_FILE "/var/run/batocera-qcom-motion.ready"
-#define DEFAULT_CALIBRATION_FILE "/userdata/system/qcom-sensors/odin3/motion-calibration.ini"
-#define ACCEL_CALIBRATION_FRAME "odin3-dsu-v2"
+#define UINPUT_DEVICE "/dev/uinput"
+#define UINPUT_SENSOR_NAME "Batocera Built-in Motion Sensor"
+#define UINPUT_ACCEL_RESOLUTION 1000
+#define UINPUT_ACCEL_LIMIT_G 16
+#define UINPUT_GYRO_RESOLUTION 1000
+#define UINPUT_GYRO_LIMIT_DPS 2000
 
-/* Locally administered stable identifier: 02:41:59:4e:00:03 (AYN + Odin 3). */
+/* Locally administered stable identifier for the built-in AYN motion source. */
 #define DEVICE_MAC 0x0241594e0003ULL
 
 typedef struct {
@@ -76,6 +83,7 @@ typedef struct {
 
 typedef struct {
 	int socket_fd;
+	int uinput_fd;
 	GMainLoop *main_loop;
 	SSCSensorAccelerometer *accelerometer;
 	SSCSensorGyroscope *gyroscope;
@@ -106,11 +114,224 @@ typedef struct {
 	gdouble gyro_deadzone;
 	gdouble sample_rate;
 	const gchar *calibration_file;
+	const gchar *default_calibration_file;
+	const gchar *accel_calibration_frame;
+	const gchar *device_name;
+	const gchar *gamepad_phys;
 	gboolean have_accel;
 	gboolean have_gyro;
+	gboolean sdl_motion_supported;
 	gboolean raw_axes;
 	gboolean verbose;
 } MotionServer;
+
+static void
+configure_device (MotionServer *server)
+{
+	gchar *compatible = NULL;
+	gsize length = 0;
+
+	server->device_name = "Qualcomm handheld";
+	server->default_calibration_file =
+		"/userdata/system/qcom-sensors/motion-calibration.ini";
+	server->accel_calibration_frame = "qcom-landscape-dsu-v1";
+	server->gamepad_phys = "rsinput-gamepad/input0";
+
+	if (!g_file_get_contents ("/proc/device-tree/compatible",
+				  &compatible, &length, NULL))
+		return;
+
+	if (memmem (compatible, length, "ayn,odin3", strlen ("ayn,odin3")) != NULL) {
+		server->device_name = "AYN Odin 3";
+		server->default_calibration_file =
+			"/userdata/system/qcom-sensors/odin3/motion-calibration.ini";
+		server->accel_calibration_frame = "odin3-dsu-v2";
+		server->sdl_motion_supported = TRUE;
+	} else if (memmem (compatible, length, "ayn,thor",
+			   strlen ("ayn,thor")) != NULL) {
+		server->device_name = "AYN Thor";
+		server->default_calibration_file =
+			"/userdata/system/qcom-sensors/thor/motion-calibration.ini";
+		server->accel_calibration_frame = "thor-dsu-v1";
+	}
+
+	g_free (compatible);
+}
+
+static gboolean
+setup_uinput_axis (int fd,
+		   unsigned int code,
+		   int minimum,
+		   int maximum,
+		   int resolution,
+		   GError **error)
+{
+	struct uinput_abs_setup setup = {
+		.code = (uint16_t) code,
+		.absinfo = {
+			.minimum = minimum,
+			.maximum = maximum,
+			.resolution = resolution,
+		},
+	};
+
+	if (ioctl (fd, UI_SET_ABSBIT, code) < 0 ||
+	    ioctl (fd, UI_ABS_SETUP, &setup) < 0) {
+		g_set_error (error, G_FILE_ERROR, g_file_error_from_errno (errno),
+			     "Unable to configure uinput axis %u: %s", code,
+			     g_strerror (errno));
+		return FALSE;
+	}
+	return TRUE;
+}
+
+static gboolean
+open_uinput_motion (MotionServer *server, GError **error)
+{
+	struct uinput_setup setup = {
+		.id = {
+			.bustype = BUS_VIRTUAL,
+			.vendor = 0x4241,
+			.product = 0x4d53,
+			.version = 1,
+		},
+	};
+	int fd = open (UINPUT_DEVICE, O_WRONLY | O_NONBLOCK | O_CLOEXEC);
+
+	if (fd < 0) {
+		g_set_error (error, G_FILE_ERROR, g_file_error_from_errno (errno),
+			     "Unable to open %s: %s", UINPUT_DEVICE,
+			     g_strerror (errno));
+		return FALSE;
+	}
+
+	if (ioctl (fd, UI_SET_EVBIT, EV_ABS) < 0 ||
+	    ioctl (fd, UI_SET_EVBIT, EV_MSC) < 0 ||
+	    ioctl (fd, UI_SET_MSCBIT, MSC_TIMESTAMP) < 0 ||
+	    ioctl (fd, UI_SET_PROPBIT, INPUT_PROP_ACCELEROMETER) < 0) {
+		g_set_error (error, G_FILE_ERROR, g_file_error_from_errno (errno),
+			     "Unable to configure uinput motion capabilities: %s",
+			     g_strerror (errno));
+		goto fail;
+	}
+
+	for (unsigned int code = ABS_X; code <= ABS_Z; code++) {
+		if (!setup_uinput_axis (fd, code,
+					-UINPUT_ACCEL_LIMIT_G * UINPUT_ACCEL_RESOLUTION,
+					 UINPUT_ACCEL_LIMIT_G * UINPUT_ACCEL_RESOLUTION,
+					 UINPUT_ACCEL_RESOLUTION, error))
+			goto fail;
+	}
+	for (unsigned int code = ABS_RX; code <= ABS_RZ; code++) {
+		if (!setup_uinput_axis (fd, code,
+					-UINPUT_GYRO_LIMIT_DPS * UINPUT_GYRO_RESOLUTION,
+					 UINPUT_GYRO_LIMIT_DPS * UINPUT_GYRO_RESOLUTION,
+					 UINPUT_GYRO_RESOLUTION, error))
+			goto fail;
+	}
+
+	g_strlcpy (setup.name, UINPUT_SENSOR_NAME, sizeof (setup.name));
+	if (server->gamepad_phys != NULL &&
+	    ioctl (fd, UI_SET_PHYS, server->gamepad_phys) < 0) {
+		g_set_error (error, G_FILE_ERROR, g_file_error_from_errno (errno),
+			     "Unable to set uinput motion physical path: %s",
+			     g_strerror (errno));
+		goto fail;
+	}
+	if (ioctl (fd, UI_DEV_SETUP, &setup) < 0 ||
+	    ioctl (fd, UI_DEV_CREATE) < 0) {
+		g_set_error (error, G_FILE_ERROR, g_file_error_from_errno (errno),
+			     "Unable to create uinput motion device: %s",
+			     g_strerror (errno));
+		goto fail;
+	}
+
+	server->uinput_fd = fd;
+	return TRUE;
+
+fail:
+	close (fd);
+	return FALSE;
+}
+
+static void
+close_uinput_motion (MotionServer *server)
+{
+	if (server->uinput_fd < 0)
+		return;
+	ioctl (server->uinput_fd, UI_DEV_DESTROY);
+	close (server->uinput_fd);
+	server->uinput_fd = -1;
+}
+
+static int32_t
+motion_to_uinput (float value, int resolution, int limit)
+{
+	float scaled = value * resolution;
+	float maximum = (float) limit * resolution;
+	return (int32_t) lrintf (CLAMP (scaled, -maximum, maximum));
+}
+
+static void
+send_uinput_motion (MotionServer *server)
+{
+	/*
+	 * DSU uses console-oriented axes. SDL uses the physical gamepad frame:
+	 * +X right, +Y toward the top edge and +Z out through the screen.
+	 * Convert the calibrated Odin 3 values without changing existing DSU
+	 * consumers. Accelerometer values are in G and gyro values in deg/s;
+	 * the Linux SDL driver applies each axis' advertised resolution to produce
+	 * m/s^2 and rad/s respectively.
+	 */
+	const float accel[3] = {
+		-server->accel[0],
+		-server->accel[2],
+		-server->accel[1],
+	};
+	const float gyro[3] = {
+		 server->gyro[0],
+		-server->gyro[2],
+		-server->gyro[1],
+	};
+	struct input_event events[8] = {
+		{ .type = EV_ABS, .code = ABS_X,
+		  .value = motion_to_uinput (accel[0], UINPUT_ACCEL_RESOLUTION,
+					    UINPUT_ACCEL_LIMIT_G) },
+		{ .type = EV_ABS, .code = ABS_Y,
+		  .value = motion_to_uinput (accel[1], UINPUT_ACCEL_RESOLUTION,
+					    UINPUT_ACCEL_LIMIT_G) },
+		{ .type = EV_ABS, .code = ABS_Z,
+		  .value = motion_to_uinput (accel[2], UINPUT_ACCEL_RESOLUTION,
+					    UINPUT_ACCEL_LIMIT_G) },
+		{ .type = EV_ABS, .code = ABS_RX,
+		  .value = motion_to_uinput (gyro[0], UINPUT_GYRO_RESOLUTION,
+					    UINPUT_GYRO_LIMIT_DPS) },
+		{ .type = EV_ABS, .code = ABS_RY,
+		  .value = motion_to_uinput (gyro[1], UINPUT_GYRO_RESOLUTION,
+					    UINPUT_GYRO_LIMIT_DPS) },
+		{ .type = EV_ABS, .code = ABS_RZ,
+		  .value = motion_to_uinput (gyro[2], UINPUT_GYRO_RESOLUTION,
+					    UINPUT_GYRO_LIMIT_DPS) },
+		{ .type = EV_MSC, .code = MSC_TIMESTAMP,
+		  .value = (int32_t) server->motion_timestamp },
+		{ .type = EV_SYN, .code = SYN_REPORT, .value = 0 },
+	};
+	ssize_t written;
+
+	if (server->uinput_fd < 0 || server->raw_axes)
+		return;
+	do {
+		written = write (server->uinput_fd, events, sizeof (events));
+	} while (written < 0 && errno == EINTR);
+	if (written >= 0 && written != (ssize_t) sizeof (events)) {
+		g_warning ("Short SDL motion uinput write: %zd of %zu bytes",
+			   written, sizeof (events));
+		close_uinput_motion (server);
+	} else if (written < 0 && errno != EAGAIN && errno != EWOULDBLOCK) {
+		g_warning ("SDL motion uinput write failed: %s", g_strerror (errno));
+		close_uinput_motion (server);
+	}
+}
 
 static uint16_t
 read_le16 (const uint8_t *data)
@@ -339,6 +560,7 @@ send_motion_data (MotionServer *server)
 
 	if (!server->have_accel || !server->have_gyro)
 		return;
+	send_uinput_motion (server);
 
 	fill_header (packet, sizeof (packet), 'S', server->server_id, DSU_MSG_DATA);
 	fill_controller_header (packet + 20, 0);
@@ -393,10 +615,9 @@ accelerometer_measurement (SSCSensorAccelerometer *sensor,
 		server->accel[2] = z / EARTH_GRAVITY;
 	} else {
 		/*
-		 * Map the Odin 3 SSC stream into the DSU frame expected by the
-		 * console emulators. X is reflected from the nominal gamepad
-		 * frame so lowering the right edge produces the rightward tilt
-		 * those consumers expect. Y=-1 face up; X=+1 on the left edge.
+		 * Map the landscape AYN SSC stream into the v2 calibration frame.
+		 * Before final DSU polarity, Y=-1 face up and X=+1 on the left
+		 * edge. The post-calibration reflection below makes X=+1 right.
 		 */
 		sample[0] = -y / EARTH_GRAVITY;
 		sample[1] = -z / EARTH_GRAVITY;
@@ -407,6 +628,11 @@ accelerometer_measurement (SSCSensorAccelerometer *sensor,
 				server->accel[i] += server->accel_matrix[i][j] *
 					(sample[j] - server->accel_offset[j]);
 		}
+		/*
+		 * Saved matrices calibrate the original sensor-aligned frame. Apply
+		 * the real-3DS lateral polarity afterward so v2 files stay valid.
+		 */
+		server->accel[0] = -server->accel[0];
 	}
 	server->motion_timestamp = (uint64_t) g_get_monotonic_time ();
 	server->have_accel = TRUE;
@@ -426,11 +652,10 @@ transform_gyro (MotionServer *server, const float raw[3], float output[3])
 		output[2] = corrected[2] * RAD_TO_DEG;
 	} else {
 		/*
-		 * Keep the lateral gyro fields paired with the reflected
-		 * accelerometer X axis. Pitch is unchanged, while yaw and roll
-		 * reverse together so consumers never fuse opposing tilt states.
+		 * Apply the real-3DS DSU pitch polarity. Roll is already reflected
+		 * by the device-specific landscape transform; yaw remains unchanged.
 		 */
-		output[0] = corrected[1] * RAD_TO_DEG;
+		output[0] = -corrected[1] * RAD_TO_DEG;
 		output[1] = -corrected[2] * RAD_TO_DEG;
 		output[2] = -corrected[0] * RAD_TO_DEG;
 	}
@@ -455,6 +680,8 @@ save_gyro_calibration (MotionServer *server, GError **error)
 {
 	GKeyFile *key_file = g_key_file_new ();
 	gchar *directory = g_path_get_dirname (server->calibration_file);
+	gchar *comment = g_strdup_printf ("%s Qualcomm motion calibration",
+					 server->device_name);
 	gchar *contents;
 	gsize length;
 	gboolean success;
@@ -462,13 +689,13 @@ save_gyro_calibration (MotionServer *server, GError **error)
 	if (g_file_test (server->calibration_file, G_FILE_TEST_IS_REGULAR))
 		g_key_file_load_from_file (key_file, server->calibration_file,
 					   G_KEY_FILE_KEEP_COMMENTS, NULL);
-	g_key_file_set_comment (key_file, NULL, NULL,
-				"AYN Odin 3 Qualcomm motion calibration", NULL);
+	g_key_file_set_comment (key_file, NULL, NULL, comment, NULL);
 	g_key_file_set_double (key_file, "gyroscope", "bias_x", server->gyro_bias[0]);
 	g_key_file_set_double (key_file, "gyroscope", "bias_y", server->gyro_bias[1]);
 	g_key_file_set_double (key_file, "gyroscope", "bias_z", server->gyro_bias[2]);
 	contents = g_key_file_to_data (key_file, &length, error);
 	if (contents == NULL) {
+		g_free (comment);
 		g_free (directory);
 		g_key_file_unref (key_file);
 		return FALSE;
@@ -484,6 +711,7 @@ save_gyro_calibration (MotionServer *server, GError **error)
 	}
 
 	g_free (contents);
+	g_free (comment);
 	g_free (directory);
 	g_key_file_unref (key_file);
 	return success;
@@ -519,7 +747,7 @@ load_gyro_calibration (MotionServer *server)
 		gchar *frame = g_key_file_get_string (key_file, "accelerometer",
 						       "frame", &error);
 		gboolean valid = error == NULL &&
-			g_strcmp0 (frame, ACCEL_CALIBRATION_FRAME) == 0;
+			g_strcmp0 (frame, server->accel_calibration_frame) == 0;
 
 		if (!valid)
 			g_warning ("Ignoring accelerometer calibration with an unsupported frame in %s",
@@ -743,7 +971,7 @@ gyroscope_measurement (SSCSensorGyroscope *sensor,
 		refine_stationary_gyro_bias (server, sample);
 	transform_gyro (server, sample, server->gyro);
 	server->have_gyro = TRUE;
-	/* SSC delivers the paired accelerometer report first on the QMI8658. */
+	/* SSC normally delivers the paired accelerometer report first. */
 	send_motion_data (server);
 }
 
@@ -1038,17 +1266,19 @@ close_sensors (MotionServer *server)
 int
 main (int argc, char **argv)
 {
-	MotionServer server = { .socket_fd = -1 };
+	MotionServer server = { .socket_fd = -1, .uinput_fd = -1 };
 	gint port = DSU_DEFAULT_PORT;
 	gint calibration_samples = GYRO_AUTO_CALIBRATION_SAMPLES;
 	gboolean check = FALSE;
 	gboolean calibrate = FALSE;
+	gboolean no_sdl_motion = FALSE;
 	gchar *calibration_file = NULL;
 	GError *error = NULL;
 	gchar ready_contents[16];
 
 	server.gyro_deadzone = GYRO_DEFAULT_DEADZONE_DPS;
 	server.sample_rate = MOTION_DEFAULT_SAMPLE_RATE_HZ;
+	configure_device (&server);
 	set_identity_accel_calibration (&server);
 	GOptionEntry options[] = {
 		{ "port", 'p', 0, G_OPTION_ARG_INT, &port, "DSU UDP port", "PORT" },
@@ -1065,6 +1295,8 @@ main (int argc, char **argv)
 		  "Accelerometer and gyroscope sample rate in Hz", "HZ" },
 		{ "raw-axes", 0, 0, G_OPTION_ARG_NONE, &server.raw_axes,
 		  "Do not rotate handset coordinates into gamepad coordinates", NULL },
+		{ "no-sdl-motion", 0, 0, G_OPTION_ARG_NONE, &no_sdl_motion,
+		  "Do not publish the built-in sensor as an SDL gamepad motion device", NULL },
 		{ "verbose", 'v', 0, G_OPTION_ARG_NONE, &server.verbose, "Verbose logging", NULL },
 		{ NULL }
 	};
@@ -1080,7 +1312,7 @@ main (int argc, char **argv)
 	}
 	g_option_context_free (context);
 	if (calibration_file == NULL)
-		calibration_file = g_strdup (DEFAULT_CALIBRATION_FILE);
+		calibration_file = g_strdup (server.default_calibration_file);
 	if (port < 1 || port > 65535) {
 		g_printerr ("Port must be between 1 and 65535\n");
 		g_free (calibration_file);
@@ -1140,9 +1372,20 @@ main (int argc, char **argv)
 		g_free (calibration_file);
 		return server.calibration_success ? 0 : 1;
 	}
+	if (server.sdl_motion_supported && !no_sdl_motion) {
+		if (open_uinput_motion (&server, &error)) {
+			g_message ("Published %s for native SDL motion input",
+				   UINPUT_SENSOR_NAME);
+		} else {
+			g_warning ("Native SDL motion is unavailable: %s",
+				   error != NULL ? error->message : "unknown error");
+			g_clear_error (&error);
+		}
+	}
 	if (!open_server_socket (&server, (uint16_t) port, &error)) {
 		g_printerr ("%s\n", error->message);
 		g_clear_error (&error);
+		close_uinput_motion (&server);
 		close_sensors (&server);
 		g_main_loop_unref (server.main_loop);
 		g_free (calibration_file);
@@ -1154,6 +1397,7 @@ main (int argc, char **argv)
 		g_printerr ("Unable to create %s: %s\n", READY_FILE, error->message);
 		g_clear_error (&error);
 		close (server.socket_fd);
+		close_uinput_motion (&server);
 		close_sensors (&server);
 		g_main_loop_unref (server.main_loop);
 		g_free (calibration_file);
@@ -1169,6 +1413,7 @@ main (int argc, char **argv)
 	g_main_loop_run (server.main_loop);
 
 	unlink (READY_FILE);
+	close_uinput_motion (&server);
 	close_sensors (&server);
 	close (server.socket_fd);
 	g_main_loop_unref (server.main_loop);

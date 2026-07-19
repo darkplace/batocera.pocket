@@ -109,10 +109,8 @@ prepare_registry() {
 }
 
 select_fastrpc_device() {
-	# Upstream DTs normally mark ADSP FastRPC non-secure, but SM8750's
-	# signed ADSP channel is currently exposed only through the secure node.
-	# SensorsPD works on either node, so prefer the conventional one and fall
-	# back without requiring a kernel/DT change.
+	# Upstream DTs normally mark ADSP FastRPC non-secure, but some signed
+	# firmware exposes only the secure node. SensorsPD works on either node.
 	for device in /dev/fastrpc-adsp /dev/fastrpc-adsp-secure; do
 		if [ -e "${device}" ]; then
 			FASTRPC_DEVICE="${device}"
@@ -148,6 +146,34 @@ wait_for_pidfile() {
 	return 1
 }
 
+start_root_listener() {
+	attempt=1
+	while [ "${attempt}" -le 10 ]; do
+		rm -f "${ROOT_PID}"
+		start-stop-daemon --start --quiet --background --make-pidfile \
+			--pidfile "${ROOT_PID}" --exec /usr/bin/hexagonrpcd \
+			--output "${LOG_FILE}" -- \
+			-f "${FASTRPC_DEVICE}" -d adsp -R "${RPC_ROOT}"
+
+		if wait_for_pidfile "${ROOT_PID}"; then
+			sleep 2
+			root_pid=$(cat "${ROOT_PID}" 2>/dev/null)
+			if [ -n "${root_pid}" ] && kill -0 "${root_pid}" 2>/dev/null; then
+				return 0
+			fi
+		fi
+
+		rm -f "${ROOT_PID}"
+		if [ "${attempt}" -lt 10 ]; then
+			log_msg "ADSP RootPD listener exited during startup; retrying (${attempt}/10)"
+			sleep 2
+		fi
+		attempt=$((attempt + 1))
+	done
+
+	return 1
+}
+
 start_daemons() {
 	configure_device || return 0
 	[ -x /usr/bin/hexagonrpcd ] || return 0
@@ -172,19 +198,7 @@ start_daemons() {
 	# finish creating its signed process before RootPD opens the channel.
 	sleep 1
 
-	start-stop-daemon --start --quiet --background --make-pidfile \
-		--pidfile "${ROOT_PID}" --exec /usr/bin/hexagonrpcd \
-		--output "${LOG_FILE}" -- \
-		-f "${FASTRPC_DEVICE}" -d adsp -R "${RPC_ROOT}"
-	if ! wait_for_pidfile "${ROOT_PID}"; then
-		log_msg "ADSP RootPD FastRPC listener failed to start"
-		return 1
-	fi
-
-	sleep 1
-	root_pid=$(cat "${ROOT_PID}" 2>/dev/null)
-	if [ -z "${root_pid}" ] || ! kill -0 "${root_pid}" 2>/dev/null; then
-		rm -f "${ROOT_PID}"
+	if ! start_root_listener; then
 		log_msg "ADSP RootPD FastRPC listener exited during startup"
 		return 1
 	fi

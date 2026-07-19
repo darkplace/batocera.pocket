@@ -1,0 +1,46 @@
+AYN Thor Qualcomm Sensor Core data
+
+The sensor registry inputs in this directory were recovered from the stock
+AYN Thor Android BSP. They select the Kailua HDK SH5001 profile while leaving
+calibration state writable and persistent under /userdata.
+
+Stock Android build: Thor_V1.0.0.377_20260206_165408_user
+Hardware platform: HDK
+SoC ID: 603 (QCS8550)
+Physical IMU: Senodia SH5001
+
+Runtime path
+------------
+
+The ADSP/QSH firmware owns the SH5001. hexagonrpcd exposes the QSH file
+services, libqmi/libssc receives SSC reports over QRTR, and ssccli provides a
+raw accelerometer/gyroscope smoke test. The generated registry and learned
+per-unit calibration live under /userdata/system/qcom-sensors/thor and are
+never overwritten automatically.
+
+The SM8550 device tree already enables the Thor-specific ADSP firmware and
+the upstream non-secure ADSP FastRPC channel. S28qcom-sensors generates the
+registry with the stock HDK/603 filters, starts SensorsPD before RootPD, and
+accepts either /dev/fastrpc-adsp or /dev/fastrpc-adsp-secure.
+
+Motion bridge
+-------------
+
+S29qcom-motion exposes the built-in accelerometer and gyroscope as DSU/Cemuhook
+slot 0 on 127.0.0.1:26760. Configgen enables the source for supported emulators
+only while the bridge readiness marker exists.
+
+The initial Thor coordinate profile uses the same landscape gamepad mapping
+as the Odin 3. Its direction, sensitivity, and long-running drift still require
+validation on a Thor booted into Batocera before the profile can be considered
+final.
+
+Run `batocera-qcom-motion --check` for a DSU packet check, or
+`batocera-qcom-sensors-test 5` to validate the complete sensor stack.
+
+Calibration
+-----------
+
+Launch "Motion Sensor Calibration" from the Tools system with the Thor resting
+still. Calibration is stored separately in
+/userdata/system/qcom-sensors/thor/motion-calibration.ini.

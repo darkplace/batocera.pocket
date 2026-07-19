@@ -41,7 +41,7 @@ start_bridge() {
 stop_bridge() {
 	start-stop-daemon --stop --quiet --remove-pidfile \
 		--pidfile "${PID_FILE}" --retry TERM/3/KILL/2 || true
-	rm -f "${READY_FILE}"
+	rm -f "${READY_FILE}" "${PID_FILE}"
 }
 
 case "${1:-}" in

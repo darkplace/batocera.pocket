@@ -2,6 +2,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <poll.h>
 #include <signal.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -33,10 +34,12 @@ struct state {
 };
 
 static volatile sig_atomic_t stop_requested;
+static volatile sig_atomic_t reset_requested;
 
 static void handle_signal(int signal_number)
 {
     (void)signal_number;
+    reset_requested = 1;
     stop_requested = 1;
 }
 
@@ -162,6 +165,42 @@ static const struct zwlr_gamma_control_v1_listener gamma_listener = {
     .failed = gamma_failed,
 };
 
+static int dispatch_until_stopped(struct wl_display *display)
+{
+    struct pollfd poll_fd = {
+        .fd = wl_display_get_fd(display),
+        .events = POLLIN,
+    };
+
+    while (!stop_requested) {
+        int result;
+
+        if (wl_display_dispatch_pending(display) < 0)
+            return -1;
+        if (stop_requested)
+            break;
+
+        poll_fd.revents = 0;
+        result = poll(&poll_fd, 1, 100);
+        if (result < 0) {
+            if (errno == EINTR)
+                continue;
+            return -1;
+        }
+        if (result == 0)
+            continue;
+        if ((poll_fd.revents & (POLLERR | POLLHUP | POLLNVAL)) != 0)
+            return -1;
+        if ((poll_fd.revents & POLLIN) != 0 && wl_display_dispatch(display) < 0) {
+            if (errno == EINTR)
+                continue;
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
 static void registry_add(void *data, struct wl_registry *registry, uint32_t name,
                          const char *interface, uint32_t version)
 {
@@ -210,6 +249,23 @@ static int configure_output(struct output_control *control, int intensity)
     zwlr_gamma_control_v1_set_gamma(control->gamma, fd);
     close(fd);
     return 1;
+}
+
+static void reset_outputs(struct state *state)
+{
+    struct output_control *control;
+    int reset_count = 0;
+
+    for (control = state->outputs; control != NULL; control = control->next) {
+        int result = configure_output(control, 0);
+
+        if (result > 0)
+            reset_count += result;
+    }
+
+    /* Some compositors retain the last gamma table after control is destroyed. */
+    if (reset_count > 0)
+        wl_display_roundtrip(state->display);
 }
 
 static void cleanup(struct state *state)
@@ -295,13 +351,10 @@ int main(int argc, char **argv)
 
     wl_display_flush(state.display);
 
-    while (!stop_requested) {
-        if (wl_display_dispatch(state.display) < 0) {
-            if (errno == EINTR)
-                continue;
-            break;
-        }
-    }
+    dispatch_until_stopped(state.display);
+
+    if (reset_requested)
+        reset_outputs(&state);
 
     cleanup(&state);
     return 0;

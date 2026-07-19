@@ -1,0 +1,58 @@
+From 5d4f0db55c06f8e4f0695eb52d441b10b04c8d85 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Sun, 19 Jul 2026 00:00:00 +0000
+Subject: [PATCH] input: accept SDL sensors without a reported data rate
+
+SDL's Linux evdev joystick backend supports paired accelerometer and gyro
+event devices, but reports a data rate of zero because evdev does not expose
+that metadata. Zero means "unavailable", not that the enabled sensor is idle.
+
+Use a nominal rate after SDL has successfully enabled such a sensor. The rate
+currently acts as the availability guard for orientation integration, whose
+actual delta is measured from the steady clock.
+---
+ src/input/controller.cpp | 8 ++++++++
+ src/input/controller.h   | 4 ++--
+ 2 files changed, 10 insertions(+), 2 deletions(-)
+
+diff --git a/src/input/controller.cpp b/src/input/controller.cpp
+index 93221b65..bf6464b4 100644
+--- a/src/input/controller.cpp
++++ b/src/input/controller.cpp
+@@ -328,5 +328,9 @@ void GameControllers::CheckControllerConnected() {
+                         c->gyro_poll_rate =
+                             SDL_GetGamepadSensorDataRate(c->m_sdl_gamepad, SDL_SENSOR_GYRO);
++                        // The Linux evdev backend cannot report sensor rates.
++                        if (c->gyro_poll_rate <= 0.0f) {
++                            c->gyro_poll_rate = 100.0f;
++                        }
+                         LOG_INFO(Input, "Gyro initialized, poll rate: {}", c->gyro_poll_rate);
+                     } else {
+                         LOG_ERROR(Input, "Failed to initialize gyro controls for gamepad {}",
+@@ -336,5 +340,9 @@ void GameControllers::CheckControllerConnected() {
+                         c->accel_poll_rate =
+                             SDL_GetGamepadSensorDataRate(c->m_sdl_gamepad, SDL_SENSOR_ACCEL);
++                        // The Linux evdev backend cannot report sensor rates.
++                        if (c->accel_poll_rate <= 0.0f) {
++                            c->accel_poll_rate = 100.0f;
++                        }
+                         LOG_INFO(Input, "Accel initialized, poll rate: {}", c->accel_poll_rate);
+                     } else {
+                         LOG_ERROR(Input, "Failed to initialize accel controls for gamepad {}",
+diff --git a/src/input/controller.h b/src/input/controller.h
+index 5fe936f6..be0c3d1a 100644
+--- a/src/input/controller.h
++++ b/src/input/controller.h
+@@ -123,8 +123,8 @@ public:
+     std::chrono::steady_clock::time_point GetLastUpdate();
+     void SetLastUpdate(std::chrono::steady_clock::time_point lastUpdate);
+ 
+-    float gyro_poll_rate;
+-    float accel_poll_rate;
++    float gyro_poll_rate = 0.0f;
++    float accel_poll_rate = 0.0f;
+     float gyro_buf[3] = {0.0f, 0.0f, 0.0f}, accel_buf[3] = {0.0f, 9.81f, 0.0f};
+     s32 user_id = Libraries::UserService::ORBIS_USER_SERVICE_USER_ID_INVALID;
+     SDL_Gamepad* m_sdl_gamepad = nullptr;
+-- 
+2.52.0

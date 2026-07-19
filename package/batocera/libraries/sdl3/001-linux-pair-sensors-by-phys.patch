@@ -1,0 +1,100 @@
+From 2d6bfa74b21eb4b6ade9cbe59a831bf277d7e582 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Sun, 19 Jul 2026 00:00:00 +0000
+Subject: [PATCH] joystick: pair split Linux sensors by physical path
+
+The Linux joystick backend normally associates a separate accelerometer event
+node with its gamepad by comparing EVIOCGUNIQ. Virtual sensor publishers made
+with uinput cannot set that string, so the sensor is otherwise never attached
+to the gamepad.
+
+Fall back to EVIOCGPHYS when either side has no unique identifier. Keep unique
+identifiers authoritative when both are present, avoiding accidental pairing
+of devices which deliberately distinguish themselves that way.
+---
+ src/joystick/linux/SDL_sysjoystick.c | 35 +++++++++++++++++++++++++----------
+ 1 file changed, 25 insertions(+), 10 deletions(-)
+
+diff --git a/src/joystick/linux/SDL_sysjoystick.c b/src/joystick/linux/SDL_sysjoystick.c
+index 9a207d2ad..4a855595b 100644
+--- a/src/joystick/linux/SDL_sysjoystick.c
++++ b/src/joystick/linux/SDL_sysjoystick.c
+@@ -1520,51 +1520,66 @@ static SDL_sensorlist_item *GetSensor(SDL_joylist_item *item)
+ {
+     SDL_sensorlist_item *item_sensor;
+     char uniq_item[128];
++    char phys_item[128];
+     int fd_item = -1;
++    bool have_uniq_item;
++    bool have_phys_item;
+ 
+     SDL_AssertJoysticksLocked();
+ 
+     if (!item || !SDL_sensorlist) {
+         return NULL;
+     }
+ 
+     SDL_memset(uniq_item, 0, sizeof(uniq_item));
++    SDL_memset(phys_item, 0, sizeof(phys_item));
+     fd_item = open(item->path, O_RDONLY | O_CLOEXEC, 0);
+     if (fd_item < 0) {
+         return NULL;
+     }
+-    if (ioctl(fd_item, EVIOCGUNIQ(sizeof(uniq_item) - 1), &uniq_item) < 0) {
+-        close(fd_item);
++    have_uniq_item = ioctl(fd_item, EVIOCGUNIQ(sizeof(uniq_item) - 1), &uniq_item) >= 0 && uniq_item[0];
++    have_phys_item = ioctl(fd_item, EVIOCGPHYS(sizeof(phys_item) - 1), &phys_item) >= 0 && phys_item[0];
++    close(fd_item);
++    if (!have_uniq_item && !have_phys_item) {
+         return NULL;
+     }
+-    close(fd_item);
+ #ifdef DEBUG_INPUT_EVENTS
+-    SDL_Log("Joystick UNIQ: %s", uniq_item);
++    SDL_Log("Joystick UNIQ: %s, PHYS: %s", uniq_item, phys_item);
+ #endif // DEBUG_INPUT_EVENTS
+ 
+     for (item_sensor = SDL_sensorlist; item_sensor; item_sensor = item_sensor->next) {
+         char uniq_sensor[128];
++        char phys_sensor[128];
+         int fd_sensor = -1;
++        bool have_uniq_sensor;
++        bool have_phys_sensor;
++        bool uniq_match;
++        bool phys_match;
++
+         if (item_sensor->hwdata) {
+             // already associated with another joystick
+             continue;
+         }
+ 
+         SDL_memset(uniq_sensor, 0, sizeof(uniq_sensor));
++        SDL_memset(phys_sensor, 0, sizeof(phys_sensor));
+         fd_sensor = open(item_sensor->path, O_RDONLY | O_CLOEXEC, 0);
+         if (fd_sensor < 0) {
+             continue;
+         }
+-        if (ioctl(fd_sensor, EVIOCGUNIQ(sizeof(uniq_sensor) - 1), &uniq_sensor) < 0) {
+-            close(fd_sensor);
+-            continue;
+-        }
++        have_uniq_sensor = ioctl(fd_sensor, EVIOCGUNIQ(sizeof(uniq_sensor) - 1), &uniq_sensor) >= 0 && uniq_sensor[0];
++        have_phys_sensor = ioctl(fd_sensor, EVIOCGPHYS(sizeof(phys_sensor) - 1), &phys_sensor) >= 0 && phys_sensor[0];
+         close(fd_sensor);
+ #ifdef DEBUG_INPUT_EVENTS
+-        SDL_Log("Sensor UNIQ: %s", uniq_sensor);
++        SDL_Log("Sensor UNIQ: %s, PHYS: %s", uniq_sensor, phys_sensor);
+ #endif // DEBUG_INPUT_EVENTS
+ 
+-        if (SDL_strcmp(uniq_item, uniq_sensor) == 0) {
++        uniq_match = have_uniq_item && have_uniq_sensor &&
++                     SDL_strcmp(uniq_item, uniq_sensor) == 0;
++        phys_match = (!have_uniq_item || !have_uniq_sensor) &&
++                     have_phys_item && have_phys_sensor &&
++                     SDL_strcmp(phys_item, phys_sensor) == 0;
++        if (uniq_match || phys_match) {
+             return item_sensor;
+         }
+     }
+-- 
+2.52.0

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Controller-friendly Odin 3 motion calibration UI.
+"""Controller-friendly AYN Qualcomm motion calibration UI.
 
 SPDX-License-Identifier: GPL-3.0-or-later
 """
@@ -22,19 +22,52 @@ import zlib
 import pyxel
 
 
+DEVICE_PROFILES = {
+    "odin3": {
+        "name": "AYN Odin 3",
+        "short_name": "Odin",
+        "calibration_file": "/userdata/system/qcom-sensors/odin3/motion-calibration.ini",
+        "frame": "odin3-dsu-v2",
+    },
+    "thor": {
+        "name": "AYN Thor",
+        "short_name": "Thor base",
+        "calibration_file": "/userdata/system/qcom-sensors/thor/motion-calibration.ini",
+        "frame": "thor-dsu-v1",
+    },
+}
+
+
+def detect_device() -> str:
+    requested = os.environ.get("QCOM_MOTION_DEVICE", "")
+    if requested in DEVICE_PROFILES:
+        return requested
+    try:
+        compatible = Path("/proc/device-tree/compatible").read_bytes()
+    except OSError:
+        compatible = b""
+    if b"ayn,thor" in compatible:
+        return "thor"
+    return "odin3"
+
+
+DEVICE_ID = detect_device()
+DEVICE_PROFILE = DEVICE_PROFILES[DEVICE_ID]
+DEVICE_NAME = os.environ.get("QCOM_MOTION_DEVICE_NAME", DEVICE_PROFILE["name"])
+DEVICE_SHORT_NAME = DEVICE_PROFILE["short_name"]
 BRIDGE = Path(os.environ.get("QCOM_MOTION_BRIDGE", "/usr/bin/batocera-qcom-motion"))
 SERVICE = Path(os.environ.get("QCOM_MOTION_SERVICE", "/etc/init.d/S29qcom-motion"))
 CALIBRATION_FILE = Path(
     os.environ.get(
         "QCOM_MOTION_CALIBRATION_FILE",
-        "/userdata/system/qcom-sensors/odin3/motion-calibration.ini",
+        DEVICE_PROFILE["calibration_file"],
     )
 )
 CALIBRATION_SAMPLES = 128
 POSE_SAMPLES = 64
 DSU_HOST = os.environ.get("QCOM_MOTION_DSU_HOST", "127.0.0.1")
 DSU_PORT = int(os.environ.get("QCOM_MOTION_DSU_PORT", "26760"))
-ACCEL_CALIBRATION_FRAME = "odin3-dsu-v2"
+ACCEL_CALIBRATION_FRAME = DEVICE_PROFILE["frame"]
 
 POSES = (
     ("face_up", "LAY ON BACK - NOT VERTICAL", (0.0, -1.0, 0.0)),
@@ -44,13 +77,22 @@ POSES = (
     ("bottom", "Stand on BOTTOM edge", (0.0, 0.0, -1.0)),
 )
 
-POSE_PROMPTS = {
-    "face_up": "Lay on BACK, screen toward CEILING; press A",
-    "left": "Rest LEFT edge on table, screen vertical; press A",
-    "right": "Rest RIGHT edge on table, screen vertical; press A",
-    "top": "Rest TOP edge on table, screen vertical; press A",
-    "bottom": "Rest BOTTOM edge on table, screen vertical; press A",
-}
+if DEVICE_ID == "thor":
+    POSE_PROMPTS = {
+        "face_up": "Open lid; lay BASE flat, screens upward; press A",
+        "left": "Hold BASE on LEFT edge, screens vertical; press A",
+        "right": "Hold BASE on RIGHT edge, screens vertical; press A",
+        "top": "Hold BASE on TOP/hinge edge, screens vertical; press A",
+        "bottom": "Hold BASE on BOTTOM edge, screens vertical; press A",
+    }
+else:
+    POSE_PROMPTS = {
+        "face_up": "Lay on BACK, screen toward CEILING; press A",
+        "left": "Rest LEFT edge on table, screen vertical; press A",
+        "right": "Rest RIGHT edge on table, screen vertical; press A",
+        "top": "Rest TOP edge on table, screen vertical; press A",
+        "bottom": "Rest BOTTOM edge on table, screen vertical; press A",
+    }
 
 
 class DsuClient:
@@ -174,7 +216,7 @@ class MotionCalibrator:
         pyxel.init(
             320,
             240,
-            title="Odin 3 Motion Calibration",
+            title=f"{DEVICE_NAME} Motion Calibration",
             fps=30,
             quit_key=pyxel.KEY_ESCAPE,
             display_scale=4,
@@ -186,6 +228,7 @@ class MotionCalibrator:
         self.progress = 0
         self.dsu: DsuClient | None = None
         self.latest_accel: tuple[float, float, float] | None = None
+        self.latest_pose_accel: tuple[float, float, float] | None = None
         self.latest_gyro: tuple[float, float, float] | None = None
         self.pose_index = 0
         self.pose_samples: list[tuple[float, float, float]] = []
@@ -199,12 +242,12 @@ class MotionCalibrator:
 
     @staticmethod
     def confirm_pressed() -> bool:
-        # Odin 3's SDL mapping presents its physical A label as Pyxel's B.
+        # AYN's SDL mapping presents its physical A label as Pyxel's B.
         return pyxel.btnp(pyxel.GAMEPAD1_BUTTON_B) or pyxel.btnp(pyxel.KEY_RETURN)
 
     @staticmethod
     def back_pressed() -> bool:
-        # Odin 3's SDL mapping presents its physical B label as Pyxel's A.
+        # AYN's SDL mapping presents its physical B label as Pyxel's A.
         return pyxel.btnp(pyxel.GAMEPAD1_BUTTON_A) or pyxel.btnp(pyxel.KEY_BACKSPACE)
 
     def ensure_bridge(self) -> None:
@@ -233,7 +276,7 @@ class MotionCalibrator:
 
     def start_gyro_calibration(self) -> None:
         self.state = "gyro"
-        self.status = "Do not touch the Odin"
+        self.status = f"Do not touch the {DEVICE_SHORT_NAME}"
         self.progress = 0
         run_service("stop")
         self.bridge_stopped = True
@@ -319,9 +362,13 @@ class MotionCalibrator:
         accel_samples = []
         for accel, gyro in self.dsu.update():
             self.latest_accel = accel
+            # Saved matrices calibrate the pre-DSU lateral frame. Undo the
+            # runtime X polarity only while collecting five-pose data.
+            pose_accel = (-accel[0], accel[1], accel[2])
+            self.latest_pose_accel = pose_accel
             self.latest_gyro = gyro
-            accel_samples.append(accel)
-        if self.state == "connecting" and self.latest_accel is not None:
+            accel_samples.append(pose_accel)
+        if self.state == "connecting" and self.latest_pose_accel is not None:
             self.state = "pose"
             self.status = "Still flat: measuring accelerometer automatically..."
         return accel_samples
@@ -334,14 +381,15 @@ class MotionCalibrator:
         return sum(a * b for a, b in zip(sample, target, strict=True)) / magnitude
 
     def begin_pose(self) -> None:
-        if self.latest_accel is None:
+        if self.latest_pose_accel is None:
             self.status = "Waiting for sensor data"
             return
         target = POSES[self.pose_index][2]
-        magnitude = math.sqrt(sum(value * value for value in self.latest_accel))
-        if not 0.75 <= magnitude <= 1.25 or self.pose_alignment(self.latest_accel, target) < 0.94:
+        magnitude = math.sqrt(sum(value * value for value in self.latest_pose_accel))
+        aligned = self.pose_alignment(self.latest_pose_accel, target) >= 0.94
+        if not 0.75 <= magnitude <= 1.25 or not aligned:
             pose = POSES[self.pose_index][1]
-            x, y, z = self.latest_accel
+            x, y, z = self.latest_pose_accel
             self.status = f"Need {pose}; sensor is {x:+.2f} {y:+.2f} {z:+.2f} G"
             return
         self.collecting = True
@@ -414,6 +462,7 @@ class MotionCalibrator:
             self.dsu.close()
         self.dsu = DsuClient()
         self.latest_accel = None
+        self.latest_pose_accel = None
         self.latest_gyro = None
         self.state = "validation"
         self.status = "Calibration saved. Try smooth 45 and 90 degree tilts"
@@ -536,10 +585,11 @@ class MotionCalibrator:
         pyxel.cls(0)
         pyxel.rect(8, 8, 304, 224, 1)
         pyxel.rectb(8, 8, 304, 224, 7)
-        pyxel.text(91, 17, "AYN ODIN 3 MOTION CALIBRATION", 10)
+        header = f"{DEVICE_NAME.upper()} MOTION CALIBRATION"
+        pyxel.text(max(16, (320 - len(header) * 4) // 2), 17, header, 10)
 
         if self.state == "intro":
-            pyxel.text(70, 38, "Place the Odin face-up on a level surface.", 7)
+            pyxel.text(62, 38, f"Place the {DEVICE_SHORT_NAME} face-up on a level surface.", 7)
             pyxel.text(62, 48, "The app will reject movement and save per-device data.", 6)
             self.draw_device("face_up")
         elif self.state == "gyro":

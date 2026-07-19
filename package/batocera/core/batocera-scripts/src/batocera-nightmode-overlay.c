@@ -2,6 +2,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <poll.h>
 #include <signal.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -42,10 +43,12 @@ struct state {
 };
 
 static volatile sig_atomic_t stop_requested;
+static volatile sig_atomic_t unmap_requested;
 
 static void handle_signal(int signal_number)
 {
     (void)signal_number;
+    unmap_requested = 1;
     stop_requested = 1;
 }
 
@@ -208,6 +211,69 @@ static const struct zwlr_layer_surface_v1_listener layer_listener = {
     .closed = layer_closed,
 };
 
+static void refresh_outputs(struct state *state)
+{
+    struct output_surface *output;
+    int refreshed = 0;
+
+    for (output = state->outputs; output != NULL; output = output->next) {
+        if (output->surface == NULL || output->buffer == NULL ||
+            output->width == 0 || output->height == 0)
+            continue;
+
+        wl_surface_damage_buffer(output->surface, 0, 0,
+                                 (int32_t)output->width, (int32_t)output->height);
+        wl_surface_commit(output->surface);
+        refreshed++;
+    }
+
+    if (refreshed > 0)
+        wl_display_flush(state->display);
+}
+
+static int dispatch_until_stopped(struct state *state)
+{
+    struct pollfd poll_fd = {
+        .fd = wl_display_get_fd(state->display),
+        .events = POLLIN,
+    };
+    unsigned int refresh_ticks = 0;
+
+    while (!stop_requested) {
+        int result;
+
+        if (wl_display_dispatch_pending(state->display) < 0)
+            return -1;
+        if (stop_requested)
+            break;
+
+        poll_fd.revents = 0;
+        result = poll(&poll_fd, 1, 100);
+        if (result < 0) {
+            if (errno == EINTR)
+                continue;
+            return -1;
+        }
+        if (result == 0) {
+            if (++refresh_ticks >= 10) {
+                refresh_outputs(state);
+                refresh_ticks = 0;
+            }
+            continue;
+        }
+        if ((poll_fd.revents & (POLLERR | POLLHUP | POLLNVAL)) != 0)
+            return -1;
+        if ((poll_fd.revents & POLLIN) != 0 &&
+            wl_display_dispatch(state->display) < 0) {
+            if (errno == EINTR)
+                continue;
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
 static void registry_add(void *data, struct wl_registry *registry, uint32_t name,
                          const char *interface, uint32_t version)
 {
@@ -276,6 +342,24 @@ static void create_surface(struct output_surface *output)
         output->layer_surface, ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_NONE);
     zwlr_layer_surface_v1_set_size(output->layer_surface, 0, 0);
     wl_surface_commit(output->surface);
+}
+
+static void unmap_outputs(struct state *state)
+{
+    struct output_surface *output;
+    int unmap_count = 0;
+
+    for (output = state->outputs; output != NULL; output = output->next) {
+        if (output->surface == NULL)
+            continue;
+
+        wl_surface_attach(output->surface, NULL, 0, 0);
+        wl_surface_commit(output->surface);
+        unmap_count++;
+    }
+
+    if (unmap_count > 0)
+        wl_display_roundtrip(state->display);
 }
 
 static void cleanup(struct state *state)
@@ -351,13 +435,10 @@ int main(int argc, char **argv)
         return 3;
     }
 
-    while (!stop_requested) {
-        if (wl_display_dispatch(state.display) < 0) {
-            if (errno == EINTR)
-                continue;
-            break;
-        }
-    }
+    dispatch_until_stopped(&state);
+
+    if (unmap_requested)
+        unmap_outputs(&state);
 
     cleanup(&state);
     return 0;
