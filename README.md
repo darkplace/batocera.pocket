@@ -14,7 +14,7 @@ https://drive.proton.me/urls/RRPFQ38NX8#LmFz5AIaV2aI
 - AYN Odin2 (validated)
 - AYN Odin 2 Portal (Validated)
 - AYN Odin 2 Mini (Not validated)
-- AYN Thor
+- AYN Thor (Validated)
 - Retroid Pocket 6 (Not Validated)
 
 - Radxa Dragon Q6A  
@@ -83,6 +83,8 @@ https://github.com/user-attachments/assets/4c939a09-1fd7-4ea7-a014-4050a58c632f
 - Many DX11-era titles may run  
 - Vulkan-native titles perform best  
 - Not a replacement for x86 gaming PCs
+- Rumble & Gyro on Odin 2 and Thor
+- HDMI out partially validated on Thor
 
 ## Extra thor perks like lower widget Conky System monitor, retroarch lower panel controls, waydroid
   <img width="661" height="881" alt="image" src="https://github.com/user-attachments/assets/2696ed6f-0bdd-48f6-9c82-d4e3ed377acb" />
@@ -93,7 +95,7 @@ https://github.com/user-attachments/assets/4c939a09-1fd7-4ea7-a014-4050a58c632f
 ## CQ8725S Dragonwing Q8 - (8 Gen elite class - Odin 3)
 - Same stack as above with more power
 - Waydroid currently not working on CQ8725S as Adreno 830 currently doesn't support hardware acceleration on waydroid.
-  
+- Odin 3 Paddle support with hotkey mappings, Gyro, Rumble, USB DP HDMI out.  
 
 ---
 
