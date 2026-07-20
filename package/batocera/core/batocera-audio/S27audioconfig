@@ -67,25 +67,199 @@ try_apply_audioconfig() {
     return 1
 }
 
-apply_odin3_volume_deferred() {
-    VOLUME=$1
+ODIN3_AUDIO_CARD=alsa_card._sys_devices_platform_sound_sound_card0
+ODIN3_AUDIO_SINK_PREFIX=alsa_output._sys_devices_platform_sound_sound_card0.
+ODIN3_INTERNAL_PROFILE='HiFi (Headphones, Speaker)'
+ODIN3_HEADPHONE_SINK=${ODIN3_AUDIO_SINK_PREFIX}HiFi__Headphones__sink
+ODIN3_SPEAKER_SINK=${ODIN3_AUDIO_SINK_PREFIX}HiFi__Speaker__sink
 
-    # The Qualcomm card can finish probing well after the init sequence has
-    # reached S27.  Never make the splash wait for Pulse/PipeWire: apply the
-    # saved volume from a detached worker once its native socket responds.
-    N=240
-    while test "${N}" -gt 0
+odin3_audio_log() {
+    mkdir -p /userdata/system/logs 2>/dev/null || return
+    printf '%s %s\n' "$(date -Iseconds 2>/dev/null || date)" "$*" \
+	>> /userdata/system/logs/odin3-audio-boot.log
+}
+
+odin3_card_exists() {
+    pactl list short cards 2>/dev/null |
+	awk -v card="${ODIN3_AUDIO_CARD}" '$2 == card { found = 1 } END { exit !found }'
+}
+
+odin3_real_sink_exists() {
+    pactl list short sinks 2>/dev/null |
+	awk -v prefix="${ODIN3_AUDIO_SINK_PREFIX}" \
+	    'index($2, prefix) == 1 { found = 1 } END { exit !found }'
+}
+
+odin3_real_default_ready() {
+    local default_sink
+    default_sink=$(pactl get-default-sink 2>/dev/null) || return 1
+    case "${default_sink}" in
+	"${ODIN3_AUDIO_SINK_PREFIX}"*) ;;
+	*) return 1 ;;
+    esac
+    pactl list short sinks 2>/dev/null |
+	awk -v sink="${default_sink}" '$2 == sink { found = 1 } END { exit !found }'
+}
+
+odin3_move_streams() {
+    local target=$1
+    pactl list short sink-inputs 2>/dev/null | awk '{ print $1 }' |
+    while read -r input_id
     do
-	if test -S /var/run/pulse/native &&
-	   timeout 1 pactl info >/dev/null 2>&1 &&
-	   batocera-audio setSystemVolume "${VOLUME}" >/dev/null 2>&1
-	then
-	    return 0
-	fi
-	sleep 0.25
-	let N--
+	test -n "${input_id}" || continue
+	pactl move-sink-input "${input_id}" "${target}" >/dev/null 2>&1 || true
+    done
+}
+
+odin3_select_existing_sink() {
+    local target=
+
+    if amixer -c 0 cget name='Headphone Jack' 2>/dev/null | grep -q 'values=on' &&
+       pactl list short sinks 2>/dev/null | awk '{ print $2 }' | grep -qxF "${ODIN3_HEADPHONE_SINK}"
+    then
+	target=${ODIN3_HEADPHONE_SINK}
+    elif pactl list short sinks 2>/dev/null | awk '{ print $2 }' | grep -qxF "${ODIN3_SPEAKER_SINK}"
+    then
+	target=${ODIN3_SPEAKER_SINK}
+    else
+	target=$(pactl list short sinks 2>/dev/null |
+	    awk -v prefix="${ODIN3_AUDIO_SINK_PREFIX}" \
+		'index($2, prefix) == 1 { print $2; exit }')
+    fi
+
+    test -n "${target}" || return 1
+    pactl set-default-sink "${target}" >/dev/null 2>&1 || return 1
+    odin3_move_streams "${target}"
+}
+
+odin3_activate_internal_profile() {
+    local count=0
+
+    pactl list cards 2>/dev/null | grep -qF "${ODIN3_INTERNAL_PROFILE}" || return 1
+    pactl set-card-profile "${ODIN3_AUDIO_CARD}" "${ODIN3_INTERNAL_PROFILE}" \
+	>/dev/null 2>&1 || return 1
+    while test "${count}" -lt 40
+    do
+	odin3_real_sink_exists && break
+	sleep 0.1
+	count=$((count + 1))
+    done
+    odin3_real_sink_exists || return 1
+    odin3_select_existing_sink
+}
+
+odin3_wireplumber_running() {
+    local pid state
+
+    for pid in $(pgrep -x wireplumber 2>/dev/null)
+    do
+	state=$(awk '{ print $3 }' "/proc/${pid}/stat" 2>/dev/null)
+	test -n "${state}" && test "${state}" != Z && return 0
+    done
+    return 1
+}
+
+odin3_restart_wireplumber() {
+    local old_pids pid count alive state
+
+    old_pids=$(pgrep -x wireplumber 2>/dev/null)
+    for pid in ${old_pids}
+    do
+	kill "${pid}" 2>/dev/null || true
     done
 
+    count=0
+    while test "${count}" -lt 10
+    do
+	alive=
+	for pid in ${old_pids}
+	do
+	    state=$(awk '{ print $3 }' "/proc/${pid}/stat" 2>/dev/null)
+	    test -n "${state}" && test "${state}" != Z &&
+		alive="${alive} ${pid}"
+	done
+	test -z "${alive}" && break
+	sleep 0.1
+	count=$((count + 1))
+    done
+    for pid in ${alive}
+    do
+	kill -9 "${pid}" 2>/dev/null || true
+    done
+
+    count=0
+    while odin3_wireplumber_running && test "${count}" -lt 10
+    do
+	sleep 0.1
+	count=$((count + 1))
+    done
+    if ! odin3_wireplumber_running
+    then
+	/usr/bin/setsid -f /usr/bin/wireplumber >/dev/null 2>&1 || return 1
+    fi
+
+    count=0
+    until odin3_wireplumber_running
+    do
+	count=$((count + 1))
+	test "${count}" -lt 30 || return 1
+	sleep 0.1
+    done
+}
+
+apply_odin3_volume_deferred() {
+    local volume=$1
+    local remaining=240
+    local missing_ticks=0
+    local recovered=no
+
+    # Never hold the splash or ES: this function runs in a detached worker.
+    # A dummy sink is not readiness.  On some boots WirePlumber sees card0
+    # before its UCM profiles are usable and never retries, leaving auto_null
+    # forever.  Give normal enumeration two seconds, then restart only the
+    # session manager once; PipeWire and connected clients stay alive.
+    while test "${remaining}" -gt 0
+    do
+	if test -S /var/run/pulse/native && timeout 1 pactl info >/dev/null 2>&1
+	then
+	    if odin3_real_default_ready &&
+	       batocera-audio setSystemVolume "${volume}" >/dev/null 2>&1
+	    then
+		if test "${recovered}" = yes
+		then
+		    odin3_audio_log "Recovered the profile-less card and applied volume ${volume}%."
+		fi
+		return 0
+	    fi
+
+	    if odin3_real_sink_exists
+	    then
+		odin3_select_existing_sink >/dev/null 2>&1 || true
+		missing_ticks=0
+	    elif odin3_card_exists
+	    then
+		missing_ticks=$((missing_ticks + 1))
+	    else
+		missing_ticks=0
+	    fi
+
+	    if test "${missing_ticks}" -ge 8 && test "${recovered}" = no
+	    then
+		odin3_audio_log 'Detected card0 with no real sinks; restarting WirePlumber once.'
+		odin3_restart_wireplumber || odin3_audio_log 'Unable to restart WirePlumber.'
+		recovered=yes
+		missing_ticks=0
+	    elif test "${recovered}" = yes && ! odin3_real_sink_exists
+	    then
+		odin3_activate_internal_profile >/dev/null 2>&1 || true
+	    fi
+	fi
+
+	sleep 0.25
+	remaining=$((remaining - 1))
+    done
+
+    test "${recovered}" = no || odin3_audio_log 'Timed out waiting for a real audio sink after recovery.'
     return 0
 }
 
