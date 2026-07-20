@@ -1,0 +1,223 @@
+#!/bin/sh
+
+# Route automatic audio with the Odin 3 DRM hotplug event.  This is kept out
+# of the boot path: PipeWire is already running when the display checker calls
+# it, and a profile change is only made when the connector state requires one.
+export XDG_RUNTIME_DIR=/var/run
+
+LOCK_DIR=/var/run/sm8750-odin3-display-audio.lock
+STATE_DIR=/userdata/system/.local/state
+STATE_FILE=${STATE_DIR}/odin3-display-audio-v2
+LOG_FILE=/userdata/system/logs/odin3-display-audio.log
+DISPLAY_STATUS_FILE=/var/run/batocera-switch-screen-checker-status
+
+CARD=alsa_card._sys_devices_platform_sound_sound_card0
+DP_PROFILE='HiFi (DisplayPort, Speaker)'
+INTERNAL_PROFILE='HiFi (Headphones, Speaker)'
+DP_SINK=alsa_output._sys_devices_platform_sound_sound_card0.HiFi__DisplayPort__sink
+HEADPHONE_SINK=alsa_output._sys_devices_platform_sound_sound_card0.HiFi__Headphones__sink
+SPEAKER_SINK=alsa_output._sys_devices_platform_sound_sound_card0.HiFi__Speaker__sink
+
+log_message() {
+	mkdir -p "$(dirname "${LOG_FILE}")" 2>/dev/null || return
+	printf '%s %s\n' "$(date -Iseconds 2>/dev/null || date)" "$*" >> "${LOG_FILE}"
+}
+
+is_odin3() {
+	grep -aq 'ayn,odin3' /proc/device-tree/compatible 2>/dev/null
+}
+
+uses_automatic_audio() {
+	device=$(batocera-settings-get audio.device 2>/dev/null)
+	profile=$(batocera-settings-get audio.profile 2>/dev/null)
+	case "${device}" in ''|auto) ;; *) return 1 ;; esac
+	case "${profile}" in ''|auto) ;; *) return 1 ;; esac
+}
+
+pipewire_ready() {
+	[ -S /var/run/pulse/native ] && timeout 1 pactl info >/dev/null 2>&1
+}
+
+dp_has_audio() {
+	for status_path in /sys/class/drm/card*-DP-*/status; do
+		[ -r "${status_path}" ] || continue
+		[ "$(cat "${status_path}" 2>/dev/null)" = connected ] || continue
+		for eld_path in /proc/asound/card*/eld*; do
+			[ -r "${eld_path}" ] || continue
+			sad_count=$(awk '$1 == "sad_count" { print $2; exit }' "${eld_path}")
+			case "${sad_count}" in
+				''|*[!0-9]*) ;;
+				*) [ "${sad_count}" -gt 0 ] && return 0 ;;
+			esac
+		done
+	done
+	return 1
+}
+
+sink_exists() {
+	pactl list short sinks 2>/dev/null | awk '{ print $2 }' | grep -qxF "$1"
+}
+
+sink_volume() {
+	pactl get-sink-volume "$1" 2>/dev/null |
+		grep -o '[0-9][0-9]*%' | head -n 1
+}
+
+sink_mute() {
+	pactl get-sink-mute "$1" 2>/dev/null |
+		cut -d: -f2 | tr -d ' '
+}
+
+write_state() {
+	key=$1
+	volume=$2
+	mute=$3
+	case "${volume}" in [0-9]*%) ;; *) return 1 ;; esac
+	case "${mute}" in yes|no) ;; *) return 1 ;; esac
+
+	mkdir -p "${STATE_DIR}" 2>/dev/null || return 1
+	tmp_file=${STATE_FILE}.$$
+	if [ -r "${STATE_FILE}" ]; then
+		grep -v "^${key} " "${STATE_FILE}" > "${tmp_file}" || true
+	else
+		: > "${tmp_file}"
+	fi
+	printf '%s %s %s\n' "${key}" "${volume}" "${mute}" >> "${tmp_file}"
+	mv "${tmp_file}" "${STATE_FILE}"
+}
+
+save_sink() {
+	key=$1
+	sink=$2
+	sink_exists "${sink}" || return 0
+	volume=$(sink_volume "${sink}")
+	mute=$(sink_mute "${sink}")
+	write_state "${key}" "${volume}" "${mute}"
+}
+
+seed_state() {
+	key=$1
+	volume=$2
+	mute=$3
+	grep -q "^${key} " "${STATE_FILE}" 2>/dev/null ||
+		write_state "${key}" "${volume}" "${mute}"
+}
+
+restore_sink() {
+	key=$1
+	sink=$2
+	sink_exists "${sink}" || return 0
+	line=$(grep "^${key} " "${STATE_FILE}" 2>/dev/null | tail -n 1) || return 0
+	set -- ${line}
+	volume=$2
+	mute=$3
+	case "${volume}" in [0-9]*%) pactl set-sink-volume "${sink}" "${volume}" >/dev/null 2>&1 ;; esac
+	case "${mute}" in yes|no) pactl set-sink-mute "${sink}" "${mute}" >/dev/null 2>&1 ;; esac
+}
+
+active_profile() {
+	pactl list cards 2>/dev/null |
+		sed -n 's/^[[:space:]]*Active Profile: //p' |
+		head -n 1
+}
+
+wait_for_sink() {
+	target=$1
+	count=0
+	while [ "${count}" -lt 20 ]; do
+		sink_exists "${target}" && return 0
+		count=$((count + 1))
+		sleep 0.05
+	done
+	return 1
+}
+
+headphones_connected() {
+	amixer -c 0 cget name='Headphone Jack' 2>/dev/null | grep -q 'values=on'
+}
+
+move_streams() {
+	target=$1
+	pactl list short sink-inputs 2>/dev/null | awk '{ print $1 }' |
+	while read -r input_id; do
+		[ -n "${input_id}" ] || continue
+		pactl move-sink-input "${input_id}" "${target}" >/dev/null 2>&1 || true
+	done
+}
+
+is_odin3 || exit 0
+
+# The DRM uevent arrives before the compositor's output list settles on this
+# device.  The hotplug checker passes the previous list; wait until its --init
+# call records the new list instead of routing from stale DP connector state.
+if [ "${1:-}" = --after-output-list ]; then
+	previous_outputs=${2:-}
+	count=0
+	while [ "${count}" -lt 100 ]; do
+		current_outputs=$(sort "${DISPLAY_STATUS_FILE}" 2>/dev/null | tr '\n' ' ')
+		[ -n "${current_outputs}" ] && [ "${current_outputs}" != "${previous_outputs}" ] && break
+		count=$((count + 1))
+		sleep 0.1
+	done
+fi
+
+uses_automatic_audio || exit 0
+pipewire_ready || exit 0
+mkdir "${LOCK_DIR}" 2>/dev/null || exit 0
+trap 'rmdir "${LOCK_DIR}" 2>/dev/null' EXIT HUP INT TERM
+
+default_sink=$(pactl get-default-sink 2>/dev/null)
+fallback_volume=$(sink_volume "${default_sink}")
+fallback_mute=$(sink_mute "${default_sink}")
+case "${fallback_volume}" in [0-9]*%) ;; *) fallback_volume=30% ;; esac
+case "${fallback_mute}" in yes|no) ;; *) fallback_mute=no ;; esac
+
+# Record only the currently selected route.  Inactive sinks can be recreated
+# by PipeWire at 100%, so they must never overwrite a known user volume.
+case "${default_sink}" in
+	"${DP_SINK}") save_sink displayport "${DP_SINK}" ;;
+	"${HEADPHONE_SINK}") save_sink headphones "${HEADPHONE_SINK}" ;;
+	"${SPEAKER_SINK}") save_sink speaker "${SPEAKER_SINK}" ;;
+esac
+
+# A fresh state starts at the live route's actual volume.  The v2 filename
+# intentionally ignores values recorded by the earlier reset/retry helper.
+seed_state displayport "${fallback_volume}" "${fallback_mute}"
+seed_state headphones "${fallback_volume}" "${fallback_mute}"
+seed_state speaker "${fallback_volume}" "${fallback_mute}"
+
+if grep -qxF DP-1 "${DISPLAY_STATUS_FILE}" 2>/dev/null && dp_has_audio; then
+	profile=${DP_PROFILE}
+	target=${DP_SINK}
+	route=displayport
+else
+	profile=${INTERNAL_PROFILE}
+	if headphones_connected; then
+		target=${HEADPHONE_SINK}
+		route=headphones
+	else
+		target=${SPEAKER_SINK}
+		route=speaker
+	fi
+fi
+
+if [ "$(active_profile)" != "${profile}" ]; then
+	# Headphones and DisplayPort share Qualcomm PCM1.  Release the old DSP
+	# route before opening the mutually exclusive UCM profile; a direct profile
+	# change can leave PipeWire with only auto_null and no real sinks.
+	pactl set-card-profile "${CARD}" off >/dev/null 2>&1 || exit 1
+	sleep 1
+	pactl set-card-profile "${CARD}" "${profile}" >/dev/null 2>&1 || exit 1
+fi
+wait_for_sink "${target}" || exit 1
+
+# Both profiles recreate their sinks.  Restore all known routes before making
+# one default so no fallback path can briefly inherit PipeWire's 100% default.
+restore_sink displayport "${DP_SINK}"
+restore_sink headphones "${HEADPHONE_SINK}"
+restore_sink speaker "${SPEAKER_SINK}"
+pactl set-default-sink "${target}" >/dev/null 2>&1 || exit 1
+move_streams "${target}"
+log_message "Hotplug routed automatic audio to ${route} at $(sink_volume "${target}")."
+
+exit 0

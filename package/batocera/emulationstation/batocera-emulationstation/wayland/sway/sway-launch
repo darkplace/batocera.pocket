@@ -331,6 +331,24 @@ model=$(batocera-model 2>/dev/null)
 connected_displays=$(get_connected_displays)
 log_message "Connected displays = ${connected_displays}"
 
+# The packaged DSI-1 preference is the undocked fallback.  If the user has
+# not explicitly selected an output, make Odin 3 Auto choose DP while docked
+# and DSI when detached.  Only one output is active on this hardware.
+if [ "$model" = "AYN_Odin_3" ]; then
+    user_preferred_display=$(batocera-settings-get global.videooutput 2>/dev/null)
+    case "$user_preferred_display" in
+        ""|auto)
+            if display_is_connected DP-1; then
+                preferred_display=DP-1
+            else
+                preferred_display=DSI-1
+            fi
+            secondary_display=
+            log_message "Odin 3 Auto selected ${preferred_display}."
+            ;;
+    esac
+fi
+
 if [ -z "$preferred_display" ] || ! display_is_connected "$preferred_display"; then
     set -- $connected_displays
     preferred_display="$1"
@@ -420,12 +438,10 @@ else
         fi
         echo
 
-        write_output_block "$preferred_display" primary "$primary_x" "$primary_y"
-
-        if [ -n "$secondary_display" ]; then
-            write_output_block "$secondary_display" secondary "$secondary_x" "$secondary_y"
-        fi
-
+        # Release unused display-controller resources before enabling the
+        # selected outputs.  This matters on Qualcomm handhelds where an
+        # internal DSI panel can still be scanning out the boot splash while
+        # an external DP output is already connected.
         for display in $connected_displays; do
             if [ "$display" != "$preferred_display" ] && [ "$display" != "$secondary_display" ]; then
                 log_message "Disabling display ${display}"
@@ -435,6 +451,12 @@ else
                 echo
             fi
         done
+
+        write_output_block "$preferred_display" primary "$primary_x" "$primary_y"
+
+        if [ -n "$secondary_display" ]; then
+            write_output_block "$secondary_display" secondary "$secondary_x" "$secondary_y"
+        fi
     } > "$SWAY_CONF_FILE"
     write_app_routing_file
 fi

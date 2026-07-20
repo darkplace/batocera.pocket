@@ -9,8 +9,9 @@ display.rotate.DSI=1
 # Rotate Wayland/Sway
 display.rotate.DSI-1=1
 
-# Default audio profile
-audio.profile=HiFi@alsa_card._sys_devices_platform_sound_sound_card0
+# The UCM profile has mutually exclusive Headphones and DisplayPort variants.
+# Let the Odin 3 display/audio hotplug helper select the matching variant.
+audio.profile=auto
 
 # Default settings
 display.brightness=60

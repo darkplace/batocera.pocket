@@ -44,7 +44,7 @@ apply_audioconfig() {
     # but in case set ou set-profile fails, always set volume
     # because in case the audio card doesn't exist,
     # it is nice to have the volume applied on the default output
-    batocera-audio setSystemVolume "${VOLUME}"  || return 1
+    batocera-audio setSystemVolume "${VOLUME}" || return 1
     return ${EXITCODE}
 }
 
@@ -67,6 +67,28 @@ try_apply_audioconfig() {
     return 1
 }
 
+apply_odin3_volume_deferred() {
+    VOLUME=$1
+
+    # The Qualcomm card can finish probing well after the init sequence has
+    # reached S27.  Never make the splash wait for Pulse/PipeWire: apply the
+    # saved volume from a detached worker once its native socket responds.
+    N=240
+    while test "${N}" -gt 0
+    do
+	if test -S /var/run/pulse/native &&
+	   timeout 1 pactl info >/dev/null 2>&1 &&
+	   batocera-audio setSystemVolume "${VOLUME}" >/dev/null 2>&1
+	then
+	    return 0
+	fi
+	sleep 0.25
+	let N--
+    done
+
+    return 0
+}
+
 start_audioconfig() {
     # this script must be started after pipewire and udev, but before es
     # and thus, we let splash before config here while udev is the services taking the most time
@@ -75,9 +97,30 @@ start_audioconfig() {
     DEVICE=$(/usr/bin/batocera-settings-get-master audio.device)
     PROFILE=$(/usr/bin/batocera-settings-get-master audio.profile)
     VOLUME=$(/usr/bin/batocera-settings-get-master audio.volume)
+
+    # The Odin 3 board default used to name a UCM profile that no longer
+    # exists.  get-master treats the user's "auto" sentinel as unset and can
+    # expose that stale fallback, so preserve the raw automatic selection.
+    if grep -aq 'ayn,odin3' /proc/device-tree/compatible 2>/dev/null
+    then
+	USER_DEVICE=$(/usr/bin/batocera-settings-get audio.device)
+	USER_PROFILE=$(/usr/bin/batocera-settings-get audio.profile)
+	case "${USER_DEVICE}" in ""|auto) DEVICE=auto ;; esac
+	case "${USER_PROFILE}" in ""|auto) PROFILE=auto ;; esac
+    fi
+
     test -z "${DEVICE}"  && DEVICE=auto
     test -z "${PROFILE}" && PROFILE=auto
     test -z "${VOLUME}"  && VOLUME=80
+
+    if grep -aq 'ayn,odin3' /proc/device-tree/compatible 2>/dev/null &&
+       test "${DEVICE}" = auto && test "${PROFILE}" = auto
+    then
+	/usr/bin/setsid -f "$0" odin3-deferred-volume "${VOLUME}" \
+	    >/dev/null 2>&1
+	echo "OK"
+	return 0
+    fi
 
     if ! apply_audioconfig "${DEVICE}" "${PROFILE}" "${VOLUME}"
     then
@@ -110,8 +153,11 @@ case "$1" in
  	stop)
 		stop_audioconfig
 	;;
- 	restart|reload)
+	restart|reload)
 		restart
+	;;
+	odin3-deferred-volume)
+		apply_odin3_volume_deferred "$2"
 	;;
 	*)
 		echo "Usage: $0 {start|stop|restart}"

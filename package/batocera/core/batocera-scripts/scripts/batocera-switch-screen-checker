@@ -47,6 +47,17 @@ case "$1" in
 
         echo "Checker: Hotplug event detected. Waiting for EmulationStation..." >> "$LOG"
 
+        # Odin 3's DRM connector state can lag this uevent.  Start a detached
+        # audio worker that waits for this checker's --init output list to
+        # change during the ensuing ES display restart.  Normal boot never
+        # enters this branch.
+        if grep -aq 'ayn,odin3' /proc/device-tree/compatible 2>/dev/null &&
+           [ -x /usr/bin/sm8750-odin3-display-audio ]; then
+            previous_outputs=$(sort "${STATUS_FILE}" 2>/dev/null | tr '\n' ' ')
+            /usr/bin/setsid -f /usr/bin/sm8750-odin3-display-audio \
+                --after-output-list "${previous_outputs}" >/dev/null 2>&1
+        fi
+
         if ! _wait_for_emulationstation; then
             rm -f "${DEBOUNCE_LOCK}"
             exit 1

@@ -5,8 +5,8 @@ Subject: [PATCH 53/54] arm64: dts: qcom: Add AYN CQ8725S Common
 
 Signed-off-by: Teguh Sobirin <teguh@sobir.in>
 ---
- .../boot/dts/qcom/cq8725s-ayn-common.dtsi     | 1260 +++++++++++++++++
- 1 file changed, 1260 insertions(+)
+ .../boot/dts/qcom/cq8725s-ayn-common.dtsi     | 1262 +++++++++++++++++
+ 1 file changed, 1262 insertions(+)
  create mode 100644 arch/arm64/boot/dts/qcom/cq8725s-ayn-common.dtsi
 
 diff --git a/arch/arm64/boot/dts/qcom/cq8725s-ayn-common.dtsi b/arch/arm64/boot/dts/qcom/cq8725s-ayn-common.dtsi
@@ -14,7 +14,7 @@ new file mode 100644
 index 000000000000..6090b5b3c668
 --- /dev/null
 +++ b/arch/arm64/boot/dts/qcom/cq8725s-ayn-common.dtsi
-@@ -0,0 +1,1260 @@
+@@ -0,0 +1,1278 @@
 +// SPDX-License-Identifier: BSD-3-Clause
 +/*
 + * Copyright (c) 2026 Teguh Sobirin.
@@ -159,6 +159,22 @@ index 000000000000..6090b5b3c668
 +
 +			codec {
 +				sound-dai = <&spk_amp_l 0>, <&spk_amp_r 0>;
++			};
++
++			platform {
++				sound-dai = <&q6apm>;
++			};
++		};
++
++		dp-dai-link {
++			link-name = "DisplayPort Playback";
++
++			codec {
++				sound-dai = <&mdss_dp0>;
++			};
++
++			cpu {
++				sound-dai = <&q6apmbedai DISPLAY_PORT_RX_0>;
 +			};
 +
 +			platform {
@@ -923,6 +939,10 @@ index 000000000000..6090b5b3c668
 +	status = "okay";
 +};
 +
++&mdss_dp0_out {
++	link-frequencies = /bits/ 64 <1620000000 2700000000 5400000000 8100000000>;
++};
++
 +&mdss_dsi0 {
 +	vdda-supply = <&vreg_l3g_1p2>;
 +
@@ -1253,8 +1273,6 @@ index 000000000000..6090b5b3c668
 +&usb_dp_qmpphy {
 +	vdda-phy-supply = <&vreg_l3g_1p2>;
 +	vdda-pll-supply = <&vreg_l2d_0p88>;
-+
-+	mode-switch;
 +
 +	status = "okay";
 +};

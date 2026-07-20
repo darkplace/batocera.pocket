@@ -95,6 +95,27 @@ while [ -e "${REBOOT_FLAG}" ]; do
         echo "Standalone: Using pre-configured video outputs - ${settings_output}, ${settings_output2}, ${settings_output3}" >> "$log"
     fi
 
+    model="$(batocera-model 2>/dev/null)"
+    user_output="$(batocera-settings-get global.videooutput)"
+
+    # The board default is DSI-1, but an empty user setting means Auto.  In
+    # Auto mode the Odin 3 is a single-display handheld: prefer a connected
+    # USB-C DisplayPort sink and return to the internal panel when it leaves.
+    if [ "${model}" = "AYN_Odin_3" ]; then
+        case "${user_output}" in
+            ""|auto)
+                if batocera-resolution listOutputs | grep -qxF DP-1; then
+                    settings_output=DP-1
+                else
+                    settings_output=DSI-1
+                fi
+                settings_output2=
+                settings_output3=
+                echo "Standalone: Odin 3 Auto selected ${settings_output}." >> "$log"
+                ;;
+        esac
+    fi
+
     echo "Standalone: Validating detected outputs..." >> "$log"
     # VALIDATE OUTPUTS
     #   The output must exists in listOutputs
@@ -152,10 +173,27 @@ while [ -e "${REBOOT_FLAG}" ]; do
             settings_output=$(batocera-resolution listOutputs | head -1)
         fi
     fi
+    user_output2="$(batocera-settings-get global.videooutput2)"
+    auto_select_secondary=1
+
+    # These AYN Qualcomm handhelds cannot reliably scan out to USB-C DisplayPort
+    # and an internal DSI panel at the same time. Treat DP as a docked,
+    # single-display layout unless the user explicitly selected a second output.
+    # When DP is unplugged, primary validation above falls back to DSI and normal
+    # secondary-output selection resumes.
+    case "${model}:${settings_output}" in
+        AYN_Thor:DP-*|AYN_Odin_3:DP-*)
+            if [ -z "${user_output2}" ]; then
+                [ -n "${settings_output2}" ] && echo "Standalone: Suppressing default secondary output while external primary ${settings_output} is active." >> "$log"
+                settings_output2=
+                auto_select_secondary=0
+            fi
+            ;;
+    esac
+
     # If screen2 is empty, take the first one found which is not screen1
     if [ -z "${settings_output2}" ]; then
-        user_output2="$(batocera-settings-get global.videooutput2)"
-        if [ "${user_output2}" != "none" ]; then
+        if [ "${user_output2}" != "none" ] && [ "${auto_select_secondary}" -eq 1 ]; then
             settings_output2=$(batocera-resolution listOutputs | grep -vE "^${settings_output}$" | head -1)
             if [ -n "${settings_output2}" ]; then
                 echo "Standalone: Auto-selected second video output: ${settings_output2}" >> "$log"
@@ -167,6 +205,7 @@ while [ -e "${REBOOT_FLAG}" ]; do
     echo "Standalone: --- Enabling Outputs ---" >> "$log"
     batocera-resolution setOutput "${settings_output}" "${settings_output2}" "${settings_output3}" # empty or invalid values defaults to the first valid
     echo "Updated video outputs: ${settings_output}, ${settings_output2}, ${settings_output3}" >> $log
+
     ###################
 
     # And now we can apply the setting per output...

@@ -1,0 +1,64 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Sun, 19 Jul 2026 19:05:00 +0000
+Subject: [PATCH] usb: typec: mux: defer for unregistered switches
+
+The switch and mux match callbacks check for duplicates before checking
+whether class_find_device() found a device.  Since struct device is the
+first member of both wrapper structures, converting a NULL device also
+produces NULL.  That NULL then matches an unused, zeroed result slot and
+the connection is silently skipped instead of returning -EPROBE_DEFER.
+
+This lets a connector consumer bind permanently without a late-probing
+switch.  On the AYN Odin 3, PMIC GLINK consequently misses the WCD939x
+SBU mux and never routes DisplayPort AUX.
+
+Check the lookup result before duplicate detection and explicitly
+initialize the result arrays used by that detection.
+
+Signed-off-by: suckbluefrog <suckbluefrog@proton.me>
+---
+ drivers/usb/typec/mux.c | 8 ++++++--
+ 1 file changed, 6 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/usb/typec/mux.c b/drivers/usb/typec/mux.c
+--- a/drivers/usb/typec/mux.c
++++ b/drivers/usb/typec/mux.c
+@@ -57,6 +57,8 @@ static void *typec_switch_match(const struct fwnode_handle *fwnode,
+ 	 */
+ 	dev = class_find_device(&typec_mux_class, NULL, fwnode,
+ 				switch_fwnode_match);
++	if (!dev)
++		return ERR_PTR(-EPROBE_DEFER);
+ 
+ 	/* Skip duplicates */
+ 	for (i = 0; i < TYPEC_MUX_MAX_DEVS; i++)
+@@ -79,7 +81,7 @@ static void *typec_switch_match(const struct fwnode_handle *fwnode,
+  */
+ struct typec_switch *fwnode_typec_switch_get(struct fwnode_handle *fwnode)
+ {
+-	struct typec_switch_dev *sw_devs[TYPEC_MUX_MAX_DEVS];
++	struct typec_switch_dev *sw_devs[TYPEC_MUX_MAX_DEVS] = { };
+ 	struct typec_switch *sw;
+ 	int count;
+ 	int err;
+@@ -292,6 +294,8 @@ static void *typec_mux_match(const struct fwnode_handle *fwnode,
+ 
+ 	dev = class_find_device(&typec_mux_class, NULL, fwnode,
+ 				mux_fwnode_match);
++	if (!dev)
++		return ERR_PTR(-EPROBE_DEFER);
+ 
+ 	/* Skip duplicates */
+ 	for (i = 0; i < TYPEC_MUX_MAX_DEVS; i++)
+@@ -315,7 +319,7 @@ static void *typec_mux_match(const struct fwnode_handle *fwnode,
+  */
+ struct typec_mux *fwnode_typec_mux_get(struct fwnode_handle *fwnode)
+ {
+-	struct typec_mux_dev *mux_devs[TYPEC_MUX_MAX_DEVS];
++	struct typec_mux_dev *mux_devs[TYPEC_MUX_MAX_DEVS] = { };
+ 	struct typec_mux *mux;
+ 	int count;
+ 	int err;
+-- 
+2.43.0
