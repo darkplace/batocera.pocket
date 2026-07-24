@@ -10957,9 +10957,9 @@ openbor:
           choices:
             Disabled: 0
             Enabled: 1
-pcsx2:
+yaps2:
   cores:
-    pcsx2:
+    yaps2:
       shared:
       - powermode
       - cpu_max_freq

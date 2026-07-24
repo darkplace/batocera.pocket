@@ -1,5 +1,5 @@
 config BR2_PACKAGE_PCSX2
-    bool "pcsx2"
+    bool "yaps2"
     depends on BR2_aarch64
     depends on BR2_PACKAGE_XORG7
     depends on BR2_PACKAGE_BATOCERA_TARGET_SM8X50 || BR2_PACKAGE_BATOCERA_TARGET_SM8250 || BR2_PACKAGE_BATOCERA_TARGET_QCS6490
@@ -37,6 +37,6 @@ config BR2_PACKAGE_PCSX2
     select BR2_PACKAGE_ZLIB
     select BR2_PACKAGE_ZSTD
     help
-      PCSX2 is a free and open-source PlayStation 2 (PS2) emulator.
+      YAPS2 is an ARM-focused fork of the PCSX2 PlayStation 2 emulator.
 
       https://github.com/yaps2/yaps2

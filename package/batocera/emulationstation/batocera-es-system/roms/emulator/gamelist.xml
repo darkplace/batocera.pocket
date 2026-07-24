@@ -22,7 +22,7 @@
   </game>
   <game>
     <path>./Configure_PCSX2.sh</path>
-    <name>Configure PCSX2</name>
+    <name>Configure YAPS2</name>
     <image>./images/pcsx2.png</image>
   </game>
   <game>

@@ -51,10 +51,10 @@ default:
     dolphin:
       dolphin: *dolphin_arch
   ps2:
-    pcsx2:
-      pcsx2:
+    yaps2:
+      yaps2:
         explanation: |
-          PCSX2 only works on x86 and x86_64 platforms and requires a good cpu & gpu.
+          YAPS2 is an ARM-focused PlayStation 2 emulator and requires a good CPU and GPU.
   snes:
     libretro:
       bsnes:

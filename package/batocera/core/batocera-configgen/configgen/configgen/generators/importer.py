@@ -19,6 +19,7 @@ _GENERATOR_MAP: Final[dict[str, tuple[str, str]]] = {
     'mupen64plus': ('mupen.mupenGenerator', 'MupenGenerator'),
     'gopher64': ('gopher64.gopher64Generator', 'Gopher64Generator'),
     'ppsspp': ('ppsspp.ppssppGenerator', 'PPSSPPGenerator'),
+    'yaps2': ('pcsx2.pcsx2Generator', 'Pcsx2Generator'),
     'hypseus-singe': ('hypseus_singe.hypseusSingeGenerator', 'HypseusSingeGenerator'),
     'sdlpop': ('sdlpop.sdlpopGenerator', 'SdlPopGenerator'),
     'melonds': ('melonds.melondsGenerator', 'MelonDSGenerator'),

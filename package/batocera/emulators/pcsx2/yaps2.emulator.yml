@@ -1,5 +1,5 @@
 cores:
-  pcsx2:
+  yaps2:
     shared_features:
       - powermode
       - cpu_max_freq

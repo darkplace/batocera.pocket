@@ -1,15 +1,15 @@
 ################################################################################
 #
-# pcsx2
+# yaps2
 #
 ################################################################################
 
-PCSX2_VERSION = b3407777c2265250c06504b241ff510529861c91
+PCSX2_VERSION = dbb7eade69c1befc6410fe636811010d340ef886
 PCSX2_SITE = https://github.com/yaps2/yaps2.git
 PCSX2_SITE_METHOD = git
 PCSX2_LICENSE = GPLv3
 PCSX2_LICENSE_FILE = COPYING.GPLv3
-PCSX2_EMULATOR_INFO = pcsx2.emulator.yml
+PCSX2_EMULATOR_INFO = yaps2.emulator.yml
 
 PCSX2_SUPPORTS_IN_SOURCE_BUILD = NO
 
