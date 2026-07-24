@@ -1,0 +1,283 @@
+#!/bin/bash
+set -u -o pipefail
+
+TOOLS_LOG="/userdata/system/logs/batocera-waydroid-tools.log"
+PROFILE_FILE="/userdata/system/configs/waydroid/image-profile"
+WAYDROID_CFG="/var/lib/waydroid/waydroid.cfg"
+WAYDROID_IMAGES="/var/lib/waydroid/images"
+
+mkdir -p /userdata/system/logs "$(dirname "${PROFILE_FILE}")"
+
+clear_screen() {
+    clear >/dev/null 2>&1 || true
+}
+
+msg_box() {
+    dialog --clear --backtitle "Batocera Waydroid Tools" \
+        --msgbox "$1" 18 92 2>&1 >/dev/tty
+    clear_screen
+}
+
+yes_no() {
+    dialog --clear --backtitle "Batocera Waydroid Tools" \
+        --yesno "$1" 18 92 2>&1 >/dev/tty
+    local rc=$?
+    clear_screen
+    return "${rc}"
+}
+
+show_text_file() {
+    local title="$1" file="$2"
+    dialog --clear --backtitle "Batocera Waydroid Tools" \
+        --title "${title}" --textbox "${file}" 24 104 2>&1 >/dev/tty
+    clear_screen
+}
+
+require_tools() {
+    local missing=() command_name
+
+    [ "$(id -u)" -eq 0 ] || {
+        echo "batocera-waydroid-tools must run as root." >&2
+        exit 1
+    }
+    for command_name in dialog xterm waydroid; do
+        command -v "${command_name}" >/dev/null 2>&1 || missing+=("${command_name}")
+    done
+    if [ "${#missing[@]}" -gt 0 ]; then
+        echo "Missing required commands: ${missing[*]}" >&2
+        exit 1
+    fi
+    if ! [ -t 0 ] && ! [ -t 1 ] && ! [ -t 2 ]; then
+        echo "batocera-waydroid-tools requires an interactive terminal." >&2
+        exit 1
+    fi
+}
+
+read_profile() {
+    local profile="standard-gapps"
+
+    if [ -f "${PROFILE_FILE}" ]; then
+        profile="$(tr -d '\r\n' < "${PROFILE_FILE}")"
+    fi
+    case "${profile}" in
+        standard-gapps|standard-vanilla|android-tv-gapps|android-tv-vanilla)
+            printf '%s\n' "${profile}"
+            ;;
+        *)
+            printf 'standard-gapps\n'
+            ;;
+    esac
+}
+
+profile_label() {
+    case "$1" in
+        standard-gapps) printf 'Standard Android with Google apps (default)\n' ;;
+        standard-vanilla) printf 'Standard Android without Google apps\n' ;;
+        android-tv-gapps) printf 'Android TV with Google apps\n' ;;
+        android-tv-vanilla) printf 'Android TV without Google apps\n' ;;
+    esac
+}
+
+write_profile() {
+    local profile="$1" temporary="${PROFILE_FILE}.tmp.$$"
+
+    printf '%s\n' "${profile}" > "${temporary}"
+    chmod 0644 "${temporary}"
+    mv "${temporary}" "${PROFILE_FILE}"
+}
+
+show_status() {
+    local output status
+
+    output="$(mktemp)"
+    status="$(waydroid status 2>&1 || true)"
+    {
+        printf 'Selected profile: %s\n\n' "$(profile_label "$(read_profile)")"
+        printf '%s\n' "${status}"
+        printf '\nConfiguration: %s\n' "${WAYDROID_CFG}"
+        printf 'System image:  %s/system.img\n' "${WAYDROID_IMAGES}"
+        printf 'Vendor image:  %s/vendor.img\n\n' "${WAYDROID_IMAGES}"
+        if [ -f "${WAYDROID_CFG}" ] &&
+           [ -f "${WAYDROID_IMAGES}/system.img" ] &&
+           [ -f "${WAYDROID_IMAGES}/vendor.img" ]; then
+            printf 'Waydroid is initialized.\n'
+        else
+            printf 'Waydroid is not initialized. Launch it once to download the selected image.\n'
+        fi
+        printf '\nThis AArch64 build runs Android ARM applications natively. No ARM translation layer is required.\n'
+    } >"${output}"
+    show_text_file "Waydroid status" "${output}"
+    rm -f "${output}"
+}
+
+show_google_id() {
+    local output rc
+    output="$(mktemp)"
+    /usr/bin/waydroid-get-android-id >"${output}" 2>&1
+    rc=$?
+    show_text_file "Google Play registration ID" "${output}"
+    rm -f "${output}"
+    return "${rc}"
+}
+
+waydroid_running() {
+    local status
+    status="$(waydroid status 2>/dev/null || true)"
+    printf '%s\n' "${status}" | grep -Eq '^(Session|Container):[[:space:]]*RUNNING'
+}
+
+stop_waydroid() {
+    local attempt
+
+    timeout 20 waydroid session stop >>"${TOOLS_LOG}" 2>&1 || true
+    timeout 20 waydroid container stop >>"${TOOLS_LOG}" 2>&1 || true
+    for attempt in $(seq 1 15); do
+        waydroid_running || return 0
+        sleep 1
+    done
+    return 1
+}
+
+waydroid_mounts_remain() {
+    awk '
+        $5 ~ "^/var/lib/waydroid(/|$)" ||
+        $5 ~ "^/userdata/system/waydroid/var-lib(/|$)" ||
+        $5 ~ "^/userdata/system/.local/share/waydroid(/|$)" {
+            print
+            found = 1
+        }
+        END { exit !found }
+    ' /proc/self/mountinfo
+}
+
+reset_container_data() {
+    local mounts
+
+    stop_waydroid || {
+        msg_box "Waydroid is still running. No data was deleted.\n\nClose Waydroid or reboot, then retry."
+        return 1
+    }
+
+    mounts="$(waydroid_mounts_remain 2>/dev/null || true)"
+    if [ -n "${mounts}" ]; then
+        printf '%s\n' "${mounts}" >>"${TOOLS_LOG}"
+        msg_box "Waydroid still has mounted filesystems. No data was deleted.\n\nReboot Batocera, do not launch Waydroid, and retry the reset."
+        return 1
+    fi
+
+    rm -rf -- \
+        /userdata/system/waydroid/var-lib \
+        /userdata/system/waydroid/etc \
+        /userdata/system/waydroid/arm-translation \
+        /userdata/system/.local/share/waydroid
+    rm -f -- /userdata/system/waydroid/libndk-auto-seed-migrated
+
+    if [ -d /userdata/system/.local/share/applications ]; then
+        find /userdata/system/.local/share/applications -maxdepth 1 -type f \
+            -name 'waydroid.*.desktop' -delete
+    fi
+
+    mkdir -p /userdata/system/waydroid/var-lib /userdata/system/waydroid/etc
+    /etc/init.d/S22waydroid-host start >>"${TOOLS_LOG}" 2>&1 || true
+    /usr/bin/batocera-waydroid-update >>"${TOOLS_LOG}" 2>&1 || true
+    return 0
+}
+
+confirm_factory_reset() {
+    yes_no "Factory-reset the Waydroid container?\n\nThis permanently deletes every Android app, account, login, setting, and all Android app data. The selected image profile and logs are preserved." ||
+        return 1
+    yes_no "Final confirmation:\n\nDELETE ALL WAYDROID ANDROID DATA?\n\nThis cannot be undone unless you have a separate backup." ||
+        return 1
+}
+
+delete_container_menu() {
+    confirm_factory_reset || return 0
+    if reset_container_data; then
+        msg_box "The Waydroid container and Android user data were deleted.\n\nThe next Waydroid launch will download and initialize:\n\n$(profile_label "$(read_profile)")"
+    fi
+}
+
+select_image_profile() {
+    local current selected initialized=0
+    local standard_gapps=off standard_vanilla=off atv_gapps=off atv_vanilla=off
+
+    current="$(read_profile)"
+    case "${current}" in
+        standard-gapps) standard_gapps=on ;;
+        standard-vanilla) standard_vanilla=on ;;
+        android-tv-gapps) atv_gapps=on ;;
+        android-tv-vanilla) atv_vanilla=on ;;
+    esac
+
+    selected="$(
+        dialog --stdout --clear --backtitle "Batocera Waydroid Tools" \
+            --title "Waydroid image profile" \
+            --radiolist "Choose the AArch64 image used on the next initialization." \
+            22 104 10 \
+            standard-gapps "Standard Android + Google apps (default)" "${standard_gapps}" \
+            standard-vanilla "Standard Android, no Google apps" "${standard_vanilla}" \
+            android-tv-gapps "Android TV + Google apps" "${atv_gapps}" \
+            android-tv-vanilla "Android TV, no Google apps" "${atv_vanilla}" \
+            </dev/tty 2>/dev/tty
+    )" || {
+        clear_screen
+        return 0
+    }
+    clear_screen
+
+    [ "${selected}" != "${current}" ] || {
+        msg_box "That profile is already selected:\n\n$(profile_label "${current}")"
+        return 0
+    }
+
+    if [ -f "${WAYDROID_CFG}" ] ||
+       [ -f "${WAYDROID_IMAGES}/system.img" ] ||
+       [ -d /userdata/system/.local/share/waydroid/data ]; then
+        initialized=1
+    fi
+
+    if [ "${initialized}" -eq 1 ]; then
+        yes_no "Changing from:\n\n$(profile_label "${current}")\n\nto:\n\n$(profile_label "${selected}")\n\nrequires a clean container. Every Android app, account, and all Android data will be deleted." ||
+            return 0
+        yes_no "Final confirmation:\n\nDELETE THE CURRENT WAYDROID CONTAINER AND SWITCH IMAGE PROFILE?" ||
+            return 0
+        reset_container_data || return 0
+    fi
+
+    write_profile "${selected}"
+    msg_box "Selected:\n\n$(profile_label "${selected}")\n\nLaunch Waydroid to initialize it. Vanilla profiles do not provide a Google Play registration ID."
+}
+
+main_menu() {
+    local choice
+
+    while true; do
+        choice="$(
+            dialog --stdout --clear --backtitle "Batocera Waydroid Tools" \
+                --title "Waydroid Tools" \
+                --menu "Current profile: $(profile_label "$(read_profile)")\nChoose an action:" \
+                21 100 10 \
+                1 "Show Google Play registration ID" \
+                2 "Select Standard / Android TV / no-GApps image" \
+                3 "Delete Waydroid container (factory reset)" \
+                4 "Show Waydroid status" \
+                99 "Exit" \
+                </dev/tty 2>/dev/tty
+        )" || {
+            clear_screen
+            break
+        }
+        clear_screen
+
+        case "${choice}" in
+            1) show_google_id || true ;;
+            2) select_image_profile ;;
+            3) delete_container_menu ;;
+            4) show_status ;;
+            99) break ;;
+        esac
+    done
+}
+
+require_tools
+main_menu

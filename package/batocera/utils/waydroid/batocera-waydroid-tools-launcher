@@ -1,0 +1,24 @@
+#!/bin/bash
+set -euo pipefail
+
+if [ -z "${DISPLAY:-}" ]; then
+    export DISPLAY="$(getLocalXDisplay 2>/dev/null || printf ':0.0')"
+fi
+
+log_dir="/userdata/system/logs"
+log_file="${log_dir}/batocera-waydroid-tools.log"
+mkdir -p "${log_dir}"
+
+if command -v batocera-mouse >/dev/null 2>&1; then
+    batocera-mouse show || true
+    trap 'batocera-mouse hide >/dev/null 2>&1 || true' EXIT
+fi
+
+xterm -fs 14 -fg white -bg black -fa "Monospace" -en UTF-8 -sb -rightbar \
+    -T "Batocera Waydroid Tools" \
+    -e /bin/bash -lc '
+        set -o pipefail
+        log_file="$1"
+        printf "\n===== batocera-waydroid-tools %s =====\n" "$(date -Is)" | tee -a "${log_file}"
+        /usr/bin/batocera-waydroid-tools 2>&1 | tee -a "${log_file}"
+    ' bash "${log_file}"

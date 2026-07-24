@@ -1,1 +1,1 @@
-Android applications from Waydroid appear here after running batocera-waydroid-update.
+The managed Waydroid launcher and exported Android applications appear here.

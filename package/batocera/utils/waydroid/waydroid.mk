@@ -16,7 +16,10 @@ WAYDROID_DEPENDENCIES = \
 	lxc \
 	python-gbinder \
 	python-gobject \
-	python3
+	python3 \
+	dialog \
+	sqlite \
+	xterm
 
 define WAYDROID_BUILD_CMDS
 	true
@@ -34,8 +37,6 @@ define WAYDROID_INSTALL_TARGET_CMDS
 
 	$(INSTALL) -D -m 0755 $(WAYDROID_PKGDIR)/batocera-waydroid-init \
 		$(TARGET_DIR)/usr/bin/batocera-waydroid-init
-	$(INSTALL) -D -m 0755 $(WAYDROID_PKGDIR)/batocera-waydroid-arm \
-		$(TARGET_DIR)/usr/bin/batocera-waydroid-arm
 	$(INSTALL) -D -m 0755 $(WAYDROID_PKGDIR)/batocera-waydroid-session \
 		$(TARGET_DIR)/usr/bin/batocera-waydroid-session
 	$(INSTALL) -D -m 0755 $(WAYDROID_PKGDIR)/batocera-waydroid-postboot \
@@ -48,6 +49,10 @@ define WAYDROID_INSTALL_TARGET_CMDS
 		$(TARGET_DIR)/usr/bin/batocera-waydroid-platform-launch
 	$(INSTALL) -D -m 0755 $(WAYDROID_PKGDIR)/batocera-waydroid-update \
 		$(TARGET_DIR)/usr/bin/batocera-waydroid-update
+	$(INSTALL) -D -m 0755 $(WAYDROID_PKGDIR)/batocera-waydroid-tools \
+		$(TARGET_DIR)/usr/bin/batocera-waydroid-tools
+	$(INSTALL) -D -m 0755 $(WAYDROID_PKGDIR)/batocera-waydroid-tools-launcher \
+		$(TARGET_DIR)/usr/bin/batocera-waydroid-tools-launcher
 	$(INSTALL) -D -m 0755 $(WAYDROID_PKGDIR)/waydroid-get-android-id \
 		$(TARGET_DIR)/usr/bin/waydroid-get-android-id
 	rm -f $(TARGET_DIR)/usr/share/batocera/services/waydroid
@@ -68,13 +73,11 @@ define WAYDROID_INSTALL_TARGET_CMDS
 	$(INSTALL) -D -m 0644 $(WAYDROID_PKGDIR)/android.keys \
 		$(TARGET_DIR)/usr/share/evmapy/android.keys
 	ln -sf android.keys $(TARGET_DIR)/usr/share/evmapy/waydroid.keys
-	$(INSTALL) -D -m 0644 $(WAYDROID_PKGDIR)/files/usr/share/batocera/waydroid/README.libndk \
-		$(TARGET_DIR)/usr/share/batocera/waydroid/README.libndk
-	if test -d $(WAYDROID_PKGDIR)/files/usr/share/batocera/waydroid/libndk; then \
-		mkdir -p $(TARGET_DIR)/usr/share/batocera/waydroid; \
-		cp -a $(WAYDROID_PKGDIR)/files/usr/share/batocera/waydroid/libndk \
-			$(TARGET_DIR)/usr/share/batocera/waydroid/; \
-	fi
+	rm -rf $(TARGET_DIR)/usr/share/batocera/waydroid/libndk
+	rm -f \
+		$(TARGET_DIR)/usr/bin/batocera-waydroid-arm \
+		$(TARGET_DIR)/usr/share/batocera/waydroid/README.libndk \
+		$(TARGET_DIR)/usr/share/batocera/waydroid/libndk-files.list
 endef
 
 $(eval $(generic-package))

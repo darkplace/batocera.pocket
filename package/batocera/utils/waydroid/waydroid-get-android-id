@@ -1,37 +1,74 @@
 #!/bin/bash
 set -euo pipefail
 
-GSF_DB="/data/data/com.google.android.gsf/databases/gservices.db"
+PROFILE_FILE="/userdata/system/configs/waydroid/image-profile"
+WAYDROID_CFG="/var/lib/waydroid/waydroid.cfg"
+GSF_DB="/userdata/system/.local/share/waydroid/data/data/com.google.android.gsf/databases/gservices.db"
+ANDROID_GSF_DB="/data/data/com.google.android.gsf/databases/gservices.db"
 REGISTER_URL="https://www.google.com/android/uncertified"
 
-status="$(waydroid status 2>/dev/null || true)"
-
-if ! printf '%s\n' "${status}" | grep -q '^Session:[[:space:]]*RUNNING'; then
-    echo "Waydroid is not running."
-    echo "Launch Waydroid first, open Play Store once, then run this script again."
-    exit 1
+profile="standard-gapps"
+if [ -f "${PROFILE_FILE}" ]; then
+    profile="$(tr -d '\r\n' < "${PROFILE_FILE}")"
 fi
 
-android_id="$(waydroid shell -- sh -c "sqlite3 ${GSF_DB} 'select value from main where name = \"android_id\";'" 2>/dev/null | tr -d '\r')"
+case "${profile}" in
+    standard-vanilla|android-tv-vanilla)
+        echo "The selected Waydroid profile does not include Google apps."
+        echo "There is no Google Services Framework registration ID to register."
+        exit 1
+        ;;
+esac
+
+[ -f "${WAYDROID_CFG}" ] || {
+    echo "Waydroid is not initialized."
+    echo "Launch Waydroid first, then open Play Store once."
+    exit 1
+}
+
+android_id=""
+if [ -f "${GSF_DB}" ]; then
+    android_id="$(
+        sqlite3 -readonly "${GSF_DB}" \
+            'SELECT value FROM main WHERE name = "android_id" LIMIT 1;' \
+            2>/dev/null | head -n1 | tr -d '\r' || true
+    )"
+fi
 
 if [ -z "${android_id}" ]; then
-    echo "No android_id was returned."
-    echo "Make sure Waydroid is still running and open Play Store once before retrying."
+    status="$(waydroid status 2>/dev/null || true)"
+    if printf '%s\n' "${status}" | grep -q '^Container:[[:space:]]*RUNNING'; then
+        android_id="$(
+            waydroid shell -- sh -c \
+                "sqlite3 '${ANDROID_GSF_DB}' 'select value from main where name = \"android_id\" limit 1;'" \
+                2>/dev/null | tr -d '\r' || true
+        )"
+    fi
+fi
+
+if [ -z "${android_id}" ]; then
+    cat <<EOF
+No Google Services Framework android_id is available yet.
+
+Launch Waydroid, complete the initial setup, and open Play Store once. You can
+then close Waydroid and run this tool again; the ID is read from persistent
+userdata, so the container does not need to remain running.
+EOF
     exit 1
 fi
 
 cat <<EOF
 Waydroid Google Play registration
 
-1. Copy this android_id:
+Device android_id:
+
 ${android_id}
 
-2. While signed into the same Google account you use in Waydroid, open:
+Registration page:
+
 ${REGISTER_URL}
 
-3. Paste the android_id there and register the device.
-
-4. Wait a few minutes for Google services to reflect the change.
-
-5. Restart Waydroid and check Play Store again.
+Sign in with the Google account used in Waydroid, paste the numeric ID, and
+register it. Wait several minutes, then restart Waydroid before checking Play
+Store again.
 EOF

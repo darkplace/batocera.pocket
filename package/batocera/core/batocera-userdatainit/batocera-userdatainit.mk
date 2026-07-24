@@ -12,6 +12,9 @@ define BATOCERA_USERDATAINIT_INSTALL_TARGET_CMDS
 	mkdir -p $(TARGET_DIR)/usr/share/batocera
 	rsync -arv $(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/core/batocera-userdatainit/datainit/ $(TARGET_DIR)/usr/share/batocera/datainit/
 	rm -f $(TARGET_DIR)/usr/share/batocera/datainit/roms/ports/Steam_Gamescope_Smoke_Test.sh
+	if [ "$(BR2_PACKAGE_WAYDROID)" != "y" ]; then \
+		rm -f $(TARGET_DIR)/usr/share/batocera/datainit/roms/tools/Start_Waydroid.sh; \
+	fi
 endef
 
 define BATOCERA_USERDATAINIT_REMOVE_ALLY_HOTKEYS

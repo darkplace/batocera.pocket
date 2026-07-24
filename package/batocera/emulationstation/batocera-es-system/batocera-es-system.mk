@@ -109,6 +109,34 @@ define BATOCERA_ES_SYSTEM_INSTALL_MOTION_SENSOR_CALIBRATION_TOOL
 endef
 endif
 
+ifeq ($(BR2_PACKAGE_WAYDROID),y)
+define BATOCERA_ES_SYSTEM_INSTALL_WAYDROID_TOOLS
+	$(INSTALL) -D -m 0644 \
+		$(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/core/batocera-desktopapps/icons/waydroid.png \
+		$(TARGET_DIR)/usr/share/batocera/datainit/roms/android/images/waydroid.png
+	gamelist="$(TARGET_DIR)/usr/share/batocera/datainit/roms/emulator/gamelist.xml"; \
+	if [ -f "$${gamelist}" ] && ! grep -q './Waydroid_Tools.sh' "$${gamelist}"; then \
+		awk '/<\/gameList>/ { \
+			print "  <game>"; \
+			print "    <path>./Waydroid_Tools.sh</path>"; \
+			print "    <name>Waydroid Tools</name>"; \
+			print "    <image>../android/images/waydroid.png</image>"; \
+			print "  </game>"; \
+		} { print }' "$${gamelist}" > "$${gamelist}.tmp" && \
+		mv "$${gamelist}.tmp" "$${gamelist}"; \
+	fi
+endef
+else
+define BATOCERA_ES_SYSTEM_INSTALL_WAYDROID_TOOLS
+	rm -f \
+		$(TARGET_DIR)/usr/share/batocera/datainit/roms/emulator/Waydroid_Tools.sh \
+		$(TARGET_DIR)/usr/share/batocera/datainit/roms/emulator/Waydroid_Tools.sh.keys \
+		$(TARGET_DIR)/usr/share/batocera/datainit/roms/android/Waydroid.waydroid \
+		$(TARGET_DIR)/usr/share/batocera/datainit/roms/android/gamelist.xml \
+		$(TARGET_DIR)/usr/share/batocera/datainit/roms/android/images/waydroid.png
+endef
+endif
+
 define BATOCERA_ES_SYSTEM_BUILD_CMDS
 	$(HOST_DIR)/bin/python \
 		$(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/emulationstation/batocera-es-system/batocera-es-system.py \
@@ -157,6 +185,7 @@ define BATOCERA_ES_SYSTEM_INSTALL_TARGET_CMDS
 	$(BATOCERA_ES_SYSTEM_INSTALL_STEAM_TOOLS)
 	$(BATOCERA_ES_SYSTEM_INSTALL_GAMEPAD_CALIBRATION_TOOL)
 	$(BATOCERA_ES_SYSTEM_INSTALL_MOTION_SENSOR_CALIBRATION_TOOL)
+	$(BATOCERA_ES_SYSTEM_INSTALL_WAYDROID_TOOLS)
 endef
 
 $(eval $(generic-package))

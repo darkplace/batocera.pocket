@@ -4,10 +4,75 @@ set -euo pipefail
 LOG_FILE="/userdata/system/logs/waydroid-init.log"
 STATE_ROOT="/userdata/system/waydroid"
 STATE_VARLIB="${STATE_ROOT}/var-lib"
-DESIRED_SYSTEM_TYPE="${BATOCERA_WAYDROID_SYSTEM_TYPE:-GAPPS}"
+PROFILE_FILE="/userdata/system/configs/waydroid/image-profile"
 WAYDROID_CFG="/var/lib/waydroid/waydroid.cfg"
+WAYDROID_BASE_PROP="/var/lib/waydroid/waydroid_base.prop"
+EXPECTED_IMAGES_DIR="/var/lib/waydroid/images"
 
-mkdir -p /userdata/system/logs "${STATE_VARLIB}"
+PROFILE="standard-gapps"
+PROFILE_LABEL="Standard Android with Google apps"
+SYSTEM_TYPE="GAPPS"
+SYSTEM_CHANNEL="https://ota.waydro.id/system"
+VENDOR_CHANNEL="https://ota.waydro.id/vendor"
+ROM_TYPE="lineage"
+IMAGE_ARCH="waydroid_arm64"
+
+mkdir -p /userdata/system/logs "${STATE_VARLIB}" "$(dirname "${PROFILE_FILE}")"
+
+read_profile() {
+    local requested="standard-gapps"
+
+    if [ -f "${PROFILE_FILE}" ]; then
+        requested="$(tr -d '\r\n' < "${PROFILE_FILE}")"
+    fi
+
+    case "${requested}" in
+        standard-gapps)
+            ;;
+        standard-vanilla)
+            PROFILE="standard-vanilla"
+            PROFILE_LABEL="Standard Android without Google apps"
+            SYSTEM_TYPE="VANILLA"
+            ;;
+        android-tv-gapps)
+            PROFILE="android-tv-gapps"
+            PROFILE_LABEL="Android TV with Google apps"
+            SYSTEM_CHANNEL="https://waydroid-atv.github.io/ota/a16-tv/system"
+            VENDOR_CHANNEL="https://waydroid-atv.github.io/ota/a16-tv/vendor"
+            ;;
+        android-tv-vanilla)
+            PROFILE="android-tv-vanilla"
+            PROFILE_LABEL="Android TV without Google apps"
+            SYSTEM_TYPE="VANILLA"
+            SYSTEM_CHANNEL="https://waydroid-atv.github.io/ota/a16-tv/system"
+            VENDOR_CHANNEL="https://waydroid-atv.github.io/ota/a16-tv/vendor"
+            ;;
+        *)
+            echo "[$(date '+%F %T')] Invalid Waydroid image profile '${requested}', using standard-gapps" |
+                tee -a "${LOG_FILE}"
+            ;;
+    esac
+}
+
+profile_matches_config() {
+    local expected_system_ota="${SYSTEM_CHANNEL}/${ROM_TYPE}/${IMAGE_ARCH}/${SYSTEM_TYPE}.json"
+    local expected_vendor_prefix="${VENDOR_CHANNEL}/${IMAGE_ARCH}/"
+
+    python3 - "${WAYDROID_CFG}" "${expected_system_ota}" "${expected_vendor_prefix}" <<'PY'
+import configparser
+import sys
+
+cfg_path, expected_system, expected_vendor_prefix = sys.argv[1:]
+cfg = configparser.RawConfigParser()
+cfg.read(cfg_path)
+if not cfg.has_section("waydroid"):
+    raise SystemExit(1)
+system_ota = cfg.get("waydroid", "system_ota", fallback="")
+vendor_ota = cfg.get("waydroid", "vendor_ota", fallback="")
+if system_ota != expected_system or not vendor_ota.startswith(expected_vendor_prefix):
+    raise SystemExit(1)
+PY
+}
 
 # Keep waydroid state in userdata (persistent), even though /var is tmpfs.
 if [ -L /var/lib/waydroid ]; then
@@ -24,6 +89,8 @@ if [ ! -x /usr/bin/waydroid ]; then
     echo "waydroid binary is not installed" | tee -a "${LOG_FILE}"
     exit 1
 fi
+
+read_profile
 
 has_network() {
     if command -v ip >/dev/null 2>&1; then
@@ -56,6 +123,51 @@ if "properties" not in cfg:
 cfg["properties"][key] = value
 with open(cfg_path, "w") as handle:
     cfg.write(handle)
+PY
+}
+
+ensure_waydroid_base_property() {
+    local key="$1"
+    local value="$2"
+
+    if [ ! -f "${WAYDROID_BASE_PROP}" ]; then
+        echo "[$(date '+%F %T')] Missing ${WAYDROID_BASE_PROP}; cannot configure Android TV setup" |
+            tee -a "${LOG_FILE}"
+        return 1
+    fi
+
+    python3 - "${WAYDROID_BASE_PROP}" "${key}" "${value}" <<'PY'
+import os
+import sys
+import tempfile
+
+prop_path, key, value = sys.argv[1:]
+prefix = f"{key}="
+with open(prop_path, encoding="utf-8") as handle:
+    lines = handle.read().splitlines()
+
+updated = []
+replaced = False
+for line in lines:
+    if line.startswith(prefix):
+        if not replaced:
+            updated.append(f"{key}={value}")
+            replaced = True
+    else:
+        updated.append(line)
+if not replaced:
+    updated.append(f"{key}={value}")
+
+directory = os.path.dirname(prop_path)
+fd, temporary = tempfile.mkstemp(prefix=".waydroid_base.prop.", dir=directory, text=True)
+try:
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        handle.write("\n".join(updated) + "\n")
+    os.chmod(temporary, os.stat(prop_path).st_mode & 0o777)
+    os.replace(temporary, prop_path)
+finally:
+    if os.path.exists(temporary):
+        os.unlink(temporary)
 PY
 }
 
@@ -146,20 +258,27 @@ PY
 
 need_waydroid_init=0
 need_waydroid_download=0
-expected_images_dir="/var/lib/waydroid/images"
 
 if [ ! -f "${WAYDROID_CFG}" ]; then
     need_waydroid_init=1
     need_waydroid_download=1
-elif [ ! -f "${expected_images_dir}/system.img" ] || [ ! -f "${expected_images_dir}/vendor.img" ]; then
+elif [ ! -f "${EXPECTED_IMAGES_DIR}/system.img" ] || [ ! -f "${EXPECTED_IMAGES_DIR}/vendor.img" ]; then
     need_waydroid_init=1
     need_waydroid_download=1
-elif ! grep -Eq "^system_ota = .*/${DESIRED_SYSTEM_TYPE}\\.json$" "${WAYDROID_CFG}" 2>/dev/null; then
-    need_waydroid_init=1
+elif ! profile_matches_config; then
+    echo "[$(date '+%F %T')] Existing Waydroid images do not match selected profile ${PROFILE}" |
+        tee -a "${LOG_FILE}"
+    echo "Use Emulator -> Waydroid Tools -> Select image profile. Profile changes require a clean container reset." |
+        tee -a "${LOG_FILE}"
+    if command -v batocera-flash-screen >/dev/null 2>&1; then
+        /usr/bin/batocera-flash-screen 7 "#ffffff" "Waydroid profile mismatch." 23 >/dev/null 2>&1 || true
+        /usr/bin/batocera-flash-screen 8 "#ffffff" "Use Waydroid Tools to switch profiles safely." 18 >/dev/null 2>&1 || true
+    fi
+    exit 1
 fi
 
 if [ "${need_waydroid_init}" -eq 1 ]; then
-    mkdir -p "${expected_images_dir}"
+    mkdir -p "${EXPECTED_IMAGES_DIR}"
 
     # Upstream Waydroid skips downloads when the cached datetimes are current,
     # even if the image files were deleted. Force a re-download in that case.
@@ -171,32 +290,35 @@ if [ "${need_waydroid_init}" -eq 1 ]; then
     fi
 
     if ! has_network; then
-        echo "[$(date '+%F %T')] Waydroid init/update requires internet" | tee -a "${LOG_FILE}"
+        echo "[$(date '+%F %T')] ${PROFILE_LABEL} initialization requires internet" |
+            tee -a "${LOG_FILE}"
         if command -v batocera-flash-screen >/dev/null 2>&1; then
-            if [ "${need_waydroid_download}" -eq 1 ]; then
-                /usr/bin/batocera-flash-screen 6 "#ffffff" "Waydroid image download needs Wi-Fi." 22 >/dev/null 2>&1 || true
-                /usr/bin/batocera-flash-screen 6 "#ffffff" "Please connect to the internet and launch again." 20 >/dev/null 2>&1 || true
-            else
-                /usr/bin/batocera-flash-screen 6 "#ffffff" "Waydroid GAPPS update needs Wi-Fi." 22 >/dev/null 2>&1 || true
-                /usr/bin/batocera-flash-screen 6 "#ffffff" "Please connect to the internet and launch again." 20 >/dev/null 2>&1 || true
-            fi
+            /usr/bin/batocera-flash-screen 6 "#ffffff" "Waydroid image download needs Wi-Fi." 22 >/dev/null 2>&1 || true
+            /usr/bin/batocera-flash-screen 6 "#ffffff" "Please connect to the internet and launch again." 20 >/dev/null 2>&1 || true
         fi
         exit 1
     fi
 
     if command -v batocera-flash-screen >/dev/null 2>&1; then
-        if [ "${need_waydroid_download}" -eq 1 ]; then
-            /usr/bin/batocera-flash-screen 12 "#ffffff" "Downloading Waydroid image. Please wait, this can take a while." 18 >/dev/null 2>&1 || true
-        else
-            /usr/bin/batocera-flash-screen 12 "#ffffff" "Updating Waydroid to GAPPS. Please wait, this can take a while." 18 >/dev/null 2>&1 || true
-        fi
+        /usr/bin/batocera-flash-screen 12 "#ffffff" "Downloading ${PROFILE_LABEL}. Please wait." 18 >/dev/null 2>&1 || true
     fi
 
-    echo "[$(date '+%F %T')] Running waydroid init -f -s ${DESIRED_SYSTEM_TYPE}" | tee -a "${LOG_FILE}"
-    /usr/bin/waydroid init -f -s "${DESIRED_SYSTEM_TYPE}" "$@" >>"${LOG_FILE}" 2>&1
+    echo "[$(date '+%F %T')] Initializing profile ${PROFILE}: ${PROFILE_LABEL}" |
+        tee -a "${LOG_FILE}"
+    /usr/bin/waydroid init -f "$@" \
+        -c "${SYSTEM_CHANNEL}" \
+        -v "${VENDOR_CHANNEL}" \
+        -r "${ROM_TYPE}" \
+        -s "${SYSTEM_TYPE}" >>"${LOG_FILE}" 2>&1
 
-    if [ ! -f "${expected_images_dir}/system.img" ] || [ ! -f "${expected_images_dir}/vendor.img" ]; then
-        echo "[$(date '+%F %T')] Waydroid init finished but expected images are still missing from ${expected_images_dir}" | tee -a "${LOG_FILE}"
+    if [ ! -f "${EXPECTED_IMAGES_DIR}/system.img" ] || [ ! -f "${EXPECTED_IMAGES_DIR}/vendor.img" ]; then
+        echo "[$(date '+%F %T')] Waydroid init finished but expected images are still missing from ${EXPECTED_IMAGES_DIR}" |
+            tee -a "${LOG_FILE}"
+        exit 1
+    fi
+    if ! profile_matches_config; then
+        echo "[$(date '+%F %T')] Waydroid init returned images from an unexpected OTA profile" |
+            tee -a "${LOG_FILE}"
         exit 1
     fi
 fi
@@ -210,7 +332,10 @@ if configure_waydroid_hardware_gpu >>"${LOG_FILE}" 2>&1; then
     rebuild_waydroid_base_props >>"${LOG_FILE}" 2>&1 || true
 fi
 
-# Re-apply native-bridge support after init refreshes images/overlay state.
-if [ -x /usr/bin/batocera-waydroid-arm ]; then
-    /usr/bin/batocera-waydroid-arm >>"${LOG_FILE}" 2>&1
-fi
+# WayDroid-ATV documents this property as the supported way to skip its broken
+# Bluetooth remote-pairing page.
+case "${PROFILE}" in
+    android-tv-*)
+        ensure_waydroid_base_property "atv.setup.bt_remote_pairing" "false"
+        ;;
+esac

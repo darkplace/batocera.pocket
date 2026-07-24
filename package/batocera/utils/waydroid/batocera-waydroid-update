@@ -6,6 +6,8 @@ LEGACY_ROMS_DIR="/userdata/roms/waydroid"
 ROMS_DIR="/userdata/roms/android"
 IMAGES_DIR="${ROMS_DIR}/images"
 GAMELIST="${ROMS_DIR}/gamelist.xml"
+FULL_UI_ROM="Waydroid.waydroid"
+FULL_UI_IMAGE="images/waydroid.png"
 TMP_XML="/tmp/batocera-waydroid-update.tmp"
 ES_SERVER="http://127.0.0.1:1234"
 
@@ -63,6 +65,15 @@ rm -f "$GAMELIST"
 
 es_add_game_begin
 added=0
+
+if [ -f "${ROMS_DIR}/${FULL_UI_ROM}" ]; then
+    full_ui_image=""
+    if [ -f "${ROMS_DIR}/${FULL_UI_IMAGE}" ]; then
+        full_ui_image="./${FULL_UI_IMAGE}"
+    fi
+    es_add_game "${FULL_UI_ROM}" "Waydroid" "${full_ui_image}"
+    added=$((added + 1))
+fi
 
 if [ -d "$DESKTOP_DIR" ]; then
     while IFS= read -r desktop_file; do

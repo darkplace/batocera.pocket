@@ -14,17 +14,28 @@ import xml.etree.ElementTree as ET
 
 
 LAUNCHER_DIRECTORIES = (
+    "roms/android",
     "roms/apps",
     "roms/emulator",
     "roms/heroic",
     "roms/lutris",
     "roms/steam",
 )
-ASSET_DIRECTORIES = ("roms/apps", "roms/emulator", "roms/steam")
-LAUNCHER_SUFFIXES = (".sh", ".steam", ".keys")
+ASSET_DIRECTORIES = ("roms/android", "roms/apps", "roms/emulator", "roms/steam")
+LAUNCHER_SUFFIXES = (".sh", ".steam", ".waydroid", ".keys")
 ASSET_SUFFIXES = (".png", ".svg")
 STAMP_RELATIVE_PATH = Path("system/datainit-managed.sha256")
-FINGERPRINT_SCHEMA = b"batocera-datainit-managed-v1\0"
+FINGERPRINT_SCHEMA = b"batocera-datainit-managed-v2\0"
+LEGACY_WAYDROID_APP_LAUNCHER = Path("roms/apps/Waydroid.sh")
+LEGACY_WAYDROID_APP_ICON = Path("roms/apps/images/waydroid.png")
+LEGACY_WAYDROID_APP_GAMELIST = Path("roms/apps/gamelist.xml")
+LEGACY_WAYDROID_APP_ENTRY = "./Waydroid.sh"
+LEGACY_WAYDROID_APP_CONTENT = (
+    b"#!/bin/bash\n"
+    b"set -euo pipefail\n"
+    b"exec /usr/bin/batocera-waydroid-session\n"
+)
+WAYDROID_ANDROID_ICON = Path("roms/android/images/waydroid.png")
 
 
 def iter_managed_files(source_root: Path) -> list[Path]:
@@ -97,6 +108,21 @@ def files_match(source: Path, destination: Path, mode: int) -> bool:
         return False
 
 
+def atomic_write_gamelist(tree: ET.ElementTree, destination: Path, mode: int) -> None:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary = destination.with_name(destination.name + ".datainit.tmp")
+    try:
+        ET.indent(tree, space="  ")
+        tree.write(temporary, encoding="utf-8", xml_declaration=True)
+        temporary.chmod(mode)
+        os.replace(temporary, destination)
+    finally:
+        try:
+            temporary.unlink()
+        except FileNotFoundError:
+            pass
+
+
 def merge_gamelist(source: Path, destination: Path) -> None:
     if not destination.exists():
         atomic_copy(source, destination, 0o644)
@@ -125,19 +151,67 @@ def merge_gamelist(source: Path, destination: Path) -> None:
     if not changed:
         return
 
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    temporary = destination.with_name(destination.name + ".datainit.tmp")
     destination_mode = stat.S_IMODE(destination.stat().st_mode)
+    atomic_write_gamelist(destination_tree, destination, destination_mode)
+
+
+def remove_gamelist_entry(destination: Path, managed_path: str) -> int:
+    if not destination.exists():
+        return 0
+
+    tree = ET.parse(destination)
+    root = tree.getroot()
+    if root.tag != "gameList":
+        raise ValueError(f"cannot edit non-gameList XML: {destination}")
+
+    matches = [
+        game
+        for game in root.findall("game")
+        if game.findtext("path") == managed_path
+    ]
+    if not matches:
+        return 0
+
+    for game in matches:
+        root.remove(game)
+
+    destination_mode = stat.S_IMODE(destination.stat().st_mode)
+    atomic_write_gamelist(tree, destination, destination_mode)
+    return len(matches)
+
+
+def retire_legacy_waydroid_app_launcher(
+    source_root: Path, destination_root: Path
+) -> None:
+    launcher = destination_root / LEGACY_WAYDROID_APP_LAUNCHER
     try:
-        ET.indent(destination_tree, space="  ")
-        destination_tree.write(temporary, encoding="utf-8", xml_declaration=True)
-        temporary.chmod(destination_mode)
-        os.replace(temporary, destination)
-    finally:
-        try:
-            temporary.unlink()
-        except FileNotFoundError:
-            pass
+        launcher_content = launcher.read_bytes()
+    except FileNotFoundError:
+        return
+
+    if launcher_content != LEGACY_WAYDROID_APP_CONTENT:
+        return
+
+    gamelist = destination_root / LEGACY_WAYDROID_APP_GAMELIST
+    removed_entries = remove_gamelist_entry(gamelist, LEGACY_WAYDROID_APP_ENTRY)
+
+    print(f"Retiring {launcher}")
+    launcher.unlink()
+
+    legacy_icon = destination_root / LEGACY_WAYDROID_APP_ICON
+    android_icon = source_root / WAYDROID_ANDROID_ICON
+    try:
+        icons_match = file_digest(legacy_icon) == file_digest(android_icon)
+    except (FileNotFoundError, OSError):
+        icons_match = False
+    if icons_match:
+        print(f"Retiring {legacy_icon}")
+        legacy_icon.unlink()
+
+    if removed_entries:
+        print(
+            f"Removed {removed_entries} legacy Waydroid entry from {gamelist}"
+        )
 
 
 def sync_managed(source_root: Path, destination_root: Path, force: bool) -> int:
@@ -164,6 +238,8 @@ def sync_managed(source_root: Path, destination_root: Path, force: bool) -> int:
             if not files_match(source, destination, mode):
                 print(f"Updating {destination}")
                 atomic_copy(source, destination, mode)
+
+        retire_legacy_waydroid_app_launcher(source_root, destination_root)
 
         stamp.parent.mkdir(parents=True, exist_ok=True)
         temporary_stamp = stamp.with_name(stamp.name + ".tmp")

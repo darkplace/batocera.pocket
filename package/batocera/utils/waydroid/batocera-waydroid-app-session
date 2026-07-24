@@ -2,9 +2,14 @@
 set -e
 
 usage() {
-    echo "usage: batocera-waydroid-app-session <package>" >&2
+    echo "usage: batocera-waydroid-app-session <package|@full-ui>" >&2
     exit 1
 }
 
 [ $# -eq 1 ] || usage
+
+if [ "$1" = "@full-ui" ]; then
+    exec /usr/bin/batocera-waydroid-session
+fi
+
 exec /usr/bin/batocera-waydroid-session --app "$1"
