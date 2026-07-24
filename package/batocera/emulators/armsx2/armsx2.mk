@@ -4,7 +4,7 @@
 #
 ################################################################################
 
-ARMSX2_VERSION = 33c3f5a2cb084261580d751cb471bacdac2c33b7
+ARMSX2_VERSION = bbdfe15aaf657823423e7e8d49461ab26c7f2c86
 ARMSX2_SITE = https://github.com/ARMSX2/ARMSX2.git
 ARMSX2_SITE_METHOD = git
 ARMSX2_LICENSE = GPL-3.0-or-later
