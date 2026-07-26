@@ -398,12 +398,12 @@ fetch_url_stdout() {
     local url="$1"
 
     if command -v curl >/dev/null 2>&1; then
-        curl -fsSL "${url}"
+        curl -fsSL --retry 5 --retry-delay 2 --connect-timeout 20 --max-time 60 "${url}"
         return
     fi
 
     if command -v wget >/dev/null 2>&1; then
-        wget -qO- "${url}"
+        wget -qO- -t 5 --timeout=20 "${url}"
         return
     fi
 
@@ -415,7 +415,20 @@ download_file() {
     local target="$2"
     local label="${3:-Steam setup}"
     local tmp="${target}.part"
+    local tmp_url="${tmp}.url"
+    local previous_url=""
     local progress_pid=""
+
+    if [[ -e "${tmp}" ]]; then
+        if [[ -r "${tmp_url}" ]]; then
+            IFS= read -r previous_url < "${tmp_url}" || true
+        fi
+        if [[ "${previous_url}" != "${url}" ]]; then
+            log_msg "${label}: discarding a partial download from a different URL"
+            rm -f "${tmp}"
+        fi
+    fi
+    printf '%s\n' "${url}" > "${tmp_url}"
 
     start_progress() {
         if gamescope_install_flashes_enabled; then
@@ -447,6 +460,7 @@ download_file() {
             }; then
             stop_progress
             mv -f "${tmp}" "${target}"
+            rm -f "${tmp_url}"
             log_msg "${label}: download complete"
             if gamescope_install_flashes_enabled; then
                 flash_msg 3 "${label}: download complete" 20
@@ -461,6 +475,7 @@ download_file() {
         if wget -c -t 10 --timeout=20 --read-timeout="${BATOCERA_STEAM_DOWNLOAD_STALL_SECS:-60}" -O "${tmp}" "${url}" >> "${log}" 2>&1; then
             stop_progress
             mv -f "${tmp}" "${target}"
+            rm -f "${tmp_url}"
             log_msg "${label}: download complete"
             if gamescope_install_flashes_enabled; then
                 flash_msg 3 "${label}: download complete" 20
@@ -470,7 +485,7 @@ download_file() {
         stop_progress
     fi
 
-    rm -f "${tmp}"
+    rm -f "${tmp}" "${tmp_url}"
     return 1
 }
 
@@ -1319,6 +1334,69 @@ link_arm64_runtime_libs() {
     fi
 }
 
+arm64_runtime_tree_ready() {
+    local runtime_dir="$1"
+    local runtime_lib_dir
+
+    [[ -d "${runtime_dir}" ]] || return 1
+    runtime_lib_dir="$(find "${runtime_dir}" -path '*/files/lib/aarch64-linux-gnu' -type d -print -quit 2>/dev/null || true)"
+    [[ -n "${runtime_lib_dir}" ]]
+}
+
+arm64_runtime_url_candidates() {
+    local base_url="${BATOCERA_STEAM_RUNTIME_BASE_URL:-https://repo.steampowered.com/steamrt3c/images}"
+    local archive_name="steam-runtime-steamrt-arm64.tar.xz"
+    local pointer_url
+    local runtime_version
+    local candidate
+    local -a pointer_urls=()
+    local -a candidates=()
+    local -A seen=()
+
+    base_url="${base_url%/}"
+
+    if [[ -n "${BATOCERA_STEAM_RUNTIME_URL:-}" ]]; then
+        candidates+=("${BATOCERA_STEAM_RUNTIME_URL}")
+    fi
+
+    if [[ -n "${BATOCERA_STEAM_RUNTIME_VERSION_URL:-}" ]]; then
+        pointer_urls+=("${BATOCERA_STEAM_RUNTIME_VERSION_URL}")
+    fi
+    pointer_urls+=(
+        "${base_url}/latest-public-stable.txt"
+        "${base_url}/latest-steam-client-general-availability.txt"
+        "${base_url}/latest-public-beta.txt"
+    )
+
+    for pointer_url in "${pointer_urls[@]}"; do
+        if ! runtime_version="$(fetch_url_stdout "${pointer_url}" 2>> "${log}")"; then
+            log_msg "Steam runtime: failed to resolve version from ${pointer_url}"
+            continue
+        fi
+        runtime_version="$(printf '%s' "${runtime_version}" | tr -d '[:space:]')"
+        if [[ ! "${runtime_version}" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]; then
+            log_msg "Steam runtime: ignoring invalid version from ${pointer_url}"
+            continue
+        fi
+        candidates+=("${base_url}/${runtime_version}/${archive_name}")
+    done
+
+    # Valve also publishes moving directory aliases. Keep these as a last
+    # resort in case the version pointer service is temporarily unavailable.
+    candidates+=(
+        "${base_url}/latest-public-stable/${archive_name}"
+        "${base_url}/latest-steam-client-general-availability/${archive_name}"
+        "${base_url}/latest-public-beta/${archive_name}"
+    )
+
+    for candidate in "${candidates[@]}"; do
+        [[ -n "${candidate}" ]] || continue
+        [[ -z "${seen["${candidate}"]:-}" ]] || continue
+        seen["${candidate}"]=1
+        printf '%s\n' "${candidate}"
+    done
+}
+
 ensure_steam_taskset_shim() {
     local shim_dir="${STEAM_ROOT}/batocera-bin"
     local shim="${shim_dir}/taskset"
@@ -1355,18 +1433,57 @@ EOF
 
 ensure_arm64_steam_runtime() {
     local archive="${STEAM_ROOT}/steam-runtime-steamrt-arm64.tar.xz"
-    local url="https://repo.steampowered.com/steamrt3c/images/latest-public-beta/steam-runtime-steamrt-arm64.tar.xz"
+    local runtime_dir="${STEAM_ROOT}/steam-runtime-steamrt-arm64"
+    local staging_dir="${STEAM_ROOT}/.steam-runtime-steamrt-arm64.install.$$"
+    local staged_runtime="${staging_dir}/steam-runtime-steamrt-arm64"
+    local selected_url=""
+    local url
+    local -a urls=()
 
-    if [[ -d "${STEAM_ROOT}/steam-runtime-steamrt-arm64" ]]; then
+    if arm64_runtime_tree_ready "${runtime_dir}"; then
         link_arm64_runtime_libs
         return
     fi
+    if [[ -d "${runtime_dir}" ]]; then
+        log_msg "ARM64 Steam runtime install is incomplete; reinstalling it."
+    fi
 
     command -v tar >/dev/null 2>&1 || die "tar is required to install the ARM64 Steam runtime."
-    log_msg "Downloading ARM64 Steam runtime from ${url}"
-    download_file "${url}" "${archive}" "Steam runtime" || die "Failed to download ARM64 Steam runtime."
-    tar -xf "${archive}" -C "${STEAM_ROOT}" >> "${log}" 2>&1 || die "Failed to extract ARM64 Steam runtime."
+    mapfile -t urls < <(arm64_runtime_url_candidates)
+    [[ "${#urls[@]}" -gt 0 ]] || die "Could not resolve an ARM64 Steam runtime URL."
+
+    for url in "${urls[@]}"; do
+        log_msg "Downloading ARM64 Steam runtime from ${url}"
+        if ! download_file "${url}" "${archive}" "Steam runtime"; then
+            log_msg "Steam runtime: download failed from ${url}; trying the next source."
+            continue
+        fi
+        if ! tar -tf "${archive}" >/dev/null 2>&1; then
+            log_msg "Steam runtime: ${url} returned an invalid archive; trying the next source."
+            rm -f "${archive}"
+            continue
+        fi
+        selected_url="${url}"
+        break
+    done
+    [[ -n "${selected_url}" ]] || die "Failed to download a valid ARM64 Steam runtime."
+
+    rm -rf "${staging_dir}"
+    mkdir -p "${staging_dir}"
+    if ! tar -xf "${archive}" -C "${staging_dir}" >> "${log}" 2>&1; then
+        rm -rf "${staging_dir}"
+        die "Failed to extract ARM64 Steam runtime."
+    fi
+    if ! arm64_runtime_tree_ready "${staged_runtime}"; then
+        rm -rf "${staging_dir}"
+        die "ARM64 Steam runtime archive has an unexpected layout."
+    fi
+
+    rm -rf "${runtime_dir}"
+    mv "${staged_runtime}" "${runtime_dir}"
+    rm -rf "${staging_dir}"
     rm -f "${archive}"
+    log_msg "Installed ARM64 Steam runtime from ${selected_url}"
     link_arm64_runtime_libs
 }
 
