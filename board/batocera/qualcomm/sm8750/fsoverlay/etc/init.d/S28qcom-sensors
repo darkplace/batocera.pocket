@@ -2,6 +2,7 @@
 
 ROOT_PID="/var/run/hexagonrpcd-adsp-root.pid"
 SENSORS_PID="/var/run/hexagonrpcd-adsp-sensors.pid"
+ROOT_STARTUP_PID="/var/run/qcom-sensors-root-startup.pid"
 LOG_DIR="/userdata/system/logs"
 LOG_FILE="${LOG_DIR}/qcom-sensors.log"
 FASTRPC_DEVICE=""
@@ -174,6 +175,17 @@ start_root_listener() {
 	return 1
 }
 
+start_root_listener_async() {
+	startup_pid=$(cat "${ROOT_STARTUP_PID}" 2>/dev/null)
+	if [ -n "${startup_pid}" ] && kill -0 "${startup_pid}" 2>/dev/null; then
+		return 0
+	fi
+
+	rm -f "${ROOT_STARTUP_PID}"
+	start-stop-daemon --start --quiet --background --make-pidfile \
+		--pidfile "${ROOT_STARTUP_PID}" --startas "$0" -- root-listener
+}
+
 start_daemons() {
 	configure_device || return 0
 	[ -x /usr/bin/hexagonrpcd ] || return 0
@@ -198,15 +210,17 @@ start_daemons() {
 	# finish creating its signed process before RootPD opens the channel.
 	sleep 1
 
-	if ! start_root_listener; then
-		log_msg "ADSP RootPD FastRPC listener exited during startup"
+	if ! start_root_listener_async; then
+		log_msg "Failed to queue ADSP RootPD FastRPC listener startup"
 		return 1
 	fi
 
-	log_msg "Started ADSP SensorsPD and RootPD FastRPC listeners"
+	log_msg "Started ADSP SensorsPD and queued RootPD FastRPC listener startup"
 }
 
 stop_daemons() {
+	start-stop-daemon --stop --quiet --remove-pidfile \
+		--pidfile "${ROOT_STARTUP_PID}" --retry TERM/3/KILL/2 || true
 	start-stop-daemon --stop --quiet --remove-pidfile \
 		--pidfile "${SENSORS_PID}" --retry TERM/3/KILL/2 || true
 	start-stop-daemon --stop --quiet --remove-pidfile \
@@ -219,6 +233,20 @@ case "${1:-}" in
 		;;
 	stop)
 		stop_daemons
+		;;
+	root-listener)
+		configure_device || exit 0
+		if ! select_fastrpc_device; then
+			log_msg "No ADSP FastRPC device available for RootPD listener"
+			rm -f "${ROOT_STARTUP_PID}"
+			exit 1
+		fi
+		if start_root_listener; then
+			log_msg "Started ADSP RootPD FastRPC listener"
+		else
+			log_msg "ADSP RootPD FastRPC listener exited during startup"
+		fi
+		rm -f "${ROOT_STARTUP_PID}"
 		;;
 	restart)
 		stop_daemons

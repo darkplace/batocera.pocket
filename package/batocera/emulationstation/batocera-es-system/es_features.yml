@@ -15971,6 +15971,8 @@ eden:
       - sm8750
       submenu: LSFG-VK
       prompt: LSFG MULTIPLIER
+      description: Set the target frame-rate multiplication. Higher values insert
+        more generated frames and can increase artifacts and GPU load.
       choices:
         2x (Default): 2
         3x: 3
@@ -15983,6 +15985,8 @@ eden:
       - sm8750
       submenu: LSFG-VK
       prompt: LSFG FLOW SCALE
+      description: Scale the optical-flow processing resolution. Lower values reduce
+        GPU load but can reduce frame-generation quality.
       choices:
         1.0 (Default x86): '1.0'
         0.75 (Default ARM): '0.75'
@@ -15996,6 +16000,8 @@ eden:
       - sm8750
       submenu: LSFG-VK
       prompt: LSFG PERFORMANCE MODE
+      description: Use a lower-cost frame-generation path for better performance
+        at a possible image-quality cost.
       choices:
         'Off': 0
         'On': 1
@@ -16007,6 +16013,8 @@ eden:
       - sm8750
       submenu: LSFG-VK
       prompt: LSFG HDR MODE
+      description: Process generated frames as HDR. Enable only when the game and
+        display are using HDR.
       choices:
         'Off': 0
         'On': 1
@@ -16018,6 +16026,8 @@ eden:
       - sm8750
       submenu: LSFG-VK
       prompt: LSFG PRESENT MODE
+      description: Select Vulkan presentation behavior. Auto is recommended; FIFO
+        avoids tearing, Mailbox can reduce latency, and Immediate may tear.
       choices:
         Auto (Default): ''
         FIFO: fifo
@@ -16118,6 +16128,8 @@ eden:
     eden_cpuaccuracy:
       submenu: CPU
       prompt: CPU ACCURACY
+      description: Auto is recommended. Accurate can fix CPU emulation issues at
+        a performance cost; Unsafe favors speed and may break some games.
       choices:
         Auto (Default): 0
         Accurate: 1
@@ -16138,18 +16150,24 @@ eden:
     eden_async_gpu:
       submenu: RENDERING
       prompt: ASYNC GPU EMULATION
+      description: Run GPU emulation asynchronously to improve performance. Disable
+        to troubleshoot timing, graphics, or stability problems.
       choices:
         Disabled: 'false'
         Enabled: 'true'
     eden_async_shaders:
       submenu: RENDERING
       prompt: ASYNC SHADER COMPILE
+      description: Compile shaders in the background to reduce stutter. Some effects
+        may appear late, and a few games require this disabled.
       choices:
         Disabled: 'false'
         Enabled: 'true'
     eden_nvdec_emu:
       submenu: RENDERING
       prompt: NVDEC EMULATION
+      description: Choose how video decoding is emulated. GPU is faster when supported,
+        CPU is more compatible, and Disabled leaves videos blank.
       choices:
         Disabled: 0
         CPU (Default): 1
@@ -16157,12 +16175,16 @@ eden:
     eden_astc:
       submenu: RENDERING
       prompt: ASTC DECODING
+      description: Decode ASTC textures on the CPU for compatibility or on the GPU
+        for lower CPU load. GPU decoding depends on driver support.
       choices:
         CPU: 0
         GPU (Default): 1
     eden_astc_recompression:
       submenu: RENDERING
       prompt: ASTC RECOMPRESSION
+      description: Recompress ASTC textures to reduce VRAM use. BC1 uses less memory
+        with lower quality; BC3 better preserves texture detail and alpha.
       choices:
         Uncompressed (Default): 0
         BC1: 1
@@ -16170,12 +16192,16 @@ eden:
     eden_vram_mode:
       submenu: RENDERING
       prompt: VRAM USAGE MODE
+      description: Conservative releases resources sooner to reduce memory use.
+        Aggressive keeps more resources resident for speed and needs more VRAM.
       choices:
         Conservative: 0
         Aggressive: 1
     eden_async_presentation:
       submenu: RENDERING
       prompt: ASYNC PRESENTATION
+      description: Present Vulkan frames on a separate thread. This can improve
+        frame pacing but may cause driver-specific issues.
       choices:
         Auto (Default): ''
         Disabled: 'false'
@@ -16183,27 +16209,34 @@ eden:
     eden_fast_gpu_time:
       submenu: RENDERING
       prompt: FAST GPU TIME
+      description: Use relaxed GPU timing for better performance. This can cause
+        timing errors or graphical problems in sensitive games.
       choices:
         Auto (Default): ''
         Disabled: 'false'
         Enabled: 'true'
     eden_single_window:
       prompt: SINGLE WINDOW MODE
+      description: Keep game output and the emulator interface in one window.
       choices:
         Enabled: 'true'
         Disabled: 'false'
     eden_inverse_button:
       prompt: INVERT A/B X/Y BUTTONS
+      description: Swap A with B and X with Y to change between Nintendo-style and
+        physical gamepad face-button layouts.
       choices:
         Disabled: 'false'
         Enabled: 'true'
     eden_rumble:
       prompt: CONTROLLER RUMBLE
+      description: Enable vibration feedback on supported controllers.
       choices:
         Disabled: 'false'
         Enabled: 'true'
     eden_rumble_strength:
       prompt: RUMBLE STRENGTH
+      description: Set controller vibration intensity.
       choices:
         100%: 100
         75%: 75
@@ -16302,6 +16335,8 @@ yuzu:
       - x86-64-v3
       submenu: LSFG-VK
       prompt: LSFG MULTIPLIER
+      description: Set the target frame-rate multiplication. Higher values insert
+        more generated frames and can increase artifacts and GPU load.
       choices:
         2x (Default): 2
         3x: 3
@@ -16312,6 +16347,8 @@ yuzu:
       - x86-64-v3
       submenu: LSFG-VK
       prompt: LSFG FLOW SCALE
+      description: Scale the optical-flow processing resolution. Lower values reduce
+        GPU load but can reduce frame-generation quality.
       choices:
         1.0 (Default x86): '1.0'
         0.75 (Default ARM): '0.75'
@@ -16323,6 +16360,8 @@ yuzu:
       - x86-64-v3
       submenu: LSFG-VK
       prompt: LSFG PERFORMANCE MODE
+      description: Use a lower-cost frame-generation path for better performance
+        at a possible image-quality cost.
       choices:
         'Off': 0
         'On': 1
@@ -16332,6 +16371,8 @@ yuzu:
       - x86-64-v3
       submenu: LSFG-VK
       prompt: LSFG HDR MODE
+      description: Process generated frames as HDR. Enable only when the game and
+        display are using HDR.
       choices:
         'Off': 0
         'On': 1
@@ -16341,6 +16382,8 @@ yuzu:
       - x86-64-v3
       submenu: LSFG-VK
       prompt: LSFG PRESENT MODE
+      description: Select Vulkan presentation behavior. Auto is recommended; FIFO
+        avoids tearing, Mailbox can reduce latency, and Immediate may tear.
       choices:
         Auto (Default): ''
         FIFO: fifo
@@ -16434,6 +16477,8 @@ yuzu:
     yuzu_cpuaccuracy:
       submenu: CPU
       prompt: CPU ACCURACY
+      description: Auto is recommended. Accurate can fix CPU emulation issues at
+        a performance cost; Unsafe favors speed and may break some games.
       choices:
         Auto (Default): 0
         Accurate: 1
@@ -16449,18 +16494,24 @@ yuzu:
     yuzu_async_gpu:
       submenu: RENDERING
       prompt: ASYNC GPU EMULATION
+      description: Run GPU emulation asynchronously to improve performance. Disable
+        to troubleshoot timing, graphics, or stability problems.
       choices:
         Disabled: 'false'
         Enabled: 'true'
     yuzu_async_shaders:
       submenu: RENDERING
       prompt: ASYNC SHADER COMPILE
+      description: Compile shaders in the background to reduce stutter. Some effects
+        may appear late, and a few games require this disabled.
       choices:
         Disabled: 'false'
         Enabled: 'true'
     yuzu_nvdec_emu:
       submenu: RENDERING
       prompt: NVDEC EMULATION
+      description: Choose how video decoding is emulated. GPU is faster when supported,
+        CPU is more compatible, and Disabled leaves videos blank.
       choices:
         Disabled: 0
         CPU (Default): 1
@@ -16468,12 +16519,16 @@ yuzu:
     yuzu_astc:
       submenu: RENDERING
       prompt: ASTC DECODING
+      description: Decode ASTC textures on the CPU for compatibility or on the GPU
+        for lower CPU load. GPU decoding depends on driver support.
       choices:
         CPU: 0
         GPU (Default): 1
     yuzu_astc_recompression:
       submenu: RENDERING
       prompt: ASTC RECOMPRESSION
+      description: Recompress ASTC textures to reduce VRAM use. BC1 uses less memory
+        with lower quality; BC3 better preserves texture detail and alpha.
       choices:
         Uncompressed (Default): 0
         BC1: 1
@@ -16481,12 +16536,16 @@ yuzu:
     yuzu_vram_mode:
       submenu: RENDERING
       prompt: VRAM USAGE MODE
+      description: Conservative releases resources sooner to reduce memory use.
+        Aggressive keeps more resources resident for speed and needs more VRAM.
       choices:
         Conservative: 0
         Aggressive: 1
     yuzu_async_presentation:
       submenu: RENDERING
       prompt: ASYNC PRESENTATION
+      description: Present Vulkan frames on a separate thread. This can improve
+        frame pacing but may cause driver-specific issues.
       choices:
         Auto (Default): ''
         Disabled: 'false'
@@ -16494,27 +16553,34 @@ yuzu:
     yuzu_fast_gpu_time:
       submenu: RENDERING
       prompt: FAST GPU TIME
+      description: Use relaxed GPU timing for better performance. This can cause
+        timing errors or graphical problems in sensitive games.
       choices:
         Auto (Default): ''
         Disabled: 'false'
         Enabled: 'true'
     yuzu_single_window:
       prompt: SINGLE WINDOW MODE
+      description: Keep game output and the emulator interface in one window.
       choices:
         Enabled: 'true'
         Disabled: 'false'
     yuzu_inverse_button:
       prompt: INVERT A/B X/Y BUTTONS
+      description: Swap A with B and X with Y to change between Nintendo-style and
+        physical gamepad face-button layouts.
       choices:
         Disabled: 'false'
         Enabled: 'true'
     yuzu_rumble:
       prompt: CONTROLLER RUMBLE
+      description: Enable vibration feedback on supported controllers.
       choices:
         Disabled: 'false'
         Enabled: 'true'
     yuzu_rumble_strength:
       prompt: RUMBLE STRENGTH
+      description: Set controller vibration intensity.
       choices:
         100%: 100
         75%: 75
@@ -16625,6 +16691,8 @@ ryujinx:
       - sm8750
       submenu: SYSTEM
       prompt: LSFG MULTIPLIER
+      description: Set the target frame-rate multiplication. Higher values insert
+        more generated frames and can increase artifacts and GPU load.
       choices:
         2x (Default): 2
         3x: 3
@@ -16639,6 +16707,8 @@ ryujinx:
       - sm8750
       submenu: SYSTEM
       prompt: LSFG FLOW SCALE
+      description: Scale the optical-flow processing resolution. Lower values reduce
+        GPU load but can reduce frame-generation quality.
       choices:
         1.0 (Default x86): '1.0'
         0.75 (Default ARM): '0.75'
@@ -16654,6 +16724,8 @@ ryujinx:
       - sm8750
       submenu: SYSTEM
       prompt: LSFG PERFORMANCE MODE
+      description: Use a lower-cost frame-generation path for better performance
+        at a possible image-quality cost.
       choices:
         'Off': 0
         'On': 1
@@ -16667,6 +16739,8 @@ ryujinx:
       - sm8750
       submenu: SYSTEM
       prompt: LSFG HDR MODE
+      description: Process generated frames as HDR. Enable only when the game and
+        display are using HDR.
       choices:
         'Off': 0
         'On': 1
@@ -16680,6 +16754,8 @@ ryujinx:
       - sm8750
       submenu: SYSTEM
       prompt: LSFG PRESENT MODE
+      description: Select Vulkan presentation behavior. Auto is recommended; FIFO
+        avoids tearing, Mailbox can reduce latency, and Immediate may tear.
       choices:
         Auto (Default): ''
         FIFO: fifo
@@ -16817,6 +16893,8 @@ ryujinx:
     ryujinx_color_space_passthrough:
       submenu: RENDERING
       prompt: COLOR SPACE PASSTHROUGH
+      description: Pass the emulated color space directly to the output. This may
+        improve HDR color handling but can produce incorrect colors on unsupported displays.
       choices:
         Off (Default): 'false'
         'On': 'true'
@@ -16903,6 +16981,7 @@ ryujinx:
     ryujinx_audio_volume:
       submenu: AUDIO
       prompt: AUDIO VOLUME
+      description: Set the emulator output volume.
       choices:
         100% (Default): 100
         75%: 75
@@ -16920,6 +16999,8 @@ ryujinx:
     ryujinx_internet:
       submenu: NETWORK
       prompt: GUEST INTERNET ACCESS
+      description: Allow emulated software to access the host network. This is separate
+        from local wireless and LDN multiplayer modes.
       choices:
         Off (Default): 'false'
         'On': 'true'
@@ -16943,18 +17024,23 @@ ryujinx:
     ryujinx_rumble:
       submenu: CONTROLS
       prompt: CONTROLLER RUMBLE
+      description: Enable vibration feedback on supported controllers.
       choices:
         Enabled (Default): 'true'
         Disabled: 'false'
     ryujinx_motion:
       submenu: CONTROLS
       prompt: MOTION CONTROLS
+      description: Enable gyroscope and accelerometer input, including the configured
+        DSU motion source when available.
       choices:
         Enabled (Default): 'true'
         Disabled: 'false'
     ryujinx_deadzone_left:
       submenu: CONTROLS
       prompt: LEFT STICK DEADZONE
+      description: Ignore small movements around the center of the left analog stick.
+        Increase this if the stick drifts.
       choices:
         0% (Default): 0
         5%: 0.05
@@ -16964,6 +17050,8 @@ ryujinx:
     ryujinx_deadzone_right:
       submenu: CONTROLS
       prompt: RIGHT STICK DEADZONE
+      description: Ignore small movements around the center of the right analog stick.
+        Increase this if the stick drifts.
       choices:
         0% (Default): 0
         5%: 0.05
@@ -16973,6 +17061,8 @@ ryujinx:
     ryujinx_skip_user_profiles:
       submenu: UI
       prompt: SKIP USER PROFILE SELECTOR
+      description: Launch games with the configured default profile instead of showing
+        the user-selection dialog.
       choices:
         Enabled (Default): 'true'
         Disabled: 'false'
@@ -16987,6 +17077,7 @@ ryujinx:
     ryujinx_hide_cursor:
       submenu: UI
       prompt: HIDE CURSOR
+      description: Choose when the mouse cursor is hidden over the game window.
       choices:
         On idle (Default): OnIdle
         Always: Always
@@ -16994,12 +17085,15 @@ ryujinx:
     ryujinx_show_title_bar:
       submenu: UI
       prompt: SHOW TITLE BAR
+      description: Show the desktop window title bar while a game is running.
       choices:
         Off (Default): 'false'
         'On': 'true'
     ryujinx_focus_lost:
       submenu: UI
       prompt: WHEN FOCUS IS LOST
+      description: Choose how emulation, input, and audio behave when another window
+        receives focus.
       choices:
         Do nothing (Default): DoNothing
         Block input: BlockInput

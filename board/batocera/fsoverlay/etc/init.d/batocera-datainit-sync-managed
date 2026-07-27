@@ -36,6 +36,22 @@ LEGACY_WAYDROID_APP_CONTENT = (
     b"exec /usr/bin/batocera-waydroid-session\n"
 )
 WAYDROID_ANDROID_ICON = Path("roms/android/images/waydroid.png")
+WAYDROID_TOOLS_LAUNCHER = Path("roms/emulator/Waydroid_Tools.sh")
+DISABLED_WAYDROID_FILES = (
+    Path("roms/android/Waydroid.waydroid"),
+    WAYDROID_ANDROID_ICON,
+    LEGACY_WAYDROID_APP_LAUNCHER,
+    LEGACY_WAYDROID_APP_ICON,
+    WAYDROID_TOOLS_LAUNCHER,
+    Path("roms/emulator/Waydroid_Tools.sh.keys"),
+    Path("roms/emulator/images/waydroid.png"),
+    Path("roms/tools/Start_Waydroid.sh"),
+)
+DISABLED_WAYDROID_GAMELIST_ENTRIES = (
+    (Path("roms/android/gamelist.xml"), "./Waydroid.waydroid"),
+    (LEGACY_WAYDROID_APP_GAMELIST, LEGACY_WAYDROID_APP_ENTRY),
+    (Path("roms/emulator/gamelist.xml"), "./Waydroid_Tools.sh"),
+)
 
 
 def iter_managed_files(source_root: Path) -> list[Path]:
@@ -214,6 +230,27 @@ def retire_legacy_waydroid_app_launcher(
         )
 
 
+def retire_disabled_waydroid(source_root: Path, destination_root: Path) -> None:
+    if (source_root / WAYDROID_TOOLS_LAUNCHER).exists():
+        return
+
+    for relative_path in DISABLED_WAYDROID_FILES:
+        artifact = destination_root / relative_path
+        try:
+            artifact.unlink()
+        except FileNotFoundError:
+            continue
+        print(f"Retiring disabled Waydroid artifact {artifact}")
+
+    for relative_gamelist, managed_path in DISABLED_WAYDROID_GAMELIST_ENTRIES:
+        gamelist = destination_root / relative_gamelist
+        removed_entries = remove_gamelist_entry(gamelist, managed_path)
+        if removed_entries:
+            print(
+                f"Removed {removed_entries} disabled Waydroid entry from {gamelist}"
+            )
+
+
 def sync_managed(source_root: Path, destination_root: Path, force: bool) -> int:
     managed_files = iter_managed_files(source_root)
     fingerprint = managed_fingerprint(source_root, managed_files)
@@ -240,6 +277,7 @@ def sync_managed(source_root: Path, destination_root: Path, force: bool) -> int:
                 atomic_copy(source, destination, mode)
 
         retire_legacy_waydroid_app_launcher(source_root, destination_root)
+        retire_disabled_waydroid(source_root, destination_root)
 
         stamp.parent.mkdir(parents=True, exist_ok=True)
         temporary_stamp = stamp.with_name(stamp.name + ".tmp")

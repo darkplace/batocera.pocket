@@ -114,7 +114,9 @@ odin3_move_streams() {
 odin3_select_existing_sink() {
     local target=
 
-    if amixer -c 0 cget name='Headphone Jack' 2>/dev/null | grep -q 'values=on' &&
+    # ASoC exposes jack state as a CARD control, not a MIXER control.
+    if amixer -c 0 cget iface=CARD,name='Headphone Jack' 2>/dev/null |
+	grep -q 'values=on' &&
        pactl list short sinks 2>/dev/null | awk '{ print $2 }' | grep -qxF "${ODIN3_HEADPHONE_SINK}"
     then
 	target=${ODIN3_HEADPHONE_SINK}
@@ -207,6 +209,12 @@ odin3_restart_wireplumber() {
     done
 }
 
+odin3_start_jack_monitor() {
+    test -x /usr/bin/sm8750-odin3-display-audio || return 0
+    /usr/bin/setsid -f /usr/bin/sm8750-odin3-display-audio --monitor-jack \
+	>/dev/null 2>&1
+}
+
 apply_odin3_volume_deferred() {
     local volume=$1
     local remaining=240
@@ -290,6 +298,7 @@ start_audioconfig() {
     if grep -aq 'ayn,odin3' /proc/device-tree/compatible 2>/dev/null &&
        test "${DEVICE}" = auto && test "${PROFILE}" = auto
     then
+	odin3_start_jack_monitor
 	/usr/bin/setsid -f "$0" odin3-deferred-volume "${VOLUME}" \
 	    >/dev/null 2>&1
 	echo "OK"

@@ -6,7 +6,7 @@
 
 # When updating the version, please also update kodi-jsonschemabuilder
 # and kodi-texturepacker
-KODI_VERSION_MAJOR = 21.2
+KODI_VERSION_MAJOR = 21.3
 KODI_VERSION_NAME = Omega
 KODI_VERSION = $(KODI_VERSION_MAJOR)-$(KODI_VERSION_NAME)
 KODI_SITE = $(call github,xbmc,xbmc,$(KODI_VERSION))
@@ -101,8 +101,10 @@ KODI_CONF_OPTS += \
 	-DPYTHON_INCLUDE_DIRS=$(STAGING_DIR)/usr/include/python$(PYTHON3_VERSION_MAJOR) \
 	-DPYTHON_PATH=$(STAGING_DIR)/usr/lib/python$(PYTHON3_VERSION_MAJOR) \
 	-DPYTHON_VER=$(PYTHON3_VERSION_MAJOR) \
-	-DWITH_JSONSCHEMABUILDER=$(HOST_DIR)/bin/ \
-	-DWITH_TEXTUREPACKER=$(HOST_DIR)/bin/ \
+	-DWITH_JSONSCHEMABUILDER=$(HOST_DIR)/bin/kodi-JsonSchemaBuilder \
+	-DJSONSCHEMABUILDER_EXECUTABLE=$(HOST_DIR)/bin/kodi-JsonSchemaBuilder \
+	-DWITH_TEXTUREPACKER=$(HOST_DIR)/bin/kodi-TexturePacker \
+	-DTEXTUREPACKER_EXECUTABLE=$(HOST_DIR)/bin/kodi-TexturePacker \
 	-DLIBDVDCSS_URL=$(KODI_DL_DIR)/kodi-libdvdcss-$(KODI_LIBDVDCSS_VERSION).tar.gz \
 	-DLIBDVDNAV_URL=$(KODI_DL_DIR)/kodi-libdvdnav-$(KODI_LIBDVDNAV_VERSION).tar.gz \
 	-DLIBDVDREAD_URL=$(KODI_DL_DIR)/kodi-libdvdread-$(KODI_LIBDVDREAD_VERSION).tar.gz

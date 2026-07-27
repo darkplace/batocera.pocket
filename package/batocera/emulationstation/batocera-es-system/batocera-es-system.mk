@@ -114,13 +114,16 @@ define BATOCERA_ES_SYSTEM_INSTALL_WAYDROID_TOOLS
 	$(INSTALL) -D -m 0644 \
 		$(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/core/batocera-desktopapps/icons/waydroid.png \
 		$(TARGET_DIR)/usr/share/batocera/datainit/roms/android/images/waydroid.png
+	$(INSTALL) -D -m 0644 \
+		$(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/core/batocera-desktopapps/icons/waydroid.png \
+		$(TARGET_DIR)/usr/share/batocera/datainit/roms/emulator/images/waydroid.png
 	gamelist="$(TARGET_DIR)/usr/share/batocera/datainit/roms/emulator/gamelist.xml"; \
 	if [ -f "$${gamelist}" ] && ! grep -q './Waydroid_Tools.sh' "$${gamelist}"; then \
 		awk '/<\/gameList>/ { \
 			print "  <game>"; \
 			print "    <path>./Waydroid_Tools.sh</path>"; \
 			print "    <name>Waydroid Tools</name>"; \
-			print "    <image>../android/images/waydroid.png</image>"; \
+			print "    <image>./images/waydroid.png</image>"; \
 			print "  </game>"; \
 		} { print }' "$${gamelist}" > "$${gamelist}.tmp" && \
 		mv "$${gamelist}.tmp" "$${gamelist}"; \
@@ -131,6 +134,7 @@ define BATOCERA_ES_SYSTEM_INSTALL_WAYDROID_TOOLS
 	rm -f \
 		$(TARGET_DIR)/usr/share/batocera/datainit/roms/emulator/Waydroid_Tools.sh \
 		$(TARGET_DIR)/usr/share/batocera/datainit/roms/emulator/Waydroid_Tools.sh.keys \
+		$(TARGET_DIR)/usr/share/batocera/datainit/roms/emulator/images/waydroid.png \
 		$(TARGET_DIR)/usr/share/batocera/datainit/roms/android/Waydroid.waydroid \
 		$(TARGET_DIR)/usr/share/batocera/datainit/roms/android/gamelist.xml \
 		$(TARGET_DIR)/usr/share/batocera/datainit/roms/android/images/waydroid.png

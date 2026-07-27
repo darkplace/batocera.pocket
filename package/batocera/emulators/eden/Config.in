@@ -4,8 +4,8 @@ config BR2_PACKAGE_EDEN
 	help
 	  Eden Nintendo Switch emulator.
 
-	  This package installs the published Linux AppImage and wraps it with
-	  a Batocera runtime launcher under /usr/bin/eden.
+	  This package installs either the published Linux AppImage or a
+	  target-native build under /usr/bin/eden.
 
 if BR2_PACKAGE_EDEN
 
@@ -63,7 +63,7 @@ config BR2_PACKAGE_EDEN_NATIVE
 	select BR2_PACKAGE_ZSTD
 	help
 	  Build the UzuCore Eden standalone frontend natively instead of
-	  relying only on the upstream AppImage. The AppImage is still
-	  installed for fallback and comparison.
+	  relying only on the upstream AppImage. Targets may choose to omit
+	  the AppImage entirely.
 
 endif

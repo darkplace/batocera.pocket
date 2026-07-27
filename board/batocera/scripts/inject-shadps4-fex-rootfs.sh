@@ -28,6 +28,22 @@ FEX_QTLAUNCHER_CONFIG_DIR="${TARGET_DIR}/usr/share/fex-emu/shadps4-fex-qtlaunche
 LOG_DIR="${EXTERNAL_DIR}/output/build-logs"
 MANIFEST_FILE="${LOG_DIR}/${TARGET_LOWER}_shadps4_fex_rootfs_files.txt"
 
+# Check the ELF identification bytes directly instead of relying on file(1).
+# Buildroot's host file binary and the build container's magic.mgc can have
+# different database versions, while these bytes are stable: ELF64, little
+# endian, EM_X86_64 (0x003e).
+is_x86_64_elf() {
+    local elf_file="${1}"
+    local elf_ident
+    local elf_machine
+
+    [ -r "${elf_file}" ] || return 1
+    elf_ident="$(od -An -tx1 -N6 "${elf_file}" 2>/dev/null | tr -d '[:space:]')" || return 1
+    elf_machine="$(od -An -tx1 -j18 -N2 "${elf_file}" 2>/dev/null | tr -d '[:space:]')" || return 1
+
+    [ "${elf_ident}" = "7f454c460201" ] && [ "${elf_machine}" = "3e00" ]
+}
+
 if [ ! -x "${TARGET_DIR}/usr/bin/shadps4-fex" ]; then
     echo "shadps4-fex launcher is not installed for ${TARGET_LOWER}, skipping shadPS4 FEX rootfs injection."
     exit 0
@@ -87,21 +103,21 @@ if [ ! -e "${DEST_ROOT}/lib64/ld-linux-x86-64.so.2" ]; then
     exit 1
 fi
 
-if ! file -L "${DEST_ROOT}/lib64/ld-linux-x86-64.so.2" | grep -q "x86-64"; then
+if ! is_x86_64_elf "${DEST_ROOT}/lib64/ld-linux-x86-64.so.2"; then
     echo "ERROR: injected shadPS4 FEX loader is not x86-64" >&2
     exit 1
 fi
 
-if ! file -L "${DEST_SHADPS4}" | grep -q "x86-64"; then
+if ! is_x86_64_elf "${DEST_SHADPS4}"; then
     echo "ERROR: injected shadPS4 FEX binary is not x86-64" >&2
     exit 1
 fi
 
-if [ -e "${DEST_QTLAUNCHER}" ] && ! file -L "${DEST_QTLAUNCHER}" | grep -q "x86-64"; then
+if [ -e "${DEST_QTLAUNCHER}" ] && ! is_x86_64_elf "${DEST_QTLAUNCHER}"; then
     echo "ERROR: injected shadPS4 FEX Qt launcher is not x86-64" >&2
     exit 1
 fi
-if [ -e "${DEST_QTLAUNCHER_NATIVE}" ] && ! file -L "${DEST_QTLAUNCHER_NATIVE}" | grep -q "x86-64"; then
+if [ -e "${DEST_QTLAUNCHER_NATIVE}" ] && ! is_x86_64_elf "${DEST_QTLAUNCHER_NATIVE}"; then
     echo "ERROR: injected shadPS4 FEX Qt launcher is not x86-64" >&2
     exit 1
 fi

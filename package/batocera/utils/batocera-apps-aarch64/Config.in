@@ -1,7 +1,22 @@
 config BR2_PACKAGE_BATOCERA_APPS_AARCH64
-	bool "batocera apps aarch64 (AppImage bundle)"
+	bool "batocera apps aarch64"
 	depends on BR2_aarch64
+	depends on BR2_TOOLCHAIN_USES_GLIBC
+	depends on BR2_PACKAGE_HAS_LIBGBM
+	depends on BR2_PACKAGE_XORG7
+	select BR2_PACKAGE_ALSA_LIB
 	select BR2_PACKAGE_BROTLI
+	select BR2_PACKAGE_CA_CERTIFICATES
+	select BR2_PACKAGE_CUPS
+	select BR2_PACKAGE_DBUS
+	select BR2_PACKAGE_FONTCONFIG
+	select BR2_PACKAGE_LIBCURL
+	select BR2_PACKAGE_LIBERATION
+	select BR2_PACKAGE_LIBGTK3
+	select BR2_PACKAGE_LIBNSS
+	select BR2_PACKAGE_LIBNSPR
+	select BR2_PACKAGE_LIBXCB
+	select BR2_PACKAGE_LIBXKBCOMMON
 	select BR2_PACKAGE_P7ZIP
 	select BR2_PACKAGE_QT6BASE
 	select BR2_PACKAGE_QT6BASE_FONTCONFIG
@@ -12,10 +27,19 @@ config BR2_PACKAGE_BATOCERA_APPS_AARCH64
 	select BR2_PACKAGE_QT6BASE_PRINTSUPPORT
 	select BR2_PACKAGE_QT6BASE_WIDGETS
 	select BR2_PACKAGE_QT6BASE_XCB if BR2_PACKAGE_XORG7
+	select BR2_PACKAGE_VULKAN_LOADER
+	select BR2_PACKAGE_WGET
+	select BR2_PACKAGE_XLIB_LIBX11
+	select BR2_PACKAGE_XLIB_LIBXCOMPOSITE
+	select BR2_PACKAGE_XLIB_LIBXDAMAGE
+	select BR2_PACKAGE_XLIB_LIBXEXT
+	select BR2_PACKAGE_XLIB_LIBXFIXES
+	select BR2_PACKAGE_XLIB_LIBXRANDR
 	select BR2_PACKAGE_ZSTD
 	help
-	  Bundled aarch64 desktop applications exposed through an
-	  EmulationStation "apps" system.
+	  Bundled aarch64 desktop applications exposed through the
+	  EmulationStation "apps" system, including native Google Chrome.
 
-comment "batocera-apps-aarch64 needs an aarch64 target"
-	depends on !BR2_aarch64
+comment "batocera-apps-aarch64 needs a glibc aarch64 target with GBM"
+	depends on !BR2_aarch64 || !BR2_TOOLCHAIN_USES_GLIBC || !BR2_PACKAGE_HAS_LIBGBM || \
+		!BR2_PACKAGE_XORG7

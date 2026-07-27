@@ -11,6 +11,11 @@
     <image>./images/brave.png</image>
   </game>
   <game>
+    <path>./Chrome.sh</path>
+    <name>Google Chrome</name>
+    <image>./images/chrome.png</image>
+  </game>
+  <game>
     <path>./Firefox.sh</path>
     <name>Firefox</name>
     <image>./images/firefox.png</image>

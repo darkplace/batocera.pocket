@@ -36,6 +36,13 @@ if [ -z "${BATOCERA_TARGET}" ]; then
     BATOCERA_TARGET=$(echo "${BATOCERA_TARGET_CANDIDATES}" | head -n1)
 fi
 
+# Waydroid is unsupported on SM8750. Remove stale files left by an older
+# incremental output before generating the final root filesystem.
+if [ "${BATOCERA_TARGET}" = "SM8750" ]; then
+    bash "${BR2_EXTERNAL_BATOCERA_PATH}/board/batocera/qualcomm/sm8750/cleanup-waydroid.sh" \
+        "${TARGET_DIR}" || exit 1
+fi
+
 # Inject optional armhf multilib stack when a matching *_armhf_libs build
 # exists in output/. This enables /lib32 runtime for PortMaster/box86 flows.
 BATOCERA_INJECT_ARMHF_SCRIPT="${BR2_EXTERNAL_BATOCERA_PATH}/board/batocera/scripts/inject-armhf-libs.sh"
@@ -209,6 +216,32 @@ do
 	exit 1
     fi
 done
+
+# target2 persists across incremental builds, so a kernel bump can otherwise
+# leave the previous kernel's modules in rufomaculata.  Resolve the active
+# kernel's exact release from the configured source tree and prune only when
+# its replacement module directory is already present.
+ACTIVE_KERNEL_VERSION="$(sed -n 's/^BR2_LINUX_KERNEL_VERSION="\(.*\)"$/\1/p' "${BR2_CONFIG}")"
+ACTIVE_KERNEL_RELEASE=""
+if test -n "${ACTIVE_KERNEL_VERSION}" -a \
+        -r "${BUILD_DIR}/linux-${ACTIVE_KERNEL_VERSION}/include/config/kernel.release"
+then
+    ACTIVE_KERNEL_RELEASE="$(sed -n '1p' "${BUILD_DIR}/linux-${ACTIVE_KERNEL_VERSION}/include/config/kernel.release")"
+fi
+
+if test -n "${ACTIVE_KERNEL_RELEASE}" -a \
+        -d "${TARGET2_DIR}/lib/modules/${ACTIVE_KERNEL_RELEASE}"
+then
+    for KERNEL_MODULE_DIR in "${TARGET2_DIR}"/lib/modules/*
+    do
+        test -d "${KERNEL_MODULE_DIR}" || continue
+        if test "$(basename "${KERNEL_MODULE_DIR}")" != "${ACTIVE_KERNEL_RELEASE}"
+        then
+            echo "Removing stale kernel modules: ${KERNEL_MODULE_DIR}"
+            rm -rf "${KERNEL_MODULE_DIR}" || exit 1
+        fi
+    done
+fi
 
 # Rebuild module indexes after moving /lib into target2. External module
 # packages can leave modules.dep/modules.alias reflecting only their own

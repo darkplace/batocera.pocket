@@ -1,0 +1,164 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Mon, 27 Jul 2026 00:00:00 +0000
+Subject: [PATCH] video: prefer Iris V4L2 M2M decoders
+
+Use the stateful V4L2 M2M decoders exposed by the Qualcomm Iris driver
+for H.264, HEVC, and VP9. Treat them as hardware decoders inside Kodi so
+the generic FFmpeg GetFormat path does not immediately reopen them in
+software.
+
+Keep CODEC_FORCE_SOFTWARE functional and retry with FFmpeg's default
+software decoder when the V4L2 decoder cannot open or fails while
+decoding a stream.
+---
+ .../DVDCodecs/Video/DVDVideoCodecFFmpeg.cpp   | 69 ++++++++++++++++++-
+ 1 file changed, 66 insertions(+), 3 deletions(-)
+
+diff --git a/xbmc/cores/VideoPlayer/DVDCodecs/Video/DVDVideoCodecFFmpeg.cpp b/xbmc/cores/VideoPlayer/DVDCodecs/Video/DVDVideoCodecFFmpeg.cpp
+index d01b7787ad..c4de7d8b69 100644
+--- a/xbmc/cores/VideoPlayer/DVDCodecs/Video/DVDVideoCodecFFmpeg.cpp
++++ b/xbmc/cores/VideoPlayer/DVDCodecs/Video/DVDVideoCodecFFmpeg.cpp
+@@ -22,6 +22,7 @@
+ #include "utils/XTimeUtils.h"
+ #include "utils/log.h"
+ 
++#include <cstring>
+ #include <memory>
+ #include <mutex>
+ 
+@@ -50,9 +51,30 @@ enum DecoderState
+   STATE_SW_SINGLE,
+   STATE_HW_SINGLE,
+   STATE_HW_FAILED,
++  STATE_HW_V4L2M2M,
+   STATE_SW_MULTI
+ };
+ 
++static const char* GetV4L2M2MDecoderName(enum AVCodecID codec)
++{
++  switch (codec)
++  {
++    case AV_CODEC_ID_H264:
++      return "h264_v4l2m2m";
++    case AV_CODEC_ID_HEVC:
++      return "hevc_v4l2m2m";
++    case AV_CODEC_ID_VP9:
++      return "vp9_v4l2m2m";
++    default:
++      return nullptr;
++  }
++}
++
++static bool IsV4L2M2MDecoder(const AVCodec* codec)
++{
++  return codec && codec->wrapper_name && std::strcmp(codec->wrapper_name, "v4l2m2m") == 0;
++}
++
+ enum EFilterFlags {
+   FILTER_NONE                =  0x0,
+   FILTER_DEINTERLACE_BWDIF   =  0x1,  //< use first deinterlace mode
+@@ -339,12 +361,20 @@ bool CDVDVideoCodecFFmpeg::Open(CDVDStreamInfo &hints, CDVDCodecOptions &options
+   m_processInfo.SetSwDeinterlacingMethods();
+   m_processInfo.SetVideoInterlaced(false);
+ 
++  if (m_decoderState != STATE_HW_FAILED &&
++      !(hints.codecOptions & CODEC_FORCE_SOFTWARE))
++  {
++    const char* decoderName = GetV4L2M2MDecoderName(hints.codec);
++    if (decoderName)
++      pCodec = avcodec_find_decoder_by_name(decoderName);
++  }
++
+   // libdav1d av1 sw decoding is implemented as a separate decoder
+   // in ffmpeg which is always found first when calling `avcodec_find_decoder`.
+   // To get hwaccels we look for decoders registered for `av1` (unless sw decoding is enforced).
+   // The decoder state check is needed to succesfully fallback to sw decoding if
+   // necessary (on retry).
+-  if (hints.codec == AV_CODEC_ID_AV1 && m_decoderState != STATE_HW_FAILED &&
++  if (!pCodec && hints.codec == AV_CODEC_ID_AV1 && m_decoderState != STATE_HW_FAILED &&
+       !(hints.codecOptions & CODEC_FORCE_SOFTWARE))
+     pCodec = avcodec_find_decoder_by_name("av1");
+ 
+@@ -357,6 +387,8 @@ bool CDVDVideoCodecFFmpeg::Open(CDVDStreamInfo &hints, CDVDCodecOptions &options
+     return false;
+   }
+ 
++  const bool isV4L2M2M = IsV4L2M2MDecoder(pCodec);
++
+   CLog::Log(LOGINFO, "CDVDVideoCodecFFmpeg::Open() Using codec: {}",
+             pCodec->long_name ? pCodec->long_name : pCodec->name);
+ 
+@@ -375,7 +407,11 @@ bool CDVDVideoCodecFFmpeg::Open(CDVDStreamInfo &hints, CDVDCodecOptions &options
+ #endif
+ 
+   // setup threading model
+-  if (!(hints.codecOptions & CODEC_FORCE_SOFTWARE))
++  if (isV4L2M2M)
++  {
++    m_decoderState = STATE_HW_V4L2M2M;
++  }
++  else if (!(hints.codecOptions & CODEC_FORCE_SOFTWARE))
+   {
+     if (m_decoderState == STATE_NONE)
+     {
+@@ -428,7 +464,15 @@ bool CDVDVideoCodecFFmpeg::Open(CDVDStreamInfo &hints, CDVDCodecOptions &options
+   if (avcodec_open2(m_pCodecContext, pCodec, nullptr) < 0)
+   {
+     CLog::Log(LOGDEBUG,"CDVDVideoCodecFFmpeg::Open() Unable to open codec");
+     avcodec_free_context(&m_pCodecContext);
++    if (isV4L2M2M)
++    {
++      CLog::Log(LOGWARNING,
++                "CDVDVideoCodecFFmpeg::Open() V4L2 M2M decoder failed; retrying in software");
++      m_decoderState = STATE_HW_FAILED;
++      return Open(hints, options);
++    }
++
+     return false;
+   }
+ 
+@@ -548,7 +592,9 @@ void CDVDVideoCodecFFmpeg::UpdateName()
+   if(m_pHardware)
+     m_name += "-" + m_pHardware->Name();
+ 
+-  m_processInfo.SetVideoDecoderName(m_name, m_pHardware ? true : false);
++  const bool isHardware = m_pHardware || m_decoderState == STATE_HW_V4L2M2M;
++
++  m_processInfo.SetVideoDecoderName(m_name, isHardware);
+ 
+   CLog::Log(LOGDEBUG, "CDVDVideoCodecFFmpeg - Updated codec: {}", m_name);
+ }
+@@ -624,6 +670,14 @@ bool CDVDVideoCodecFFmpeg::AddData(const DemuxPacket &packet)
+   // error
+   else if (ret)
+   {
++    if (m_decoderState == STATE_HW_V4L2M2M)
++    {
++      CLog::Log(LOGWARNING,
++                "CDVDVideoCodecFFmpeg::AddData() V4L2 M2M decoder failed; retrying in software");
++      m_decoderState = STATE_HW_FAILED;
++      return false;
++    }
++
+     // handle VC_NOBUFFER error for hw accel
+     if (m_pHardware)
+     {
+@@ -771,6 +825,15 @@ CDVDVideoCodec::VCReturn CDVDVideoCodecFFmpeg::GetPicture(VideoPicture* pVideoPi
+   }
+   else if (ret)
+   {
++    if (m_decoderState == STATE_HW_V4L2M2M)
++    {
++      CLog::Log(
++          LOGWARNING,
++          "CDVDVideoCodecFFmpeg::GetPicture() V4L2 M2M decoder failed; retrying in software");
++      m_decoderState = STATE_HW_FAILED;
++      return VC_REOPEN;
++    }
++
+     CLog::Log(LOGERROR, "{} - avcodec_receive_frame returned failure", __FUNCTION__);
+     return VC_ERROR;
+   }
+-- 
+2.50.1

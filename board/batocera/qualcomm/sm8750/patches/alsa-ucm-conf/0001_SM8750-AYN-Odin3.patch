@@ -107,7 +107,7 @@ index 0000000..dc5211e
 +		PlaybackPCM "hw:${CardId},1"
 +		PlaybackMixer "default:${CardId}"
 +		PlaybackMixerElem "HP Digital"
-+		JackControl "Headphone Jack"
++		# Keep selectable when MBHC does not classify a 3.5 mm load.
 +		JackHWMute "Speaker"
 +	}
 +}

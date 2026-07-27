@@ -10,6 +10,9 @@ STATE_DIR=/userdata/system/.local/state
 STATE_FILE=${STATE_DIR}/odin3-display-audio-v2
 LOG_FILE=/userdata/system/logs/odin3-display-audio.log
 DISPLAY_STATUS_FILE=/var/run/batocera-switch-screen-checker-status
+JACK_MONITOR_PID_FILE=/var/run/sm8750-odin3-jack-monitor.pid
+WCD_POWER_CONTROL_FILE=
+WCD_POWER_CONTROL_ORIGINAL=
 
 CARD=alsa_card._sys_devices_platform_sound_sound_card0
 DP_PROFILE='HiFi (DisplayPort, Speaker)'
@@ -132,8 +135,120 @@ wait_for_sink() {
 	return 1
 }
 
+headset_input_event() {
+	for input_path in /sys/class/input/input*; do
+		[ -r "${input_path}/name" ] || continue
+		[ "$(cat "${input_path}/name" 2>/dev/null)" = "SM8750-AYN Headset Jack" ] || continue
+		for event_path in "${input_path}"/event*; do
+			[ -e "${event_path}" ] || continue
+			printf '/dev/input/%s\n' "${event_path##*/}"
+			return 0
+		done
+	done
+	return 1
+}
+
+physical_jack_state() {
+	input_event=$(headset_input_event) || return 1
+	evtest --query "${input_event}" 5 7 >/dev/null 2>&1
+	case "$?" in
+		10) printf '%s\n' connected ;;
+		0) printf '%s\n' disconnected ;;
+		*) return 1 ;;
+	esac
+}
+
 headphones_connected() {
-	amixer -c 0 cget name='Headphone Jack' 2>/dev/null | grep -q 'values=on'
+	# The mechanical switch covers powered and unusual loads that MBHC cannot
+	# classify.  Use the ASoC CARD control only when no input switch exists.
+	case "$(physical_jack_state)" in
+		connected) return 0 ;;
+		disconnected) return 1 ;;
+	esac
+	amixer -c 0 cget iface=CARD,name='Headphone Jack' 2>/dev/null |
+		grep -q 'values=on'
+}
+
+jack_irq_count() {
+	awk '/mbhc sw intr/ {
+		total = 0
+		for (field = 2; field <= NF; field++) {
+			if ($field !~ /^[0-9]+$/)
+				break
+			total += $field
+		}
+		print total
+		exit
+	}' /proc/interrupts 2>/dev/null
+}
+
+hold_wcd939x_jack_power() {
+	# The Odin 3 WCD939x TX slave loses MBHC out-of-band alerts while it is
+	# runtime-suspended.  Keep only that slave awake while automatic routing
+	# is monitoring the physical 3.5 mm jack.
+	for power_control in \
+		/sys/bus/soundwire/devices/sdw:*:0:0217:010e:00:3/power/control
+	do
+		[ -w "${power_control}" ] || continue
+		WCD_POWER_CONTROL_ORIGINAL=$(cat "${power_control}" 2>/dev/null)
+		case "${WCD_POWER_CONTROL_ORIGINAL}" in auto|on) ;; *) continue ;; esac
+		printf '%s\n' on > "${power_control}" || continue
+		WCD_POWER_CONTROL_FILE=${power_control}
+		return 0
+	done
+	return 1
+}
+
+release_wcd939x_jack_power() {
+	[ -n "${WCD_POWER_CONTROL_FILE}" ] || return 0
+	[ -w "${WCD_POWER_CONTROL_FILE}" ] || return 0
+	case "${WCD_POWER_CONTROL_ORIGINAL}" in
+		auto|on) printf '%s\n' "${WCD_POWER_CONTROL_ORIGINAL}" > "${WCD_POWER_CONTROL_FILE}" ;;
+	esac
+}
+
+monitor_jack() {
+	old_pid=$(cat "${JACK_MONITOR_PID_FILE}" 2>/dev/null)
+	case "${old_pid}" in
+		''|*[!0-9]*) ;;
+		*)
+			[ "${old_pid}" = "$$" ] || ! kill -0 "${old_pid}" 2>/dev/null || return 0
+			;;
+	esac
+	printf '%s\n' "$$" > "${JACK_MONITOR_PID_FILE}" || return 1
+	hold_wcd939x_jack_power || true
+	trap 'release_wcd939x_jack_power; rm -f "${JACK_MONITOR_PID_FILE}"' EXIT
+	trap 'exit 0' HUP INT TERM
+
+	previous_irq=
+	previous_jack_state=
+	power_retry=0
+	while is_odin3; do
+		if [ -n "${WCD_POWER_CONTROL_FILE}" ] &&
+		   [ ! -w "${WCD_POWER_CONTROL_FILE}" ]; then
+			WCD_POWER_CONTROL_FILE=
+			WCD_POWER_CONTROL_ORIGINAL=
+		fi
+		if [ -z "${WCD_POWER_CONTROL_FILE}" ]; then
+			if [ "${power_retry}" -le 0 ]; then
+				hold_wcd939x_jack_power || true
+				power_retry=40
+			else
+				power_retry=$((power_retry - 1))
+			fi
+		fi
+		current_irq=$(jack_irq_count)
+		current_jack_state=$(physical_jack_state 2>/dev/null)
+		if [ "${current_irq}" != "${previous_irq}" ] ||
+		   [ "${current_jack_state}" != "${previous_jack_state}" ]; then
+			if pipewire_ready; then
+				previous_irq=${current_irq}
+				previous_jack_state=${current_jack_state}
+				"$0" --jack-event
+			fi
+		fi
+		sleep 0.25
+	done
 }
 
 move_streams() {
@@ -146,6 +261,11 @@ move_streams() {
 }
 
 is_odin3 || exit 0
+
+if [ "${1:-}" = --monitor-jack ]; then
+	monitor_jack
+	exit $?
+fi
 
 # The DRM uevent arrives before the compositor's output list settles on this
 # device.  The hotplug checker passes the previous list; wait until its --init
@@ -218,6 +338,10 @@ restore_sink headphones "${HEADPHONE_SINK}"
 restore_sink speaker "${SPEAKER_SINK}"
 pactl set-default-sink "${target}" >/dev/null 2>&1 || exit 1
 move_streams "${target}"
-log_message "Hotplug routed automatic audio to ${route} at $(sink_volume "${target}")."
+case "${1:-}" in
+	--jack-event) event_name='3.5 mm jack event' ;;
+	*) event_name='Hotplug' ;;
+esac
+log_message "${event_name} routed automatic audio to ${route} at $(sink_volume "${target}")."
 
 exit 0

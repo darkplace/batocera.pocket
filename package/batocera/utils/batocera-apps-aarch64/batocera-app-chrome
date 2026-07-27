@@ -1,0 +1,37 @@
+#!/bin/sh
+set -eu
+
+app="/usr/share/batocera/apps/google-chrome/google-chrome"
+
+export HOME="/userdata/saves/apps/chrome"
+export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
+export XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
+export XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+
+mkdir -p "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_CACHE_HOME" "$XDG_RUNTIME_DIR" \
+    2>/dev/null || true
+
+if [ ! -x "$app" ]; then
+    echo "Google Chrome executable not found: $app" >&2
+    exit 1
+fi
+
+need_no_sandbox=0
+if [ "${BATOCERA_APPS_NO_SANDBOX:-0}" = "1" ] || \
+   [ "${BATOCERA_APPS_NO_SANDBOX:-false}" = "true" ]; then
+    need_no_sandbox=1
+elif [ "$(id -u)" = "0" ]; then
+    need_no_sandbox=1
+fi
+
+if [ -n "${BATOCERA_APPS_EXTRA_ARGS:-}" ]; then
+    # shellcheck disable=SC2086
+    set -- "$@" ${BATOCERA_APPS_EXTRA_ARGS}
+fi
+
+if [ "$need_no_sandbox" = "1" ]; then
+    exec "$app" --no-sandbox "$@"
+fi
+
+exec "$app" "$@"

@@ -1,6 +1,53 @@
 default:
   options:
     gpu_performance_profile: auto
+    opengl_driver: native
+
+ports:
+  options:
+    opengl_driver: native
+
+atomiswave:
+  options:
+    flycast_renderer: 4
+    opengl_driver: zink
+
+dreamcast:
+  options:
+    flycast_renderer: 4
+    opengl_driver: zink
+
+gamecube:
+  options:
+    gfxbackend: Vulkan
+    opengl_driver: zink
+
+naomi:
+  options:
+    flycast_renderer: 4
+    opengl_driver: zink
+
+naomi2:
+  options:
+    flycast_renderer: 4
+    opengl_driver: zink
+
+n64dd:
+  options:
+    opengl_driver: zink
+
+psx:
+  options:
+    duckstation_gfxbackend: Vulkan
+    opengl_driver: zink
+
+triforce:
+  options:
+    gfxbackend: Vulkan
+    opengl_driver: zink
+
+xbox:
+  options:
     opengl_driver: zink
 
 odcommander:
@@ -34,6 +81,10 @@ lcdgames:
 n64:
   emulator: libretro
   core:     mupen64plus-next
+  options:
+    mupen64plus-rdpPlugin: parallel
+    mupen64plus-rspPlugin: parallel
+    opengl_driver: zink
 nds:
   emulator: libretro
   core:     melonds
@@ -60,9 +111,32 @@ steam:
 psp:
   emulator: libretro
   core: ppsspp
+  options:
+    gfxbackend: 3 (VULKAN)
 ps2:
   emulator: aethersx2
   core:     aethersx2
+  options:
+    aethersx2_renderer: 14
+    gfxbackend: Vulkan
+    opengl_driver: zink
+ps3:
+  options:
+    rpcs3_gfxbackend: Vulkan
+psvita:
+  options:
+    vita3k_gfxbackend: Vulkan
+switch:
+  options:
+    eden_backend: 1
+    ryujinx_api: Vulkan
+    yuzu_backend: 1
+wii:
+  options:
+    gfxbackend: Vulkan
+wiiu:
+  options:
+    cemu_gfxbackend: 1
 plugnplay:
   emulator: mame
   core:     mame
@@ -129,6 +203,9 @@ xegs:
 xbox360:
   emulator: xenia-edge
   core:     xenia-edge
+  options:
+    gpu: Vulkan
+    xenia_api: Vulkan
 atom:
   emulator: mame
   core:     mame
@@ -162,6 +239,7 @@ saturn:
   options:
     decorations: none
     hud_support: none
+    opengl_driver: zink
 oricatmos:
   emulator: clk
   core:     clk

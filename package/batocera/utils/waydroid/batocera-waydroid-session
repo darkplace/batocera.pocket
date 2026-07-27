@@ -99,7 +99,8 @@ cleanup_waydroid() {
     /usr/bin/waydroid container stop >>"${LOG_FILE}" 2>&1 || true
 }
 
-trap cleanup_waydroid EXIT INT TERM
+trap cleanup_waydroid EXIT
+trap 'exit 0' INT TERM
 
 /usr/bin/batocera-waydroid-init >>"${LOG_FILE}" 2>&1 || exit 1
 
@@ -181,7 +182,7 @@ app_left_foreground=0
 
 for _ in $(seq 1 90); do
     status="$(/usr/bin/waydroid status 2>/dev/null || true)"
-    if printf "%s\n" "${status}" | grep -q "^Container:[[:space:]]\+STOPPED"; then
+    if printf "%s\n" "${status}" | grep -Eq "^(Session|Container):[[:space:]]+STOPPED"; then
         exit 1
     fi
 
@@ -224,7 +225,7 @@ fi
 
 while :; do
     status="$(/usr/bin/waydroid status 2>/dev/null || true)"
-    if printf "%s\n" "${status}" | grep -q "^Container:[[:space:]]\+STOPPED"; then
+    if printf "%s\n" "${status}" | grep -Eq "^(Session|Container):[[:space:]]+STOPPED"; then
         exit 0
     fi
 
@@ -271,7 +272,7 @@ else
 
         while :; do
             status="$(/usr/bin/waydroid status 2>/dev/null || true)"
-            if printf "%s\n" "${status}" | grep -q "^Container:[[:space:]]\+STOPPED"; then
+            if printf "%s\n" "${status}" | grep -Eq "^(Session|Container):[[:space:]]+STOPPED"; then
                 exit 0
             fi
             sleep 1

@@ -19,13 +19,11 @@ WEBKITGTK_DEPENDENCIES = host-ruby host-python3 host-gperf host-unifdef \
 
 WEBKITGTK_CMAKE_BACKEND = ninja
 
-# batocera - limit the number of parallel jobs
-# otherwise webkitgtk eats all your memory C....
-total_memory_kb := $(shell grep MemTotal /proc/meminfo | awk '{print $$2}')
-memory_based_jobs := $(shell echo $$(( $(total_memory_kb) / 1024 / 1024 / 4 + 1)))
-cpu_threads := $(shell nproc)
-njobs := $(shell echo $$(( $(memory_based_jobs) < $(cpu_threads) ? $(memory_based_jobs) : $(cpu_threads) )))
-WEBKITGTK_BUILD_OPTS= -j$(njobs) -- -l$(njobs)
+# batocera - JavaScriptCore C++ files can use several GiB per compiler
+# process while cross-compiling. Keep WebKitGTK below the global build
+# parallelism so it does not OOM hosts without swap.
+WEBKITGTK_BUILD_JOBS = 4
+WEBKITGTK_BUILD_OPTS = -j$(WEBKITGTK_BUILD_JOBS) -- -j$(WEBKITGTK_BUILD_JOBS) -l$(WEBKITGTK_BUILD_JOBS)
 
 # Buildroot adds support for ccache through its
 # toolchain-wrapper, so tell webkitgtk not to mess with it.

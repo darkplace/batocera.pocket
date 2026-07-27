@@ -1,9 +1,11 @@
 # From upstream release assets:
 # - VacuumTube v1.8.1
 # - Brave AppImage stable 1.92.139
+# - Google Chrome stable 150.0.7871.186-1 arm64
 # - Firefox 152.0.5 linux-aarch64 en-US
 # - PeaZip 11.2.0 Flathub aarch64 Qt6 app layer
 sha256  f479b1864f6b43720c8a73f50feccbf8fdba40b62322f666fdb32deb9fddc5ea  VacuumTube-arm64.AppImage
 sha256  0b4f3df389f5d438cf445a302b77c5c278a3fd1c37179b97ffb20cc5979720ef  Brave-Web-Browser-stable-1.92.139-aarch64.AppImage
+sha256  02596a2d07db16eec42422b95dea374ee22d18c9ceaae9e9301298e0e2678fb3  google-chrome-stable_150.0.7871.186-1_arm64.deb
 sha256  6ea600b7c20a38042157817bd18c921e15de3508d0f073377c179d5f1b3e8c2d  firefox-152.0.5.tar.xz
 sha256  7c8ce0df04f0ed08776e18c5747ce2d800b028445a9b231f4ea09e39cbf6c544  peazip-flatpak-aarch64-11.2.0.tar.gz

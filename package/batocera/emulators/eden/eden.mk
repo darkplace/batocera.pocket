@@ -17,9 +17,28 @@ EDEN_VERSION = 58c1e20ee58efa3900ba616207d460886214480b
 EDEN_SITE = https://github.com/UzuCore/eden.git
 EDEN_SITE_METHOD = git
 EDEN_LICENSE_FILES = LICENSE.txt
-EDEN_EXTRA_DOWNLOADS = $(EDEN_APPIMAGE_SITE)/$(EDEN_APPIMAGE_SOURCE)
 EDEN_SUPPORTS_IN_SOURCE_BUILD = NO
 EDEN_CMAKE_BACKEND = ninja
+
+# QCS6490 always runs the target-native build. Keep the AppImage fallback on
+# the other native targets for compatibility, but do not download or install it
+# for QCS6490.
+ifeq ($(BR2_PACKAGE_BATOCERA_TARGET_QCS6490),y)
+define EDEN_INSTALL_RUNTIME
+	ln -sf ../share/eden/native/eden $(TARGET_DIR)/usr/bin/eden
+endef
+else
+EDEN_EXTRA_DOWNLOADS = $(EDEN_APPIMAGE_SITE)/$(EDEN_APPIMAGE_SOURCE)
+
+define EDEN_INSTALL_RUNTIME
+	mkdir -p $(TARGET_DIR)/usr/share/eden
+	$(INSTALL) -m 0644 $(EDEN_DL_DIR)/$(EDEN_APPIMAGE_SOURCE) \
+		$(TARGET_DIR)/usr/share/eden/eden.AppImage
+	$(INSTALL) -m 0755 \
+		$(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/emulators/eden/eden \
+		$(TARGET_DIR)/usr/bin/eden
+endef
+endif
 
 EDEN_DEPENDENCIES = \
 	host-clang \
@@ -162,14 +181,8 @@ define EDEN_INSTALL_TARGET_CMDS
 	$(INSTALL) -m 0755 $(@D)/buildroot-build/bin/eden \
 		$(TARGET_DIR)/usr/share/eden/native/eden
 
-	mkdir -p $(TARGET_DIR)/usr/share/eden
-	$(INSTALL) -m 0644 $(EDEN_DL_DIR)/$(EDEN_APPIMAGE_SOURCE) \
-		$(TARGET_DIR)/usr/share/eden/eden.AppImage
-
 	mkdir -p $(TARGET_DIR)/usr/bin
-	$(INSTALL) -m 0755 \
-		$(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/emulators/eden/eden \
-		$(TARGET_DIR)/usr/bin/eden
+	$(EDEN_INSTALL_RUNTIME)
 	ln -sf ../share/eden/native/eden $(TARGET_DIR)/usr/bin/eden-native
 
 	mkdir -p $(TARGET_DIR)/usr/share/evmapy

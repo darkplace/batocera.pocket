@@ -1,0 +1,512 @@
+From 863ed0fafb7b41c99eea3e9543aeed6351647915 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Tue, 21 Jul 2026 15:24:46 +0300
+Subject: [PATCH] ASoC: wcd939x: route physical headsets through USBSS
+
+The AYN Odin 3 routes its physical 3.5 mm jack through the WCD939x
+USBSS switch. Mainline only programs that block for USB, DisplayPort,
+and USB-C analog accessory modes, so a detected physical headset is
+left without a shared ground and direct left/right paths. This causes
+severe channel crossfeed and leaves jack switching dependent on
+userspace workarounds.
+
+Add a codec-to-USBSS phandle and an MBHC callback which connects the
+physical switch before plug classification and releases it on removal.
+Keep DisplayPort AUX ownership when DP is active, then restore a
+still-inserted headset when DP disconnects. The USBSS programming mirrors
+the vendor HSJ sequence while selecting the codec left/right inputs
+directly.
+
+Signed-off-by: suckbluefrog <suckbluefrog@proton.me>
+---
+ .../bindings/sound/qcom,wcd939x.yaml          |   6 +
+ .../boot/dts/qcom/cq8725s-ayn-common.dtsi     |   1 +
+ drivers/usb/typec/mux/wcd939x-usbss.c         | 193 ++++++++++++++++++
+ include/linux/usb/wcd939x-usbss.h             |  22 ++
+ sound/soc/codecs/wcd-mbhc-v2.c                |  16 ++
+ sound/soc/codecs/wcd-mbhc-v2.h                |   1 +
+ sound/soc/codecs/wcd939x.c                    |  59 +++++-
+ 7 files changed, 296 insertions(+), 2 deletions(-)
+ create mode 100644 include/linux/usb/wcd939x-usbss.h
+
+diff --git a/Documentation/devicetree/bindings/sound/qcom,wcd939x.yaml b/Documentation/devicetree/bindings/sound/qcom,wcd939x.yaml
+index 85283f9..2199acd 100644
+--- a/Documentation/devicetree/bindings/sound/qcom,wcd939x.yaml
++++ b/Documentation/devicetree/bindings/sound/qcom,wcd939x.yaml
+@@ -38,6 +38,12 @@ properties:
+     description: Flag the port as possible handler of orientation switching
+     type: boolean
+ 
++  qcom,usbss:
++    $ref: /schemas/types.yaml#/definitions/phandle
++    description:
++      Phandle to the WCD939x USBSS switch when it routes a physical headset
++      jack in addition to USB Type-C signals.
++
+   port:
+     $ref: /schemas/graph.yaml#/properties/port
+     description:
+diff --git a/arch/arm64/boot/dts/qcom/cq8725s-ayn-common.dtsi b/arch/arm64/boot/dts/qcom/cq8725s-ayn-common.dtsi
+index ff0bfa7..774c1d3 100644
+--- a/arch/arm64/boot/dts/qcom/cq8725s-ayn-common.dtsi
++++ b/arch/arm64/boot/dts/qcom/cq8725s-ayn-common.dtsi
+@@ -40,6 +40,7 @@
+ 		qcom,mbhc-headphone-vthreshold-microvolt = <50000>;
+ 		qcom,rx-device = <&wcd_rx>;
+ 		qcom,tx-device = <&wcd_tx>;
++		qcom,usbss = <&wcd_usbss>;
+ 
+ 		reset-gpios = <&tlmm 101 GPIO_ACTIVE_LOW>;
+ 
+diff --git a/drivers/usb/typec/mux/wcd939x-usbss.c b/drivers/usb/typec/mux/wcd939x-usbss.c
+index d46c353..3f4def9 100644
+--- a/drivers/usb/typec/mux/wcd939x-usbss.c
++++ b/drivers/usb/typec/mux/wcd939x-usbss.c
+@@ -9,14 +9,27 @@
+ #include <linux/kernel.h>
+ #include <linux/module.h>
+ #include <linux/mutex.h>
++#include <linux/of.h>
+ #include <linux/regmap.h>
+ #include <linux/bitfield.h>
+ #include <linux/gpio/consumer.h>
+ #include <linux/usb/typec_dp.h>
+ #include <linux/usb/typec_mux.h>
++#include <linux/usb/wcd939x-usbss.h>
+ 
++#define WCD_USBSS_PMP_OUT			0x1
+ #define WCD_USBSS_PMP_OUT1			0x2
+ 
++#define WCD_USBSS_PMP_OUT1_HSJ_PWR_EN				BIT(6)
++
++#define WCD_USBSS_POWER_MODE			0x4
++
++#define WCD_USBSS_TEST_3D			0x3d
++#define WCD_USBSS_TEST_43			0x43
++#define WCD_USBSS_TEST_50			0x50
++#define WCD_USBSS_TEST_91			0x91
++#define WCD_USBSS_TEST_92			0x92
++
+ #define WCD_USBSS_DP_DN_MISC1			0x20
+ 
+ #define WCD_USBSS_DP_DN_MISC1_DP_PCOMP_2X_DYN_BST_ON_EN			BIT(3)
+@@ -112,6 +125,7 @@
+ #define WCD_USBSS_USB_SS_CNTL_RCO_EN					BIT(3)
+ #define WCD_USBSS_USB_SS_CNTL_USB_SS_MODE				GENMASK(2, 0)
+ 
++#define WCD_USBSS_USB_SS_CNTL_USB_SS_MODE_HSJ		1
+ #define WCD_USBSS_USB_SS_CNTL_USB_SS_MODE_AATC		2
+ #define WCD_USBSS_USB_SS_CNTL_USB_SS_MODE_USB		5
+ 
+@@ -197,6 +211,9 @@ struct wcd939x_usbss {
+ 	enum typec_orientation orientation;
+ 	unsigned long mode;
+ 	unsigned int svid;
++	bool hsj_connected;
++	bool hsj_active;
++	bool hsj_swapped;
+ };
+ 
+ static const struct regmap_range_cfg wcd939x_usbss_ranges[] = {
+@@ -237,6 +254,134 @@ static const struct {
+ 	{ WCD_USBSS_RATIO_SPKR_REXT_R_MSB, GENMASK(6, 0), 0x04 },
+ };
+ 
++static int wcd939x_usbss_set_hsj(struct wcd939x_usbss *usbss)
++{
++	unsigned int select0 = usbss->hsj_swapped ?
++		WCD_USBSS_SWITCH_SELECT0_SENSE_SWITCHES :
++		WCD_USBSS_SWITCH_SELECT0_MIC_SWITCHES;
++	unsigned int select1 = usbss->hsj_swapped ?
++		WCD_USBSS_SWITCH_SELECT1_AGND_SWITCHES : 0;
++	int ret;
++
++	/* Program the physical 3.5 mm headset path used by WCD939x. */
++	ret = regmap_update_bits(usbss->regmap, WCD_USBSS_USB_SS_CNTL,
++				 WCD_USBSS_USB_SS_CNTL_USB_SS_MODE,
++				 FIELD_PREP(WCD_USBSS_USB_SS_CNTL_USB_SS_MODE,
++					    WCD_USBSS_USB_SS_CNTL_USB_SS_MODE_HSJ));
++	if (ret)
++		return ret;
++
++	ret = regmap_write(usbss->regmap, WCD_USBSS_PMP_OUT, 0x0f);
++	if (ret)
++		return ret;
++
++	ret = regmap_write(usbss->regmap, WCD_USBSS_TEST_43, 0x00);
++	if (ret)
++		return ret;
++
++	ret = regmap_write(usbss->regmap, WCD_USBSS_TEST_3D, 0xc4);
++	if (ret)
++		return ret;
++
++	ret = regmap_write(usbss->regmap, WCD_USBSS_TEST_50, 0x01);
++	if (ret)
++		return ret;
++
++	ret = regmap_write(usbss->regmap, WCD_USBSS_TEST_91, 0x3c);
++	if (ret)
++		return ret;
++
++	ret = regmap_write(usbss->regmap, WCD_USBSS_TEST_92, 0x0f);
++	if (ret)
++		return ret;
++
++	ret = regmap_set_bits(usbss->regmap, WCD_USBSS_PMP_OUT1,
++			      WCD_USBSS_PMP_OUT1_HSJ_PWR_EN);
++	if (ret)
++		return ret;
++
++	/* DNL/DPR carry the codec's left/right channels in HSJ mode. */
++	ret = regmap_update_bits(usbss->regmap, WCD_USBSS_SWITCH_SELECT0,
++				 WCD_USBSS_SWITCH_SELECT0_DNL_SWITCHES |
++				 WCD_USBSS_SWITCH_SELECT0_DPR_SWITCHES |
++				 WCD_USBSS_SWITCH_SELECT0_SENSE_SWITCHES |
++				 WCD_USBSS_SWITCH_SELECT0_MIC_SWITCHES,
++				 select0);
++	if (ret)
++		return ret;
++
++	ret = regmap_update_bits(usbss->regmap, WCD_USBSS_SWITCH_SELECT1,
++				 WCD_USBSS_SWITCH_SELECT1_AGND_SWITCHES,
++				 select1);
++	if (ret)
++		return ret;
++
++	ret = regmap_clear_bits(usbss->regmap, WCD_USBSS_MG1_BIAS,
++				WCD_USBSS_MG1_BIAS_PCOMP_DYN_BST_EN);
++	if (ret)
++		return ret;
++
++	return regmap_set_bits(usbss->regmap,
++			       WCD_USBSS_SWITCH_SETTINGS_ENABLE,
++			       WCD_USBSS_SWITCH_SETTINGS_ENABLE_DNL_SWITCHES |
++			       WCD_USBSS_SWITCH_SETTINGS_ENABLE_DPR_SWITCHES |
++			       WCD_USBSS_SWITCH_SETTINGS_ENABLE_SENSE_SWITCHES |
++			       WCD_USBSS_SWITCH_SETTINGS_ENABLE_MIC_SWITCHES |
++			       WCD_USBSS_SWITCH_SETTINGS_ENABLE_AGND_SWITCHES);
++}
++
++static int wcd939x_usbss_unset_hsj(struct wcd939x_usbss *usbss)
++{
++	int ret;
++
++	ret = regmap_write(usbss->regmap, WCD_USBSS_PMP_OUT, 0x00);
++	if (ret)
++		return ret;
++
++	ret = regmap_clear_bits(usbss->regmap, WCD_USBSS_PMP_OUT1,
++				WCD_USBSS_PMP_OUT1_HSJ_PWR_EN);
++	if (ret)
++		return ret;
++
++	ret = regmap_write(usbss->regmap, WCD_USBSS_TEST_43, 0x00);
++	if (ret)
++		return ret;
++
++	ret = regmap_write(usbss->regmap, WCD_USBSS_TEST_3D, 0x00);
++	if (ret)
++		return ret;
++
++	ret = regmap_write(usbss->regmap, WCD_USBSS_POWER_MODE, 0x10);
++	if (ret)
++		return ret;
++
++	ret = regmap_write(usbss->regmap, WCD_USBSS_TEST_50, 0x00);
++	if (ret)
++		return ret;
++
++	ret = regmap_write(usbss->regmap, WCD_USBSS_TEST_91, 0x00);
++	if (ret)
++		return ret;
++
++	return regmap_write(usbss->regmap, WCD_USBSS_TEST_92, 0x00);
++}
++
++static bool wcd939x_usbss_dp_active(struct wcd939x_usbss *usbss)
++{
++	if (!usbss->svid)
++		return false;
++
++	switch (usbss->mode) {
++	case TYPEC_DP_STATE_C:
++	case TYPEC_DP_STATE_D:
++	case TYPEC_DP_STATE_E:
++	case TYPEC_DP_STATE_F:
++		return true;
++	default:
++		return false;
++	}
++}
++
+ static int wcd939x_usbss_set(struct wcd939x_usbss *usbss)
+ {
+ 	bool reverse = (usbss->orientation == TYPEC_ORIENTATION_REVERSE);
+@@ -328,6 +473,21 @@ static int wcd939x_usbss_set(struct wcd939x_usbss *usbss)
+ 	/* 35us to allow the SBU switch to turn off */
+ 	usleep_range(35, 1000);
+ 
++	/* DisplayPort AUX owns MG1/MG2 while DP is active. */
++	if (usbss->hsj_connected && !enable_dp) {
++		ret = wcd939x_usbss_set_hsj(usbss);
++		if (!ret)
++			usbss->hsj_active = true;
++		return ret;
++	}
++
++	if (usbss->hsj_active) {
++		ret = wcd939x_usbss_unset_hsj(usbss);
++		if (ret)
++			return ret;
++		usbss->hsj_active = false;
++	}
++
+ 	/* Setup Audio Accessory mux/switch */
+ 	if (enable_audio) {
+ 		int i;
+@@ -531,6 +691,39 @@ static int wcd939x_usbss_set(struct wcd939x_usbss *usbss)
+ 	return 0;
+ }
+ 
++int wcd939x_usbss_hsj_set(struct device_node *node, bool connected,
++			  bool swapped)
++{
++	struct wcd939x_usbss *usbss;
++	struct i2c_client *client;
++	int ret;
++
++	client = of_find_i2c_device_by_node(node);
++	if (!client)
++		return -EPROBE_DEFER;
++
++	usbss = i2c_get_clientdata(client);
++	if (!usbss) {
++		ret = -EPROBE_DEFER;
++		goto out_put_device;
++	}
++
++	mutex_lock(&usbss->lock);
++	usbss->hsj_connected = connected;
++	usbss->hsj_swapped = connected && swapped;
++	/* Preserve active DP AUX; restore the pending HSJ after DP exits. */
++	if (wcd939x_usbss_dp_active(usbss))
++		ret = 0;
++	else
++		ret = wcd939x_usbss_set(usbss);
++	mutex_unlock(&usbss->lock);
++
++out_put_device:
++	put_device(&client->dev);
++	return ret;
++}
++EXPORT_SYMBOL_GPL(wcd939x_usbss_hsj_set);
++
+ static int wcd939x_usbss_switch_set(struct typec_switch_dev *sw,
+ 				    enum typec_orientation orientation)
+ {
+diff --git a/include/linux/usb/wcd939x-usbss.h b/include/linux/usb/wcd939x-usbss.h
+new file mode 100644
+index 0000000..04f8044
+--- /dev/null
++++ b/include/linux/usb/wcd939x-usbss.h
+@@ -0,0 +1,22 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++#ifndef __LINUX_USB_WCD939X_USBSS_H
++#define __LINUX_USB_WCD939X_USBSS_H
++
++#include <linux/errno.h>
++#include <linux/kconfig.h>
++#include <linux/types.h>
++
++struct device_node;
++
++#if IS_REACHABLE(CONFIG_TYPEC_MUX_WCD939X_USBSS)
++int wcd939x_usbss_hsj_set(struct device_node *node, bool connected,
++			  bool swapped);
++#else
++static inline int wcd939x_usbss_hsj_set(struct device_node *node,
++					bool connected, bool swapped)
++{
++	return -EOPNOTSUPP;
++}
++#endif
++
++#endif /* __LINUX_USB_WCD939X_USBSS_H */
+diff --git a/sound/soc/codecs/wcd-mbhc-v2.c b/sound/soc/codecs/wcd-mbhc-v2.c
+index bb0c847..9f6a6e6 100644
+--- a/sound/soc/codecs/wcd-mbhc-v2.c
++++ b/sound/soc/codecs/wcd-mbhc-v2.c
+@@ -516,6 +516,7 @@ static void mbhc_plug_detect_fn(struct work_struct *work)
+ 	struct snd_soc_component *component = mbhc->component;
+ 	enum snd_jack_types jack_type;
+ 	bool detection_type;
++	int ret;
+ 
+ 	mutex_lock(&mbhc->lock);
+ 
+@@ -535,6 +536,13 @@ static void mbhc_plug_detect_fn(struct work_struct *work)
+ 	if (detection_type) {
+ 		if (mbhc->current_plug != MBHC_PLUG_TYPE_NONE)
+ 			goto exit;
++		if (mbhc->mbhc_cb->mbhc_hsj_set) {
++			ret = mbhc->mbhc_cb->mbhc_hsj_set(component, true);
++
++			if (ret)
++				dev_warn_ratelimited(mbhc->dev,
++						     "failed to connect HSJ switch: %d\n", ret);
++		}
+ 		/* Make sure MASTER_BIAS_CTL is enabled */
+ 		mbhc->mbhc_cb->mbhc_bias(component, true);
+ 		mbhc->is_btn_press = false;
+@@ -544,6 +552,12 @@ static void mbhc_plug_detect_fn(struct work_struct *work)
+ 		wcd_mbhc_write_field(mbhc, WCD_MBHC_FSM_EN, 0);
+ 		wcd_mbhc_write_field(mbhc, WCD_MBHC_BTN_ISRC_CTL, 0);
+ 		mbhc->extn_cable_hph_rem = false;
++		if (mbhc->mbhc_cb->mbhc_hsj_set) {
++			ret = mbhc->mbhc_cb->mbhc_hsj_set(component, false);
++			if (ret)
++				dev_warn_ratelimited(mbhc->dev,
++						     "failed to disconnect HSJ switch: %d\n", ret);
++		}
+ 
+ 		if (mbhc->current_plug == MBHC_PLUG_TYPE_NONE)
+ 			goto exit;
+@@ -1445,6 +1459,8 @@ EXPORT_SYMBOL(wcd_mbhc_start);
+ 
+ void wcd_mbhc_stop(struct wcd_mbhc *mbhc)
+ {
++	if (mbhc->mbhc_cb->mbhc_hsj_set)
++		mbhc->mbhc_cb->mbhc_hsj_set(mbhc->component, false);
+ 	mbhc->current_plug = MBHC_PLUG_TYPE_NONE;
+ 	mbhc->hph_status = 0;
+ 	disable_irq_nosync(mbhc->intr_ids->hph_left_ocp);
+diff --git a/sound/soc/codecs/wcd-mbhc-v2.h b/sound/soc/codecs/wcd-mbhc-v2.h
+index a5d52b9..2005a0f 100644
+--- a/sound/soc/codecs/wcd-mbhc-v2.h
++++ b/sound/soc/codecs/wcd-mbhc-v2.h
+@@ -265,6 +265,7 @@ struct wcd_mbhc_cb {
+ 	bool (*mbhc_get_moisture_status)(struct snd_soc_component *component);
+ 	void (*mbhc_moisture_polling_ctrl)(struct snd_soc_component *component, bool enable);
+ 	void (*mbhc_moisture_detect_en)(struct snd_soc_component *component, bool enable);
++	int (*mbhc_hsj_set)(struct snd_soc_component *component, bool connected);
+ };
+ 
+ #if IS_ENABLED(CONFIG_SND_SOC_WCD_MBHC)
+diff --git a/sound/soc/codecs/wcd939x.c b/sound/soc/codecs/wcd939x.c
+index 01f1a08..6c02980 100644
+--- a/sound/soc/codecs/wcd939x.c
++++ b/sound/soc/codecs/wcd939x.c
+@@ -26,6 +26,7 @@
+ #include <linux/regulator/consumer.h>
+ #include <linux/usb/typec_mux.h>
+ #include <linux/usb/typec_altmode.h>
++#include <linux/usb/wcd939x-usbss.h>
+ 
+ #include "wcd-clsh-v2.h"
+ #include "wcd-common.h"
+@@ -187,6 +188,8 @@ struct wcd939x_priv {
+ 	unsigned long typec_mode;
+ 	struct typec_switch *typec_switch;
+ #endif /* CONFIG_TYPEC */
++	struct device_node *usbss_node;
++	bool hsj_swapped;
+ 	/* mbhc module */
+ 	struct wcd_mbhc *wcd_mbhc;
+ 	struct wcd_mbhc_config mbhc_cfg;
+@@ -2411,6 +2414,9 @@ static void wcd939x_mbhc_moisture_polling_ctrl(struct snd_soc_component *compone
+ 				      enable);
+ }
+ 
++static int wcd939x_mbhc_hsj_set(struct snd_soc_component *component,
++				bool connected);
++
+ static const struct wcd_mbhc_cb mbhc_cb = {
+ 	.clk_setup = wcd939x_mbhc_clk_setup,
+ 	.mbhc_bias = wcd939x_mbhc_mbhc_bias_control,
+@@ -2427,6 +2433,7 @@ static const struct wcd_mbhc_cb mbhc_cb = {
+ 	.mbhc_get_moisture_status = wcd939x_mbhc_get_moisture_status,
+ 	.mbhc_moisture_polling_ctrl = wcd939x_mbhc_moisture_polling_ctrl,
+ 	.mbhc_moisture_detect_en = wcd939x_mbhc_moisture_detect_en,
++	.mbhc_hsj_set = wcd939x_mbhc_hsj_set,
+ };
+ 
+ static int wcd939x_get_hph_type(struct snd_kcontrol *kcontrol,
+@@ -3161,11 +3168,42 @@ static int wcd939x_typec_mux_set(struct typec_mux_dev *mux,
+ }
+ #endif /* CONFIG_TYPEC */
+ 
+-#if IS_ENABLED(CONFIG_TYPEC)
++static int wcd939x_mbhc_hsj_set(struct snd_soc_component *component,
++				bool connected)
++{
++	struct wcd939x_priv *wcd939x = snd_soc_component_get_drvdata(component);
++	int ret;
++
++	if (!wcd939x->usbss_node)
++		return 0;
++
++	if (connected)
++		wcd939x->hsj_swapped = false;
++
++	ret = wcd939x_usbss_hsj_set(wcd939x->usbss_node, connected,
++				    connected && wcd939x->hsj_swapped);
++	if (!ret && !connected)
++		wcd939x->hsj_swapped = false;
++
++	return ret;
++}
++
+ static bool wcd939x_swap_gnd_mic(struct snd_soc_component *component)
+ {
+ 	struct wcd939x_priv *wcd939x = snd_soc_component_get_drvdata(component);
++	int ret;
+ 
++	if (wcd939x->usbss_node) {
++		ret = wcd939x_usbss_hsj_set(wcd939x->usbss_node, true,
++					    !wcd939x->hsj_swapped);
++		if (ret)
++			return false;
++
++		wcd939x->hsj_swapped = !wcd939x->hsj_swapped;
++		return true;
++	}
++
++#if IS_ENABLED(CONFIG_TYPEC)
+ 	if (!wcd939x->typec_analog_mux || !wcd939x->typec_switch)
+ 		return false;
+ 
+@@ -3175,8 +3213,15 @@ static bool wcd939x_swap_gnd_mic(struct snd_soc_component *component)
+ 				TYPEC_ORIENTATION_NORMAL : TYPEC_ORIENTATION_REVERSE);
+ 
+ 	return true;
+-}
++#else
++	return false;
+ #endif /* CONFIG_TYPEC */
++}
++
++static void wcd939x_of_node_put(void *data)
++{
++	of_node_put(data);
++}
+ 
+ static int wcd939x_populate_dt_data(struct wcd939x_priv *wcd939x, struct device *dev)
+ {
+@@ -3211,6 +3256,16 @@ static int wcd939x_populate_dt_data(struct wcd939x_priv *wcd939x, struct device
+ 
+ 	wcd_dt_parse_mbhc_data(dev, cfg);
+ 
++	wcd939x->usbss_node = of_parse_phandle(dev->of_node, "qcom,usbss", 0);
++	if (wcd939x->usbss_node) {
++		ret = devm_add_action_or_reset(dev, wcd939x_of_node_put,
++					       wcd939x->usbss_node);
++		if (ret)
++			return ret;
++
++		cfg->swap_gnd_mic = wcd939x_swap_gnd_mic;
++	}
++
+ #if IS_ENABLED(CONFIG_TYPEC)
+ 	/*
+ 	 * Is node has a port and a valid remote endpoint
