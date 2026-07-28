@@ -647,14 +647,19 @@ class MameGenerator(Generator):
 
         # Change directory to MAME folder (allows data plugin to load properly)
         os.chdir('/usr/bin/mame')
-        return Command.Command(
-            array=commandArray,
-            env={
-                "PWD":"/usr/bin/mame/",
-                "XDG_CONFIG_HOME": CONFIGS,
-                "XDG_CACHE_HOME": SAVES
-                }
-            )
+        env = {
+            "PWD": "/usr/bin/mame/",
+            "XDG_CONFIG_HOME": CONFIGS,
+            "XDG_CACHE_HOME": SAVES,
+        }
+        if os.environ.get("BATOCERA_LAUNCH_SOURCE") == "steam":
+            env.update({
+                "DISPLAY": os.environ.get("DISPLAY", ":0"),
+                "WAYLAND_DISPLAY": "",
+                "SDL_VIDEODRIVER": "x11",
+            })
+
+        return Command.Command(array=commandArray, env=env)
 
     @staticmethod
     def writeBezelConfig(bezelSet: str | None, system: Emulator, rom: Path, messSys: str, gameResolution: Resolution, gunsBordersSize: str | None, gunsBordersRatio: str | None) -> None:

@@ -1,0 +1,277 @@
+From 11dd1eb3c112dacfee9b3e1b1306f5b814bb2ee6 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Tue, 28 Jul 2026 14:27:54 +0000
+Subject: [PATCH 14/15] capture SteamGridDB artwork for Steam shortcuts
+
+---
+ es-app/src/ApiSystem.cpp                   | 10 ++++++
+ es-app/src/ApiSystem.h                     |  5 +++
+ es-app/src/MetaData.cpp                    |  9 ++++++
+ es-app/src/MetaData.h                      |  9 +++++-
+ es-app/src/guis/GuiGameOptions.cpp         |  5 +++
+ es-app/src/guis/GuiMetaDataEd.cpp          |  4 +--
+ es-app/src/scrapers/Scraper.cpp            | 12 ++++++++
+ es-app/src/scrapers/SteamGridDBScraper.cpp | 36 +++++++++++++++++++---
+ 8 files changed, 82 insertions(+), 8 deletions(-)
+
+diff --git a/es-app/src/ApiSystem.cpp b/es-app/src/ApiSystem.cpp
+index 0cd1101..dfec5c6 100644
+--- a/es-app/src/ApiSystem.cpp
++++ b/es-app/src/ApiSystem.cpp
+@@ -3176,6 +3176,11 @@ bool ApiSystem::setSteamGameManaged(
+ 	const std::string& boxart,
+ 	const std::string& fanart,
+ 	const std::string& marquee,
++	const std::string& steamGrid,
++	const std::string& steamBanner,
++	const std::string& steamHero,
++	const std::string& steamLogo,
++	const std::string& steamIcon,
+ 	bool managed)
+ {
+ 	if (!isSteamSyncAvailable())
+@@ -3200,6 +3205,11 @@ bool ApiSystem::setSteamGameManaged(
+ 		addMedia("--boxart", boxart);
+ 		addMedia("--fanart", fanart);
+ 		addMedia("--marquee", marquee);
++		addMedia("--steam-grid", steamGrid);
++		addMedia("--steam-banner", steamBanner);
++		addMedia("--steam-hero", steamHero);
++		addMedia("--steam-logo", steamLogo);
++		addMedia("--steam-icon", steamIcon);
+ 	}
+ 	else
+ 	{
+diff --git a/es-app/src/ApiSystem.h b/es-app/src/ApiSystem.h
+index da845da..27ce5b2 100644
+--- a/es-app/src/ApiSystem.h
++++ b/es-app/src/ApiSystem.h
+@@ -226,6 +226,11 @@ public:
+         const std::string& boxart,
+         const std::string& fanart,
+         const std::string& marquee,
++        const std::string& steamGrid,
++        const std::string& steamBanner,
++        const std::string& steamHero,
++        const std::string& steamLogo,
++        const std::string& steamIcon,
+         bool managed);
+     virtual bool isSteamSystemManaged(const std::string& system);
+     virtual bool setSteamSystemManaged(const std::string& system, const std::string& systemName, bool managed);
+diff --git a/es-app/src/MetaData.cpp b/es-app/src/MetaData.cpp
+index 6e7b2ed..6b1a307 100644
+--- a/es-app/src/MetaData.cpp
++++ b/es-app/src/MetaData.cpp
+@@ -125,6 +125,11 @@ void MetaDataList::initMetadata()
+ 		{ LauncherCloudSave, "launchercloudsave", MD_STRING,       "",                 false,      _("Launcher cloud save"),  _("external launcher cloud save path"), false },
+ 		{ EpicNamespace,    "epicnamespace", MD_STRING,            "",                 false,      _("Epic namespace"),       _("Epic namespace"), false },
+ 		{ GogId,            "gogid",       MD_STRING,              "",                 false,      _("GOG ID"),               _("GOG game ID"), false },
++		{ SteamGrid,        "steamgrid",   MD_PATH,                "",                 false,      _("Steam portrait"),       _("Steam portrait artwork"), false, false, true },
++		{ SteamBanner,      "steambanner", MD_PATH,                "",                 false,      _("Steam banner"),         _("Steam banner artwork"), false, false, true },
++		{ SteamHero,        "steamhero",   MD_PATH,                "",                 false,      _("Steam hero"),           _("Steam hero artwork"), false, false, true },
++		{ SteamLogo,        "steamlogo",   MD_PATH,                "",                 false,      _("Steam logo"),           _("Steam logo artwork"), false, false, true },
++		{ SteamIcon,        "steamicon",   MD_PATH,                "",                 false,      _("Steam icon"),           _("Steam icon artwork"), false, false, true },
+ 
+ 		{ Language,         "lang",        MD_STRING,              "",                 false,      _("Languages"),            _("this game's languages"),				false },
+ 		{ Region,           "region",      MD_STRING,              "",                 false,      _("Region"),               _("this game's region"),					false },
+@@ -596,6 +601,10 @@ void MetaDataList::importScrappedMetadata(const MetaDataList& source)
+ 			source.get(mdd.id).empty())
+ 			continue;
+ 
++		if ((mdd.id == MetaDataId::SteamGrid || mdd.id == MetaDataId::SteamBanner || mdd.id == MetaDataId::SteamHero ||
++			mdd.id == MetaDataId::SteamLogo || mdd.id == MetaDataId::SteamIcon) && source.get(mdd.id).empty())
++			continue;
++
+ 		if (mdd.id == MetaDataId::Image && (source.get(mdd.id).empty() || (type & MetaDataImportType::Types::IMAGE) != MetaDataImportType::Types::IMAGE))
+ 			continue;		
+ 
+diff --git a/es-app/src/MetaData.h b/es-app/src/MetaData.h
+index fa494a6..96b3977 100644
+--- a/es-app/src/MetaData.h
++++ b/es-app/src/MetaData.h
+@@ -109,6 +109,11 @@ enum MetaDataId
+ 	LauncherCloudSave = 72,
+ 	EpicNamespace = 73,
+ 	GogId = 74,
++	SteamGrid = 75,
++	SteamBanner = 76,
++	SteamHero = 77,
++	SteamLogo = 78,
++	SteamIcon = 79,
+ 
+ 	// Important : Control value
+ 	MetaDataIdCount
+@@ -144,8 +149,9 @@ struct MetaDataDecl
+ 	std::string  displayPrompt; // phrase displayed in editors when prompted to enter value (currently only for strings)
+ 	bool		 visibleForFolder;
+ 	bool		 isAttribute;
++	bool		 isInternal;
+ 
+-	MetaDataDecl(MetaDataId id, std::string key, MetaDataType type, std::string defaultValue, bool isStatistic, std::string displayName, std::string displayPrompt, bool folderMetadata, bool isAttribute = false)
++	MetaDataDecl(MetaDataId id, std::string key, MetaDataType type, std::string defaultValue, bool isStatistic, std::string displayName, std::string displayPrompt, bool folderMetadata, bool isAttribute = false, bool isInternal = false)
+ 	{
+ 		this->id = id;
+ 		this->key = key;
+@@ -156,6 +162,7 @@ struct MetaDataDecl
+ 		this->displayPrompt = displayPrompt;
+ 		this->visibleForFolder = folderMetadata;
+ 		this->isAttribute = isAttribute;
++		this->isInternal = isInternal;
+ 	}
+ };
+ 
+diff --git a/es-app/src/guis/GuiGameOptions.cpp b/es-app/src/guis/GuiGameOptions.cpp
+index 8943f1f..aa4ccac 100644
+--- a/es-app/src/guis/GuiGameOptions.cpp
++++ b/es-app/src/guis/GuiGameOptions.cpp
+@@ -400,6 +400,11 @@ GuiGameOptions::GuiGameOptions(Window* window, FileData* game) : GuiComponent(wi
+ 						sourceGame->getMetadata(MetaDataId::BoxArt),
+ 						sourceGame->getMetadata(MetaDataId::FanArt),
+ 						sourceGame->getMarqueePath(),
++						sourceGame->getMetadata(MetaDataId::SteamGrid),
++						sourceGame->getMetadata(MetaDataId::SteamBanner),
++						sourceGame->getMetadata(MetaDataId::SteamHero),
++						sourceGame->getMetadata(MetaDataId::SteamLogo),
++						sourceGame->getMetadata(MetaDataId::SteamIcon),
+ 						!steamManaged);
+ 
+ 					Window* window = mWindow;
+diff --git a/es-app/src/guis/GuiMetaDataEd.cpp b/es-app/src/guis/GuiMetaDataEd.cpp
+index 8245acc..d248d14 100644
+--- a/es-app/src/guis/GuiMetaDataEd.cpp
++++ b/es-app/src/guis/GuiMetaDataEd.cpp
+@@ -82,8 +82,8 @@ GuiMetaDataEd::GuiMetaDataEd(Window* window, MetaDataList* md, const std::vector
+ 	{
+ 		std::shared_ptr<GuiComponent> ed;
+ 
+-		// don't add statistics
+-		if(iter->isStatistic)
++		// don't add statistics or internal metadata
++		if(iter->isStatistic || iter->isInternal)
+ 			continue;
+ 
+ 		if (file->getType() != GAME && !iter->visibleForFolder)
+diff --git a/es-app/src/scrapers/Scraper.cpp b/es-app/src/scrapers/Scraper.cpp
+index 8d042ca..021dcd6 100644
+--- a/es-app/src/scrapers/Scraper.cpp
++++ b/es-app/src/scrapers/Scraper.cpp
+@@ -466,6 +466,11 @@ MDResolveHandle::MDResolveHandle(const ScraperSearchResult& result, const Scrape
+ 		case MetaDataId::Map: suffix = "map"; resize = false; break;
+ 		case MetaDataId::Cartridge: suffix = "cartridge"; break;
+ 		case MetaDataId::Bezel: suffix = "bezel"; resize = false; break;
++		case MetaDataId::SteamGrid: suffix = "steam-grid"; resize = false; break;
++		case MetaDataId::SteamBanner: suffix = "steam-banner"; resize = false; break;
++		case MetaDataId::SteamHero: suffix = "steam-hero"; resize = false; break;
++		case MetaDataId::SteamLogo: suffix = "steam-logo"; resize = false; break;
++		case MetaDataId::SteamIcon: suffix = "steam-icon"; resize = false; break;
+ 		}
+ 
+ 		auto ext = url.second.format;
+@@ -692,6 +697,8 @@ void ImageDownloadHandle::update()
+ 				trueExtension = "." + contentType.substr(6);
+ 				if (trueExtension == ".jpeg")
+ 					trueExtension = ".jpg";
++				else if (trueExtension == ".x-icon" || trueExtension == ".vnd.microsoft.icon")
++					trueExtension = ".ico";
+ 				else if (trueExtension == ".svg+xml")
+ 					trueExtension = ".svg";
+ 
+@@ -833,6 +840,11 @@ std::string Scraper::getSaveAsPath(FileData* game, const MetaDataId metadataId,
+ 	case MetaDataId::Map: suffix = "map"; break;
+ 	case MetaDataId::Cartridge: suffix = "cartridge"; break;
+ 	case MetaDataId::Bezel: suffix = "bezel"; break;
++	case MetaDataId::SteamGrid: suffix = "steam-grid"; break;
++	case MetaDataId::SteamBanner: suffix = "steam-banner"; break;
++	case MetaDataId::SteamHero: suffix = "steam-hero"; break;
++	case MetaDataId::SteamLogo: suffix = "steam-logo"; break;
++	case MetaDataId::SteamIcon: suffix = "steam-icon"; break;
+ 	}
+ 
+ 	auto system = game->getSourceFileData()->getSystem();
+diff --git a/es-app/src/scrapers/SteamGridDBScraper.cpp b/es-app/src/scrapers/SteamGridDBScraper.cpp
+index 187d8bc..b244f6a 100644
+--- a/es-app/src/scrapers/SteamGridDBScraper.cpp
++++ b/es-app/src/scrapers/SteamGridDBScraper.cpp
+@@ -134,9 +134,9 @@ namespace
+ 		return std::to_string(manualScrape ? STEAMGRIDDB_MANUAL_ASSET_LIMIT : STEAMGRIDDB_AUTO_ASSET_LIMIT);
+ 	}
+ 
+-	std::string addGridFilters(const std::string& url, bool manualScrape)
++	std::string addGridFilters(const std::string& url, const std::string& dimensions, bool manualScrape)
+ 	{
+-		return url + "?dimensions=600x900,342x482,660x930"
++		return url + "?dimensions=" + dimensions
+ 			+ "&types=static"
+ 			+ "&mimes=image%2Fpng,image%2Fjpeg"
+ 			+ "&nsfw=false"
+@@ -145,6 +145,15 @@ namespace
+ 			+ "&limit=" + getAssetLimitQuery(manualScrape);
+ 	}
+ 
++	std::string addIconFilters(const std::string& url, bool manualScrape)
++	{
++		return url + "?types=static"
++			+ "&nsfw=false"
++			+ "&humor=false"
++			+ "&epilepsy=false"
++			+ "&limit=" + getAssetLimitQuery(manualScrape);
++	}
++
+ 	std::string addHeroFilters(const std::string& url, bool manualScrape)
+ 	{
+ 		return url + "?types=static"
+@@ -270,9 +279,11 @@ void SteamGridDBRequest::preProcess(const std::string& response)
+ 	for (auto game : mGames)
+ 	{
+ 		auto id = std::to_string(game.id);
+-		mDependencyQueue.push({ "grid:" + id, addGridFilters(STEAMGRIDDB_API_URL_BASE + "/grids/game/" + id, mIsManualScrape) });
++		mDependencyQueue.push({ "grid:" + id, addGridFilters(STEAMGRIDDB_API_URL_BASE + "/grids/game/" + id, "600x900,342x482,660x930", mIsManualScrape) });
++		mDependencyQueue.push({ "banner:" + id, addGridFilters(STEAMGRIDDB_API_URL_BASE + "/grids/game/" + id, "920x430,460x215", mIsManualScrape) });
+ 		mDependencyQueue.push({ "hero:" + id, addHeroFilters(STEAMGRIDDB_API_URL_BASE + "/heroes/game/" + id, mIsManualScrape) });
+ 		mDependencyQueue.push({ "logo:" + id, addLogoFilters(STEAMGRIDDB_API_URL_BASE + "/logos/game/" + id, mIsManualScrape) });
++		mDependencyQueue.push({ "icon:" + id, addIconFilters(STEAMGRIDDB_API_URL_BASE + "/icons/game/" + id, mIsManualScrape) });
+ 	}
+ }
+ 
+@@ -310,17 +321,21 @@ bool SteamGridDBRequest::process(const std::string& response, std::vector<Scrape
+ 	{
+ 		auto id = std::to_string(game.id);
+ 		auto grids = getAssetUrls("grid:" + id);
++		auto banners = getAssetUrls("banner:" + id);
+ 		auto heroes = getAssetUrls("hero:" + id);
+ 		auto logos = getAssetUrls("logo:" + id);
++		auto icons = getAssetUrls("icon:" + id);
+ 
+-		size_t variantCount = mIsManualScrape ? std::max({ grids.size(), heroes.size(), logos.size(), static_cast<size_t>(1) }) : 1;
++		size_t variantCount = mIsManualScrape ? std::max({ grids.size(), banners.size(), heroes.size(), logos.size(), icons.size(), static_cast<size_t>(1) }) : 1;
+ 		for (size_t i = 0; i < variantCount; i++)
+ 		{
+ 			auto grid = selectAsset(grids, i);
++			auto banner = selectAsset(banners, i);
+ 			auto hero = selectAsset(heroes, i);
+ 			auto logo = selectAsset(logos, i);
++			auto icon = selectAsset(icons, i);
+ 
+-			if (grid.empty() && hero.empty() && logo.empty())
++			if (grid.empty() && banner.empty() && hero.empty() && logo.empty() && icon.empty())
+ 				continue;
+ 
+ 			ScraperSearchResult result("SteamGridDB");
+@@ -328,6 +343,17 @@ bool SteamGridDBRequest::process(const std::string& response, std::vector<Scrape
+ 			if (mIsManualScrape && variantCount > 1)
+ 				result.displayName = game.name + " [SteamGridDB art " + std::to_string(i + 1) + "/" + std::to_string(variantCount) + "]";
+ 
++			if (!grid.empty())
++				result.urls[MetaDataId::SteamGrid] = ScraperSearchItem(grid);
++			if (!banner.empty())
++				result.urls[MetaDataId::SteamBanner] = ScraperSearchItem(banner);
++			if (!hero.empty())
++				result.urls[MetaDataId::SteamHero] = ScraperSearchItem(hero);
++			if (!logo.empty())
++				result.urls[MetaDataId::SteamLogo] = ScraperSearchItem(logo);
++			if (!icon.empty())
++				result.urls[MetaDataId::SteamIcon] = ScraperSearchItem(icon);
++
+ 			auto imageSource = Settings::getInstance()->getString("ScrapperImageSrc");
+ 			if (!imageSource.empty())
+ 			{

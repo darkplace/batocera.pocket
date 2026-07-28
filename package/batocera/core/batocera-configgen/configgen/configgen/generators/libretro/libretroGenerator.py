@@ -66,8 +66,26 @@ class LibretroGenerator(Generator):
         if system.config.core in [ 'mess', 'mamevirtual' ]:
             system.config['core'] = 'mame'
 
+        # RetroArch on the current images has no native X11 context driver.
+        # For managed Steam MAME shortcuts, make SDL create an Xwayland
+        # window that Gamescope can present and track. The GLES-oriented
+        # binary's SDL2 renderer works on ARM, but produces black frames on
+        # x86; use the desktop-GL build with its SDL GL context there.
+        steam_mame = (
+            os.environ.get("BATOCERA_LAUNCH_SOURCE") == "steam"
+            and system.name == "mame"
+        )
+        retroarchGlcoreBin = Path("/usr/bin/retroarch-glcore")
+        steam_mame_desktop_gl = (
+            steam_mame
+            and currentPlatform.isPC()
+            and retroarchGlcoreBin.exists()
+        )
+
         # Get the graphics backend first
         gfxBackend = getGFXBackend(system)
+        if steam_mame:
+            gfxBackend = "gl" if steam_mame_desktop_gl else "sdl2"
 
         # Get the shader before writing the config, we may need to disable bezels based on the shader.
         renderConfig = system.renderconfig
@@ -147,8 +165,17 @@ class LibretroGenerator(Generator):
         if not infoFile.exists():
             raise MissingCore
 
-        retroarchGlcoreBin = Path("/usr/bin/retroarch-glcore")
-        retroarchBin = retroarchGlcoreBin if system.config.core == 'kronos' and retroarchGlcoreBin.exists() else RETROARCH_BIN
+        retroarchBin = (
+            retroarchGlcoreBin
+            if (
+                steam_mame_desktop_gl
+                or (
+                    system.config.core == 'kronos'
+                    and retroarchGlcoreBin.exists()
+                )
+            )
+            else RETROARCH_BIN
+        )
 
         # The command to run
         dontAppendROM = False
@@ -324,6 +351,14 @@ class LibretroGenerator(Generator):
 
         configToAppend: list[Path] = []
 
+        if steam_mame_desktop_gl:
+            steamContextCfg = Path("/var/run/retroarch-steam-mame.cfg")
+            steamContextCfg.write_text(
+                'video_context_driver = "gl_sdl"\n',
+                encoding="utf-8",
+            )
+            configToAppend.append(steamContextCfg)
+
         # Custom configs - per core
         customCfg = RETROARCH_CONFIG / f"{system.name}.cfg"
         if customCfg.is_file():
@@ -413,6 +448,12 @@ class LibretroGenerator(Generator):
             commandArray.extend(["-e", state_slot])
 
         env = {"XDG_CONFIG_HOME": CONFIGS}
+        if steam_mame:
+            env.update({
+                "DISPLAY": os.environ.get("DISPLAY", ":0"),
+                "WAYLAND_DISPLAY": "",
+                "SDL_VIDEODRIVER": "x11",
+            })
         if libretroConfig.should_dual_screen_libretro(system):
             env["SDL_VIDEO_WAYLAND_WMCLASS"] = "retroarch-dualscreen"
             env["BATOCERA_WAYLAND_APP_ID"] = "retroarch-dualscreen"

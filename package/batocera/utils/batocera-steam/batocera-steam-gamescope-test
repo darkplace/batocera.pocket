@@ -1,0 +1,795 @@
+#!/usr/bin/env python3
+"""Probe Batocera-managed emulator presentation inside Steam Gamescope."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import shutil
+import signal
+import socket
+import subprocess
+import sys
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+
+STATE_DIR = Path(os.environ.get(
+    "BATOCERA_STEAM_SYNC_STATE_DIR",
+    "/userdata/system/configs/batocera-steam",
+))
+MANIFEST_PATH = STATE_DIR / "managed-games.json"
+REPORT_DIR = STATE_DIR / "gamescope-tests"
+LAUNCHER = Path(os.environ.get(
+    "BATOCERA_STEAM_GAMESCOPE_TEST_LAUNCHER",
+    "/usr/bin/batocera-steam-rom-launch",
+))
+ID_PATTERN = re.compile(r"^[0-9a-f]{24}$")
+STEAM_ENV_KEYS = {
+    "BATOCERA_SKIP_GAMESCOPE",
+    "BATOCERA_STEAM_GAMEPADUI",
+    "BATOCERA_STEAM_GS_NESTED_RES",
+    "BATOCERA_STEAM_GS_OUTPUT_RES",
+    "BATOCERA_STEAM_MODE",
+    "BATOCERA_STEAM_USE_GAMESCOPE",
+    "DBUS_SESSION_BUS_ADDRESS",
+    "DISPLAY",
+    "GAMESCOPE_WAYLAND_DISPLAY",
+    "HOME",
+    "I3SOCK",
+    "LANG",
+    "LC_ALL",
+    "PATH",
+    "PIPEWIRE_REMOTE",
+    "PIPEWIRE_RUNTIME_DIR",
+    "PULSE_SERVER",
+    "SHELL",
+    "SWAYSOCK",
+    "XDG_CACHE_HOME",
+    "XDG_CONFIG_HOME",
+    "XDG_CURRENT_DESKTOP",
+    "XDG_DATA_HOME",
+    "XDG_RUNTIME_DIR",
+    "XDG_SESSION_TYPE",
+}
+
+
+def utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def read_environment(pid: int) -> dict[str, str]:
+    try:
+        raw = Path(f"/proc/{pid}/environ").read_bytes()
+    except OSError:
+        return {}
+    environment: dict[str, str] = {}
+    for item in raw.split(b"\0"):
+        if b"=" not in item:
+            continue
+        key, value = item.split(b"=", 1)
+        environment[key.decode(errors="surrogateescape")] = value.decode(
+            errors="surrogateescape"
+        )
+    return environment
+
+
+def process_name(pid: int) -> str:
+    try:
+        return Path(f"/proc/{pid}/comm").read_text().strip()
+    except OSError:
+        return ""
+
+
+def process_command(pid: int) -> list[str]:
+    try:
+        raw = Path(f"/proc/{pid}/cmdline").read_bytes()
+    except OSError:
+        return []
+    return [
+        value.decode(errors="replace")
+        for value in raw.rstrip(b"\0").split(b"\0")
+        if value
+    ]
+
+
+def process_ids() -> list[int]:
+    result: list[int] = []
+    for entry in Path("/proc").iterdir():
+        if entry.name.isdigit():
+            result.append(int(entry.name))
+    return result
+
+
+def process_stat(pid: int) -> tuple[int, int, int] | None:
+    try:
+        value = Path(f"/proc/{pid}/stat").read_text()
+    except OSError:
+        return None
+    fields = value[value.rfind(")") + 2:].split()
+    if len(fields) < 4:
+        return None
+    return int(fields[1]), int(fields[2]), int(fields[3])
+
+
+def descendants(root_pid: int) -> set[int]:
+    parents: dict[int, int] = {}
+    for pid in process_ids():
+        if (stat := process_stat(pid)) is not None:
+            parents[pid] = stat[0]
+    result = {root_pid}
+    changed = True
+    while changed:
+        changed = False
+        for pid, parent in parents.items():
+            if parent in result and pid not in result:
+                result.add(pid)
+                changed = True
+    return {pid for pid in result if Path(f"/proc/{pid}").exists()}
+
+
+def ancestors(pid: int) -> list[int]:
+    result: list[int] = []
+    seen: set[int] = set()
+    while pid > 1 and pid not in seen:
+        seen.add(pid)
+        stat = process_stat(pid)
+        if stat is None:
+            break
+        pid = stat[0]
+        if pid > 0:
+            result.append(pid)
+    return result
+
+
+def load_games() -> dict[str, dict[str, Any]]:
+    data = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
+    games = data.get("games", {})
+    if not isinstance(games, dict):
+        raise RuntimeError(f"Invalid managed game manifest: {MANIFEST_PATH}")
+    return {
+        str(managed_id): game
+        for managed_id, game in games.items()
+        if isinstance(game, dict) and game.get("enabled", True)
+    }
+
+
+def get_game(managed_id: str) -> dict[str, Any]:
+    if not ID_PATTERN.fullmatch(managed_id):
+        raise ValueError(f"Invalid managed game id: {managed_id}")
+    game = load_games().get(managed_id)
+    if game is None:
+        raise KeyError(f"Managed game not found: {managed_id}")
+    return game
+
+
+def find_steam_pid() -> int | None:
+    candidates: list[tuple[int, int]] = []
+    for pid in process_ids():
+        if process_name(pid) != "steam":
+            continue
+        environment = read_environment(pid)
+        score = 0
+        if environment.get("SteamGamepadUI") == "1":
+            score += 4
+        if environment.get("BATOCERA_STEAM_MODE") == "steamos":
+            score += 2
+        if "gamepadui" in " ".join(process_command(pid)):
+            score += 1
+        candidates.append((score, pid))
+    return max(candidates)[1] if candidates else None
+
+
+def safe_steam_environment(pid: int) -> dict[str, str]:
+    source = read_environment(pid)
+    environment = {
+        key: value
+        for key, value in source.items()
+        if key in STEAM_ENV_KEYS
+    }
+    environment.setdefault("PATH", "/usr/sbin:/usr/bin:/sbin:/bin")
+    environment.setdefault("HOME", "/userdata/system")
+    environment.setdefault("XDG_RUNTIME_DIR", "/run/user/0")
+    environment.setdefault("XDG_CONFIG_HOME", "/userdata/system/configs")
+    environment.setdefault("XDG_DATA_HOME", "/userdata/system/.local/share")
+    environment.setdefault("XDG_CACHE_HOME", "/userdata/system/.cache")
+    environment.setdefault("PIPEWIRE_RUNTIME_DIR", "/run")
+    environment.setdefault("PIPEWIRE_REMOTE", "pipewire-0")
+    environment.setdefault("PULSE_SERVER", "unix:/run/pulse/native")
+    environment["BATOCERA_STEAM_GAMESCOPE_TEST"] = "1"
+    environment["SteamEnv"] = "1"
+    environment["SteamGamepadUI"] = "1"
+    return environment
+
+
+def managed_roots(managed_id: str) -> list[int]:
+    marker = managed_id
+    matching = {
+        pid
+        for pid in process_ids()
+        if read_environment(pid).get("BATOCERA_STEAM_MANAGED_GAME_ID") == marker
+    }
+    roots: list[int] = []
+    for pid in matching:
+        stat = process_stat(pid)
+        if stat is None or stat[0] not in matching:
+            roots.append(pid)
+    return sorted(roots)
+
+
+def x11_windows(pids: set[int], display: str) -> list[dict[str, Any]]:
+    if not display or shutil.which("xdotool") is None:
+        return []
+    windows: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    environment = os.environ.copy()
+    environment["DISPLAY"] = display
+    for pid in sorted(pids):
+        result = subprocess.run(
+            ["xdotool", "search", "--all", "--pid", str(pid)],
+            env=environment,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        for window_id in result.stdout.split():
+            if window_id in seen:
+                continue
+            seen.add(window_id)
+            name_result = subprocess.run(
+                ["xdotool", "getwindowname", window_id],
+                env=environment,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            geometry_result = subprocess.run(
+                ["xdotool", "getwindowgeometry", "--shell", window_id],
+                env=environment,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            geometry = dict(
+                line.split("=", 1)
+                for line in geometry_result.stdout.splitlines()
+                if "=" in line
+            )
+            try:
+                width = int(geometry.get("WIDTH", 0))
+                height = int(geometry.get("HEIGHT", 0))
+            except ValueError:
+                width = 0
+                height = 0
+            windows.append({
+                "id": window_id,
+                "pid": pid,
+                "name": name_result.stdout.strip(),
+                "width": width,
+                "height": height,
+            })
+    return sorted(
+        windows,
+        key=lambda window: int(window["width"]) * int(window["height"]),
+        reverse=True,
+    )
+
+
+def x11_frame_sample(window_id: str, display: str) -> dict[str, Any] | None:
+    if not display or shutil.which("ffmpeg") is None:
+        return None
+    environment = os.environ.copy()
+    environment["DISPLAY"] = display
+    try:
+        result = subprocess.run(
+            [
+                "ffmpeg",
+                "-nostdin",
+                "-hide_banner",
+                "-loglevel", "error",
+                "-f", "x11grab",
+                "-window_id", window_id,
+                "-i", display,
+                "-frames:v", "1",
+                "-vf", "scale=64:64,format=gray",
+                "-f", "rawvideo",
+                "pipe:1",
+            ],
+            env=environment,
+            check=False,
+            capture_output=True,
+            timeout=5,
+        )
+    except subprocess.TimeoutExpired:
+        return None
+    if result.returncode != 0 or not result.stdout:
+        return None
+    pixels = result.stdout
+    average_luma = sum(pixels) / len(pixels)
+    nonblack_fraction = sum(value > 3 for value in pixels) / len(pixels)
+    return {
+        "window_id": window_id,
+        "average_luma": round(average_luma, 3),
+        "nonblack_fraction": round(nonblack_fraction, 6),
+    }
+
+
+def frame_is_visible(sample: dict[str, Any]) -> bool:
+    return (
+        float(sample.get("average_luma", 0)) > 1.0
+        or float(sample.get("nonblack_fraction", 0)) > 0.01
+    )
+
+
+def wayland_connection(pids: set[int]) -> bool:
+    if shutil.which("ss") is None:
+        return False
+    result = subprocess.run(
+        ["ss", "-xnpH"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    rows: list[tuple[str, str, str, str, str]] = []
+    pattern = re.compile(
+        r"^\S+\s+\S+\s+\d+\s+\d+\s+(\S*)\s+(\d+)\s+(\S*)\s+(\d+)\s*(.*)$"
+    )
+    for line in result.stdout.splitlines():
+        match = pattern.match(line)
+        if match:
+            rows.append(match.groups())
+
+    peer_inodes: set[str] = set()
+    pid_patterns = tuple(f"pid={pid}," for pid in pids)
+    for local_path, _local_inode, peer_path, peer_inode, owner in rows:
+        if not any(pattern in owner for pattern in pid_patterns):
+            continue
+        if "gamescope-" in local_path or "gamescope-" in peer_path:
+            return True
+        peer_inodes.add(peer_inode)
+    return any(
+        local_inode in peer_inodes and "gamescope-" in local_path
+        for local_path, local_inode, _peer_path, _peer_inode, _owner in rows
+    )
+
+
+def pulse_audio_processes(pids: set[int]) -> list[int]:
+    if shutil.which("pactl") is None:
+        return []
+    result = subprocess.run(
+        ["pactl", "list", "sink-inputs"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    found: set[int] = set()
+    for record in result.stdout.split("Sink Input #")[1:]:
+        match = re.search(r'application\.process\.id = "(\d+)"', record)
+        if match and int(match.group(1)) in pids:
+            found.add(int(match.group(1)))
+    return sorted(found)
+
+
+def pipewire_audio_processes(pids: set[int]) -> list[int]:
+    if shutil.which("pw-dump") is None:
+        return []
+    environment = os.environ.copy()
+    environment.setdefault("PIPEWIRE_RUNTIME_DIR", "/run")
+    environment.setdefault("PIPEWIRE_REMOTE", "pipewire-0")
+    try:
+        result = subprocess.run(
+            ["pw-dump"],
+            env=environment,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=3,
+        )
+        objects = json.loads(result.stdout)
+    except (subprocess.TimeoutExpired, json.JSONDecodeError):
+        return []
+
+    client_pids: dict[str, int] = {}
+    for item in objects:
+        if not isinstance(item, dict) or item.get("type") != "PipeWire:Interface:Client":
+            continue
+        info = item.get("info", {})
+        props = info.get("props", {}) if isinstance(info, dict) else {}
+        if not isinstance(props, dict):
+            continue
+        try:
+            client_pids[str(item.get("id"))] = int(
+                props.get("application.process.id", -1)
+            )
+        except (TypeError, ValueError):
+            continue
+
+    found: set[int] = set()
+    for item in objects:
+        if not isinstance(item, dict) or item.get("type") != "PipeWire:Interface:Node":
+            continue
+        info = item.get("info", {})
+        props = info.get("props", {}) if isinstance(info, dict) else {}
+        if not isinstance(props, dict):
+            continue
+        media_class = str(props.get("media.class", ""))
+        if "Output/Audio" not in media_class:
+            continue
+        try:
+            pid = int(props.get("application.process.id", -1))
+        except (TypeError, ValueError):
+            pid = -1
+        if pid < 0:
+            pid = client_pids.get(str(props.get("client.id")), -1)
+        if pid in pids:
+            found.add(pid)
+    return sorted(found)
+
+
+def process_snapshot(root_pid: int) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
+    for pid in sorted(descendants(root_pid)):
+        stat = process_stat(pid)
+        if stat is None:
+            continue
+        parent, group, session = stat
+        records.append({
+            "pid": pid,
+            "ppid": parent,
+            "pgid": group,
+            "sid": session,
+            "name": process_name(pid),
+            "command": process_command(pid),
+        })
+    return records
+
+
+def steam_tracked(root_pid: int) -> bool:
+    for pid in ancestors(root_pid):
+        name = process_name(pid)
+        command = " ".join(process_command(pid))
+        if name == "reaper" and "SteamLaunch" in command:
+            return True
+    return False
+
+
+def collect_state(root_pid: int, display: str) -> dict[str, Any]:
+    pids = descendants(root_pid)
+    pulse_pids = pulse_audio_processes(pids)
+    pipewire_pids = pipewire_audio_processes(pids)
+    return {
+        "alive": Path(f"/proc/{root_pid}").exists(),
+        "processes": process_snapshot(root_pid),
+        "x11_windows": x11_windows(pids, display),
+        "wayland_connected": wayland_connection(pids),
+        "audio_pids": sorted(set(pulse_pids) | set(pipewire_pids)),
+        "pulse_audio_pids": pulse_pids,
+        "pipewire_audio_pids": pipewire_pids,
+        "steam_tracked": steam_tracked(root_pid),
+    }
+
+
+def observe(
+    root_pid: int,
+    display: str,
+    timeout: int,
+    poll: Any | None = None,
+) -> dict[str, Any]:
+    state: dict[str, Any] = {}
+    frame_samples: list[dict[str, Any]] = []
+    deadline = time.monotonic() + timeout
+    window_seen_at: float | None = None
+    last_sample_at = 0.0
+    while time.monotonic() < deadline:
+        state = collect_state(root_pid, display)
+        now = time.monotonic()
+        windows = state["x11_windows"]
+        if windows:
+            if window_seen_at is None:
+                window_seen_at = now
+            window_age = now - window_seen_at
+            if window_age >= 2 and now - last_sample_at >= 1:
+                sample = x11_frame_sample(windows[0]["id"], display)
+                last_sample_at = now
+                if sample is not None:
+                    frame_samples.append(sample)
+                    if frame_is_visible(sample):
+                        break
+            if window_age >= 6 and frame_samples:
+                break
+        if poll is not None and poll() is not None:
+            break
+        if not state["alive"]:
+            break
+        time.sleep(1)
+
+    if frame_samples:
+        state["frame_samples"] = frame_samples
+        state["frame_sample"] = max(
+            frame_samples,
+            key=lambda sample: (
+                float(sample["average_luma"]),
+                float(sample["nonblack_fraction"]),
+            ),
+        )
+    return state
+
+
+def terminate_probe(process: subprocess.Popen[bytes]) -> int | None:
+    if process.poll() is not None:
+        return process.returncode
+
+    try:
+        process_group = os.getpgid(process.pid)
+    except ProcessLookupError:
+        return process.poll()
+
+    try:
+        if process_group == process.pid:
+            os.killpg(process_group, signal.SIGINT)
+        else:
+            process.send_signal(signal.SIGINT)
+    except ProcessLookupError:
+        return process.poll()
+    try:
+        return process.wait(timeout=7)
+    except subprocess.TimeoutExpired:
+        pass
+
+    try:
+        if process_group == process.pid:
+            os.killpg(process_group, signal.SIGTERM)
+        else:
+            process.terminate()
+    except ProcessLookupError:
+        return process.poll()
+    try:
+        return process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        pass
+
+    try:
+        if process_group == process.pid:
+            os.killpg(process_group, signal.SIGKILL)
+        else:
+            process.kill()
+    except ProcessLookupError:
+        return process.poll()
+    try:
+        return process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        return None
+
+
+def classify(state: dict[str, Any], exited: bool) -> str:
+    if state.get("x11_windows"):
+        tracked = "tracked-" if state.get("steam_tracked") else ""
+        if (
+            (sample := state.get("frame_sample")) is not None
+            and not frame_is_visible(sample)
+        ):
+            return f"{tracked}xwayland-black-frame"
+        return f"{tracked}xwayland-window"
+    if exited:
+        return "exited-before-window"
+    if state.get("wayland_connected"):
+        return "wayland-only"
+    return "running-no-window"
+
+
+def report_path(managed_id: str, mode: str, started: datetime) -> Path:
+    stamp = started.strftime("%Y%m%dT%H%M%SZ")
+    return REPORT_DIR / f"{stamp}-{managed_id}-{mode}.json"
+
+
+def save_report(report: dict[str, Any], path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_text(
+        json.dumps(report, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    temporary.replace(path)
+
+
+def summarize(report: dict[str, Any]) -> None:
+    game = report["game"]
+    print(
+        f"{report['classification']}: "
+        f"{game.get('system', '?')} / {game.get('name', report['managed_id'])}"
+    )
+    print(f"report: {report['report_path']}")
+    if report.get("log_path"):
+        print(f"log: {report['log_path']}")
+
+
+def command_list(as_json: bool) -> int:
+    games = load_games()
+    if as_json:
+        print(json.dumps(games, indent=2, sort_keys=True))
+        return 0
+    for managed_id, game in sorted(
+        games.items(),
+        key=lambda item: (
+            str(item[1].get("system", "")),
+            str(item[1].get("name", "")).casefold(),
+        ),
+    ):
+        print(
+            f"{managed_id}\t{game.get('system', '')}\t"
+            f"{game.get('name', '')}\t{game.get('rom', '')}"
+        )
+    return 0
+
+
+def command_test(managed_id: str, timeout: int, keep_running: bool) -> int:
+    game = get_game(managed_id)
+    steam_pid = find_steam_pid()
+    if steam_pid is None:
+        raise RuntimeError("Steam GamepadUI is not running")
+    if managed_roots(managed_id):
+        raise RuntimeError(f"Managed game is already running: {managed_id}")
+    if not LAUNCHER.exists():
+        raise RuntimeError(f"Managed launcher is missing: {LAUNCHER}")
+
+    started = utc_now()
+    path = report_path(managed_id, "test", started)
+    log_path = path.with_suffix(".log")
+    REPORT_DIR.mkdir(parents=True, exist_ok=True)
+    environment = safe_steam_environment(steam_pid)
+    display = environment.get("DISPLAY", "")
+
+    with log_path.open("wb") as log_file:
+        process = subprocess.Popen(
+            [str(LAUNCHER), managed_id],
+            env=environment,
+            stdin=subprocess.DEVNULL,
+            stdout=log_file,
+            stderr=subprocess.STDOUT,
+        )
+
+    state = observe(process.pid, display, timeout, process.poll)
+
+    exit_code = process.poll()
+    exited = exit_code is not None
+    if not keep_running and not exited:
+        exit_code = terminate_probe(process)
+
+    report = {
+        "schema": 1,
+        "mode": "test",
+        "managed_id": managed_id,
+        "game": game,
+        "hostname": socket.gethostname(),
+        "architecture": os.uname().machine,
+        "started_at": started.isoformat(),
+        "finished_at": utc_now().isoformat(),
+        "root_pid": process.pid,
+        "steam_pid": steam_pid,
+        "classification": classify(state, exited),
+        "exit_code": exit_code,
+        "kept_running": keep_running and not exited,
+        "state": state,
+        "report_path": str(path),
+        "log_path": str(log_path),
+    }
+    save_report(report, path)
+    summarize(report)
+    return 0 if report["classification"] == "xwayland-window" else 1
+
+
+def command_watch(managed_id: str, timeout: int) -> int:
+    game = get_game(managed_id)
+    started = utc_now()
+    path = report_path(managed_id, "watch", started)
+    launch_deadline = time.monotonic() + timeout
+    root_pid: int | None = None
+    while time.monotonic() < launch_deadline:
+        roots = managed_roots(managed_id)
+        if roots:
+            root_pid = roots[0]
+            break
+        time.sleep(0.5)
+    if root_pid is None:
+        raise RuntimeError(f"Timed out waiting for managed launch: {managed_id}")
+
+    environment = read_environment(root_pid)
+    display = environment.get("DISPLAY", "")
+    state = observe(root_pid, display, timeout)
+
+    report = {
+        "schema": 1,
+        "mode": "watch",
+        "managed_id": managed_id,
+        "game": game,
+        "hostname": socket.gethostname(),
+        "architecture": os.uname().machine,
+        "started_at": started.isoformat(),
+        "finished_at": utc_now().isoformat(),
+        "root_pid": root_pid,
+        "classification": classify(state, not state.get("alive", False)),
+        "state": state,
+        "report_path": str(path),
+    }
+    save_report(report, path)
+    summarize(report)
+    return 0 if report["classification"] == "tracked-xwayland-window" else 1
+
+
+def command_history(managed_id: str | None) -> int:
+    if not REPORT_DIR.exists():
+        return 0
+    for path in sorted(REPORT_DIR.glob("*.json")):
+        try:
+            report = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if managed_id and report.get("managed_id") != managed_id:
+            continue
+        game = report.get("game", {})
+        print(
+            f"{report.get('started_at', '')}\t"
+            f"{report.get('classification', '')}\t"
+            f"{game.get('system', '')}\t{game.get('name', '')}\t{path}"
+        )
+    return 0
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description=(
+            "Test only Batocera-managed Steam games for Gamescope window, "
+            "audio and process-session compatibility."
+        )
+    )
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    list_parser = subparsers.add_parser("list", help="list managed test targets")
+    list_parser.add_argument("--json", action="store_true")
+
+    test_parser = subparsers.add_parser(
+        "test",
+        help="launch an isolated direct probe and stop it after classification",
+    )
+    test_parser.add_argument("managed_id")
+    test_parser.add_argument("--timeout", type=int, default=20)
+    test_parser.add_argument("--keep-running", action="store_true")
+
+    watch_parser = subparsers.add_parser(
+        "watch",
+        help="classify the next real Steam GamepadUI launch",
+    )
+    watch_parser.add_argument("managed_id")
+    watch_parser.add_argument("--timeout", type=int, default=45)
+
+    history_parser = subparsers.add_parser(
+        "history",
+        help="show prior compatibility reports",
+    )
+    history_parser.add_argument("managed_id", nargs="?")
+    return parser.parse_args()
+
+
+def main() -> int:
+    args = parse_args()
+    try:
+        if args.command == "list":
+            return command_list(args.json)
+        if args.command == "test":
+            return command_test(args.managed_id, max(3, args.timeout), args.keep_running)
+        if args.command == "watch":
+            return command_watch(args.managed_id, max(3, args.timeout))
+        if args.command == "history":
+            return command_history(args.managed_id)
+    except (OSError, ValueError, KeyError, RuntimeError, json.JSONDecodeError) as exc:
+        print(f"batocera-steam-gamescope-test: {exc}", file=sys.stderr)
+        return 2
+    return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

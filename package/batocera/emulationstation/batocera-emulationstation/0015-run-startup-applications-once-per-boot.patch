@@ -1,0 +1,69 @@
+From d210fb8d541080aff473d6125b27b22f94ee7328 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Tue, 28 Jul 2026 14:37:06 +0000
+Subject: [PATCH 15/15] run startup applications once per boot
+
+---
+ es-app/src/main.cpp | 39 +++++++++++++++++++++++++++++----------
+ 1 file changed, 29 insertions(+), 10 deletions(-)
+
+diff --git a/es-app/src/main.cpp b/es-app/src/main.cpp
+index 81246fb..e11dbb2 100644
+--- a/es-app/src/main.cpp
++++ b/es-app/src/main.cpp
+@@ -588,26 +588,45 @@ int main(int argc, char* argv[])
+ 	SystemConf* systemConf = SystemConf::getInstance();
+ 
+ #if defined(BATOCERA) || defined(_ENABLE_KODI_)
++	bool initialFrontendStart = true;
++#ifdef BATOCERA
++	const std::string startupApplicationMarker = "/var/run/emulationstation-startup-application.done";
++	initialFrontendStart = !Utils::FileSystem::exists(startupApplicationMarker);
++	if (initialFrontendStart)
++	{
++		Utils::FileSystem::writeAllText(startupApplicationMarker, "1\n");
++		if (!Utils::FileSystem::exists(startupApplicationMarker))
++		{
++			LOG(LogWarning) << "Unable to create the startup application one-shot marker; skipping automatic startup!";
++			initialFrontendStart = false;
++		}
++	}
++#endif
++
+ 	bool startupApplicationSelected = false;
+ #ifdef BATOCERA
+ 	if (systemConf->getBool("steamos.atstartup"))
+ 	{
+-		if (splashScreen)
+-			window.closeSplashScreen();
+-
+ 		startupApplicationSelected = true;
+-		if (!ApiSystem::getInstance()->launchSteamOS(&window))
+-			LOG(LogWarning) << "SteamOS mode terminated with non-zero result at startup!";
+-
+-		if (splashScreen)
++		if (initialFrontendStart)
+ 		{
+-			window.renderSplashScreen("");
+-			splashScreen = false;
++			if (splashScreen)
++				window.closeSplashScreen();
++
++			if (!ApiSystem::getInstance()->launchSteamOS(&window))
++				LOG(LogWarning) << "SteamOS mode terminated with non-zero result at startup!";
++
++			if (splashScreen)
++			{
++				window.renderSplashScreen("");
++				splashScreen = false;
++			}
+ 		}
+ 	}
+ #endif
+ #ifdef _ENABLE_KODI_
+-	if (!startupApplicationSelected && systemConf->getBool("kodi.enabled", true) && systemConf->getBool("kodi.atstartup"))
++	if (initialFrontendStart && !startupApplicationSelected &&
++		systemConf->getBool("kodi.enabled", true) && systemConf->getBool("kodi.atstartup"))
+ 	{
+ 		if (splashScreen)
+ 			window.closeSplashScreen();

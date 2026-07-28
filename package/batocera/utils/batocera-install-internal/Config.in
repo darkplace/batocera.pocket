@@ -1,0 +1,19 @@
+config BR2_PACKAGE_BATOCERA_INSTALL_INTERNAL
+	bool "batocera-install-internal"
+	depends on BR2_PACKAGE_BATOCERA_TARGET_SM8550 || BR2_PACKAGE_BATOCERA_TARGET_SM8750
+	depends on BR2_PACKAGE_XORG7
+	default y
+	select BR2_PACKAGE_BASH
+	select BR2_PACKAGE_BATOCERA_ES_SYSTEM
+	select BR2_PACKAGE_BATOCERA_SCRIPTS
+	select BR2_PACKAGE_DIALOG
+	select BR2_PACKAGE_DOSFSTOOLS
+	select BR2_PACKAGE_DOSFSTOOLS_MKFS_FAT
+	select BR2_PACKAGE_E2FSPROGS
+	select BR2_PACKAGE_EVMAPY
+	select BR2_PACKAGE_PARTED
+	select BR2_PACKAGE_XTERM
+	help
+	  Add a gamepad-navigable EmulationStation tool that installs
+	  Batocera beside Android on supported SM8550 and SM8750 handheld
+	  internal storage using a ROCKNIX-compatible ABL.

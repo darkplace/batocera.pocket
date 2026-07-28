@@ -1,0 +1,31 @@
+#!/bin/bash
+set -euo pipefail
+
+if [ -z "${DISPLAY:-}" ]; then
+    export DISPLAY="$(getLocalXDisplay 2>/dev/null || printf ':0.0')"
+fi
+
+log_dir="/userdata/system/logs"
+log_file="${log_dir}/batocera-install-internal.log"
+mkdir -p "${log_dir}"
+
+batocera-mouse show || true
+trap 'batocera-mouse hide || true' EXIT
+
+set +e
+xterm -fs 14 -fg white -bg black -fa "Monospace" -en UTF-8 -sb -rightbar \
+    -T "Install Batocera Internal" \
+    -e /bin/bash -lc '
+        log_file="$1"
+        printf "\n===== batocera-install-internal %s =====\n" "$(date -Is)" >> "${log_file}"
+        /usr/bin/batocera-install-internal
+        rc=$?
+        printf "Installer exited with status %s at %s.\n" "${rc}" "$(date -Is)" >> "${log_file}"
+        printf "\nInstaller exited with status %s. Press Enter to close.\n" "${rc}"
+        read -r _
+        exit "${rc}"
+    ' bash "${log_file}"
+rc=$?
+set -e
+
+exit "${rc}"

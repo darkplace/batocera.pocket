@@ -325,6 +325,16 @@ class YuzuGenerator(Generator):
             "SDL_JOYSTICK_HIDAPI": "0",
         }
 
+        # Managed Steam shortcuts inherit the nested Gamescope display. Avoid
+        # replacing it with the frontend's normal Wayland endpoint.
+        if os.environ.get("BATOCERA_LAUNCH_SOURCE") == "steam":
+            env.update({
+                "DISPLAY": os.environ.get("DISPLAY", ":0"),
+                "WAYLAND_DISPLAY": "",
+                "XDG_RUNTIME_DIR": os.environ.get("XDG_RUNTIME_DIR", "/run/user/0"),
+                "QT_QPA_PLATFORM": "xcb",
+            })
+
         # ---- UCLAMP performance tuning for big.LITTLE ----
         use_uclamp = system.config.get_bool("perf_uclamp", True) and _has_uclamp_support()
         uclamp_min = system.config.get_int("perf_uclamp_min", UCLAMP_MIN)

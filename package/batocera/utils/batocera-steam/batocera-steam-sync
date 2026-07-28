@@ -1,0 +1,1315 @@
+#!/usr/bin/env python3
+"""Synchronize Batocera-owned ROM shortcuts into Steam.
+
+Only shortcuts carrying the BatoceraManaged tag and using a launcher alias in
+STATE_DIR/launchers are changed.  Manual Steam shortcuts are left alone.
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import re
+import shlex
+import shutil
+import struct
+import sys
+import urllib.parse
+import urllib.request
+import zlib
+from pathlib import Path
+from typing import Any
+
+
+STATE_DIR = Path(os.environ.get(
+    "BATOCERA_STEAM_SYNC_STATE_DIR",
+    "/userdata/system/configs/batocera-steam",
+))
+MANIFEST_PATH = STATE_DIR / "managed-games.json"
+PENDING_PATH = STATE_DIR / "sync.pending"
+LAUNCHERS_DIR = STATE_DIR / "launchers"
+ARTWORK_MANIFEST_PATH = STATE_DIR / "managed-artwork.json"
+INPUT_MANIFEST_PATH = STATE_DIR / "managed-steam-input.json"
+ROM_LAUNCHER = os.environ.get(
+    "BATOCERA_STEAM_SYNC_ROM_LAUNCHER",
+    "/usr/bin/batocera-steam-rom-launch",
+)
+ES_API = os.environ.get(
+    "BATOCERA_STEAM_SYNC_ES_API",
+    "http://127.0.0.1:1234",
+).rstrip("/")
+STEAM_ROOTS = (
+    Path("/userdata/system/steam"),
+    Path("/userdata/system/.local/share/Steam"),
+    Path("/userdata/system/.steam/steam"),
+)
+OWNER_TAG = "BatoceraManaged"
+ID_PATTERN = re.compile(r"^[0-9a-f]{24}$")
+ARTWORK_EXTENSIONS = (".png", ".jpg", ".jpeg", ".webp")
+ICON_EXTENSIONS = ARTWORK_EXTENSIONS + (".ico",)
+MEDIA_KEYS = (
+    "image",
+    "thumbnail",
+    "boxart",
+    "fanart",
+    "marquee",
+    "steamgrid",
+    "steambanner",
+    "steamhero",
+    "steamlogo",
+    "steamicon",
+)
+
+
+def log(message: str, *, quiet: bool = False, error: bool = False) -> None:
+    if not quiet:
+        print(message, file=sys.stderr if error else sys.stdout)
+
+
+def atomic_write(path: Path, data: bytes) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".{path.name}.tmp")
+    tmp.write_bytes(data)
+    os.replace(tmp, path)
+
+
+def default_manifest() -> dict[str, Any]:
+    return {
+        "version": 1,
+        "enabled": True,
+        "managed_systems": [],
+        "excluded_games": {},
+        "games": {},
+    }
+
+
+def load_manifest() -> dict[str, Any]:
+    if not MANIFEST_PATH.exists():
+        return default_manifest()
+    data = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise ValueError(f"Invalid manifest root in {MANIFEST_PATH}")
+    data.setdefault("version", 1)
+    data.setdefault("enabled", True)
+    data.setdefault("managed_systems", [])
+    data.setdefault("excluded_games", {})
+    data.setdefault("games", {})
+    if (
+        not isinstance(data["managed_systems"], list)
+        or not isinstance(data["excluded_games"], dict)
+        or not isinstance(data["games"], dict)
+    ):
+        raise ValueError(f"Invalid manifest structure in {MANIFEST_PATH}")
+    return data
+
+
+def save_manifest(manifest: dict[str, Any]) -> None:
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    if MANIFEST_PATH.exists():
+        shutil.copy2(MANIFEST_PATH, MANIFEST_PATH.with_suffix(".json.bak"))
+    payload = (json.dumps(manifest, indent=2, sort_keys=True) + "\n").encode("utf-8")
+    atomic_write(MANIFEST_PATH, payload)
+
+
+def load_artwork_manifest() -> dict[str, Any]:
+    if not ARTWORK_MANIFEST_PATH.exists():
+        return {"version": 1, "configs": {}}
+    data = json.loads(ARTWORK_MANIFEST_PATH.read_text(encoding="utf-8"))
+    if not isinstance(data, dict) or not isinstance(data.get("configs"), dict):
+        raise ValueError(f"Invalid artwork manifest in {ARTWORK_MANIFEST_PATH}")
+    data.setdefault("version", 1)
+    return data
+
+
+def save_artwork_manifest(manifest: dict[str, Any]) -> None:
+    payload = (json.dumps(manifest, indent=2, sort_keys=True) + "\n").encode("utf-8")
+    atomic_write(ARTWORK_MANIFEST_PATH, payload)
+
+
+def load_input_manifest() -> dict[str, Any]:
+    if not INPUT_MANIFEST_PATH.exists():
+        return {"version": 1, "configs": {}}
+    data = json.loads(INPUT_MANIFEST_PATH.read_text(encoding="utf-8"))
+    if not isinstance(data, dict) or not isinstance(data.get("configs"), dict):
+        raise ValueError(f"Invalid Steam Input manifest in {INPUT_MANIFEST_PATH}")
+    data.setdefault("version", 1)
+    return data
+
+
+def save_input_manifest(manifest: dict[str, Any]) -> None:
+    payload = (json.dumps(manifest, indent=2, sort_keys=True) + "\n").encode("utf-8")
+    atomic_write(INPUT_MANIFEST_PATH, payload)
+
+
+def mark_pending() -> None:
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    PENDING_PATH.touch()
+
+
+def steam_running() -> bool:
+    if os.environ.get("BATOCERA_STEAM_SYNC_ASSUME_STOPPED") == "1":
+        return False
+    names = {"steam", "steamui", "steamwebhelper"}
+    for proc in Path("/proc").iterdir():
+        if not proc.name.isdigit() or int(proc.name) == os.getpid():
+            continue
+        try:
+            comm = (proc / "comm").read_text(encoding="utf-8").strip().casefold()
+        except OSError:
+            continue
+        if comm in names:
+            return True
+        if comm.startswith("fex"):
+            try:
+                arguments = (proc / "cmdline").read_bytes().split(b"\0")
+            except OSError:
+                continue
+            for argument in arguments[:4]:
+                executable = Path(
+                    argument.decode("utf-8", errors="ignore")
+                ).name.casefold()
+                if executable in names:
+                    return True
+    return False
+
+
+def steam_config_dirs() -> list[Path]:
+    override = os.environ.get("BATOCERA_STEAM_SYNC_CONFIG_DIRS")
+    if override:
+        return [Path(item) for item in override.split(os.pathsep) if item]
+
+    roots: list[Path] = []
+    for env_name in ("BATOCERA_STEAM_HOME", "BATOCERA_STEAM_ROOT"):
+        if value := os.environ.get(env_name):
+            roots.append(Path(value))
+    if not roots:
+        roots.extend(STEAM_ROOTS)
+
+    configs: list[Path] = []
+    seen: set[str] = set()
+    for root in roots:
+        userdata = root / "userdata"
+        if not userdata.is_dir():
+            continue
+        for config in userdata.glob("*/config"):
+            key = str(config.resolve(strict=False))
+            if config.is_dir() and key not in seen:
+                configs.append(config)
+                seen.add(key)
+    return configs
+
+
+def cstring(value: str) -> bytes:
+    return value.encode("utf-8", errors="surrogateescape") + b"\x00"
+
+
+def read_cstring(data: bytes, pos: int) -> tuple[str, int]:
+    end = data.find(b"\x00", pos)
+    if end < 0:
+        raise ValueError("unterminated binary VDF string")
+    return data[pos:end].decode("utf-8", errors="replace"), end + 1
+
+
+def parse_vdf_object(data: bytes, pos: int = 0) -> tuple[dict[str, Any], int]:
+    node: dict[str, Any] = {}
+    while pos < len(data):
+        kind = data[pos]
+        pos += 1
+        if kind == 0x08:
+            return node, pos
+        key, pos = read_cstring(data, pos)
+        if kind == 0x00:
+            value, pos = parse_vdf_object(data, pos)
+        elif kind == 0x01:
+            value, pos = read_cstring(data, pos)
+        elif kind == 0x02:
+            if pos + 4 > len(data):
+                raise ValueError("short binary VDF int32")
+            value = struct.unpack_from("<i", data, pos)[0]
+            pos += 4
+        elif kind == 0x07:
+            if pos + 8 > len(data):
+                raise ValueError("short binary VDF uint64")
+            value = struct.unpack_from("<Q", data, pos)[0]
+            pos += 8
+        else:
+            raise ValueError(f"unsupported binary VDF type 0x{kind:02x}")
+        node[key] = value
+    return node, pos
+
+
+def load_shortcuts(path: Path) -> dict[str, Any]:
+    if not path.exists() or path.stat().st_size == 0:
+        return {"shortcuts": {}}
+    parsed, _ = parse_vdf_object(path.read_bytes())
+    if not isinstance(parsed.get("shortcuts"), dict):
+        parsed["shortcuts"] = {}
+    return parsed
+
+
+def write_vdf_object(node: dict[str, Any]) -> bytes:
+    out = bytearray()
+    for key, value in node.items():
+        if isinstance(value, dict):
+            out.append(0x00)
+            out.extend(cstring(str(key)))
+            out.extend(write_vdf_object(value))
+        elif isinstance(value, int):
+            out.append(0x02)
+            out.extend(cstring(str(key)))
+            number = value
+            if number > 0x7FFFFFFF:
+                number -= 0x100000000
+            if not -0x80000000 <= number <= 0x7FFFFFFF:
+                number = 0
+            out.extend(struct.pack("<i", number))
+        else:
+            out.append(0x01)
+            out.extend(cstring(str(key)))
+            out.extend(cstring(str(value)))
+    out.append(0x08)
+    return bytes(out)
+
+
+def save_shortcuts(path: Path, data: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    backup = path.with_name(f"{path.name}.batocera-steam-sync.bak")
+    if path.exists() and not backup.exists():
+        shutil.copy2(path, backup)
+    atomic_write(path, write_vdf_object(data))
+
+
+def steam_quote(value: str) -> str:
+    return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def steam_unquote(value: object) -> str:
+    text = str(value)
+    try:
+        parsed = shlex.split(text)
+    except ValueError:
+        return text.strip('"')
+    return parsed[0] if len(parsed) == 1 else text.strip('"')
+
+
+def shortcut_appid(exe: str, app_name: str) -> int:
+    appid = (zlib.crc32((exe + app_name).encode("utf-8")) & 0xFFFFFFFF) | 0x80000000
+    return appid - 0x100000000 if appid >= 0x80000000 else appid
+
+
+def shortcut_unsigned_appid(entry: dict[str, Any]) -> int:
+    return int(entry.get("appid", 0)) & 0xFFFFFFFF
+
+
+def game_id(system: str, rom: Path) -> str:
+    canonical = str(rom.resolve(strict=False))
+    return hashlib.sha256(f"{system}\0{canonical}".encode("utf-8")).hexdigest()[:24]
+
+
+def launcher_path(managed_id: str) -> Path:
+    return LAUNCHERS_DIR / managed_id
+
+
+def game_entry(game: dict[str, Any]) -> dict[str, Any]:
+    managed_id = str(game["id"])
+    system = str(game["system"])
+    name = str(game["name"])
+    rom = Path(str(game["rom"]))
+    alias = str(launcher_path(managed_id))
+    tags = ("Batocera", OWNER_TAG, system)
+    icon = ""
+    media = game.get("media", {})
+    if isinstance(media, dict):
+        icon_source = local_media_path(media.get("steamicon", ""))
+        if icon_source.is_file() and icon_source.suffix.casefold() in ICON_EXTENSIONS:
+            icon = str(icon_source)
+    return {
+        "appid": shortcut_appid(alias, name),
+        "AppName": name,
+        "Exe": steam_quote(alias),
+        "StartDir": steam_quote(str(rom.parent)),
+        "icon": icon,
+        "ShortcutPath": "",
+        "LaunchOptions": managed_id,
+        "IsHidden": 0,
+        "AllowDesktopConfig": 1,
+        "AllowOverlay": 1,
+        "OpenVR": 0,
+        "Devkit": 0,
+        "DevkitGameID": "",
+        "DevkitOverrideAppID": 0,
+        "LastPlayTime": 0,
+        "FlatpakAppID": "",
+        "tags": {str(index): tag for index, tag in enumerate(tags)},
+    }
+
+
+def owned_game_id(entry: object) -> str | None:
+    if not isinstance(entry, dict):
+        return None
+    tags = entry.get("tags")
+    if not isinstance(tags, dict) or OWNER_TAG not in {str(value) for value in tags.values()}:
+        return None
+    exe = Path(steam_unquote(entry.get("Exe", "")))
+    if exe.parent != LAUNCHERS_DIR:
+        return None
+    managed_id = str(entry.get("LaunchOptions", "")).strip()
+    if managed_id != exe.name or not ID_PATTERN.fullmatch(managed_id):
+        return None
+    return managed_id
+
+
+def ensure_launcher_aliases(games: dict[str, dict[str, Any]]) -> None:
+    LAUNCHERS_DIR.mkdir(parents=True, exist_ok=True)
+    for managed_id in games:
+        alias = launcher_path(managed_id)
+        if alias.is_symlink() and os.readlink(alias) == ROM_LAUNCHER:
+            continue
+        tmp = LAUNCHERS_DIR / f".{managed_id}.tmp"
+        try:
+            tmp.unlink()
+        except FileNotFoundError:
+            pass
+        tmp.symlink_to(ROM_LAUNCHER)
+        os.replace(tmp, alias)
+
+    for alias in LAUNCHERS_DIR.iterdir():
+        if ID_PATTERN.fullmatch(alias.name) and alias.name not in games:
+            alias.unlink()
+
+
+TextVdfToken = tuple[str, str, int, int]
+
+
+def text_vdf_tokens(text: str) -> list[TextVdfToken]:
+    tokens: list[TextVdfToken] = []
+    position = 0
+    while position < len(text):
+        character = text[position]
+        if character.isspace():
+            position += 1
+            continue
+        if text.startswith("//", position):
+            newline = text.find("\n", position)
+            position = len(text) if newline < 0 else newline + 1
+            continue
+        if character in "{}":
+            tokens.append((character, character, position, position + 1))
+            position += 1
+            continue
+        if character == '"':
+            start = position
+            position += 1
+            value: list[str] = []
+            while position < len(text):
+                character = text[position]
+                if character == '"':
+                    position += 1
+                    break
+                if character == "\\" and position + 1 < len(text):
+                    position += 1
+                    character = text[position]
+                    value.append({"n": "\n", "t": "\t"}.get(character, character))
+                else:
+                    value.append(character)
+                position += 1
+            else:
+                raise ValueError("Unterminated quoted string in localconfig.vdf")
+            tokens.append(("value", "".join(value), start, position))
+            continue
+
+        start = position
+        while (
+            position < len(text)
+            and not text[position].isspace()
+            and text[position] not in "{}"
+        ):
+            position += 1
+        tokens.append(("value", text[start:position], start, position))
+    return tokens
+
+
+def text_vdf_braces(tokens: list[TextVdfToken]) -> dict[int, int]:
+    result: dict[int, int] = {}
+    stack: list[int] = []
+    for index, token in enumerate(tokens):
+        if token[0] == "{":
+            stack.append(index)
+        elif token[0] == "}":
+            if not stack:
+                raise ValueError("Unexpected closing brace in localconfig.vdf")
+            result[stack.pop()] = index
+    if stack:
+        raise ValueError("Unclosed object in localconfig.vdf")
+    return result
+
+
+def text_vdf_entry(
+    tokens: list[TextVdfToken],
+    braces: dict[int, int],
+    object_open: int,
+    wanted: str,
+) -> tuple[int, int] | None:
+    position = object_open + 1
+    object_close = braces[object_open]
+    while position < object_close:
+        if tokens[position][0] != "value" or position + 1 >= object_close:
+            raise ValueError("Invalid entry in localconfig.vdf")
+        key_index = position
+        value_index = position + 1
+        if tokens[key_index][1] == wanted:
+            return key_index, value_index
+        if tokens[value_index][0] == "{":
+            position = braces[value_index] + 1
+        else:
+            position += 2
+    return None
+
+
+def text_vdf_root(
+    text: str,
+) -> tuple[list[TextVdfToken], dict[int, int], int]:
+    tokens = text_vdf_tokens(text)
+    braces = text_vdf_braces(tokens)
+    for index in range(len(tokens) - 1):
+        if tokens[index][0] == "value" and tokens[index + 1][0] == "{":
+            return tokens, braces, index + 1
+    raise ValueError("No root object in localconfig.vdf")
+
+
+def text_vdf_apps(
+    text: str,
+) -> tuple[list[TextVdfToken], dict[int, int], int] | None:
+    tokens, braces, root = text_vdf_root(text)
+    apps = text_vdf_entry(tokens, braces, root, "apps")
+    if apps is None or tokens[apps[1]][0] != "{":
+        return None
+    return tokens, braces, apps[1]
+
+
+def line_start(text: str, position: int) -> int:
+    newline = text.rfind("\n", 0, position)
+    return 0 if newline < 0 else newline + 1
+
+
+def line_end(text: str, position: int) -> int:
+    newline = text.find("\n", position)
+    return len(text) if newline < 0 else newline + 1
+
+
+def quote_text_vdf(value: str) -> str:
+    return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def ensure_text_vdf_apps(text: str) -> str:
+    if text_vdf_apps(text) is not None:
+        return text
+    tokens, braces, root = text_vdf_root(text)
+    insert_at = line_start(text, tokens[braces[root]][2])
+    return text[:insert_at] + '\t"apps"\n\t{\n\t}\n' + text[insert_at:]
+
+
+def text_vdf_input_state(text: str, appid: str) -> tuple[bool, bool, str]:
+    parsed = text_vdf_apps(text)
+    if parsed is None:
+        return False, False, ""
+    tokens, braces, apps = parsed
+    app = text_vdf_entry(tokens, braces, apps, appid)
+    if app is None or tokens[app[1]][0] != "{":
+        return False, False, ""
+    setting = text_vdf_entry(tokens, braces, app[1], "UseSteamControllerConfig")
+    if setting is None or tokens[setting[1]][0] != "value":
+        return True, False, ""
+    return True, True, tokens[setting[1]][1]
+
+
+def set_text_vdf_input(text: str, appid: str, value: str) -> tuple[str, bool]:
+    text = ensure_text_vdf_apps(text)
+    tokens, braces, apps = text_vdf_apps(text)  # type: ignore[misc]
+    app = text_vdf_entry(tokens, braces, apps, appid)
+    created_app = app is None
+    if app is None:
+        insert_at = line_start(text, tokens[braces[apps]][2])
+        entry = (
+            f'\t\t{quote_text_vdf(appid)}\n'
+            "\t\t{\n"
+            f'\t\t\t"UseSteamControllerConfig"\t\t{quote_text_vdf(value)}\n'
+            "\t\t}\n"
+        )
+        return text[:insert_at] + entry + text[insert_at:], True
+    if tokens[app[1]][0] != "{":
+        raise ValueError(f"Invalid Steam app entry {appid} in localconfig.vdf")
+
+    setting = text_vdf_entry(tokens, braces, app[1], "UseSteamControllerConfig")
+    if setting is not None:
+        if tokens[setting[1]][0] != "value":
+            raise ValueError(f"Invalid Steam Input setting for {appid}")
+        start, end = tokens[setting[1]][2], tokens[setting[1]][3]
+        return text[:start] + quote_text_vdf(value) + text[end:], created_app
+
+    insert_at = line_start(text, tokens[braces[app[1]]][2])
+    entry = f'\t\t\t"UseSteamControllerConfig"\t\t{quote_text_vdf(value)}\n'
+    return text[:insert_at] + entry + text[insert_at:], created_app
+
+
+def remove_text_vdf_input(text: str, appid: str, remove_empty_app: bool) -> str:
+    parsed = text_vdf_apps(text)
+    if parsed is None:
+        return text
+    tokens, braces, apps = parsed
+    app = text_vdf_entry(tokens, braces, apps, appid)
+    if app is None or tokens[app[1]][0] != "{":
+        return text
+    setting = text_vdf_entry(tokens, braces, app[1], "UseSteamControllerConfig")
+    if setting is None or tokens[setting[1]][0] != "value":
+        return text
+
+    start = line_start(text, tokens[setting[0]][2])
+    end = line_end(text, tokens[setting[1]][3])
+    text = text[:start] + text[end:]
+    if not remove_empty_app:
+        return text
+
+    tokens, braces, apps = text_vdf_apps(text)  # type: ignore[misc]
+    app = text_vdf_entry(tokens, braces, apps, appid)
+    if app is None or tokens[app[1]][0] != "{":
+        return text
+    if app[1] + 1 != braces[app[1]]:
+        return text
+    start = line_start(text, tokens[app[0]][2])
+    end = line_end(text, tokens[braces[app[1]]][3])
+    return text[:start] + text[end:]
+
+
+def write_localconfig(path: Path, text: str) -> None:
+    backup = path.with_name(f"{path.name}.batocera-steam-sync.bak")
+    if not backup.exists():
+        shutil.copy2(path, backup)
+    atomic_write(path, text.encode("utf-8", errors="surrogateescape"))
+
+
+def local_media_path(value: object) -> Path:
+    text = str(value or "")
+    return Path(urllib.parse.unquote(urllib.parse.urlparse(text).path))
+
+
+def media_state(media: dict[str, str]) -> dict[str, str]:
+    state: dict[str, str] = {}
+    for key, value in media.items():
+        if not value:
+            state[key] = ""
+            continue
+        source = local_media_path(value)
+        try:
+            stat = source.stat()
+        except OSError:
+            state[key] = ""
+        else:
+            state[key] = f"{stat.st_mtime_ns}:{stat.st_size}"
+    return state
+
+
+def file_digest(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def artwork_sources(appid: int, game: dict[str, Any]) -> dict[str, Path]:
+    media = game.get("media", {})
+    if not isinstance(media, dict):
+        return {}
+
+    def first_available(*keys: str) -> str:
+        for key in keys:
+            source = local_media_path(media.get(key, ""))
+            if source.is_file() and source.suffix.casefold() in ARTWORK_EXTENSIONS:
+                return key
+        return ""
+
+    mapping = (
+        (first_available("steamgrid", "boxart", "image"), "p"),
+        (first_available("steambanner", "thumbnail", "image", "boxart"), ""),
+        (first_available("steamhero", "fanart"), "_hero"),
+        (first_available("steamlogo", "marquee"), "_logo"),
+    )
+
+    result: dict[str, Path] = {}
+    for media_key, suffix in mapping:
+        value = str(media.get(media_key, ""))
+        source = local_media_path(value)
+        if not value or not source.is_file():
+            continue
+        extension = source.suffix.casefold()
+        if extension not in ARTWORK_EXTENSIONS:
+            continue
+        result[f"{appid}{suffix}{extension}"] = source
+    return result
+
+
+def sync_artwork(
+    config: Path,
+    games: dict[str, dict[str, Any]],
+    artwork_manifest: dict[str, Any],
+) -> None:
+    grid = config / "grid"
+    grid.mkdir(parents=True, exist_ok=True)
+    config_key = str(config.resolve(strict=False))
+    configs = artwork_manifest["configs"]
+    owned = configs.setdefault(config_key, {})
+    if not isinstance(owned, dict):
+        owned = {}
+        configs[config_key] = owned
+
+    desired: dict[str, Path] = {}
+    slots: dict[str, str] = {}
+    for game in games.values():
+        appid = shortcut_unsigned_appid(game_entry(game))
+        for filename, source in artwork_sources(appid, game).items():
+            desired[filename] = source
+            slots[filename] = filename.removesuffix(source.suffix.casefold())
+
+    # Delete stale artwork only when it still matches the copy Batocera made.
+    # If Decky/SteamGridDB replaced it, relinquish ownership and preserve it.
+    for filename in list(owned):
+        if Path(filename).name != filename:
+            del owned[filename]
+            continue
+        destination = grid / filename
+        if not destination.is_file():
+            del owned[filename]
+            continue
+        try:
+            unchanged = file_digest(destination) == str(owned[filename])
+        except OSError:
+            unchanged = False
+        if not unchanged:
+            del owned[filename]
+        elif filename not in desired:
+            destination.unlink()
+            del owned[filename]
+
+    for filename, source in desired.items():
+        slot = slots[filename]
+        candidates = [
+            grid / f"{slot}{extension}"
+            for extension in ARTWORK_EXTENSIONS
+            if (grid / f"{slot}{extension}").is_file()
+        ]
+        external = [candidate for candidate in candidates if candidate.name not in owned]
+        if external:
+            # Let an external artwork provider own the slot. Remove only an
+            # unchanged Batocera copy that might otherwise compete with it.
+            for candidate in candidates:
+                if candidate.name not in owned:
+                    continue
+                if file_digest(candidate) == str(owned[candidate.name]):
+                    candidate.unlink()
+                del owned[candidate.name]
+            continue
+
+        destination = grid / filename
+        tmp = grid / f".{destination.name}.tmp"
+        shutil.copy2(source, tmp)
+        os.replace(tmp, destination)
+        owned[filename] = file_digest(destination)
+
+    if not owned:
+        del configs[config_key]
+
+
+def sync_steam_input(
+    config: Path,
+    games: dict[str, dict[str, Any]],
+    input_manifest: dict[str, Any],
+) -> int:
+    localconfig = config / "localconfig.vdf"
+    config_key = str(config.resolve(strict=False))
+    configs = input_manifest["configs"]
+    tracked = configs.setdefault(config_key, {})
+    if not isinstance(tracked, dict):
+        tracked = {}
+        configs[config_key] = tracked
+
+    if not localconfig.is_file():
+        if not tracked:
+            del configs[config_key]
+        return 0
+
+    text = localconfig.read_text(encoding="utf-8", errors="surrogateescape")
+    desired = {
+        str(int(game_entry(game)["appid"]))
+        for game in games.values()
+    }
+    changed = False
+
+    for appid in list(tracked):
+        record = tracked[appid]
+        if not isinstance(record, dict):
+            del tracked[appid]
+            continue
+        _, setting_present, current = text_vdf_input_state(text, appid)
+
+        if appid in desired:
+            if record.get("owned", False) and (
+                not setting_present or current != "0"
+            ):
+                # The user or another tool changed the setting. Stop owning it
+                # so subsequent refreshes preserve that explicit choice.
+                record["owned"] = False
+                record["user_override"] = True
+            continue
+
+        if (
+            record.get("owned", False)
+            and setting_present
+            and current == "0"
+        ):
+            if record.get("previous_present", False):
+                text, _ = set_text_vdf_input(
+                    text,
+                    appid,
+                    str(record.get("previous_value", "")),
+                )
+            else:
+                text = remove_text_vdf_input(
+                    text,
+                    appid,
+                    bool(record.get("created_app", False)),
+                )
+            changed = True
+        del tracked[appid]
+
+    for appid in desired:
+        if appid in tracked:
+            continue
+        app_present, setting_present, current = text_vdf_input_state(text, appid)
+        if setting_present and current == "0":
+            # It was already disabled before Batocera managed this shortcut.
+            # Track that fact without claiming or later removing the setting.
+            tracked[appid] = {"owned": False, "preexisting": True}
+            continue
+
+        text, created_app = set_text_vdf_input(text, appid, "0")
+        tracked[appid] = {
+            "owned": True,
+            "previous_present": setting_present,
+            "previous_value": current if setting_present else "",
+            "created_app": created_app and not app_present,
+        }
+        changed = True
+
+    if changed:
+        write_localconfig(localconfig, text)
+    if not tracked:
+        del configs[config_key]
+
+    disabled = 0
+    for appid in desired:
+        _, setting_present, current = text_vdf_input_state(text, appid)
+        if setting_present and current == "0":
+            disabled += 1
+    return disabled
+
+
+def sync_config(
+    config: Path,
+    games: dict[str, dict[str, Any]],
+    artwork_manifest: dict[str, Any],
+) -> tuple[int, int]:
+    shortcuts_path = config / "shortcuts.vdf"
+    data = load_shortcuts(shortcuts_path)
+    shortcuts = data["shortcuts"]
+    installed: set[str] = set()
+    removed = 0
+
+    for key in list(shortcuts):
+        raw = shortcuts[key]
+        managed_id = owned_game_id(raw)
+        if managed_id is None:
+            continue
+        game = games.get(managed_id)
+        if game is None or managed_id in installed:
+            del shortcuts[key]
+            removed += 1
+            continue
+        entry = game_entry(game)
+        entry["LastPlayTime"] = raw.get("LastPlayTime", 0)
+        if raw.get("icon"):
+            entry["icon"] = raw["icon"]
+        shortcuts[key] = entry
+        installed.add(managed_id)
+
+    used = [int(key) for key in shortcuts if str(key).isdigit()]
+    next_key = max(used, default=-1) + 1
+    for managed_id, game in games.items():
+        if managed_id in installed:
+            continue
+        shortcuts[str(next_key)] = game_entry(game)
+        next_key += 1
+        installed.add(managed_id)
+
+    save_shortcuts(shortcuts_path, data)
+
+    sync_artwork(config, games, artwork_manifest)
+    return len(installed), removed
+
+
+def apply_manifest(manifest: dict[str, Any], *, force: bool, quiet: bool) -> bool:
+    if steam_running() and not force:
+        mark_pending()
+        log("Steam is running; queued the Batocera shortcut update.", quiet=quiet)
+        return False
+
+    raw_games = manifest.get("games", {}) if manifest.get("enabled", True) else {}
+    games = {
+        managed_id: game
+        for managed_id, game in raw_games.items()
+        if isinstance(game, dict) and game.get("enabled", True)
+    }
+    ensure_launcher_aliases(games)
+
+    configs = steam_config_dirs()
+    if not configs:
+        mark_pending()
+        raise RuntimeError("No Steam user config found; launch Steam and log in once.")
+
+    artwork_manifest = load_artwork_manifest()
+    input_manifest = load_input_manifest()
+    for config in configs:
+        installed, removed = sync_config(config, games, artwork_manifest)
+        input_disabled = sync_steam_input(config, games, input_manifest)
+        log(
+            f"{config}: {installed} managed shortcut(s), "
+            f"{removed} stale shortcut(s) removed, "
+            f"Steam Input disabled for {input_disabled}",
+            quiet=quiet,
+        )
+    save_artwork_manifest(artwork_manifest)
+    save_input_manifest(input_manifest)
+    try:
+        PENDING_PATH.unlink()
+    except FileNotFoundError:
+        pass
+    return True
+
+
+def truthy(value: object) -> bool:
+    return value is True or str(value).casefold() in {"1", "true", "yes", "on"}
+
+
+def normalize_rom(system: str, value: object) -> Path:
+    rom = Path(str(value))
+    if not rom.is_absolute():
+        rom = Path("/userdata/roms") / system / rom
+    return rom.resolve(strict=False)
+
+
+def fetch_system_games(system: str, system_name: str = "") -> dict[str, dict[str, Any]]:
+    quoted_system = urllib.parse.quote(system, safe="")
+    url = f"{ES_API}/systems/{quoted_system}/games?localpaths=true"
+    with urllib.request.urlopen(url, timeout=10) as response:
+        payload = json.load(response)
+    if not isinstance(payload, list):
+        raise ValueError(f"Unexpected ES response for {system}")
+
+    games: dict[str, dict[str, Any]] = {}
+    for item in payload:
+        if not isinstance(item, dict) or truthy(item.get("hidden", False)):
+            continue
+        if not item.get("path"):
+            continue
+        rom = normalize_rom(system, item["path"])
+        managed_id = game_id(system, rom)
+        media = {
+            key: str(item.get(key) or "")
+            for key in MEDIA_KEYS
+        }
+        games[managed_id] = {
+            "id": managed_id,
+            "system": system,
+            "system_name": system_name or system,
+            "rom": str(rom),
+            "name": str(item.get("name") or rom.stem),
+            "enabled": True,
+            "source": "system-sync",
+            "media": media,
+            "media_state": media_state(media),
+        }
+    return games
+
+
+def refresh_system(manifest: dict[str, Any], system: str, system_name: str = "") -> int:
+    if not system_name:
+        for game in manifest["games"].values():
+            if isinstance(game, dict) and game.get("system") == system:
+                system_name = str(game.get("system_name") or system)
+                break
+    refreshed = fetch_system_games(system, system_name)
+    for managed_id in list(refreshed):
+        if managed_id in manifest["excluded_games"]:
+            del refreshed[managed_id]
+    games = manifest["games"]
+    for managed_id in list(games):
+        game = games[managed_id]
+        if (
+            isinstance(game, dict)
+            and game.get("system") == system
+            and game.get("source") == "system-sync"
+        ):
+            del games[managed_id]
+    games.update(refreshed)
+    if system not in manifest["managed_systems"]:
+        manifest["managed_systems"].append(system)
+        manifest["managed_systems"].sort()
+    return len(refreshed)
+
+
+def refresh_all(manifest: dict[str, Any], *, quiet: bool) -> bool:
+    success = True
+    for system in list(manifest["managed_systems"]):
+        try:
+            count = refresh_system(manifest, str(system))
+            log(f"{system}: refreshed {count} visible game(s) from ES", quiet=quiet)
+        except Exception as exc:
+            success = False
+            log(f"{system}: ES refresh failed: {exc}", quiet=quiet, error=True)
+    return success
+
+
+def finish_mutation(
+    manifest: dict[str, Any],
+    *,
+    force: bool = False,
+    quiet: bool = False,
+) -> int:
+    save_manifest(manifest)
+    mark_pending()
+    try:
+        apply_manifest(manifest, force=force, quiet=quiet)
+    except Exception as exc:
+        log(f"Shortcut update queued: {exc}", quiet=quiet, error=True)
+        return 1
+    return 0
+
+
+def add_game(args: argparse.Namespace) -> int:
+    manifest = load_manifest()
+    manifest["enabled"] = True
+    rom = normalize_rom(args.system, args.rom)
+    if not rom.exists() and not args.allow_missing:
+        raise FileNotFoundError(f"ROM does not exist: {rom}")
+    managed_id = game_id(args.system, rom)
+    manifest["excluded_games"].pop(managed_id, None)
+    manifest["games"][managed_id] = {
+        "id": managed_id,
+        "system": args.system,
+        "system_name": args.system_name or args.system,
+        "rom": str(rom),
+        "name": args.name or rom.stem,
+        "enabled": True,
+        "source": "game",
+        "media": {
+            key: str(getattr(args, key) or "")
+            for key in MEDIA_KEYS
+        },
+    }
+    log(f"Managing {args.system}/{rom.name} as {managed_id}")
+    return finish_mutation(manifest)
+
+
+def remove_game(args: argparse.Namespace) -> int:
+    manifest = load_manifest()
+    if args.id:
+        managed_id = args.id
+    elif args.rom and args.system:
+        managed_id = game_id(args.system, normalize_rom(args.system, args.rom))
+    else:
+        raise ValueError("remove-game needs --id or both --system and ROM")
+    game = manifest["games"].pop(managed_id, None)
+    if game is None:
+        raise KeyError(f"Managed game not found: {managed_id}")
+    system = str(game.get("system") or args.system)
+    if system in manifest["managed_systems"]:
+        manifest["excluded_games"][managed_id] = {
+            "system": system,
+            "rom": str(game.get("rom") or ""),
+        }
+    log(f"Stopped managing {managed_id}")
+    return finish_mutation(manifest)
+
+
+def sync_system(args: argparse.Namespace) -> int:
+    manifest = load_manifest()
+    manifest["enabled"] = True
+    count = refresh_system(manifest, args.system, args.system_name)
+    log(f"{args.system}: managing {count} visible game(s)")
+    return finish_mutation(manifest)
+
+
+def unsync_system(args: argparse.Namespace) -> int:
+    manifest = load_manifest()
+    manifest["managed_systems"] = [
+        system for system in manifest["managed_systems"] if system != args.system
+    ]
+    for game in manifest["games"].values():
+        if (
+            isinstance(game, dict)
+            and game.get("system") == args.system
+            and game.get("source") == "system-sync"
+        ):
+            game["source"] = "game"
+    for managed_id in list(manifest["excluded_games"]):
+        excluded = manifest["excluded_games"][managed_id]
+        if isinstance(excluded, dict) and excluded.get("system") == args.system:
+            del manifest["excluded_games"][managed_id]
+    log(f"{args.system}: automatic refresh disabled; current shortcuts retained")
+    return finish_mutation(manifest)
+
+
+def remove_system(args: argparse.Namespace) -> int:
+    manifest = load_manifest()
+    manifest["managed_systems"] = [
+        system for system in manifest["managed_systems"] if system != args.system
+    ]
+    for managed_id in list(manifest["games"]):
+        game = manifest["games"][managed_id]
+        if isinstance(game, dict) and game.get("system") == args.system:
+            del manifest["games"][managed_id]
+    for managed_id in list(manifest["excluded_games"]):
+        excluded = manifest["excluded_games"][managed_id]
+        if isinstance(excluded, dict) and excluded.get("system") == args.system:
+            del manifest["excluded_games"][managed_id]
+    log(f"{args.system}: removed from the managed Steam library")
+    return finish_mutation(manifest)
+
+
+def refresh_selected(args: argparse.Namespace) -> int:
+    manifest = load_manifest()
+    refreshed = refresh_all(manifest, quiet=args.quiet)
+    result = finish_mutation(manifest, force=args.force, quiet=args.quiet)
+    return result if refreshed else 1
+
+
+def is_game_managed(args: argparse.Namespace) -> int:
+    manifest = load_manifest()
+    if not manifest.get("enabled", True):
+        return 1
+    managed_id = game_id(args.system, normalize_rom(args.system, args.rom))
+    game = manifest["games"].get(managed_id)
+    return 0 if isinstance(game, dict) and game.get("enabled", True) else 1
+
+
+def is_system_managed(args: argparse.Namespace) -> int:
+    manifest = load_manifest()
+    if not manifest.get("enabled", True):
+        return 1
+    return 0 if args.system in manifest["managed_systems"] else 1
+
+
+def steam_input_sync_needed(manifest: dict[str, Any]) -> bool:
+    if not manifest.get("enabled", True):
+        return False
+    desired = {
+        str(int(game_entry(game)["appid"]))
+        for game in manifest["games"].values()
+        if isinstance(game, dict) and game.get("enabled", True)
+    }
+    if not desired:
+        return False
+
+    input_manifest = load_input_manifest()
+    tracked_configs = input_manifest["configs"]
+    for config in steam_config_dirs():
+        if not (config / "localconfig.vdf").is_file():
+            continue
+        tracked = tracked_configs.get(str(config.resolve(strict=False)), {})
+        if not isinstance(tracked, dict) or not desired.issubset(tracked):
+            return True
+    return False
+
+
+def apply_pending(args: argparse.Namespace) -> int:
+    if not MANIFEST_PATH.exists() and not PENDING_PATH.exists():
+        log("Batocera's managed Steam library has not been enabled.", quiet=args.quiet)
+        return 0
+
+    manifest = load_manifest()
+    needs_input_sync = steam_input_sync_needed(manifest)
+    refreshed = True
+    did_refresh = (
+        args.refresh
+        and bool(manifest.get("enabled", True))
+        and bool(manifest["managed_systems"])
+    )
+    if did_refresh:
+        before = json.dumps(manifest["games"], sort_keys=True)
+        refreshed = refresh_all(manifest, quiet=args.quiet)
+        after = json.dumps(manifest["games"], sort_keys=True)
+        if before != after:
+            save_manifest(manifest)
+            mark_pending()
+    if not PENDING_PATH.exists() and not did_refresh and not needs_input_sync:
+        log("No pending Batocera Steam shortcut update.", quiet=args.quiet)
+        return 0
+    if not PENDING_PATH.exists() and not needs_input_sync:
+        if refreshed:
+            log("Managed Steam library is already up to date.", quiet=args.quiet)
+            return 0
+        log("One or more managed ES systems could not be refreshed.", quiet=args.quiet, error=True)
+        return 1
+    try:
+        applied = apply_manifest(manifest, force=args.force, quiet=args.quiet)
+    except Exception as exc:
+        log(str(exc), quiet=args.quiet, error=True)
+        return 1
+    return 0 if applied and refreshed else 1
+
+
+def set_enabled(args: argparse.Namespace, enabled: bool) -> int:
+    manifest = load_manifest()
+    manifest["enabled"] = enabled
+    log(
+        "Batocera Steam library synchronization enabled."
+        if enabled
+        else "Batocera-owned Steam shortcuts disabled; manifest retained."
+    )
+    return finish_mutation(manifest, force=args.force)
+
+
+def status(args: argparse.Namespace) -> int:
+    manifest = load_manifest()
+    result = {
+        "enabled": bool(manifest.get("enabled", True)),
+        "managed_systems": manifest["managed_systems"],
+        "game_count": len(manifest["games"]),
+        "excluded_game_count": len(manifest["excluded_games"]),
+        "pending": PENDING_PATH.exists(),
+        "steam_running": steam_running(),
+        "steam_configs": [str(path) for path in steam_config_dirs()],
+        "manifest": str(MANIFEST_PATH),
+    }
+    if args.json:
+        print(json.dumps(result, indent=2, sort_keys=True))
+    else:
+        for key, value in result.items():
+            print(f"{key}: {value}")
+    return 0
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Manage Batocera-owned native ROM shortcuts in Steam.",
+    )
+    commands = parser.add_subparsers(dest="command", required=True)
+
+    add = commands.add_parser("add-game", help="add or update one managed ROM")
+    add.add_argument("rom", type=Path)
+    add.add_argument("--system", required=True)
+    add.add_argument("--system-name", default="")
+    add.add_argument("--name", default="")
+    add.add_argument("--image", type=Path)
+    add.add_argument("--thumbnail", type=Path)
+    add.add_argument("--boxart", type=Path)
+    add.add_argument("--fanart", type=Path)
+    add.add_argument("--marquee", type=Path)
+    add.add_argument("--steam-grid", dest="steamgrid", type=Path)
+    add.add_argument("--steam-banner", dest="steambanner", type=Path)
+    add.add_argument("--steam-hero", dest="steamhero", type=Path)
+    add.add_argument("--steam-logo", dest="steamlogo", type=Path)
+    add.add_argument("--steam-icon", dest="steamicon", type=Path)
+    add.add_argument("--allow-missing", action="store_true")
+    add.set_defaults(handler=add_game)
+
+    remove = commands.add_parser("remove-game", help="remove one managed ROM")
+    remove.add_argument("rom", type=Path, nargs="?")
+    remove.add_argument("--system", default="")
+    remove.add_argument("--id", default="")
+    remove.set_defaults(handler=remove_game)
+
+    system = commands.add_parser(
+        "sync-system",
+        help="make one ES system persistent in the managed Steam library",
+    )
+    system.add_argument("system")
+    system.add_argument("--system-name", default="")
+    system.set_defaults(handler=sync_system)
+
+    unsync = commands.add_parser(
+        "unsync-system",
+        help="stop refreshing a system while retaining its current shortcuts",
+    )
+    unsync.add_argument("system")
+    unsync.set_defaults(handler=unsync_system)
+
+    remove_sys = commands.add_parser(
+        "remove-system",
+        help="stop refreshing a system and remove its managed shortcuts",
+    )
+    remove_sys.add_argument("system")
+    remove_sys.set_defaults(handler=remove_system)
+
+    refresh = commands.add_parser(
+        "refresh-selected",
+        help="refresh only the ES systems explicitly selected for Steam",
+    )
+    refresh.add_argument("--force", action="store_true")
+    refresh.add_argument("--quiet", action="store_true")
+    refresh.set_defaults(handler=refresh_selected)
+
+    is_game = commands.add_parser(
+        "is-game-managed",
+        help="return success when one ROM is selected for Steam",
+    )
+    is_game.add_argument("rom", type=Path)
+    is_game.add_argument("--system", required=True)
+    is_game.set_defaults(handler=is_game_managed)
+
+    is_system = commands.add_parser(
+        "is-system-managed",
+        help="return success when one ES system is selected for Steam",
+    )
+    is_system.add_argument("system")
+    is_system.set_defaults(handler=is_system_managed)
+
+    apply_parser = commands.add_parser(
+        "apply-pending",
+        help="apply queued VDF/artwork changes while Steam is stopped",
+    )
+    apply_parser.add_argument("--refresh", action="store_true")
+    apply_parser.add_argument("--force", action="store_true")
+    apply_parser.add_argument("--quiet", action="store_true")
+    apply_parser.set_defaults(handler=apply_pending)
+
+    enable = commands.add_parser("enable", help="restore entries from the retained manifest")
+    enable.add_argument("--force", action="store_true")
+    enable.set_defaults(handler=lambda args: set_enabled(args, True))
+
+    disable = commands.add_parser(
+        "disable",
+        help="remove only Batocera-owned entries and retain the manifest",
+    )
+    disable.add_argument("--force", action="store_true")
+    disable.set_defaults(handler=lambda args: set_enabled(args, False))
+
+    status_parser = commands.add_parser("status", help="show managed library state")
+    status_parser.add_argument("--json", action="store_true")
+    status_parser.set_defaults(handler=status)
+    return parser
+
+
+def main() -> int:
+    args = build_parser().parse_args()
+    try:
+        return int(args.handler(args))
+    except (OSError, ValueError, KeyError, json.JSONDecodeError) as exc:
+        log(f"batocera-steam-sync: {exc}", error=True)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -109,6 +109,35 @@ define BATOCERA_ES_SYSTEM_INSTALL_MOTION_SENSOR_CALIBRATION_TOOL
 endef
 endif
 
+ifeq ($(BR2_PACKAGE_BATOCERA_INSTALL_INTERNAL),y)
+BATOCERA_ES_SYSTEM_DEPENDENCIES += batocera-install-internal
+
+define BATOCERA_ES_SYSTEM_INSTALL_INTERNAL_TOOL
+	$(INSTALL) -D -m 0755 \
+		$(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/utils/batocera-install-internal/datainit/roms/emulator/Install_Batocera_Internal.sh \
+		$(TARGET_DIR)/usr/share/batocera/datainit/roms/emulator/Install_Batocera_Internal.sh
+	$(INSTALL) -D -m 0644 \
+		$(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/utils/batocera-install-internal/datainit/roms/emulator/Install_Batocera_Internal.sh.keys \
+		$(TARGET_DIR)/usr/share/batocera/datainit/roms/emulator/Install_Batocera_Internal.sh.keys
+	$(INSTALL) -D -m 0644 \
+		$(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/utils/batocera-install-internal/datainit/roms/emulator/images/install-internal.svg \
+		$(TARGET_DIR)/usr/share/batocera/datainit/roms/emulator/images/install-internal.svg
+	gamelist="$(TARGET_DIR)/usr/share/batocera/datainit/roms/emulator/gamelist.xml"; \
+	if [ -f "$${gamelist}" ] && ! grep -q './Install_Batocera_Internal.sh' "$${gamelist}"; then \
+		awk '/<\/gameList>/ { \
+			print "  <game>"; \
+			print "    <path>./Install_Batocera_Internal.sh</path>"; \
+			print "    <name>Install Batocera Internal</name>"; \
+			print "    <desc>Install Batocera beside Android on supported Qualcomm handheld internal storage.</desc>"; \
+			print "    <image>./images/install-internal.svg</image>"; \
+			print "    <thumbnail>./images/install-internal.svg</thumbnail>"; \
+			print "  </game>"; \
+		} { print }' "$${gamelist}" > "$${gamelist}.tmp" && \
+		mv "$${gamelist}.tmp" "$${gamelist}"; \
+	fi
+endef
+endif
+
 ifeq ($(BR2_PACKAGE_WAYDROID),y)
 define BATOCERA_ES_SYSTEM_INSTALL_WAYDROID_TOOLS
 	$(INSTALL) -D -m 0644 \
@@ -189,6 +218,7 @@ define BATOCERA_ES_SYSTEM_INSTALL_TARGET_CMDS
 	$(BATOCERA_ES_SYSTEM_INSTALL_STEAM_TOOLS)
 	$(BATOCERA_ES_SYSTEM_INSTALL_GAMEPAD_CALIBRATION_TOOL)
 	$(BATOCERA_ES_SYSTEM_INSTALL_MOTION_SENSOR_CALIBRATION_TOOL)
+	$(BATOCERA_ES_SYSTEM_INSTALL_INTERNAL_TOOL)
 	$(BATOCERA_ES_SYSTEM_INSTALL_WAYDROID_TOOLS)
 endef
 

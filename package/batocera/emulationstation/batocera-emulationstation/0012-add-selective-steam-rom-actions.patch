@@ -1,0 +1,314 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Mon, 27 Jul 2026 00:00:00 +0000
+Subject: [PATCH] Add selective Steam ROM actions
+
+Expose only explicit per-game and current-system Steam selections in ES.  The
+actions delegate manifest ownership, VDF updates, and artwork copying to
+batocera-steam-sync.
+
+---
+ es-app/src/ApiSystem.cpp             | 105 +++++++++++++++++++++++++++
+ es-app/src/ApiSystem.h               |  18 +++++
+ es-app/src/guis/GuiGameOptions.cpp   |  43 +++++++++++
+ es-app/src/guis/GuiMenu.cpp          |  39 ++++++++++
+ es-app/src/services/HttpApi.cpp       |   4 +-
+ es-app/src/services/HttpApi.h         |   2 +-
+ es-app/src/services/HttpServerThread.cpp |   2 +-
+ 7 files changed, 210 insertions(+), 4 deletions(-)
+
+diff --git a/es-app/src/services/HttpApi.h b/es-app/src/services/HttpApi.h
+--- a/es-app/src/services/HttpApi.h
++++ b/es-app/src/services/HttpApi.h
+@@ -12,7 +12,7 @@ class HttpApi
+ public:
+ 	static std::string getCaps();
+ 	static std::string getSystemList();
+-	static std::string getSystemGames(SystemData* system);
++	static std::string getSystemGames(SystemData* system, bool localpaths = false);
+ 
+ 	static std::string getRunnningGameInfo();
+ 
+diff --git a/es-app/src/services/HttpApi.cpp b/es-app/src/services/HttpApi.cpp
+--- a/es-app/src/services/HttpApi.cpp
++++ b/es-app/src/services/HttpApi.cpp
+@@ -280,7 +280,7 @@ std::string HttpApi::ToJson(SystemData* system, bool localpaths)
+ 	return s.GetString();
+ }
+ 
+-std::string HttpApi::getSystemGames(SystemData* system)
++std::string HttpApi::getSystemGames(SystemData* system, bool localpaths)
+ {
+ 	rapidjson::StringBuffer s;
+ 	rapidjson::PrettyWriter<rapidjson::StringBuffer> writer(s);
+@@ -305,7 +305,7 @@ std::string HttpApi::getSystemGames(SystemData* system)
+ 	}
+ 
+ 	for (auto game : files)
+-		getFileDataJson(writer, game);
++		getFileDataJson(writer, game, localpaths);
+ 
+ 	writer.EndArray();
+ 
+diff --git a/es-app/src/services/HttpServerThread.cpp b/es-app/src/services/HttpServerThread.cpp
+--- a/es-app/src/services/HttpServerThread.cpp
++++ b/es-app/src/services/HttpServerThread.cpp
+@@ -345,9 +345,10 @@ void HttpServerThread::start()
+ 		SystemData* system = SystemData::getSystem(systemName);
+ 		if (system != nullptr)
+ 		{
+-			res.set_content(HttpApi::getSystemGames(system), "application/json");
++			bool localpaths = req.has_param("localpaths") && req.get_param_value("localpaths") == "true";
++			res.set_content(HttpApi::getSystemGames(system, localpaths), "application/json");
+ 			return;
+ 		}
+ 		
+ 		res.set_content("404 system not found", "text/html");
+ 		res.status = 404;		
+ 	});
+diff --git a/es-app/src/ApiSystem.h b/es-app/src/ApiSystem.h
+--- a/es-app/src/ApiSystem.h
++++ b/es-app/src/ApiSystem.h
+@@ -212,5 +212,23 @@ public:
+ #ifdef BATOCERA
+     virtual bool launchSteamOS(Window *window);
++
++    virtual bool isSteamSyncAvailable();
++    virtual bool isSteamGameManaged(
++        const std::string& system,
++        const std::string& path);
++    virtual bool setSteamGameManaged(
++        const std::string& system,
++        const std::string& systemName,
++        const std::string& path,
++        const std::string& name,
++        const std::string& image,
++        const std::string& thumbnail,
++        const std::string& boxart,
++        const std::string& fanart,
++        const std::string& marquee,
++        bool managed);
++    virtual bool isSteamSystemManaged(const std::string& system);
++    virtual bool setSteamSystemManaged(const std::string& system, const std::string& systemName, bool managed);
+ #endif
+     virtual bool launchKodi(Window *window);
+     bool launchFileManager(Window *window);
+diff --git a/es-app/src/ApiSystem.cpp b/es-app/src/ApiSystem.cpp
+--- a/es-app/src/ApiSystem.cpp
++++ b/es-app/src/ApiSystem.cpp
+@@ -3129,6 +3129,111 @@ bool ApiSystem::nfc_write(const std::string& game) {
+ }
+ 
+ #ifdef BATOCERA
++namespace
++{
++	std::string shellQuote(const std::string& value)
++	{
++		std::string result = "'";
++		for (char character : value)
++		{
++			if (character == '\'')
++				result += "'\\''";
++			else
++				result += character;
++		}
++		return result + "'";
++	}
++}
++
++bool ApiSystem::isSteamSyncAvailable()
++{
++	return Utils::FileSystem::exists("/usr/bin/batocera-steam-sync");
++}
++
++bool ApiSystem::isSteamGameManaged(const std::string& system, const std::string& path)
++{
++	if (!isSteamSyncAvailable())
++		return false;
++
++	return executeScript(
++		"/usr/bin/batocera-steam-sync is-game-managed " + shellQuote(path) +
++		" --system " + shellQuote(system) + " >/dev/null 2>&1");
++}
++
++bool ApiSystem::setSteamGameManaged(
++	const std::string& system,
++	const std::string& systemName,
++	const std::string& path,
++	const std::string& name,
++	const std::string& image,
++	const std::string& thumbnail,
++	const std::string& boxart,
++	const std::string& fanart,
++	const std::string& marquee,
++	bool managed)
++{
++	if (!isSteamSyncAvailable())
++		return false;
++
++	std::string command;
++	if (managed)
++	{
++		command =
++			"/usr/bin/batocera-steam-sync add-game " + shellQuote(path) +
++			" --system " + shellQuote(system) +
++			" --system-name " + shellQuote(systemName) +
++			" --name " + shellQuote(name);
++
++		auto addMedia = [&command](const std::string& option, const std::string& value)
++		{
++			if (!value.empty())
++				command += " " + option + " " + shellQuote(value);
++		};
++		addMedia("--image", image);
++		addMedia("--thumbnail", thumbnail);
++		addMedia("--boxart", boxart);
++		addMedia("--fanart", fanart);
++		addMedia("--marquee", marquee);
++	}
++	else
++	{
++		command =
++			"/usr/bin/batocera-steam-sync remove-game " + shellQuote(path) +
++			" --system " + shellQuote(system);
++	}
++
++	return executeScript(command);
++}
++
++bool ApiSystem::isSteamSystemManaged(const std::string& system)
++{
++	if (!isSteamSyncAvailable())
++		return false;
++
++	return executeScript(
++		"/usr/bin/batocera-steam-sync is-system-managed " + shellQuote(system) +
++		" >/dev/null 2>&1");
++}
++
++bool ApiSystem::setSteamSystemManaged(
++	const std::string& system,
++	const std::string& systemName,
++	bool managed)
++{
++	if (!isSteamSyncAvailable())
++		return false;
++
++	std::string command;
++	if (managed)
++		command =
++			"/usr/bin/batocera-steam-sync sync-system " + shellQuote(system) +
++			" --system-name " + shellQuote(systemName);
++	else
++		command = "/usr/bin/batocera-steam-sync remove-system " + shellQuote(system);
++
++	return executeScript(command);
++}
++
+ bool ApiSystem::launchSteamOS(Window *window)
+ {
+ 	LOG(LogDebug) << "ApiSystem::launchSteamOS";
+diff --git a/es-app/src/guis/GuiGameOptions.cpp b/es-app/src/guis/GuiGameOptions.cpp
+--- a/es-app/src/guis/GuiGameOptions.cpp
++++ b/es-app/src/guis/GuiGameOptions.cpp
+@@ -389,6 +389,49 @@ GuiGameOptions::GuiGameOptions(Window* window, FileData* game) : GuiComponent(w
+ 	{
+ 		mMenu.addGroup(_("OPTIONS"));
+ 		
++#ifdef BATOCERA
++		auto sourceGame = game->getSourceFileData();
++		auto sourceSystem = sourceGame->getSystem();
++		if (game->getType() != FOLDER &&
++			sourceSystem->isGameSystem() &&
++			sourceSystem->getName() != "steam" &&
++			ApiSystem::getInstance()->isSteamSyncAvailable())
++		{
++			bool steamManaged = ApiSystem::getInstance()->isSteamGameManaged(
++				sourceSystem->getName(),
++				sourceGame->getPath());
++			mMenu.addEntry(
++				steamManaged ? _("REMOVE GAME FROM STEAM") : _("ADD GAME TO STEAM"),
++				false,
++				[this, game, sourceGame, sourceSystem, steamManaged]
++				{
++					bool success = ApiSystem::getInstance()->setSteamGameManaged(
++						sourceSystem->getName(),
++						sourceSystem->getFullName(),
++						sourceGame->getPath(),
++						game->getName(),
++						sourceGame->getImagePath(),
++						sourceGame->getThumbnailPath(false),
++						sourceGame->getMetadata(MetaDataId::BoxArt),
++						sourceGame->getMetadata(MetaDataId::FanArt),
++						sourceGame->getMarqueePath(),
++						!steamManaged);
++
++					Window* window = mWindow;
++					std::string message;
++					if (!success)
++						message = _("FAILED TO UPDATE THE STEAM GAME SELECTION.");
++					else if (steamManaged)
++						message = _("THE GAME WILL BE REMOVED FROM STEAM WHEN STEAM NEXT STARTS.");
++					else
++						message = _("THE GAME WILL BE ADDED TO STEAM WHEN STEAM NEXT STARTS.");
++
++					close();
++					window->pushGui(new GuiMsgBox(window, message));
++				});
++		}
++#endif
++
+ 		mMenu.addEntry(_("SCRAPE"), false, [this, game]
+ 		{
+ 			ScraperSearchParams scraperParams;
+diff --git a/es-app/src/guis/GuiMenu.cpp b/es-app/src/guis/GuiMenu.cpp
+--- a/es-app/src/guis/GuiMenu.cpp
++++ b/es-app/src/guis/GuiMenu.cpp
+@@ -4869,6 +4869,45 @@ void GuiMenu::popSpecificConfigurationGui(Window* mWindow, std::string title, st
+ 	if (fileData != nullptr)
+ 		systemConfiguration->setSubTitle(systemData->getFullName());
+ 
++#ifdef BATOCERA
++	if (fileData == nullptr &&
++		systemData->isGameSystem() &&
++		systemData->getName() != "steam" &&
++		ApiSystem::getInstance()->isSteamSyncAvailable())
++	{
++		bool steamManaged = ApiSystem::getInstance()->isSteamSystemManaged(systemData->getName());
++		systemConfiguration->addGroup(_("STEAM"));
++		systemConfiguration->addEntry(
++			steamManaged ? _("REMOVE THIS SYSTEM FROM STEAM") : _("ADD ALL VISIBLE ROMS IN THIS SYSTEM TO STEAM"),
++			false,
++			[mWindow, systemConfiguration, systemData, steamManaged]
++			{
++				std::string prompt = steamManaged
++					? _("REMOVE ALL MANAGED ROMS IN THIS SYSTEM FROM STEAM?")
++					: _("ADD ALL VISIBLE ROMS IN THIS SYSTEM TO STEAM?");
++				mWindow->pushGui(new GuiMsgBox(
++					mWindow,
++					prompt,
++					_("YES"),
++					[mWindow, systemConfiguration, systemData, steamManaged]
++					{
++						bool success = ApiSystem::getInstance()->setSteamSystemManaged(
++							systemData->getName(),
++							systemData->getFullName(),
++							!steamManaged);
++						systemConfiguration->close();
++						mWindow->pushGui(new GuiMsgBox(
++							mWindow,
++							success
++								? _("THE STEAM SYSTEM SELECTION WAS UPDATED. RESTART STEAM TO LOAD THE CHANGES.")
++								: _("FAILED TO UPDATE THE STEAM SYSTEM SELECTION.")));
++					},
++					_("NO"),
++					nullptr));
++			});
++	}
++#endif
++
+ 	std::string currentEmulator = fileData != nullptr ? fileData->getEmulator(false) : systemData->getEmulator(false);
+ 	std::string currentCore = fileData != nullptr ? fileData->getCore(false) : systemData->getCore(false);
+ 
+-- 
+2.50.1

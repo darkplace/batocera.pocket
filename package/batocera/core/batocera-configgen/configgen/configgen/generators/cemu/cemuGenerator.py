@@ -83,16 +83,24 @@ class CemuGenerator(Generator):
             # force no menubar
             commandArray.append("--force-no-menubar")
 
-        return Command.Command(
-            array=commandArray,
-            env={
-                "XDG_CONFIG_HOME": CONFIGS,
-                "XDG_CACHE_HOME": CACHE,
-                "XDG_DATA_HOME": SAVES,
-                "SDL_GAMECONTROLLERCONFIG": generate_sdl_game_controller_config(playersControllers),
-                "SDL_JOYSTICK_HIDAPI": "0"
-            }
-        )
+        env = {
+            "XDG_CONFIG_HOME": CONFIGS,
+            "XDG_CACHE_HOME": CACHE,
+            "XDG_DATA_HOME": SAVES,
+            "SDL_GAMECONTROLLERCONFIG": generate_sdl_game_controller_config(playersControllers),
+            "SDL_JOYSTICK_HIDAPI": "0"
+        }
+
+        # Managed Steam shortcuts run inside Gamescope. Keep Cemu on the
+        # session's Xwayland display instead of selecting a stale Wayland socket.
+        if environ.get("BATOCERA_LAUNCH_SOURCE") == "steam":
+            env.update({
+                "GDK_BACKEND": "x11",
+                "DISPLAY": environ.get("DISPLAY", ":0"),
+                "WAYLAND_DISPLAY": ""
+            })
+
+        return Command.Command(array=commandArray, env=env)
 
     @staticmethod
     def CemuConfig(configFile: Path, system: Emulator) -> None:

@@ -160,6 +160,15 @@ class EdenGenerator(Generator):
             "SDL_GAMECONTROLLERCONFIG": build_eden_sdl_game_controller_config(playersControllers),
         }
 
+        # Native ARM Eden is launched directly by Steam inside Gamescope.
+        # Preserve that nested Xwayland display instead of routing back to Sway.
+        if os.environ.get("BATOCERA_LAUNCH_SOURCE") == "steam":
+            env.update({
+                "DISPLAY": os.environ.get("DISPLAY", ":0"),
+                "WAYLAND_DISPLAY": "",
+                "XDG_RUNTIME_DIR": os.environ.get("XDG_RUNTIME_DIR", "/run/user/0"),
+            })
+
         # ---- UCLAMP performance tuning for big.LITTLE ----
         use_uclamp = system.config.get_bool("perf_uclamp", True)
         uclamp_min = system.config.get_int("perf_uclamp_min", UCLAMP_MIN)

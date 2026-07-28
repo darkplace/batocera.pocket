@@ -1,0 +1,214 @@
+#!/usr/bin/env python3
+"""Launch a Batocera-managed Steam ROM through configgen."""
+
+from __future__ import annotations
+
+import ctypes
+import json
+import os
+import re
+import sys
+import xml.etree.ElementTree as ET
+from pathlib import Path
+from typing import Any
+
+
+STATE_DIR = Path(os.environ.get(
+    "BATOCERA_STEAM_SYNC_STATE_DIR",
+    "/userdata/system/configs/batocera-steam",
+))
+MANIFEST_PATH = STATE_DIR / "managed-games.json"
+EMULATORLAUNCHER = os.environ.get(
+    "BATOCERA_STEAM_SYNC_EMULATORLAUNCHER",
+    "/usr/bin/emulatorlauncher",
+)
+ID_PATTERN = re.compile(r"^[0-9a-f]{24}$")
+ES_INPUT_CONFIGS = (
+    Path("/userdata/system/configs/emulationstation/es_input.cfg"),
+    Path("/usr/share/emulationstation/es_input.cfg"),
+)
+PULSE_ALSA_MODULE = Path("/usr/lib/alsa-lib/libasound_module_pcm_pulse.so")
+
+
+def sdl_text(value: object) -> str:
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    return str(value or "")
+
+
+def configured_controllers() -> list[tuple[str, str]]:
+    configured: list[tuple[str, str]] = []
+    for path in ES_INPUT_CONFIGS:
+        if not path.exists():
+            continue
+        try:
+            root = ET.parse(path).getroot()
+        except (OSError, ET.ParseError) as exc:
+            print(f"Ignoring invalid controller config {path}: {exc}", file=sys.stderr)
+            continue
+        for element in root.findall("./inputConfig"):
+            configured.append((
+                str(element.get("deviceGUID") or "").casefold(),
+                str(element.get("deviceName") or ""),
+            ))
+    return configured
+
+
+def controller_is_configured(
+    configured: list[tuple[str, str]],
+    guid: str,
+    name: str,
+) -> bool:
+    wanted_guid = guid.casefold()
+    return any(
+        (entry_guid == wanted_guid and entry_name == name)
+        or (entry_guid and entry_guid == wanted_guid)
+        or (entry_name and entry_name == name)
+        for entry_guid, entry_name in configured
+    )
+
+
+def controller_arguments() -> list[str]:
+    if os.environ.get("BATOCERA_STEAM_CONTROLLER_AUTODETECT", "1") == "0":
+        return []
+    try:
+        import sdl2
+    except ImportError as exc:
+        print(f"Steam controller autodetection unavailable: {exc}", file=sys.stderr)
+        return []
+
+    initialized_here = False
+    if sdl2.SDL_WasInit(sdl2.SDL_INIT_JOYSTICK) == 0:
+        if sdl2.SDL_InitSubSystem(sdl2.SDL_INIT_JOYSTICK) != 0:
+            print(
+                f"Steam controller autodetection failed: {sdl_text(sdl2.SDL_GetError())}",
+                file=sys.stderr,
+            )
+            return []
+        initialized_here = True
+
+    configurations = configured_controllers()
+    arguments: list[str] = []
+    try:
+        player = 0
+        for index in range(sdl2.SDL_NumJoysticks()):
+            path_value = sdl2.SDL_JoystickPathForIndex(index)
+            name_value = sdl2.SDL_JoystickNameForIndex(index)
+            path = sdl_text(path_value)
+            name = sdl_text(name_value)
+            if not path or not name:
+                continue
+
+            joystick = sdl2.SDL_JoystickOpen(index)
+            if not joystick:
+                continue
+            try:
+                guid = sdl2.SDL_JoystickGetGUID(joystick)
+                guid_buffer = (ctypes.c_char * 33)()
+                sdl2.SDL_JoystickGetGUIDString(guid, guid_buffer, 33)
+                guid_text = guid_buffer.value.decode("ascii", errors="ignore")
+                if (
+                    not guid_text
+                    or not controller_is_configured(configurations, guid_text, name)
+                ):
+                    continue
+                player += 1
+                arguments.extend([
+                    f"-p{player}index", str(index),
+                    f"-p{player}guid", guid_text,
+                    f"-p{player}name", name,
+                    f"-p{player}devicepath", path,
+                    f"-p{player}nbbuttons", str(sdl2.SDL_JoystickNumButtons(joystick)),
+                    f"-p{player}nbhats", str(sdl2.SDL_JoystickNumHats(joystick)),
+                    f"-p{player}nbaxes", str(sdl2.SDL_JoystickNumAxes(joystick)),
+                ])
+            finally:
+                sdl2.SDL_JoystickClose(joystick)
+            if player >= 8:
+                break
+    finally:
+        if initialized_here:
+            sdl2.SDL_QuitSubSystem(sdl2.SDL_INIT_JOYSTICK)
+    return arguments
+
+
+def load_game(managed_id: str) -> dict[str, Any]:
+    data = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
+    if not data.get("enabled", True):
+        raise RuntimeError("Batocera Steam ROM synchronization is disabled")
+    games = data.get("games", {})
+    game = games.get(managed_id) if isinstance(games, dict) else None
+    if not isinstance(game, dict) or not game.get("enabled", True):
+        raise KeyError(f"Managed Steam ROM not found: {managed_id}")
+    return game
+
+
+def managed_id_from_args() -> str:
+    if len(sys.argv) > 1:
+        managed_id = sys.argv[1]
+    else:
+        managed_id = Path(sys.argv[0]).name
+    if not ID_PATTERN.fullmatch(managed_id):
+        raise ValueError(f"Invalid managed game id: {managed_id}")
+    return managed_id
+
+
+def main() -> int:
+    try:
+        managed_id = managed_id_from_args()
+        game = load_game(managed_id)
+        system = str(game["system"])
+        rom = str(game["rom"])
+        system_name = str(game.get("system_name") or system)
+    except (OSError, ValueError, KeyError, RuntimeError, json.JSONDecodeError) as exc:
+        print(f"batocera-steam-rom-launch: {exc}", file=sys.stderr)
+        return 1
+
+    try:
+        controllers = controller_arguments()
+    except Exception as exc:
+        print(f"Steam controller autodetection failed: {exc}", file=sys.stderr)
+        controllers = []
+
+    command = [
+        EMULATORLAUNCHER,
+        *controllers,
+        "-system", system,
+        "-rom", rom,
+        "-systemname", system_name,
+    ]
+    environment = os.environ.copy()
+    # Native Batocera emulators must use the image's libraries. Steam's ARM
+    # client paths and overlay preload can override their GL, SDL and Wayland
+    # libraries before configgen has a chance to select the correct backend.
+    environment.pop("LD_LIBRARY_PATH", None)
+    environment.pop("LD_PRELOAD", None)
+
+    # Steam sets this for its own SDL clients, but the ARM image's SDL2 is
+    # ALSA-only. Route that ALSA backend through the installed Pulse PCM plugin
+    # so it reaches Steam's per-game audio namespace instead of opening the
+    # PipeWire default PCM, which fails with EHOSTDOWN.
+    environment.pop("SDL_AUDIODRIVER", None)
+    if os.uname().machine in {"aarch64", "arm64"} and PULSE_ALSA_MODULE.exists():
+        environment.setdefault("AUDIODEV", "pulse")
+
+    environment["BATOCERA_LAUNCH_SOURCE"] = "steam"
+    environment["BATOCERA_STEAM_MANAGED_GAME_ID"] = managed_id
+
+    # Steam's native ARM reaper leaves shortcuts in the client's process
+    # group. Isolate configgen and its emulator so "Exit game" cannot signal
+    # the outer Steam/Gamescope session.
+    try:
+        os.setsid()
+    except OSError:
+        try:
+            os.setpgid(0, 0)
+        except OSError as exc:
+            print(f"Unable to isolate managed Steam launch: {exc}", file=sys.stderr)
+
+    os.execvpe(command[0], command, environment)
+    return 127
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

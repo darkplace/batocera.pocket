@@ -24,7 +24,7 @@ BATOCERA_TARGET_EXE = "/usr/bin/emulatorlauncher"
 DEFAULT_TAGS = ("Batocera",)
 MODE_LABELS = {
     "auto": "Auto - choose from path",
-    "batocera": "Batocera ROM - launch through ES",
+    "batocera": "Batocera ROM - launch through configgen",
     "wine": "Windows executable - Steam Proton",
     "direct": "Steam-managed file - set Proton in Steam",
 }
@@ -711,7 +711,7 @@ def gui() -> int:
     form = run_yad([
         "--form",
         "--title=Add Non-Steam Game",
-        "--text=This writes a non-Steam shortcut into Steam userdata/config/shortcuts.vdf for every logged-in Steam user.\n\nWindows .exe entries are added as Steam-managed shortcuts. .pc/.wine folders use autorun.cmd when possible. .wsquashfs/.wtgz archives must be extracted first.\nAfter adding, set Compatibility to Proton 11 (ARM64) in Steam.",
+        "--text=This writes a non-Steam shortcut into Steam userdata/config/shortcuts.vdf for every logged-in Steam user.\n\nWindows .exe entries are added as Steam-managed shortcuts. .pc/.wine folders use autorun.cmd when possible. .wsquashfs/.wtgz archives must be extracted first.\nUse Proton 11 (ARM64) only for Windows/direct entries. Native Batocera ROM shortcuts launch through configgen and must not use Proton.",
         "--separator=|",
         "--field=Steam name",
         "--field=Shortcut type:CB",
@@ -744,7 +744,17 @@ def gui() -> int:
         notify(f"Failed to add Steam shortcut:\n{exc}", error=True)
         return 1
 
-    notify(f"Added Steam shortcut for {name}.\nSet Compatibility to Proton 11 (ARM64) in Steam, then restart Steam/GamepadUI.\nUpdated {len(updated)} user config(s).")
+    if mode == "batocera":
+        notify(
+            f"Added native Batocera shortcut for {name}.\n"
+            f"Restart Steam/GamepadUI to load it.\nUpdated {len(updated)} user config(s)."
+        )
+    else:
+        notify(
+            f"Added Steam shortcut for {name}.\n"
+            "Set Compatibility to Proton 11 (ARM64) in Steam, then restart Steam/GamepadUI.\n"
+            f"Updated {len(updated)} user config(s)."
+        )
     return 0
 
 
@@ -787,7 +797,10 @@ def main() -> int:
     print(f"Added Steam shortcut: {name}")
     for updated_path in updated:
         print(f"Updated: {updated_path}")
-    print("Set Compatibility to Proton 11 (ARM64) in Steam, then restart Steam/GamepadUI.")
+    if mode == "batocera":
+        print("Native Batocera ROM shortcuts must not use Proton. Restart Steam/GamepadUI.")
+    else:
+        print("Set Compatibility to Proton 11 (ARM64) in Steam, then restart Steam/GamepadUI.")
     return 0
 
 

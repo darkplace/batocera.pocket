@@ -1,0 +1,128 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: suckbluefrog <suckbluefrog@proton.me>
+Date: Tue, 28 Jul 2026 12:00:00 +0000
+Subject: [PATCH] Add SteamOS mode to the startup selector
+
+Keep the existing Kodi startup keys compatible while presenting Kodi,
+SteamOS mode, and EmulationStation as mutually exclusive choices.
+
+diff --git a/es-app/src/guis/GuiMenu.cpp b/es-app/src/guis/GuiMenu.cpp
+index eabfd66..ff84243 100644
+--- a/es-app/src/guis/GuiMenu.cpp
++++ b/es-app/src/guis/GuiMenu.cpp
+@@ -1559,16 +1559,52 @@ void GuiMenu::openSystemSettings()
+ 		}
+ 	});
+ 
+-	// KODI SETTINGS
+-#ifdef _ENABLE_KODI_
+-	if (ApiSystem::getInstance()->isScriptingSupported(ApiSystem::KODI))
++	// STARTUP SETTINGS
++#if defined(_ENABLE_KODI_) || defined(BATOCERA)
++	bool kodiSupported = false;
++#ifdef _ENABLE_KODI_
++	kodiSupported = ApiSystem::getInstance()->isScriptingSupported(ApiSystem::KODI);
++#endif
++
++	bool steamOSSupported = false;
++#ifdef BATOCERA
++	steamOSSupported = Utils::FileSystem::exists("/usr/bin/steam-direct-session.sh") ||
++		Utils::FileSystem::exists("/usr/bin/batocera-steam");
++#endif
++
++	if (kodiSupported || steamOSSupported)
+ 	{
+-		s->addEntry(_("KODI SETTINGS"), true, [this] 
++		s->addEntry(_("STARTUP SETTINGS"), true, [this, kodiSupported, steamOSSupported]
+ 		{
+-			GuiSettings* kodiGui = new GuiSettings(mWindow, _("KODI SETTINGS").c_str());
+-			kodiGui->addSwitch(_("ENABLE KODI"), "kodi.enabled", false);
+-			kodiGui->addSwitch(_("LAUNCH KODI AT BOOT"), "kodi.atstartup", false);
+-			mWindow->pushGui(kodiGui);
++			GuiSettings* startupGui = new GuiSettings(mWindow, _("STARTUP SETTINGS").c_str());
++			if (kodiSupported)
++				startupGui->addSwitch(_("ENABLE KODI"), "kodi.enabled", false);
++
++			auto startupApplication = std::make_shared<OptionListComponent<std::string>>(
++				mWindow, _("STARTUP APPLICATION"), false);
++			const bool steamAtStartup = steamOSSupported &&
++				SystemConf::getInstance()->getBool("steamos.atstartup");
++			const bool kodiAtStartup = !steamAtStartup && kodiSupported &&
++				SystemConf::getInstance()->getBool("kodi.atstartup");
++
++			startupApplication->add(_("EMULATIONSTATION"), "emulationstation",
++				!steamAtStartup && !kodiAtStartup);
++			if (kodiSupported)
++				startupApplication->add(_("KODI"), "kodi", kodiAtStartup);
++			if (steamOSSupported)
++				startupApplication->add(_("STEAMOS MODE"), "steamos", steamAtStartup);
++
++			startupGui->addWithDescription(
++				_("STARTUP APPLICATION"),
++				_("Choose which interface opens automatically after boot."),
++				startupApplication);
++			startupGui->addSaveFunc([startupApplication]
++			{
++				const std::string selected = startupApplication->getSelected();
++				SystemConf::getInstance()->setBool("kodi.atstartup", selected == "kodi");
++				SystemConf::getInstance()->setBool("steamos.atstartup", selected == "steamos");
++			});
++			mWindow->pushGui(startupGui);
+ 		});
+ 	}
+ #endif
+diff --git a/es-app/src/main.cpp b/es-app/src/main.cpp
+index 2b9c712..29d9fc8 100644
+--- a/es-app/src/main.cpp
++++ b/es-app/src/main.cpp
+@@ -587,8 +587,27 @@ int main(int argc, char* argv[])
+ 
+ 	SystemConf* systemConf = SystemConf::getInstance();
+ 
++#if defined(BATOCERA) || defined(_ENABLE_KODI_)
++	bool startupApplicationSelected = false;
++#ifdef BATOCERA
++	if (systemConf->getBool("steamos.atstartup"))
++	{
++		if (splashScreen)
++			window.closeSplashScreen();
++
++		startupApplicationSelected = true;
++		if (!ApiSystem::getInstance()->launchSteamOS(&window))
++			LOG(LogWarning) << "SteamOS mode terminated with non-zero result at startup!";
++
++		if (splashScreen)
++		{
++			window.renderSplashScreen("");
++			splashScreen = false;
++		}
++	}
++#endif
+ #ifdef _ENABLE_KODI_
+-	if (systemConf->getBool("kodi.enabled", true) && systemConf->getBool("kodi.atstartup"))
++	if (!startupApplicationSelected && systemConf->getBool("kodi.enabled", true) && systemConf->getBool("kodi.atstartup"))
+ 	{
+ 		if (splashScreen)
+ 			window.closeSplashScreen();
+@@ -602,6 +621,7 @@ int main(int argc, char* argv[])
+ 		}
+ 	}
+ #endif
++#endif
+ 
+ 	// preload what we can right away instead of waiting for the user to select it
+ 	// this makes for no delays when accessing content, but a longer startup time
+diff --git a/es-core/src/SystemConf.cpp b/es-core/src/SystemConf.cpp
+index 801a184..58cbf5f 100644
+--- a/es-core/src/SystemConf.cpp
++++ b/es-core/src/SystemConf.cpp
+@@ -32,6 +32,7 @@ static std::map<std::string, std::string> defaults =
+ {
+ 	{ "kodi.enabled", "1" },
+ 	{ "kodi.atstartup", "0" },
++	{ "steamos.atstartup", "0" },
+ 	{ "audio.bgmusic", "1" },
+ 	{ "wifi.enabled", "0" },
+ 	{ "system.hostname", "BATOCERA" }, // batocera
+-- 
+2.52.0

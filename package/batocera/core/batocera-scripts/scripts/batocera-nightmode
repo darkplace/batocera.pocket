@@ -4,6 +4,7 @@ set -u
 STATE_DIR="/var/run/batocera-nightmode"
 STATE_FILE="${STATE_DIR}/state"
 LOCK_FILE="${STATE_DIR}/apply.lock"
+SUSPEND_FILE="${STATE_DIR}/suspended"
 CONFIG_FILE="/userdata/system/batocera.conf"
 LOG="/userdata/system/logs/batocera-nightmode.log"
 DEFAULT_ON="21:00"
@@ -86,6 +87,26 @@ nightmode_active() {
             ;;
     esac
 
+    return 1
+}
+
+suspension_active() {
+    local owner_pid
+
+    [ -f "${SUSPEND_FILE}" ] || return 1
+    owner_pid="$(cat "${SUSPEND_FILE}" 2>/dev/null || true)"
+    case "${owner_pid}" in
+        ''|*[!0-9]*)
+            return 0
+            ;;
+    esac
+
+    if kill -0 "${owner_pid}" 2>/dev/null; then
+        return 0
+    fi
+
+    rm -f "${SUSPEND_FILE}" 2>/dev/null || true
+    log "removed stale suspension owned by pid ${owner_pid}"
     return 1
 }
 
@@ -330,6 +351,11 @@ apply_gamescope() {
 apply_nightmode_locked() {
     local intensity key previous
 
+    # Steam's Gamescope session owns its color state while this flag is active.
+    if suspension_active; then
+        return 0
+    fi
+
     intensity="$(nightmode_intensity)"
     previous="$(cat "${STATE_FILE}" 2>/dev/null || true)"
 
@@ -391,6 +417,42 @@ stop_nightmode() {
     with_nightmode_lock stop_nightmode_locked
 }
 
+suspend_nightmode_locked() {
+    local owner_pid="${1:-manual}"
+    local temporary="${SUSPEND_FILE}.$$"
+
+    printf '%s\n' "${owner_pid}" > "${temporary}" || return 1
+    mv -f "${temporary}" "${SUSPEND_FILE}" || return 1
+    stop_nightmode_locked
+    log "suspended runtime tint for owner ${owner_pid}"
+}
+
+suspend_nightmode() {
+    local owner_pid="${1:-manual}"
+
+    if command -v flock >/dev/null 2>&1; then
+        (
+            flock -x 9 || return 1
+            suspend_nightmode_locked "${owner_pid}"
+        ) 9>"${LOCK_FILE}"
+    else
+        suspend_nightmode_locked "${owner_pid}"
+    fi
+}
+
+resume_nightmode_locked() {
+    local previous_owner
+
+    previous_owner="$(cat "${SUSPEND_FILE}" 2>/dev/null || true)"
+    rm -f "${SUSPEND_FILE}" 2>/dev/null || true
+    log "resumed runtime tint from owner ${previous_owner:-unknown}"
+    apply_nightmode_locked
+}
+
+resume_nightmode() {
+    with_nightmode_lock resume_nightmode_locked
+}
+
 wait_for_settings_change() {
     if command -v inotifywait >/dev/null 2>&1 && [ -f "${CONFIG_FILE}" ]; then
         inotifywait -q -t "${INTERVAL}" -e close_write "${CONFIG_FILE}" \
@@ -417,11 +479,21 @@ case "${1:-apply}" in
     stop)
         stop_nightmode
         ;;
+    suspend)
+        suspend_nightmode "${2:-manual}"
+        ;;
+    resume)
+        resume_nightmode
+        ;;
     status)
-        cat "${STATE_FILE}" 2>/dev/null || echo "unknown"
+        if suspension_active; then
+            echo "suspended"
+        else
+            cat "${STATE_FILE}" 2>/dev/null || echo "unknown"
+        fi
         ;;
     *)
-        echo "Usage: $0 {apply|watch|stop|status}"
+        echo "Usage: $0 {apply|watch|stop|suspend [owner-pid]|resume|status}"
         exit 1
         ;;
 esac

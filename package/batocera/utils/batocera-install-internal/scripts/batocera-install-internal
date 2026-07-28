@@ -1,0 +1,657 @@
+#!/bin/bash
+
+# Internal Batocera installer for Qualcomm handhelds using a ROCKNIX-compatible ABL.
+#
+# Layout created on the internal UFS:
+#   [existing Android partitions] [smaller userdata] [BATOCERA] [SHARE]
+#
+# This intentionally follows the ROCKNIX internal-install partition order so the
+# custom ABL can discover the Linux boot partition, while copying the live
+# Batocera /boot payload so the installed boot files exactly match the currently
+# running system. Some SM8550 builds use EFI/GRUB files, while newer Qualcomm
+# builds can use an Android boot-image payload.
+
+set -euo pipefail
+
+DEVICE="${DEVICE:-auto}"
+BOOT_SOURCE="${BOOT_SOURCE:-/boot}"
+TMP_ROOT="/tmp/batocera-internal-installer"
+TMP_BOOT="${TMP_ROOT}/boot"
+TMP_SHARE="${TMP_ROOT}/share"
+DIALOG_TITLE="Install Batocera Internal"
+
+ANDROID_LABEL="userdata"
+BATOCERA_LABEL="BATOCERA"
+SHARE_LABEL="SHARE"
+
+MIN_ANDROID_GB=1
+MIN_BOOT_GB=8
+MIN_SHARE_MB=512
+
+MIB=$((1024 * 1024))
+GIB=$((1024 * 1024 * 1024))
+
+cleanup() {
+    set +e
+    sync
+    if mountpoint -q "${TMP_BOOT}" 2>/dev/null; then
+        umount "${TMP_BOOT}"
+    fi
+    if mountpoint -q "${TMP_SHARE}" 2>/dev/null; then
+        umount "${TMP_SHARE}"
+    fi
+    rmdir "${TMP_BOOT}" "${TMP_SHARE}" "${TMP_ROOT}" 2>/dev/null || true
+}
+
+trap cleanup EXIT
+
+show_help() {
+    cat <<EOF
+Usage: batocera-install-internal [--smoke-test]
+
+Installs Batocera beside Android on supported SM8550 and SM8750 handhelds
+using a ROCKNIX-compatible ABL. The installer recreates Android userdata,
+then creates BATOCERA and SHARE partitions in the freed internal UFS space.
+
+This destroys all existing Android userdata.
+
+Options:
+  --smoke-test  Validate the live hardware, boot payload, disk selection,
+                Android layout, and size calculations without changing disks.
+EOF
+}
+
+dialog_msg() {
+    local title=$1
+    local message=$2
+    dialog --clear --title "${title}" --msgbox "${message}" 22 78 2>/dev/tty
+}
+
+dialog_info() {
+    local title=$1
+    local message=$2
+    dialog --title "${title}" --infobox \
+        "${message}
+
+Please wait..." 10 78 2>/dev/tty
+}
+
+die() {
+    local message="$*"
+    if command -v dialog >/dev/null 2>&1 && [ -t 0 ]; then
+        dialog_msg "${DIALOG_TITLE}" "ERROR: ${message}" || true
+    fi
+    printf 'ERROR: %s\n' "${message}" >&2
+    exit 1
+}
+
+info() {
+    local message="$*"
+    printf '==> %s\n' "${message}"
+    if command -v dialog >/dev/null 2>&1 && [ -t 0 ]; then
+        dialog_info "${DIALOG_TITLE}" "${message}"
+    fi
+}
+
+require_cmd() {
+    command -v "$1" >/dev/null 2>&1 || die "Missing required command: $1"
+}
+
+normalize_hw_device() {
+    local value
+    value=$(printf '%s\n' "$1" | tr '[:lower:]' '[:upper:]')
+
+    case "${value}" in
+        SM8250*) printf '%s\n' "SM8250" ;;
+        SM8550*|QCS8550*) printf '%s\n' "SM8550" ;;
+        SM8650*) printf '%s\n' "SM8650" ;;
+        SM8750*) printf '%s\n' "SM8750" ;;
+        *) printf '%s\n' "${value}" ;;
+    esac
+}
+
+detect_hw_device() {
+    local model=""
+    local compat=""
+    local board=""
+    local arch=""
+
+    if [ -n "${HW_DEVICE:-}" ]; then
+        normalize_hw_device "${HW_DEVICE}"
+        return
+    fi
+
+    arch=$(normalize_hw_device "$(cat /usr/share/batocera/batocera.arch 2>/dev/null || true)")
+    case "${arch}" in
+        SM8250|SM8550|SM8650|SM8750)
+            printf '%s\n' "${arch}"
+            return
+            ;;
+    esac
+
+    board=$(cat /boot/boot/batocera.board 2>/dev/null || true)
+    case "${board}" in
+        sm8750|odin3)
+            printf '%s\n' "SM8750"
+            return
+            ;;
+        thor|odin2|odin2mini|odin2portal|sm8550)
+            printf '%s\n' "SM8550"
+            return
+            ;;
+    esac
+
+    compat=$(tr -d '\0' </proc/device-tree/compatible 2>/dev/null || true)
+    case "${compat}" in
+        *sm8750*|*cq8725s*|*ayn,odin3*)
+            printf '%s\n' "SM8750"
+            return
+            ;;
+        *sm8650*)
+            printf '%s\n' "SM8650"
+            return
+            ;;
+        *sm8550*|*qcs8550*)
+            printf '%s\n' "SM8550"
+            return
+            ;;
+        *sm8250*)
+            printf '%s\n' "SM8250"
+            return
+            ;;
+    esac
+
+    if command -v batocera-model >/dev/null 2>&1; then
+        model=$(batocera-model 2>/dev/null || true)
+        case "${model}" in
+            AYN_Odin3|AYN_ODIN3)
+                printf '%s\n' "SM8750"
+                return
+                ;;
+            AYN_Thor|AYN_Odin2|AYN_Odin2_Mini|AYN_Odin2_Portal)
+                printf '%s\n' "SM8550"
+                return
+                ;;
+        esac
+    fi
+
+    printf '%s\n' "unknown"
+}
+
+part_path() {
+    local num=$1
+    case "${DEVICE}" in
+        /dev/mmcblk*|/dev/nvme*)
+            printf '%sp%s\n' "${DEVICE}" "${num}"
+            ;;
+        *)
+            printf '%s%s\n' "${DEVICE}" "${num}"
+            ;;
+    esac
+}
+
+disk_from_part() {
+    local part=$1
+    case "${part}" in
+        /dev/mmcblk*p[0-9]*|/dev/nvme*n*p[0-9]*)
+            printf '%s\n' "${part%p[0-9]*}"
+            ;;
+        /dev/*[0-9])
+            printf '%s\n' "${part%%[0-9]*}"
+            ;;
+        *)
+            printf '%s\n' "${part}"
+            ;;
+    esac
+}
+
+parted_line_by_name() {
+    local device=$1
+    local name=$2
+    parted -m -s "${device}" unit B print | awk -F: -v name="${name}" '$1 ~ /^[0-9]+$/ && $6 == name { print $0 }'
+}
+
+candidate_devices() {
+    local sys name
+
+    for sys in /sys/class/block/*; do
+        name=${sys##*/}
+        [ -b "/dev/${name}" ] || continue
+        [ ! -e "${sys}/partition" ] || continue
+        case "${name}" in
+            loop*|ram*|dm-*|zram*|sr*)
+                continue
+                ;;
+        esac
+        printf '/dev/%s\n' "${name}"
+    done
+}
+
+resolve_target_device() {
+    local dev
+    local boot_part boot_disk
+    local found=()
+    local lines=()
+    local remaining=()
+
+    if [ "${DEVICE}" != "auto" ]; then
+        printf '%s\n' "${DEVICE}"
+        return
+    fi
+
+    while IFS= read -r dev; do
+        mapfile -t lines < <(parted_line_by_name "${dev}" "${ANDROID_LABEL}" 2>/dev/null || true)
+        if [ "${#lines[@]}" -gt 0 ]; then
+            found+=("${dev}")
+        fi
+    done < <(candidate_devices)
+
+    case "${#found[@]}" in
+        0)
+            die "Unable to auto-detect the internal Android disk. Set DEVICE=/dev/<disk> manually."
+            ;;
+        1)
+            printf '%s\n' "${found[0]}"
+            ;;
+        *)
+            boot_part=$(awk '$2 == "/boot" { print $1; exit }' /proc/mounts)
+            if [ -n "${boot_part}" ]; then
+                boot_part=$(canonical_block_path "${boot_part}")
+                boot_disk=$(disk_from_part "${boot_part}")
+                boot_disk=$(canonical_block_path "${boot_disk}")
+
+                for dev in "${found[@]}"; do
+                    if [ "$(canonical_block_path "${dev}")" != "${boot_disk}" ]; then
+                        remaining+=("${dev}")
+                    fi
+                done
+
+                if [ "${#remaining[@]}" -eq 1 ]; then
+                    printf '%s\n' "${remaining[0]}"
+                    return
+                fi
+            fi
+
+            die "Multiple disks contain a '${ANDROID_LABEL}' partition: ${found[*]}. Could not uniquely exclude the disk hosting /boot; set DEVICE=/dev/<disk> manually."
+            ;;
+    esac
+}
+
+canonical_block_path() {
+    local path=$1
+    readlink -f "${path}" 2>/dev/null || printf '%s\n' "${path}"
+}
+
+parted_num_by_start_mb() {
+    local start_mb=$1
+    local start_b=$((start_mb * MIB))
+    parted -m -s "${DEVICE}" unit B print | awk -F: -v start="${start_b}B" '$1 ~ /^[0-9]+$/ && $2 == start { print $1 }'
+}
+
+unique_part_num_by_start_mb() {
+    local start_mb=$1
+    local label=$2
+    local nums=()
+
+    mapfile -t nums < <(parted_num_by_start_mb "${start_mb}")
+    [ "${#nums[@]}" -eq 1 ] || die "Could not uniquely identify the new ${label} partition on ${DEVICE}."
+    printf '%s\n' "${nums[0]}"
+}
+
+require_restored_android_layout() {
+    local userdata_num=$1
+    local trailing_num
+    local trailing_nums=()
+    local trailing_parts=()
+
+    mapfile -t trailing_nums < <(
+        parted -m -s "${DEVICE}" print |
+            awk -F: -v userdata_num="${userdata_num}" \
+                '$1 ~ /^[0-9]+$/ && $1 > userdata_num { print $1 }'
+    )
+    if [ "${#trailing_nums[@]}" -eq 0 ]; then
+        return
+    fi
+
+    for trailing_num in "${trailing_nums[@]}"; do
+        trailing_parts+=("$(part_path "${trailing_num}")")
+    done
+    die "Found partition(s) after Android userdata #${userdata_num}: ${trailing_parts[*]}. Restore Android before continuing: boot ROCKNIX ABL v1.1.6 or newer and choose 'Uninstall CFW' to remove the Linux partitions and restore the Android userdata partition, then rerun this installer."
+}
+
+has_any_file() {
+    local path
+    for path in "$@"; do
+        [ -f "${path}" ] && return 0
+    done
+    return 1
+}
+
+detect_boot_payload() {
+    local image_magic=""
+
+    if [ -f "${BOOT_SOURCE}/KERNEL" ] && [ -f "${BOOT_SOURCE}/SYSTEM" ]; then
+        printf '%s\n' "Android KERNEL/SYSTEM"
+        return
+    fi
+
+    if [ -f "${BOOT_SOURCE}/EFI/BOOT/bootaa64.efi" ] || [ -f "${BOOT_SOURCE}/EFI/BOOT/BOOTAA64.EFI" ]; then
+        [ -f "${BOOT_SOURCE}/EFI/BOOT/grub.cfg" ] || die "Missing ${BOOT_SOURCE}/EFI/BOOT/grub.cfg."
+        [ -f "${BOOT_SOURCE}/boot/initrd.lz4" ] || die "Missing ${BOOT_SOURCE}/boot/initrd.lz4."
+        [ -f "${BOOT_SOURCE}/boot/Image" ] || die "Missing ${BOOT_SOURCE}/boot/Image."
+        printf '%s\n' "EFI/GRUB"
+        return
+    fi
+
+    [ -d "${BOOT_SOURCE}/boot" ] || die "Missing ${BOOT_SOURCE}/boot."
+    [ -f "${BOOT_SOURCE}/boot/Image" ] || die "Missing ${BOOT_SOURCE}/boot/Image."
+
+    image_magic=$(head -c 8 "${BOOT_SOURCE}/boot/Image" 2>/dev/null || true)
+    if [ "${image_magic}" = "ANDROID!" ]; then
+        has_any_file \
+            "${BOOT_SOURCE}/boot/batocera" \
+            "${BOOT_SOURCE}/boot/batocera.update" \
+            "${BOOT_SOURCE}/SYSTEM" || die "Android boot image found, but no Batocera system payload was found."
+        printf '%s\n' "Android boot/Image"
+        return
+    fi
+
+    die "Boot source does not look like an EFI/GRUB payload or an Android boot-image payload."
+}
+
+get_gb() {
+    local part=$1
+    local bytes
+    bytes=$(blockdev --getsize64 "${part}" 2>/dev/null) || {
+        echo "N/A"
+        return
+    }
+    echo $((bytes / GIB))
+}
+
+prompt_integer_in_range() {
+    local title=$1
+    local prompt=$2
+    local min=$3
+    local max=$4
+    local default_value=$5
+
+    dialog --clear --stdout \
+        --title "${title}" \
+        --rangebox "${prompt}" 18 78 \
+        "${min}" "${max}" "${default_value}" 2>/dev/tty
+}
+
+main() {
+    local hw
+    local boot_payload
+    local boot_part current_boot_disk
+    local part_names=()
+    local ud_line=()
+    local current_boot_bytes current_boot_gb recommended_boot_gb boot_default_gb
+    local ud_num ud_start_b ud_end_b
+    local ud_start_mb ud_end_mb orig_ud_gb max_ud_gb reserve_bytes
+    local android_gb android_bytes new_ud_end_mb
+    local remaining_mb max_boot_for_choice boot_gb
+    local new_ud_part bat_part share_part
+    local new_ud_num bat_num share_num
+    local boot_size_mb share_size_mb
+    local completion_message
+    local smoke_test=0
+
+    case "${1:-}" in
+        --smoke-test)
+            smoke_test=1
+            ;;
+        --help|-h)
+            show_help
+            exit 0
+            ;;
+        "")
+            ;;
+        *)
+            show_help >&2
+            exit 2
+            ;;
+    esac
+
+    [ "$(id -u)" -eq 0 ] || die "Run this script as root."
+    if [ "${smoke_test}" -eq 0 ] && [ ! -t 0 ]; then
+        die "This installer must be launched from an interactive terminal."
+    fi
+
+    hw=$(detect_hw_device)
+
+    case "${hw}" in
+        SM8550|SM8750)
+            ;;
+        *)
+            die "Unsupported HW_DEVICE '${hw}'. This package is only for SM8550 and SM8750 handheld targets."
+            ;;
+    esac
+
+    for cmd in awk blockdev cp dd dialog grep head mkdir mkfs.ext4 mkfs.vfat mount mountpoint partprobe parted readlink sed sleep sync umount; do
+        require_cmd "${cmd}"
+    done
+
+    DEVICE=$(resolve_target_device)
+    DEVICE=$(canonical_block_path "${DEVICE}")
+    [ -b "${DEVICE}" ] || die "Target device '${DEVICE}' does not exist."
+    boot_payload=$(detect_boot_payload)
+
+    boot_part=$(awk '$2 == "/boot" { print $1; exit }' /proc/mounts)
+    [ -n "${boot_part}" ] || die "Unable to determine the currently mounted /boot partition."
+    boot_part=$(canonical_block_path "${boot_part}")
+    current_boot_disk=$(disk_from_part "${boot_part}")
+    current_boot_disk=$(canonical_block_path "${current_boot_disk}")
+    if [ "${current_boot_disk}" = "${DEVICE}" ]; then
+        die "Refusing to repartition the device currently hosting /boot (${DEVICE})."
+    fi
+
+    mapfile -t ud_line < <(parted_line_by_name "${DEVICE}" "${ANDROID_LABEL}")
+    [ "${#ud_line[@]}" -eq 1 ] || die "Could not uniquely find the Android '${ANDROID_LABEL}' partition on ${DEVICE}."
+
+    IFS=':' read -r ud_num ud_start_b ud_end_b _ <<< "${ud_line[0]}"
+    ud_start_b=${ud_start_b%B}
+    ud_end_b=${ud_end_b%B}
+
+    require_restored_android_layout "${ud_num}"
+
+    mapfile -t part_names < <(parted -m -s "${DEVICE}" print | awk -F: '$1 ~ /^[0-9]+$/ { print $6 }')
+    for name in "${part_names[@]}"; do
+        if [ "${name}" = "${BATOCERA_LABEL}" ] || [ "${name}" = "${SHARE_LABEL}" ]; then
+            die "An installation already exists on ${DEVICE} (found partition named '${name}')."
+        fi
+    done
+
+    ud_start_mb=$(((ud_start_b + MIB - 1) / MIB))
+    ud_end_mb=$((ud_end_b / MIB))
+    orig_ud_gb=$(((ud_end_mb - ud_start_mb) / 1024))
+    current_boot_bytes=$(blockdev --getsize64 "${boot_part}" 2>/dev/null || echo 0)
+    current_boot_gb=$(((current_boot_bytes + GIB - 1) / GIB))
+    recommended_boot_gb=$(((current_boot_bytes * 21 + (10 * GIB) - 1) / (10 * GIB)))
+    if (( recommended_boot_gb < MIN_BOOT_GB )); then
+        recommended_boot_gb=${MIN_BOOT_GB}
+    fi
+    reserve_bytes=$((MIN_BOOT_GB * GIB + MIN_SHARE_MB * MIB))
+    max_ud_gb=$((((ud_end_mb - ud_start_mb) * MIB - reserve_bytes) / GIB))
+
+    if (( max_ud_gb < MIN_ANDROID_GB )); then
+        die "Not enough free space to leave Android userdata plus a ${MIN_BOOT_GB}GB BATOCERA partition and ${MIN_SHARE_MB}MB SHARE partition."
+    fi
+
+    if [ "${smoke_test}" -eq 1 ]; then
+        printf '%s\n' \
+            "SMOKE TEST PASSED" \
+            "  HW_DEVICE=${hw}" \
+            "  TARGET_DEVICE=${DEVICE}" \
+            "  BOOT_PARTITION=${boot_part}" \
+            "  BOOT_PAYLOAD=${boot_payload}" \
+            "  ANDROID_USERDATA=$(part_path "${ud_num}")" \
+            "  ANDROID_USERDATA_GB=${orig_ud_gb}" \
+            "  MAX_NEW_ANDROID_GB=${max_ud_gb}" \
+            "  MIN_BATOCERA_BOOT_GB=${MIN_BOOT_GB}" \
+            "  MIN_SHARE_MB=${MIN_SHARE_MB}" \
+            "No partition or filesystem changes were made."
+        exit 0
+    fi
+
+    printf '%s\n' \
+        "Target device       : ${DEVICE}" \
+        "Detected HW_DEVICE  : ${hw}" \
+        "Boot payload        : ${boot_payload}" \
+        "Current Android data: ${orig_ud_gb} GB" \
+        "Boot source         : ${BOOT_SOURCE}"
+
+    dialog --clear --defaultno --title "${DIALOG_TITLE}" --yesno \
+"Install Batocera beside Android on:
+  ${DEVICE}
+
+Detected hardware: ${hw}
+Boot payload: ${boot_payload}
+Current Android userdata: ${orig_ud_gb} GB
+
+This recreates the Android userdata partition.
+ALL Android apps and data will be erased.
+
+Continue to choose the new partition sizes?" \
+        22 78 2>/dev/tty || {
+            echo "Aborted."
+            exit 0
+        }
+
+    android_gb=$(prompt_integer_in_range \
+        "Android Userdata Size" \
+        "Choose the new Android userdata size in GB.
+
+Range: ${MIN_ANDROID_GB}-${max_ud_gb} GB
+Larger Android userdata leaves less internal SHARE space for Batocera.
+
+Use Up/Down to change the size.
+Left/Right moves the cursor.
+Confirm to continue." \
+        "${MIN_ANDROID_GB}" "${max_ud_gb}" "${max_ud_gb}") || {
+            echo "Aborted."
+            exit 0
+        }
+    android_bytes=$((android_gb * GIB))
+    new_ud_end_mb=$((ud_start_mb + (android_bytes / MIB)))
+
+    remaining_mb=$((ud_end_mb - new_ud_end_mb - MIN_SHARE_MB))
+    max_boot_for_choice=$((remaining_mb / 1024))
+    if (( max_boot_for_choice < MIN_BOOT_GB )); then
+        die "Not enough room left for a BATOCERA boot partition and SHARE after shrinking Android userdata."
+    fi
+    boot_default_gb=${recommended_boot_gb}
+    if (( boot_default_gb > max_boot_for_choice )); then
+        boot_default_gb=${max_boot_for_choice}
+    fi
+
+    boot_gb=$(prompt_integer_in_range \
+        "BATOCERA Boot Size" \
+        "Choose the BATOCERA boot partition size in GB.
+
+Range: ${MIN_BOOT_GB}-${max_boot_for_choice} GB
+Recommended: ${recommended_boot_gb} GB
+Current live /boot: ${current_boot_gb} GB
+
+The recommendation leaves update-staging room.
+Use Up/Down to change the size.
+Left/Right moves the cursor.
+Confirm to continue." \
+        "${MIN_BOOT_GB}" "${max_boot_for_choice}" "${boot_default_gb}") || {
+            echo "Aborted."
+            exit 0
+        }
+    boot_size_mb=$((boot_gb * 1024))
+    share_size_mb=$((ud_end_mb - new_ud_end_mb - boot_size_mb))
+    if (( share_size_mb < MIN_SHARE_MB )); then
+        die "Selected sizes leave less than ${MIN_SHARE_MB}MB for SHARE."
+    fi
+
+    dialog --clear --defaultno --title "Final Destructive Confirmation" --yesno \
+"Target: ${DEVICE}
+
+Final layout:
+  Android userdata : ${android_gb} GB
+  BATOCERA          : ${boot_gb} GB
+  SHARE             : $((share_size_mb / 1024)) GB
+
+The existing Android userdata partition and all of its data will now be
+deleted. Select Yes only if this layout is correct." \
+        20 78 2>/dev/tty || {
+            echo "Aborted."
+            exit 0
+        }
+
+    info "Deleting Android userdata partition #${ud_num}"
+    parted -s "${DEVICE}" rm "${ud_num}"
+
+    info "Recreating Android userdata partition #${ud_num}"
+    parted -a optimal -s "${DEVICE}" mkpart primary ext4 "${ud_start_mb}MiB" "${new_ud_end_mb}MiB"
+    new_ud_num=$(unique_part_num_by_start_mb "${ud_start_mb}" "${ANDROID_LABEL}")
+    parted -s "${DEVICE}" name "${new_ud_num}" "${ANDROID_LABEL}"
+    new_ud_part=$(part_path "${new_ud_num}")
+
+    info "Creating ${BATOCERA_LABEL} partition"
+    parted -a optimal -s "${DEVICE}" mkpart primary fat32 "${new_ud_end_mb}MiB" "$((new_ud_end_mb + boot_size_mb))MiB"
+    bat_num=$(unique_part_num_by_start_mb "${new_ud_end_mb}" "${BATOCERA_LABEL}")
+    parted -s "${DEVICE}" name "${bat_num}" "${BATOCERA_LABEL}"
+    parted -s "${DEVICE}" set "${bat_num}" msftdata on || true
+    parted -s "${DEVICE}" set "${bat_num}" boot on || true
+    bat_part=$(part_path "${bat_num}")
+
+    info "Creating ${SHARE_LABEL} partition"
+    parted -a optimal -s "${DEVICE}" mkpart primary ext4 "$((new_ud_end_mb + boot_size_mb))MiB" 100%
+    share_num=$(unique_part_num_by_start_mb "$((new_ud_end_mb + boot_size_mb))" "${SHARE_LABEL}")
+    parted -s "${DEVICE}" name "${share_num}" "${SHARE_LABEL}"
+    share_part=$(part_path "${share_num}")
+
+    info "Refreshing kernel partition table view"
+    partprobe "${DEVICE}" || true
+    sleep 2
+
+    info "Clearing the start of ${new_ud_part}"
+    dd if=/dev/zero of="${new_ud_part}" bs=1M count=8 status=none
+
+    info "Formatting ${bat_part} as FAT32"
+    if mount | grep -q "^${bat_part} "; then
+        umount "${bat_part}"
+    fi
+    mkfs.vfat -F 32 -S 4096 -s 4 -n "${BATOCERA_LABEL}" "${bat_part}" >/dev/null
+
+    info "Formatting ${share_part} as ext4"
+    if mount | grep -q "^${share_part} "; then
+        umount "${share_part}"
+    fi
+    mkfs.ext4 -F -q -L "${SHARE_LABEL}" -m 0 "${share_part}"
+
+    mkdir -p "${TMP_BOOT}" "${TMP_SHARE}"
+    mount "${bat_part}" "${TMP_BOOT}"
+    mount "${share_part}" "${TMP_SHARE}"
+
+    info "Copying live Batocera boot payload to ${bat_part}"
+    cp -r "${BOOT_SOURCE}/." "${TMP_BOOT}/"
+    sync
+
+    info "Internal install prepared"
+    completion_message="Internal install complete.
+
+New partitions:
+  Android userdata : ${new_ud_part} ($(get_gb "${new_ud_part}") GB)
+  BATOCERA          : ${bat_part} ($(get_gb "${bat_part}") GB)
+  SHARE             : ${share_part} ($(get_gb "${share_part}") GB)
+
+The live ${boot_payload} payload was copied to BATOCERA.
+
+Shut down, remove the SD card, then boot from internal storage.
+Batocera cannot boot while copies are detected on both internal storage
+and the SD card.
+
+To remove internal Linux later and restore Android userdata, boot
+ROCKNIX ABL v1.1.6 or newer and choose 'Uninstall CFW'."
+    printf '%s\n' "${completion_message}"
+    dialog_msg "${DIALOG_TITLE}" "${completion_message}"
+}
+
+main "$@"
