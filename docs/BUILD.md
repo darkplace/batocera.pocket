@@ -10,21 +10,36 @@ English documentation for developers. Chat / support with maintainers may be in 
 
 Optional: see `batocera.mk` for `MAKE_JLEVEL`, Docker image name, and paths.
 
-## Quick start
+## Quick start (AYN Odin 3 / sm8750 on Arch)
+
+The working Odin 3 tree under `output/sm8750` was built with **direct Arch builds**, not Docker:
 
 ```bash
-git clone https://github.com/darkplace/batocera.pocket.git
-cd batocera.pocket
+# one-time on Arch
+sudo pacman -S libxcrypt-compat
 
-# Configure + build SM8750 (Odin 3)
-make sm8750-build
+./build-arch-persistent.sh
+# equivalent:
+# make sm8750-build DIRECT_BUILD=y PARALLEL_BUILD=y MAKE_JLEVEL=20
 ```
 
-Package-only rebuild example:
+Do **not** continue that tree inside Docker: `output/sm8750/host` is linked against Arch glibc.
+
+## Docker (clean trees only)
 
 ```bash
-make sm8750-shell BATCH_MODE=y CMD='make gamescope-rebuild gamescope-reinstall'
+make sm8750-build   # uses batoceralinux/batocera.linux-build
 ```
+
+Use Docker only when `output/<target>/host` was produced inside that image (or after a clean wipe of that output dir).
+
+## Other Qualcomm targets
+
+```bash
+TARGETS="sm8550 sm8250" ./scripts/dev/build-release-queue.sh
+```
+
+`sm8550` covers Odin 2 / Thor / AYANEO / RP6. `sm8250` covers RP5 / Mini / Flip2.
 
 ## Outputs
 

@@ -43,11 +43,13 @@ ifdef DIRECT_BUILD
 
 define MAKE_BUILDROOT
 	BUILDROOT_HOST_LIB="$(OUTPUT_DIR)/$*/host/lib"; \
+	BUILDROOT_HOST_BIN="$(OUTPUT_DIR)/$*/host/bin"; \
 	if [ -d "$$BUILDROOT_HOST_LIB" ]; then \
-		export LD_LIBRARY_PATH="$$BUILDROOT_HOST_LIB$${LD_LIBRARY_PATH:+:$$LD_LIBRARY_PATH}"; \
+		export LD_LIBRARY_PATH="$$BUILDROOT_HOST_LIB"; \
 	fi; \
-	SANITIZED_PATH="$$(printf '%s' "$$PATH" | tr ':' '\n' | awk 'NF && $$0 !~ /[[:space:]]/ { if (!seen[$$0]++) printf("%s%s", sep, $$0); sep=":" }')"; \
-	if [ -n "$$SANITIZED_PATH" ]; then export PATH="$$SANITIZED_PATH"; fi; \
+	export PATH="$$BUILDROOT_HOST_BIN:/usr/bin:/bin:/usr/sbin:/sbin"; \
+	export TMPDIR="$(OUTPUT_DIR)/$*/tmp"; \
+	mkdir -p "$$TMPDIR"; \
 	make $(MAKE_OPTS) O=$(OUTPUT_DIR)/$* \
 		BR2_EXTERNAL=$(PROJECT_DIR) \
 		BR2_DL_DIR=$(DL_DIR) \

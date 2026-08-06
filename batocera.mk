@@ -1,12 +1,16 @@
-# Build configuration for batocera.pocket
-# Based on upstream darkplace/Batocera-Custom-Qualcomm-Builds
+# Build configuration for batocera.pocket (Arch host, Odin 3 / sm8750 tree)
+#
+# Canonical command (same method that produced the working Odin image):
+#   ./build-arch-persistent.sh
+#   # or:
+#   make sm8750-build DIRECT_BUILD=y PARALLEL_BUILD=y MAKE_JLEVEL=20
+#
+# Do NOT continue this output/sm8750 tree inside Docker: host tools were
+# linked against Arch glibc and break under the Ubuntu build image.
 
-# Parallelism without forcing BR2_PER_PACKAGE_DIRECTORIES (PARALLEL_BUILD=y
-# appends that and breaks fresh/partial trees missing per-package host tools).
-MAKE_JLEVEL := 12
-MAKE_LLEVEL := 12
-MAKE_OPTS += -j$(MAKE_JLEVEL) -l$(MAKE_LLEVEL)
+MAKE_JLEVEL := 20
+MAKE_LLEVEL := 20
+PARALLEL_BUILD := y
 
-# Docker configuration (use suckbluefrog's image)
 DOCKER_REPO := batoceralinux
 IMAGE_NAME := batocera.linux-build

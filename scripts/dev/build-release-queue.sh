@@ -1,41 +1,41 @@
 #!/usr/bin/env bash
 # Sequential release builds for batocera.pocket Qualcomm targets.
-# Order: sm8750 (Odin 3) → sm8550 (Odin 2 / Thor / AYANEO) → sm8250 (RP) → odin (SD845).
+# Default method matches the working Odin 3 path: Arch DIRECT_BUILD + PARALLEL_BUILD.
 #
 # Usage:
 #   ./scripts/dev/build-release-queue.sh
-#   TARGETS="sm8750 sm8550" ./scripts/dev/build-release-queue.sh
+#   TARGETS="sm8750" ./scripts/dev/build-release-queue.sh
+#   DIRECT_BUILD= TARGETS="sm8550" ./scripts/dev/build-release-queue.sh   # Docker only on clean trees
 
 set -uo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$PROJECT_DIR"
 
-# odin (SD845) skipped by default: unmet qt5base/libxcb deps on this tree
 TARGETS="${TARGETS:-sm8750 sm8550 sm8250}"
 LOG_DIR="${PROJECT_DIR}/output/release-build-logs"
 mkdir -p "$LOG_DIR"
 MASTER_LOG="${LOG_DIR}/queue-$(date -u +%Y%m%dT%H%M%SZ).log"
 
-# Direct build by default on this host (output/*/host was built on Arch;
-# Docker glibc is older and cannot run those host tools). Use DIRECT_BUILD=
-# only with a clean output tree built entirely inside Docker.
+# Match build-arch-persistent.sh / working Odin builds
 DIRECT_BUILD="${DIRECT_BUILD-y}"
-MAKE_JLEVEL="${MAKE_JLEVEL:-$(nproc)}"
-MAKE_LLEVEL="${MAKE_LLEVEL:-$(nproc)}"
-# Arch system cmake >= 4 rejects old host-* CMakeLists; allow configure anyway.
+PARALLEL_BUILD="${PARALLEL_BUILD-y}"
+MAKE_JLEVEL="${MAKE_JLEVEL:-20}"
+MAKE_LLEVEL="${MAKE_LLEVEL:-20}"
 export CMAKE_POLICY_VERSION_MINIMUM="${CMAKE_POLICY_VERSION_MINIMUM:-3.5}"
+# Shrink env so target-finalize does not hit ARG_MAX under Cursor
+export PATH="/usr/bin:/bin:/usr/sbin:/sbin"
 
 log() { echo "[$(date '+%F %T')] $*" | tee -a "$MASTER_LOG"; }
 
 log "=== batocera.pocket release build queue ==="
 log "Targets: $TARGETS"
 if [ -n "$DIRECT_BUILD" ]; then
-    log "DIRECT_BUILD=y"
+    log "Method: DIRECT_BUILD=y PARALLEL_BUILD=${PARALLEL_BUILD:-n}"
 else
-    log "DIRECT_BUILD=n (docker)"
+    log "Method: Docker (only safe on trees whose host/ was built in Docker)"
 fi
-log "MAKE_JLEVEL=$MAKE_JLEVEL MAKE_LLEVEL=$MAKE_LLEVEL"
+log "MAKE_JLEVEL=$MAKE_JLEVEL"
 log "Commit: $(git rev-parse --short HEAD) — $(git log -1 --pretty=%s)"
 log ""
 
@@ -46,25 +46,26 @@ for t in $TARGETS; do
     START=$(date +%s)
 
     set +e
+    export TMPDIR="${PROJECT_DIR}/output/${t}/tmp"
+    mkdir -p "$TMPDIR"
+    if [ -d "${PROJECT_DIR}/output/${t}/host/lib" ]; then
+        export LD_LIBRARY_PATH="${PROJECT_DIR}/output/${t}/host/lib"
+    else
+        unset LD_LIBRARY_PATH || true
+    fi
+
     if [ -n "$DIRECT_BUILD" ]; then
-        export TMPDIR="${PROJECT_DIR}/output/${t}/tmp"
-        mkdir -p "$TMPDIR"
-        make "${t}-build" DIRECT_BUILD=y MAKE_JLEVEL="$MAKE_JLEVEL" MAKE_LLEVEL="$MAKE_LLEVEL" BATCH_MODE= CMD=host-zstd \
-            >>"$TLOG" 2>&1
         make "${t}-build" \
             DIRECT_BUILD=y \
+            PARALLEL_BUILD=y \
             MAKE_JLEVEL="$MAKE_JLEVEL" \
             MAKE_LLEVEL="$MAKE_LLEVEL" \
-            BATCH_MODE= \
             2>&1 | tee -a "$TLOG"
         rc=${PIPESTATUS[0]}
     else
-        make "${t}-build" BATCH_MODE= CMD=host-zstd \
-            MAKE_JLEVEL="$MAKE_JLEVEL" MAKE_LLEVEL="$MAKE_LLEVEL" >>"$TLOG" 2>&1
         make "${t}-build" \
             MAKE_JLEVEL="$MAKE_JLEVEL" \
             MAKE_LLEVEL="$MAKE_LLEVEL" \
-            BATCH_MODE= \
             2>&1 | tee -a "$TLOG"
         rc=${PIPESTATUS[0]}
     fi
@@ -74,8 +75,7 @@ for t in $TARGETS; do
     DUR=$(( (END - START) / 60 ))
     if [ "$rc" -eq 0 ]; then
         log "<<< OK $t (${DUR} min)"
-        # Record image paths if present
-        find "output/${t}/images" -name 'batocera-*.img.gz' -o -name 'boot.tar.xz' 2>/dev/null \
+        find "output/${t}/images" \( -name 'batocera-*.img.gz' -o -name 'boot.tar.xz' \) 2>/dev/null \
             | tee -a "$MASTER_LOG" || true
     else
         log "<<< FAIL $t exit=$rc (${DUR} min) — continuing with next target"
