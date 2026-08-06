@@ -804,12 +804,14 @@ endif # merged /usr
 		@$(call MESSAGE,"Copying overlay $(d)")$(sep) \
 		$(Q)$(call SYSTEM_RSYNC,$(d),$(TARGET_DIR))$(sep))
 
-	$(Q)$(if $(TARGET_DIR_FILES_LISTS), \
-		cat $(TARGET_DIR_FILES_LISTS)) > $(BUILD_DIR)/packages-file-list.txt
-	$(Q)$(if $(HOST_DIR_FILES_LISTS), \
-		cat $(HOST_DIR_FILES_LISTS)) > $(BUILD_DIR)/packages-file-list-host.txt
-	$(Q)$(if $(STAGING_DIR_FILES_LISTS), \
-		cat $(STAGING_DIR_FILES_LISTS)) > $(BUILD_DIR)/packages-file-list-staging.txt
+	# batocera.pocket: avoid "Argument list too long" (Linux MAX_ARG_STRLEN)
+	# when concatenating thousands of per-package .files-list*.txt paths.
+	$(Q)find $(BUILD_DIR) -mindepth 2 -maxdepth 2 -name '.files-list.txt' \
+		| LC_ALL=C sort | xargs -r cat > $(BUILD_DIR)/packages-file-list.txt
+	$(Q)find $(BUILD_DIR) -mindepth 2 -maxdepth 2 -name '.files-list-host.txt' \
+		| LC_ALL=C sort | xargs -r cat > $(BUILD_DIR)/packages-file-list-host.txt
+	$(Q)find $(BUILD_DIR) -mindepth 2 -maxdepth 2 -name '.files-list-staging.txt' \
+		| LC_ALL=C sort | xargs -r cat > $(BUILD_DIR)/packages-file-list-staging.txt
 
 	$(foreach s, $(call qstrip,$(BR2_ROOTFS_POST_BUILD_SCRIPT)), \
 		@$(call MESSAGE,"Executing post-build script $(s)")$(sep) \
