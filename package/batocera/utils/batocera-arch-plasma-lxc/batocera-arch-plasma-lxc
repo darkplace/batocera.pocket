@@ -1049,7 +1049,11 @@ container_has_expected_distribution() {
     rootfs="$(container_rootfs)"
     [ -r "${rootfs}/etc/os-release" ] || return 1
     container_os_id="$(awk -F= '$1 == "ID" { gsub(/"/, "", $2); print $2; exit }' "${rootfs}/etc/os-release")"
-    [ "${container_os_id}" = "${PLASMA_OS_ID}" ]
+    [ "${container_os_id}" = "${PLASMA_OS_ID}" ] && return 0
+    # Fallback: check ID_LIKE (Arch Linux ARM has ID=archarm but ID_LIKE=arch)
+    container_os_id="$(awk -F= '$1 == "ID_LIKE" { gsub(/"/, "", $2); print $2; exit }' "${rootfs}/etc/os-release")"
+    case "${container_os_id}" in *"${PLASMA_OS_ID}"*) return 0 ;; esac
+    return 1
 }
 
 start_container() {
@@ -1081,7 +1085,7 @@ start_container() {
 container_has_session_mounts() {
     container_running || return 1
     lxc-attach -P "${LXC_PATH}" -n "${CONTAINER}" -- /bin/sh -lc \
-        "[ -e /dev/dri/card0 ] && [ -d /dev/input ] && [ -d /dev/snd ] && [ -S /batocera-runtime/seatd.sock ] && [ -d /dev/.lxc/proc ] && [ -d /dev/.lxc/sys ] && [ -d ${CONTAINER_HOST_LIB_DIR} ] && [ -d ${CONTAINER_HOST_USERDATA} ] && [ /etc/resolv.conf -ef ${CONTAINER_RUNTIME_DIR}/resolv.conf ]" \
+        "[ -e /dev/dri ] && [ -d /dev/input ] && [ -d /dev/snd ] && [ -S /batocera-runtime/seatd.sock ] && [ -d /dev/.lxc/proc ] && [ -d /dev/.lxc/sys ] && [ -d ${CONTAINER_HOST_LIB_DIR} ] && [ -d ${CONTAINER_HOST_USERDATA} ] && [ /etc/resolv.conf -ef ${CONTAINER_RUNTIME_DIR}/resolv.conf ]" \
         >/dev/null 2>&1
 }
 
@@ -1710,7 +1714,7 @@ case "${session_type}" in
         export SDL_VIDEODRIVER=wayland
         export CLUTTER_BACKEND=wayland
         export MOZ_ENABLE_WAYLAND=1
-        export KWIN_DRM_DEVICES="${KWIN_DRM_DEVICES:-/dev/dri/card0}"
+        export KWIN_DRM_DEVICES="${KWIN_DRM_DEVICES:-$(ls /dev/dri/card* 2>/dev/null | head -1)}"
         unset DISPLAY
         unset XAUTHORITY
         if command -v dbus-run-session >/dev/null 2>&1; then
@@ -1777,7 +1781,7 @@ export DESKTOP_SESSION=plasmawayland
 export KDE_FULL_SESSION=true
 export NO_AT_BRIDGE=1
 export QT_QPA_PLATFORM=wayland
-export KWIN_DRM_DEVICES="${KWIN_DRM_DEVICES:-/dev/dri/card0}"
+export KWIN_DRM_DEVICES="${KWIN_DRM_DEVICES:-$(ls /dev/dri/card* 2>/dev/null | head -1)}"
 export LIBSEAT_BACKEND="${LIBSEAT_BACKEND:-seatd}"
 export SEATD_SOCK="${SEATD_SOCK:-/batocera-runtime/seatd.sock}"
 
@@ -2524,6 +2528,7 @@ set -euo pipefail
 mode="${1:-}"
 mobile_config="${HOME}/.config/plasma-mobile"
 log_file="${XDG_RUNTIME_DIR:-/tmp}/batocera-plasma-shell-mode.log"
+uid="$(id -u)"
 
 strip_mobile_config_dir() {
     local value entry result="" old_ifs
@@ -2540,8 +2545,55 @@ strip_mobile_config_dir() {
     printf '%s\n' "${result:-/etc/xdg}"
 }
 
+# plasmashell --replace alone often keeps the previous shell when Plasma Mobile
+# has written shell=org.kde.plasma.mobileshell into plasmashellrc. Force a clean
+# hand-off by stopping plasmashell and scrubbing mobile shell panel stanzas.
+stop_plasmashell() {
+    pkill -TERM -u "${uid}" -x plasmashell 2>/dev/null || true
+    for _ in $(seq 1 50); do
+        pgrep -u "${uid}" -x plasmashell >/dev/null 2>&1 || return 0
+        sleep 0.1
+    done
+    pkill -KILL -u "${uid}" -x plasmashell 2>/dev/null || true
+}
+
+scrub_mobile_shell_config() {
+    local rc="${HOME}/.config/plasmashellrc"
+    [ -f "${rc}" ] || return 0
+    # Drop panel view blocks that pin mobileshell; plasmashell recreates desktop panels.
+    awk '
+        BEGIN { skip=0 }
+        /^\[PlasmaViews\]\[Panel / {
+            block=$0
+            skip=0
+            buf=block ORS
+            next
+        }
+        skip==0 && buf!="" {
+            if ($0 ~ /^shell=org\.kde\.plasma\.mobileshell/) { skip=1; buf=""; next }
+            buf=buf $0 ORS
+            if ($0 ~ /^\[/ && $0 !~ /^\[PlasmaViews\]\[Panel /) {
+                printf "%s", buf
+                buf=""
+            }
+            next
+        }
+        skip==1 {
+            if ($0 ~ /^\[/ && $0 !~ /^\[PlasmaViews\]\[Panel /) {
+                skip=0
+                print
+            }
+            next
+        }
+        { print }
+        END { if (skip==0 && buf!="") printf "%s", buf }
+    ' "${rc}" > "${rc}.batocera-tmp" && mv -f "${rc}.batocera-tmp" "${rc}"
+}
+
 command -v plasmashell >/dev/null 2>&1 || exit 127
 desktop_config_dirs="$(strip_mobile_config_dir)"
+: >>"${log_file}" 2>/dev/null || true
+printf '[%s] switch -> %s\n' "$(date -Iseconds)" "${mode}" >>"${log_file}" 2>/dev/null || true
 
 case "${mode}" in
     mobile)
@@ -2556,6 +2608,7 @@ case "${mode}" in
                 XDG_CONFIG_DIRS="${mobile_config_dirs}" \
                 plasma-mobile-envmanager --apply-settings >>"${log_file}" 2>&1 || true
         fi
+        stop_plasmashell
         nohup env \
             QT_QPA_PLATFORMTHEME=KDE \
             EGL_PLATFORM=wayland \
@@ -2566,10 +2619,13 @@ case "${mode}" in
             PLASMA_PLATFORM=phone:handset \
             PLASMA_DEFAULT_SHELL=org.kde.plasma.mobileshell \
             XDG_CONFIG_DIRS="${mobile_config_dirs}" \
-            plasmashell -p org.kde.plasma.mobileshell --replace >>"${log_file}" 2>&1 &
+            plasmashell -p org.kde.plasma.mobileshell >>"${log_file}" 2>&1 &
         ;;
     desktop)
         [ -d /usr/share/plasma/shells/org.kde.plasma.desktop ] || exit 1
+        scrub_mobile_shell_config
+        stop_plasmashell
+        # Drop mobile-only env that may be inherited from the launcher process.
         nohup env \
             -u EGL_PLATFORM \
             -u QT_QUICK_CONTROLS_STYLE \
@@ -2580,7 +2636,7 @@ case "${mode}" in
             QT_QPA_PLATFORMTHEME=KDE \
             PLASMA_DEFAULT_SHELL=org.kde.plasma.desktop \
             XDG_CONFIG_DIRS="${desktop_config_dirs}" \
-            plasmashell -p org.kde.plasma.desktop --replace >>"${log_file}" 2>&1 &
+            plasmashell -p org.kde.plasma.desktop >>"${log_file}" 2>&1 &
         ;;
     *)
         printf 'usage: %s {mobile|desktop}\n' "$0" >&2
@@ -2659,19 +2715,19 @@ do
 done
 
 touch /var/lib/batocera-arch-plasma-ready
-touch /var/lib/batocera-plasma-ready-v8
+touch /var/lib/batocera-plasma-ready-v9
 EOF
 }
 
 container_ready() {
     container_exists || return 1
 
-    if [ -f "$(container_rootfs)/var/lib/batocera-plasma-ready-v8" ]; then
+    if [ -f "$(container_rootfs)/var/lib/batocera-plasma-ready-v9" ]; then
         return 0
     fi
 
     container_running && \
-        lxc-attach -P "${LXC_PATH}" -n "${CONTAINER}" -- test -f /var/lib/batocera-plasma-ready-v8 >/dev/null 2>&1
+        lxc-attach -P "${LXC_PATH}" -n "${CONTAINER}" -- test -f /var/lib/batocera-plasma-ready-v9 >/dev/null 2>&1
 }
 
 ensure_private_session_bus_wrapper() {
@@ -3149,7 +3205,7 @@ launch_plasma_session() {
             -v "LANG=C.UTF-8" \
             -v "XDG_RUNTIME_DIR=${runtime_dir}" \
             -v "BATOCERA_ARCH_PLASMA_SESSION_TYPE=${PLASMA_SESSION_TYPE}" \
-            -v "KWIN_DRM_DEVICES=${BATOCERA_ARCH_PLASMA_DRM_DEVICES:-/dev/dri/card0}" \
+            -v "KWIN_DRM_DEVICES=${BATOCERA_ARCH_PLASMA_DRM_DEVICES:-$(ls /dev/dri/card* 2>/dev/null | head -1)}" \
             -v "LIBSEAT_BACKEND=seatd" \
             -v "SEATD_SOCK=/batocera-runtime/seatd.sock" \
             -v "PIPEWIRE_REMOTE=/batocera-runtime/pipewire-0" \
@@ -3180,7 +3236,7 @@ launch_plasma_session() {
             -v "LANG=C.UTF-8" \
             -v "XDG_RUNTIME_DIR=${runtime_dir}" \
             -v "BATOCERA_ARCH_PLASMA_SESSION_TYPE=${PLASMA_SESSION_TYPE}" \
-            -v "KWIN_DRM_DEVICES=${BATOCERA_ARCH_PLASMA_DRM_DEVICES:-/dev/dri/card0}" \
+            -v "KWIN_DRM_DEVICES=${BATOCERA_ARCH_PLASMA_DRM_DEVICES:-$(ls /dev/dri/card* 2>/dev/null | head -1)}" \
             -v "LIBSEAT_BACKEND=seatd" \
             -v "SEATD_SOCK=/batocera-runtime/seatd.sock" \
             -v "PIPEWIRE_REMOTE=/batocera-runtime/pipewire-0" \

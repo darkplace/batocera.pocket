@@ -5,6 +5,7 @@ do_clean() {
     rm -f "/userdata/system/upgrade/upgrade_message.txt"
     rm -f "/userdata/system/upgrade/boot.tar.xz"
     rm -f "/userdata/system/upgrade/boot.tar.xz.md5"
+    rm -f /userdata/system/upgrade/boot.tar.xz.part*
     if test $# -eq 1; then
         [ "$1" = "0" ] && echo "Finally syncing of disk ...>>>100"
         [ "$1" = "1" ] && echo "removed downloaded files, sync disk now"
@@ -34,13 +35,30 @@ do_badgeines() {
             COUNT=$((COUNT+5))
             sleep 0.1
         else
-            CURVAL=$(stat --printf="%s" "/userdata/system/upgrade/boot.tar.xz")
+            CURVAL=$(stat --printf="%s" "/userdata/system/upgrade/boot.tar.xz" 2>/dev/null || echo 0)
             CURVAL=$((CURVAL / 1024 / 1024))
-            PER=$((CURVAL * 100 / TARVAL))
+            if [ "${TARVAL}" -gt 0 ]; then
+                PER=$((CURVAL * 100 / TARVAL))
+            else
+                PER=0
+            fi
             echo "$CURVAL of $TARVAL MB downloaded ... >>> ${PER}%"
             sleep 5
         fi
     done
+}
+
+# Resolve Content-Length (MB) for a URL; echo 0 on failure
+http_size_mb() {
+    local headers size
+    headers=$(curl -A "batocera-upgrade.header" -sfIL "$1" 2>/dev/null) || { echo 0; return 1; }
+    size=$(echo "$headers" | grep -i "Content-Length: " | tail -1 | sed -e s+'^Content-Length: \([0-9]*\).*$'+'\1'+I)
+    if [ -z "${size}" ] || [ "${size}" -eq 0 ] 2>/dev/null; then
+        echo 0
+        return 1
+    fi
+    echo $((size / 1024 / 1024))
+    return 0
 }
 
 # ---- MAIN ----
@@ -48,7 +66,9 @@ echo "Starting the upgrade..."
 
 # --- Prepare update URLs ---
 
-updateurl="https://updates.batocera.org"
+# batocera.pocket: default to GitHub Releases
+GITHUB_REPO="darkplace/batocera.pocket"
+updateurl="https://github.com/${GITHUB_REPO}"
 
 board=$(cat /boot/boot/batocera.board)
 oldboard="$board"
@@ -61,21 +81,45 @@ settingsupdateurl="$(/usr/bin/batocera-settings-get updates.url)"
 test -n "${settingsupdateurl}" && updateurl="${settingsupdateurl}"
 
 # force a default value in case the value is removed or miswritten
+# batocera.pocket: all channels map to the same GitHub latest release
 test "${updatetype}" != "stable" -a "${updatetype}" != "unstable" -a "${updatetype}" != "butterfly" && updatetype="stable"
+if echo "${updateurl}" | grep -q "github.com"; then
+    updatetype="stable"
+fi
 
-# custom the url directory
-DWD_HTTP_DIR="${updateurl}/${board}/${updatetype}/last"
-
-# custom CLI url
-test $# -eq 1 && DWD_HTTP_DIR="$1"
+CUSTOM_DIR=0
+# custom CLI url (not "manual")
+if [ $# -eq 1 ] && [ "$1" != "manual" ]; then
+    DWD_HTTP_DIR="$1"
+    CUSTOM_DIR=1
+elif echo "${updateurl}" | grep -q "github.com"; then
+    # batocera.pocket: always use GitHub Releases /latest (stable == butterfly)
+    _gh_owner_repo=$(echo "${updateurl}" | sed -E 's|https?://github.com/||; s|/+$||; s|\.git$||')
+    GITHUB_API_URL="https://api.github.com/repos/${_gh_owner_repo}/releases/latest"
+    LATEST_TAG=$(curl -sfL -H "Accept: application/vnd.github+json" "${GITHUB_API_URL}" 2>/dev/null \
+        | grep '"tag_name"' | head -1 | sed -E 's/.*"tag_name":[[:space:]]*"([^"]+)".*/\1/')
+    if test -n "${LATEST_TAG}"; then
+        DWD_HTTP_DIR="https://github.com/${_gh_owner_repo}/releases/download/${LATEST_TAG}"
+        echo "Found release: ${LATEST_TAG}"
+    else
+        echo "No releases found at https://github.com/${_gh_owner_repo}"
+        exit 1
+    fi
+else
+    # Original batocera update URL format
+    DWD_HTTP_DIR="${updateurl}/${board}/${updatetype}/last"
+fi
 
 # started from Terminal/SSH (TERMINAL=1) or from ES (TERMINAL=0)
 [ -t 1 ] && TERMINAL=1 || TERMINAL=0
 
 # --- Prepare file downloads ---
 
+USE_PARTS=0
+PART_COUNT=0
+
 # Check if "manual" argument is provided
-if [ "$1" == "manual" ]; then
+if [ "$1" = "manual" ]; then
     # Check if the local file exists
     if [ -f "/userdata/system/upgrade/boot.tar.xz" ]; then
         size=$(du -m "/userdata/system/upgrade/boot.tar.xz" | awk '{print $1}')
@@ -88,15 +132,31 @@ else
     # download directory
     mkdir -p /userdata/system/upgrade || exit 1
 
-    # get size to download
     url="${DWD_HTTP_DIR}/boot.tar.xz"
     echo "url: ${url}"
-    headers=$(curl -A "batocera-upgrade.header" -sfIL "${url}")
-    test $? -eq 0 || exit 1
-    size=$(echo "$headers" | grep -i "Content-Length: " | tail -1 | sed -e s+'^Content-Length: \([0-9]*\).*$'+'\1'+I) # take the last one in case of redirection
-    size=$((size / 1024 / 1024))
-    test $? -eq 0 || exit 1
-    echo "need to download ${size}mb"
+    size=$(http_size_mb "${url}")
+    if [ $? -ne 0 ] || [ "${size}" -eq 0 ]; then
+        # GitHub 2GB limit: try split parts boot.tar.xz.part01, part02, ...
+        echo "Single boot.tar.xz not available; trying split parts..."
+        PART_COUNT=0
+        size=0
+        while true; do
+            PART_COUNT=$((PART_COUNT + 1))
+            part_url=$(printf "%s/boot.tar.xz.part%02d" "${DWD_HTTP_DIR}" "${PART_COUNT}")
+            part_mb=$(http_size_mb "${part_url}") || break
+            [ "${part_mb}" -eq 0 ] && break
+            size=$((size + part_mb))
+            USE_PARTS=1
+        done
+        PART_COUNT=$((PART_COUNT - 1))
+        if [ "${USE_PARTS}" -ne 1 ] || [ "${PART_COUNT}" -lt 1 ]; then
+            echo "Error: boot.tar.xz (or .part*) not found at ${DWD_HTTP_DIR}"
+            exit 1
+        fi
+        echo "need to download ${size}mb in ${PART_COUNT} parts"
+    else
+        echo "need to download ${size}mb"
+    fi
 fi
 
 # check free space on fs
@@ -122,27 +182,52 @@ done
 # download
 if [ "$1" != "manual" ]; then
     if [ $TERMINAL -eq 0 ]; then
-        # download inside ES with badge
         touch "/userdata/system/upgrade/boot.tar.xz"
         do_badgeines "${size}" &
         GETPERPID=$!
-        curl -A "batocera-upgrade" -sfL "${url}" -o "/userdata/system/upgrade/boot.tar.xz" || exit 1
-        do_upgmsg "Calculating md5 checksum ..."
+    fi
+
+    if [ "${USE_PARTS}" -eq 1 ]; then
+        rm -f /userdata/system/upgrade/boot.tar.xz.part* "/userdata/system/upgrade/boot.tar.xz"
+        i=1
+        while [ "${i}" -le "${PART_COUNT}" ]; do
+            part_name=$(printf "boot.tar.xz.part%02d" "${i}")
+            part_url="${DWD_HTTP_DIR}/${part_name}"
+            do_upgmsg "Downloading part ${i}/${PART_COUNT} ..."
+            if [ $TERMINAL -eq 0 ]; then
+                curl -A "batocera-upgrade" -sfL "${part_url}" -o "/userdata/system/upgrade/${part_name}" || exit 1
+            else
+                echo "Downloading ${part_name}..."
+                curl -A "batocera-upgrade" -fL "${part_url}" -o "/userdata/system/upgrade/${part_name}" || exit 1
+            fi
+            i=$((i + 1))
+        done
+        do_upgmsg "Reassembling boot.tar.xz ..."
+        cat /userdata/system/upgrade/boot.tar.xz.part* > "/userdata/system/upgrade/boot.tar.xz" || exit 1
+        rm -f /userdata/system/upgrade/boot.tar.xz.part*
     else
-        # download inside SSH or terminal
-        curl -A "batocera-upgrade" -fL "${url}" -o "/userdata/system/upgrade/boot.tar.xz" || exit 1
-        echo "Check proper file download, checking md5sum - please wait"
+        if [ $TERMINAL -eq 0 ]; then
+            curl -A "batocera-upgrade" -sfL "${url}" -o "/userdata/system/upgrade/boot.tar.xz" || exit 1
+            do_upgmsg "Calculating md5 checksum ..."
+        else
+            curl -A "batocera-upgrade" -fL "${url}" -o "/userdata/system/upgrade/boot.tar.xz" || exit 1
+            echo "Check proper file download, checking md5sum - please wait"
+        fi
+    fi
+
+    if [ $TERMINAL -eq 0 ]; then
+        do_upgmsg "Calculating md5 checksum ..."
     fi
 fi
 
 # try to download an md5 checksum
 if [ "$1" != "manual" ]; then
-    curl -A "batocera-upgrade.md5" -sfL "${url}.md5" -o "/userdata/system/upgrade/boot.tar.xz.md5"
+    curl -A "batocera-upgrade.md5" -sfL "${DWD_HTTP_DIR}/boot.tar.xz.md5" -o "/userdata/system/upgrade/boot.tar.xz.md5"
 fi
 if test -e "/userdata/system/upgrade/boot.tar.xz.md5"
 then
-    DISTMD5=$(cat "/userdata/system/upgrade/boot.tar.xz.md5")
-    CURRMD5=$(md5sum "/userdata/system/upgrade/boot.tar.xz" | sed -e s+' .*$'++)
+    DISTMD5=$(cat "/userdata/system/upgrade/boot.tar.xz.md5" | awk '{print $1}')
+    CURRMD5=$(md5sum "/userdata/system/upgrade/boot.tar.xz" | awk '{print $1}')
     if test "${DISTMD5}" = "${CURRMD5}"
     then
         do_upgmsg "Checksum validated ..." 2

@@ -8,7 +8,9 @@ config BR2_PACKAGE_GAMESCOPE
 	select BR2_PACKAGE_XLIB_LIBX11
 	select BR2_PACKAGE_LIBXCB
 	select BR2_PACKAGE_XLIB_LIBXRES
-	select BR2_PACKAGE_LUAJIT if !BR2_PACKAGE_LUA
+	# Use batocera-luajit (coexists with system Lua 5.4 for WirePlumber).
+	# BR2_PACKAGE_LUAJIT conflicts with BR2_PACKAGE_LUA in Buildroot.
+	select BR2_PACKAGE_BATOCERA_LUAJIT
 	select BR2_PACKAGE_SEATD
 	select BR2_PACKAGE_SEATD_DAEMON
 	select BR2_PACKAGE_VULKAN_HEADERS

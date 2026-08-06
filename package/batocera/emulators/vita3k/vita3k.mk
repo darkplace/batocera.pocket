@@ -25,7 +25,9 @@ VITA3K_CMAKE_BACKEND = ninja
 
 VITA3K_CONF_OPTS += -DCMAKE_C_COMPILER=$(HOST_DIR)/bin/clang \
                     -DCMAKE_CXX_COMPILER=$(HOST_DIR)/bin/clang++ \
-                    -DCMAKE_EXE_LINKER_FLAGS="-no-pie -lm -lstdc++" \
+                    -DCMAKE_C_FLAGS="-fno-lto" \
+                    -DCMAKE_CXX_FLAGS="-fno-lto" \
+                    -DCMAKE_EXE_LINKER_FLAGS="-no-pie -lm -lstdc++ -fno-lto" \
                     -DCMAKE_BUILD_TYPE=Release \
                     -DBUILD_SHARED_LIBS=OFF \
                     -DUSE_DISCORD_RICH_PRESENCE=OFF \

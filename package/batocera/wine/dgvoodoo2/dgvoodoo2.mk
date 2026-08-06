@@ -4,8 +4,8 @@
 #
 ################################################################################
 
-DGVOODOO2_VERSION = 2.86.5
-DGVOODOO2_SOURCE = dgVoodoo2_86_5.zip
+DGVOODOO2_VERSION = 2.87.3
+DGVOODOO2_SOURCE = dgVoodoo2_87_3.zip
 DGVOODOO2_SITE = https://github.com/dege-diosg/dgVoodoo2/releases/download/v$(DGVOODOO2_VERSION)
 DGVOODOO2_LICENSE = Freeware
 DGVOODOO2_BIN_ARCH_EXCLUDE += /usr/wine/dgvoodoo2

@@ -16,9 +16,9 @@ FEX_EMU_DEPENDENCIES += host-clang host-fex-emu alsa-lib libdrm libglvnd llvm me
 
 FEX_EMU_CMAKE_BACKEND = ninja
 
-# Use clang (FEX requires it)
-FEX_EMU_CONF_OPTS += -DCMAKE_C_COMPILER=$(HOST_DIR)/bin/clang
-FEX_EMU_CONF_OPTS += -DCMAKE_CXX_COMPILER=$(HOST_DIR)/bin/clang++
+# Use fex-clang wrapper: strips ARM flags (-mcpu, -march, etc.) when targeting x86_64
+FEX_EMU_CONF_OPTS += -DCMAKE_C_COMPILER=$(HOST_DIR)/bin/fex-clang
+FEX_EMU_CONF_OPTS += -DCMAKE_CXX_COMPILER=$(HOST_DIR)/bin/fex-clang++
 FEX_EMU_CONF_OPTS += -DCMAKE_C_COMPILER_AR=$(HOST_DIR)/bin/llvm-ar
 FEX_EMU_CONF_OPTS += -DCMAKE_CXX_COMPILER_AR=$(HOST_DIR)/bin/llvm-ar
 FEX_EMU_CONF_OPTS += -DCMAKE_ASM_COMPILER_AR=$(HOST_DIR)/bin/llvm-ar
@@ -34,7 +34,7 @@ FEX_EMU_CONF_OPTS += -DCMAKE_BUILD_TYPE=Release
 FEX_EMU_CONF_OPTS += -DCMAKE_INSTALL_PREFIX=/usr
 FEX_EMU_CONF_OPTS += -DUSE_LINKER=lld
 FEX_EMU_CONF_OPTS += -DCMAKE_LINKER=$(HOST_DIR)/bin/ld.lld
-FEX_EMU_CONF_OPTS += -DENABLE_LTO=True
+FEX_EMU_CONF_OPTS += -DENABLE_LTO=False
 FEX_EMU_CONF_OPTS += -DBUILD_TESTING=False
 FEX_EMU_CONF_OPTS += -DENABLE_ASSERTIONS=False
 FEX_EMU_CONF_OPTS += -DBUILD_FEXCONFIG=False
@@ -48,8 +48,8 @@ FEX_EMU_CONF_OPTS += -DHOST_THUNK_SYSROOT=$(HOST_DIR)/$(GNU_TARGET_NAME)/sysroot
 FEX_EMU_CONF_OPTS += -DHOST_THUNK_TARGET_TRIPLE=$(GNU_TARGET_NAME)
 FEX_EMU_CONF_OPTS += -DHOST_THUNK_TOOLCHAIN_INCLUDE_ROOT=$(HOST_DIR)/$(GNU_TARGET_NAME)/include
 FEX_EMU_CONF_OPTS += -DHOST_THUNK_CXX_INCLUDE_ROOT=$(HOST_DIR)/$(GNU_TARGET_NAME)/include/c++
-FEX_EMU_CONF_OPTS += -DGUEST_CLANG_PATH=$(HOST_DIR)/bin/fex-guest-clang
-FEX_EMU_CONF_OPTS += -DGUEST_CLANGXX_PATH=$(HOST_DIR)/bin/fex-guest-clang++
+FEX_EMU_CONF_OPTS += -DGUEST_CLANG_PATH=$(HOST_DIR)/bin/fex-clang
+FEX_EMU_CONF_OPTS += -DGUEST_CLANGXX_PATH=$(HOST_DIR)/bin/fex-clang++
 FEX_EMU_CONF_OPTS += -DCLANG_RESOURCE_DIR=$(HOST_DIR)/lib/clang/20
 FEX_EMU_CONF_OPTS += -DCLANG_BUILTIN_HEADERS=$(HOST_DIR)/lib/clang/20/include
 FEX_EMU_CONF_OPTS += -DENABLE_JEMALLOC=False
@@ -65,6 +65,7 @@ FEX_EMU_CONF_ENV += TARGET_CFLAGS=
 FEX_EMU_CONF_ENV += TARGET_CXXFLAGS=
 FEX_EMU_CONF_ENV += TARGET_LDFLAGS=
 FEX_EMU_CONF_ENV += CCC_OVERRIDE_OPTIONS=
+FEX_EMU_CONF_ENV += THUNKGEN_EXTRA_FLAGS="-isystem $(HOST_DIR)/$(GNU_TARGET_NAME)/sysroot/usr/include"
 FEX_EMU_CONF_ENV += HOME=$(FEX_EMU_BUILDDIR)/home
 FEX_EMU_CONF_ENV += TMPDIR=$(FEX_EMU_BUILDDIR)/tmp
 
@@ -76,13 +77,28 @@ FEX_EMU_BUILD_ENV += TARGET_CFLAGS=
 FEX_EMU_BUILD_ENV += TARGET_CXXFLAGS=
 FEX_EMU_BUILD_ENV += TARGET_LDFLAGS=
 FEX_EMU_BUILD_ENV += CCC_OVERRIDE_OPTIONS=
+FEX_EMU_BUILD_ENV += THUNKGEN_EXTRA_FLAGS="-isystem $(HOST_DIR)/$(GNU_TARGET_NAME)/sysroot/usr/include"
 FEX_EMU_BUILD_ENV += HOME=$(FEX_EMU_BUILDDIR)/home
 FEX_EMU_BUILD_ENV += TMPDIR=$(FEX_EMU_BUILDDIR)/tmp
 
 define FEX_EMU_PREPARE_GUEST_THUNK_ENV
 	rm -rf $(HOST_DIR)/share/fex-guest-rootfs
 	mkdir -p $(HOST_DIR)/share/fex-guest-rootfs/usr $(FEX_EMU_BUILDDIR)/home $(FEX_EMU_BUILDDIR)/tmp
+	# Copy host /usr/include (headers for the guest x86_64 rootfs)
 	cp -a /usr/include $(HOST_DIR)/share/fex-guest-rootfs/usr/
+	# Explicitly copy C++ standard library headers (cp -a sometimes skips them)
+	if [ -d /usr/include/c++ ]; then \
+		cp -a /usr/include/c++ $(HOST_DIR)/share/fex-guest-rootfs/usr/include/; \
+	fi
+	# Replace GCC 15 cstdint/cinttypes with minimal wrappers to avoid
+	# 'int_fast8_t' global namespace errors when clang --target=x86_64-linux-gnu
+	# encounters the GCC 'using ::int_fast8_t;' declarations.
+	for f in $$(find $(HOST_DIR)/share/fex-guest-rootfs/usr/include -name "cstdint" -type f); do \
+		echo '#pragma once' > "$$f"; echo '#include <stdint.h>' >> "$$f"; \
+	done
+	for f in $$(find $(HOST_DIR)/share/fex-guest-rootfs/usr/include -name "cinttypes" -type f); do \
+		echo '#pragma once' > "$$f"; echo '#include <inttypes.h>' >> "$$f"; \
+	done
 	for d in \
 		alsa \
 		xcb \
@@ -100,6 +116,18 @@ define FEX_EMU_PREPARE_GUEST_THUNK_ENV
 			cp -a $(HOST_DIR)/$(GNU_TARGET_NAME)/sysroot/usr/include/$$d $(HOST_DIR)/share/fex-guest-rootfs/usr/include/; \
 		fi; \
 	done
+	# Override Vulkan headers with FEX's bundled version (newer extensions)
+	# The target sysroot Vulkan headers are older and miss functions that
+	# FEX-2607's libvulkan_interface.cpp references.
+	# Apply to both guest rootfs (guest thunks) and host sysroot (host thunks).
+	if [ -d $(BUILD_DIR)/fex-emu-$(FEX_EMU_VERSION)/External/Vulkan-Headers/include/vulkan ]; then \
+		mkdir -p $(HOST_DIR)/share/fex-guest-rootfs/usr/include/vulkan; \
+		cp -a $(BUILD_DIR)/fex-emu-$(FEX_EMU_VERSION)/External/Vulkan-Headers/include/vulkan/* \
+			$(HOST_DIR)/share/fex-guest-rootfs/usr/include/vulkan/; \
+		mkdir -p $(HOST_DIR)/$(GNU_TARGET_NAME)/sysroot/usr/include/vulkan; \
+		cp -a $(BUILD_DIR)/fex-emu-$(FEX_EMU_VERSION)/External/Vulkan-Headers/include/vulkan/* \
+			$(HOST_DIR)/$(GNU_TARGET_NAME)/sysroot/usr/include/vulkan/; \
+	fi
 	for f in $(HOST_DIR)/$(GNU_TARGET_NAME)/sysroot/usr/include/wayland*.h \
 		$(HOST_DIR)/$(GNU_TARGET_NAME)/sysroot/usr/include/xf86drm.h \
 		$(HOST_DIR)/$(GNU_TARGET_NAME)/sysroot/usr/include/xf86drmMode.h \
@@ -109,6 +137,12 @@ define FEX_EMU_PREPARE_GUEST_THUNK_ENV
 			cp -a "$$f" $(HOST_DIR)/share/fex-guest-rootfs/usr/include/; \
 		fi; \
 	done
+	$(INSTALL) -D -m 0755 \
+		$(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/emulators/fex-emu/fex-clang \
+		$(HOST_DIR)/bin/fex-clang
+	$(INSTALL) -D -m 0755 \
+		$(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/emulators/fex-emu/fex-clang++ \
+		$(HOST_DIR)/bin/fex-clang++
 	$(INSTALL) -D -m 0755 \
 		$(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/emulators/fex-emu/fex-guest-clang \
 		$(HOST_DIR)/bin/fex-guest-clang
@@ -137,7 +171,7 @@ FEX_EMU_PRE_CONFIGURE_HOOKS += FEX_EMU_PREPARE_GUEST_THUNK_ENV
 
 HOST_FEX_EMU_CMAKE_BACKEND = ninja
 HOST_FEX_EMU_SUPPORTS_IN_SOURCE_BUILD = NO
-HOST_FEX_EMU_DEPENDENCIES += host-clang host-fmt host-openssl
+HOST_FEX_EMU_DEPENDENCIES += host-clang host-fmt host-nasm host-openssl
 HOST_FEX_EMU_CONF_OPTS += -DCMAKE_PREFIX_PATH=$(HOST_DIR)/lib/cmake
 HOST_FEX_EMU_CONF_OPTS += -DClang_DIR=$(HOST_DIR)/lib/cmake/clang
 HOST_FEX_EMU_CONF_OPTS += -DLLVM_DIR=$(HOST_DIR)/lib/cmake/llvm
@@ -175,6 +209,7 @@ define HOST_FEX_EMU_CONFIGURE_CMDS
 	PKG_CONFIG_ALLOW_SYSTEM_CFLAGS=1 \
 	PKG_CONFIG_ALLOW_SYSTEM_LIBS=1 \
 	TMPDIR="$(HOST_FEX_EMU_BUILDDIR)/tmp" \
+	THUNKGEN_EXTRA_FLAGS="-isystem $(HOST_DIR)/$(GNU_TARGET_NAME)/sysroot/usr/include" \
 	CFLAGS= CXXFLAGS= CPPFLAGS= LDFLAGS= CCC_OVERRIDE_OPTIONS= \
 	$(HOST_DIR)/bin/cmake $(HOST_FEX_EMU_SRCDIR) \
 		-G"Ninja" \

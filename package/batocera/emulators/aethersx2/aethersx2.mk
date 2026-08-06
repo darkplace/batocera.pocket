@@ -60,9 +60,9 @@ define AETHERSX2_INSTALL_TARGET_CMDS
 		$(TARGET_DIR)/usr/share/evmapy/ps2.aethersx2.keys
 
 	mkdir -p $(TARGET_DIR)/usr/share/batocera/datainit/bios/ps2
-	$(HOST_DIR)/bin/curl -L \
-		https://github.com/PCSX2/pcsx2_patches/releases/download/latest/patches.zip -o \
-		$(TARGET_DIR)/usr/share/batocera/datainit/bios/ps2/patches.zip
+	wget -O \
+		$(TARGET_DIR)/usr/share/batocera/datainit/bios/ps2/patches.zip \
+		https://github.com/PCSX2/pcsx2_patches/releases/download/latest/patches.zip
 endef
 
 $(eval $(generic-package))

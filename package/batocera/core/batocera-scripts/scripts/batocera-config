@@ -15,7 +15,8 @@ extra3="$5"
 extra4="$6"
 board=`cat /boot/boot/batocera.board`
 
-updateurl="https://updates.batocera.org"
+# batocera.pocket: default updates via GitHub Releases
+updateurl="https://github.com/darkplace/batocera.pocket"
 
 preBootConfig() {
     mount -o remount,rw /boot
@@ -194,23 +195,46 @@ if [ "$command" = "canupdate" ];then
 	    updateurl="${settingsupdateurl}"
 	fi
 
-	#echo "Update url: ${updateurl}/${board}/${updatetype}/last"
 	test "${board}" = "rpi4" && board=rpi464 # "temporarly" download on rpi464 for rpi4
-	available=`wget -qO- ${updateurl}/${board}/${updatetype}/last/batocera.version`
-	if [ "$?" != "0" ]; then
-	    echo "Unable to access the url" >&2
-		exit 2
-	fi
-	# hum, i don't know how to check correctly while the ws return success in case of real 404
-	nbytes=`echo "${available}" | wc -c`
-	if test "${nbytes}" -ge 50; then
-	    echo "Unable to retrieve the version" >&2
-	    exit 2
-	fi
 	installed=`cat /usr/share/batocera/batocera.version`
 
+	# batocera.pocket: GitHub Releases — fetch batocera.version from latest release assets
+	if echo "${updateurl}" | grep -q "github.com"; then
+	    _gh_owner_repo=$(echo "${updateurl}" | sed -E 's|https?://github.com/||; s|/+$||; s|\.git$||')
+	    _gh_api="https://api.github.com/repos/${_gh_owner_repo}/releases/latest"
+	    _gh_response=$(curl -sfL -H "Accept: application/vnd.github+json" "${_gh_api}" 2>/dev/null)
+	    if [ "$?" != "0" ] || [ -z "${_gh_response}" ]; then
+	        echo "Unable to access GitHub API" >&2
+	        exit 2
+	    fi
+	    _gh_tag=$(echo "${_gh_response}" | grep '"tag_name"' | head -1 | sed -E 's/.*"tag_name":[[:space:]]*"([^"]+)".*/\1/')
+	    if [ -z "${_gh_tag}" ]; then
+	        echo "No releases found" >&2
+	        exit 2
+	    fi
+	    available=$(curl -sfL "https://github.com/${_gh_owner_repo}/releases/download/${_gh_tag}/batocera.version" 2>/dev/null)
+	    if [ "$?" != "0" ] || [ -z "${available}" ]; then
+	        # fallback: use release tag as version string
+	        available="${_gh_tag}"
+	    fi
+	    available=$(echo "${available}" | head -1 | tr -d '\r')
+	else
+	    # Original batocera update check
+	    available=`wget -qO- ${updateurl}/${board}/${updatetype}/last/batocera.version`
+	    if [ "$?" != "0" ]; then
+	        echo "Unable to access the url" >&2
+	        exit 2
+	    fi
+	    # hum, i don't know how to check correctly while the ws return success in case of real 404
+	    nbytes=`echo "${available}" | wc -c`
+	    if test "${nbytes}" -ge 50; then
+	        echo "Unable to retrieve the version" >&2
+	        exit 2
+	    fi
+	fi
+
 	echo "${available}"
-	
+
 	if [ "$available" != "$installed" ]; then
 		exit 0
 	fi

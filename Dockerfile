@@ -38,6 +38,9 @@ RUN dpkg --add-architecture i386 && \
 		python3 \
 		gcc-multilib \
 		g++-multilib \
+		libclang-dev \
+		clang \
+		lld \
 	&& apt-get clean \
 	&& rm -rf /var/lib/apt/lists/*
 

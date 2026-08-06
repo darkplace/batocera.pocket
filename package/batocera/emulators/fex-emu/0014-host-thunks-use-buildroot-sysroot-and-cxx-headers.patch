@@ -1,6 +1,6 @@
 --- a/ThunkLibs/HostLibs/CMakeLists.txt
 +++ b/ThunkLibs/HostLibs/CMakeLists.txt
-@@ -7,15 +7,97 @@
+@@ -7,15 +7,101 @@
 
  find_package(PkgConfig REQUIRED)
 
@@ -53,8 +53,12 @@
 +  list(APPEND FLAGS "-U__clang_major__" "-U__clang_minor__" "-U__clang_patchlevel__")
 +  if (HOST_THUNK_SYSROOT)
 +    list(APPEND FLAGS "--sysroot=${HOST_THUNK_SYSROOT}")
++    # libclang does not reliably resolve <stdint.h> via --sysroot alone;
++    # add the sysroot usr/include explicitly (same fix as guest thunks).
++    list(APPEND FLAGS "-isystem" "${HOST_THUNK_SYSROOT}/usr/include")
 +  elseif (CMAKE_SYSROOT)
 +    list(APPEND FLAGS "--sysroot=${CMAKE_SYSROOT}")
++    list(APPEND FLAGS "-isystem" "${CMAKE_SYSROOT}/usr/include")
 +  endif()
 +  if (HOST_THUNK_TARGET_TRIPLE)
 +    list(APPEND FLAGS "--target=${HOST_THUNK_TARGET_TRIPLE}")

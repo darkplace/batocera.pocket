@@ -69,6 +69,14 @@ define DUSK_FIX_DAWN_ITYP_ARRAY_EQUALITY
 endef
 DUSK_POST_CONFIGURE_HOOKS += DUSK_FIX_DAWN_ITYP_ARRAY_EQUALITY
 
+define DUSK_FIX_DAWN_ABSEIL_LINK
+	# Dawn's webgpu_dawn.a pulls in cctz symbols that live in absl_time_zone.
+	# Append the static libs to dusklight's link line after configure.
+	$(SED) 's|libwebgpu_dawn\.a|libwebgpu_dawn.a _deps/dawn-build/third_party/abseil/absl/time/libabsl_time_zone.a _deps/dawn-build/third_party/abseil/absl/time/libabsl_time.a|' \
+		$(@D)/buildroot-build/CMakeFiles/dusklight.dir/link.txt
+endef
+DUSK_POST_CONFIGURE_HOOKS += DUSK_FIX_DAWN_ABSEIL_LINK
+
 define DUSK_INSTALL_WRAPPER
 	$(INSTALL) -D -m 0755 $(DUSK_PKGDIR)/dusk-wrapper \
 		$(TARGET_DIR)/usr/bin/dusk

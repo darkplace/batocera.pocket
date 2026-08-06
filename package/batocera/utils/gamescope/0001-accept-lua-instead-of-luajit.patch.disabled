@@ -1,0 +1,17 @@
+--- a/src/meson.build
++++ b/src/meson.build
+@@ -125,7 +125,13 @@ foreach src : src
+   )
+ endforeach
+ 
+-luajit_dep = dependency( 'luajit' )
++luajit_dep = dependency( 'luajit', required: false )
++if not luajit_dep.found()
++  luajit_dep = dependency( 'lua', required: false )
++endif
++if not luajit_dep.found()
++  luajit_dep = dependency( 'lua5.4', required: false )
++endif
+ libinput_dep = dependency('libinput', required: true)
+ 
+ gamescope_cpp_args = []

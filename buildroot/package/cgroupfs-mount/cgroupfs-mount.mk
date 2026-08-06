@@ -11,8 +11,8 @@ CGROUPFS_MOUNT_LICENSE_FILES = debian/copyright
 CGROUPFS_MOUNT_CPE_ID_VALID = YES
 
 define CGROUPFS_MOUNT_INSTALL_TARGET_CMDS
-	$(INSTALL) -D -m 0755 $(@D)/cgroupfs-mount $(TARGET_DIR)/usr/bin/cgroupfs-mount
-	$(INSTALL) -D -m 0755 $(@D)/cgroupfs-umount $(TARGET_DIR)/usr/bin/cgroupfs-umount
+	$(INSTALL) -D -m 0755 $(CGROUPFS_MOUNT_PKGDIR)/cgroupfs-mount-v2.sh $(TARGET_DIR)/usr/bin/cgroupfs-mount
+	$(INSTALL) -D -m 0755 $(CGROUPFS_MOUNT_PKGDIR)/cgroupfs-umount-v2.sh $(TARGET_DIR)/usr/bin/cgroupfs-umount
 endef
 
 define CGROUPFS_MOUNT_INSTALL_INIT_SYSV

@@ -11,11 +11,13 @@
  set(X86_DEV_ROOTFS "/" CACHE FILEPATH "Path to the sysroot used for cross-compiling for i686 and x86_64")
  set(DATA_DIRECTORY "" CACHE PATH "Global data directory (override)")
  set(HOSTLIBS_DATA_DIRECTORY "" CACHE PATH "Global data directory (override)")
-@@ -620,82 +624,120 @@
- 
+@@ -633,76 +633,120 @@
  if (BUILD_THUNKS)
    set(FEX_PROJECT_SOURCE_DIR ${PROJECT_SOURCE_DIR})
 -  add_subdirectory(ThunkLibs/Generator)
+ 
+-  # Thunk targets for both host libraries and IDE integration
+-  add_subdirectory(ThunkLibs/HostLibs)
 +  if (GUEST_CLANG_PATH)
 +    set(GUEST_C_COMPILER "${GUEST_CLANG_PATH}")
 +  else()
@@ -27,8 +29,8 @@
 +    set(GUEST_CXX_COMPILER "/usr/bin/clang++")
 +  endif()
  
--  # Thunk targets for both host libraries and IDE integration
--  add_subdirectory(ThunkLibs/HostLibs)
+-  # Thunk targets for IDE integration of guest code, only
+-  add_subdirectory(ThunkLibs/GuestLibs)
 +  if (THUNKGEN_ONLY)
 +    add_subdirectory(ThunkLibs/Generator)
 +    set(GENERATOR_EXE "$<TARGET_FILE:thunkgen>")
@@ -43,11 +45,6 @@
 +      add_subdirectory(ThunkLibs/Generator)
 +      set(GENERATOR_EXE "$<TARGET_FILE:thunkgen>")
 +    endif()
- 
--  # Thunk targets for IDE integration of guest code, only
--  add_subdirectory(ThunkLibs/GuestLibs)
-+    # Thunk targets for both host libraries and IDE integration
-+    add_subdirectory(ThunkLibs/HostLibs)
  
 -  # Thunk targets for guest libraries
 -  include(ExternalProject)
@@ -68,26 +65,40 @@
 -    INSTALL_COMMAND ""
 -    BUILD_ALWAYS ON
 -    DEPENDS thunkgen)
++    # Thunk targets for both host libraries and IDE integration
++    add_subdirectory(ThunkLibs/HostLibs)
+ 
+-  ExternalProject_Add(guest-libs-32
+-    PREFIX guest-libs-32
+-    SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/ThunkLibs/GuestLibs"
+-    BINARY_DIR "Guest_32"
+-    CMAKE_ARGS
+-      "-DBITNESS=32"
+-      "-DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}"
+-      "-DBUILD_FEX_LINUX_TESTS=${BUILD_FEX_LINUX_TESTS}"
+-      "-DENABLE_CLANG_THUNKS=${ENABLE_CLANG_THUNKS}"
+-      "-DCMAKE_TOOLCHAIN_FILE:FILEPATH=${X86_32_TOOLCHAIN_FILE}"
+-      "-DCMAKE_INSTALL_PREFIX=${CMAKE_INSTALL_PREFIX}"
+-      "-DFEX_PROJECT_SOURCE_DIR=${FEX_PROJECT_SOURCE_DIR}"
+-      "-DGENERATOR_EXE=$<TARGET_FILE:thunkgen>"
+-      "-DX86_DEV_ROOTFS=${X86_DEV_ROOTFS}"
+-    INSTALL_COMMAND ""
+-    BUILD_ALWAYS ON
+-    DEPENDS thunkgen)
 +    # Thunk targets for IDE integration of guest code, only
 +    add_subdirectory(ThunkLibs/GuestLibs)
- 
--  if (BUILD_32BIT_GUEST_THUNKS)
--    ExternalProject_Add(guest-libs-32
--      PREFIX guest-libs-32
++
 +    # Thunk targets for guest libraries
 +    include(ExternalProject)
 +    ExternalProject_Add(guest-libs
 +      PREFIX guest-libs
-       SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/ThunkLibs/GuestLibs"
--      BINARY_DIR "Guest_32"
++      SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/ThunkLibs/GuestLibs"
 +      BINARY_DIR "Guest"
-       CMAKE_ARGS
--        "-DBITNESS=32"
++      CMAKE_ARGS
 +        "-DBITNESS=64"
-         "-DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}"
-         "-DBUILD_FEX_LINUX_TESTS=${BUILD_FEX_LINUX_TESTS}"
-         "-DENABLE_CLANG_THUNKS=${ENABLE_CLANG_THUNKS}"
--        "-DCMAKE_TOOLCHAIN_FILE:FILEPATH=${X86_32_TOOLCHAIN_FILE}"
++        "-DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}"
++        "-DBUILD_FEX_LINUX_TESTS=${BUILD_FEX_LINUX_TESTS}"
++        "-DENABLE_CLANG_THUNKS=${ENABLE_CLANG_THUNKS}"
 +        "-DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY"
 +        "-DCMAKE_C_COMPILER=${GUEST_C_COMPILER}"
 +        "-DCMAKE_CXX_COMPILER=${GUEST_CXX_COMPILER}"
@@ -100,15 +111,13 @@
 +        "-DCLANG_RESOURCE_DIR=${CLANG_RESOURCE_DIR}"
 +        "-DCLANG_BUILTIN_HEADERS=${CLANG_BUILTIN_HEADERS}"
 +        "-DCMAKE_TOOLCHAIN_FILE:FILEPATH=${X86_64_TOOLCHAIN_FILE}"
-         "-DCMAKE_INSTALL_PREFIX=${CMAKE_INSTALL_PREFIX}"
-         "-DFEX_PROJECT_SOURCE_DIR=${FEX_PROJECT_SOURCE_DIR}"
--        "-DGENERATOR_EXE=$<TARGET_FILE:thunkgen>"
++        "-DCMAKE_INSTALL_PREFIX=${CMAKE_INSTALL_PREFIX}"
++        "-DFEX_PROJECT_SOURCE_DIR=${FEX_PROJECT_SOURCE_DIR}"
 +        "-DGENERATOR_EXE=${GENERATOR_EXE}"
-         "-DX86_DEV_ROOTFS=${X86_DEV_ROOTFS}"
-       INSTALL_COMMAND ""
-       BUILD_ALWAYS ON
-       DEPENDS thunkgen)
--  endif()
++        "-DX86_DEV_ROOTFS=${X86_DEV_ROOTFS}"
++      INSTALL_COMMAND ""
++      BUILD_ALWAYS ON
++      DEPENDS thunkgen)
  
 -  install(
 -    CODE "message(\"-- Installing: guest-libs\")"
@@ -138,19 +147,21 @@
 +    endif()
 +  endif()
  
--  if (BUILD_32BIT_GUEST_THUNKS)
+-  install(
+-    CODE "message(\"-- Installing: guest-libs-32\")"
+-    CODE "
+-      execute_process(COMMAND ${CMAKE_COMMAND} --build . --target install
+-        WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/Guest_32)"
+-    DEPENDS guest-libs-32
+-    COMPONENT Runtime)
 +  if (NOT THUNKGEN_ONLY)
-     install(
--      CODE "message(\"-- Installing: guest-libs-32\")"
++    install(
 +      CODE "message(\"-- Installing: guest-libs\")"
-       CODE "
-         execute_process(COMMAND ${CMAKE_COMMAND} --build . --target install
--          WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/Guest_32)"
--      DEPENDS guest-libs-32
++      CODE "
++        execute_process(COMMAND ${CMAKE_COMMAND} --build . --target install
 +          WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/Guest)"
 +      DEPENDS guest-libs
-       COMPONENT Runtime)
--  endif()
++      COMPONENT Runtime)
  
 -  add_custom_target(uninstall_guest-libs
 -    COMMAND ${CMAKE_COMMAND} "--build" "." "--target" "uninstall"
@@ -165,15 +176,15 @@
 +        COMPONENT Runtime)
 +    endif()
  
--  add_dependencies(uninstall uninstall_guest-libs)
--  if (BUILD_32BIT_GUEST_THUNKS)
--    add_custom_target(uninstall_guest-libs-32
+-  add_custom_target(uninstall_guest-libs-32
+-    COMMAND ${CMAKE_COMMAND} "--build" "." "--target" "uninstall"
+-    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/Guest_32)
 +    add_custom_target(uninstall_guest-libs
-       COMMAND ${CMAKE_COMMAND} "--build" "." "--target" "uninstall"
--      WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/Guest_32)
--    add_dependencies(uninstall uninstall_guest-libs-32)
++      COMMAND ${CMAKE_COMMAND} "--build" "." "--target" "uninstall"
 +      WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/Guest)
-+
+ 
+-  add_dependencies(uninstall uninstall_guest-libs)
+-  add_dependencies(uninstall uninstall_guest-libs-32)
 +    add_dependencies(uninstall uninstall_guest-libs)
 +    if (BUILD_32BIT_GUEST_THUNKS)
 +      add_custom_target(uninstall_guest-libs-32
@@ -181,7 +192,7 @@
 +        WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/Guest_32)
 +      add_dependencies(uninstall uninstall_guest-libs-32)
 +    endif()
-   endif()
++  endif()
  endif()
  
 --- a/ThunkLibs/GuestLibs/CMakeLists.txt

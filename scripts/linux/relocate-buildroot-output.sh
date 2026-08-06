@@ -28,6 +28,21 @@ if [ ! -d "${output_abs}/host" ]; then
     exit 0
 fi
 
+# Fast exit: if the output directory is already at the builder-visible path,
+# no relocation is needed.
+if [ "${output_abs}" = "${builder_root}" ] \
+   || [ "${output_abs}" = "$(cd "${builder_root}" 2>/dev/null && pwd -P)" ]; then
+    exit 0
+fi
+
+# Stamp file: skip the expensive grep scan if relocation was already performed
+# for this exact builder_root in a previous run.
+stamp_file="${output_abs}/.relocate-stamp"
+if [ -f "${stamp_file}" ] && [ "$(cat "${stamp_file}" 2>/dev/null)" = "${builder_root}" ]; then
+    repair_host_tool_rpaths "${output_abs}/host" 2>/dev/null || true
+    exit 0
+fi
+
 is_host_elf_executable() {
     local file="${1}"
 
@@ -147,7 +162,18 @@ if [ -d "${output_abs}/per-package" ]; then
     scan_dirs+=("${output_abs}/per-package")
 fi
 
-if grep --binary-files=without-match -IlrZ -F -f "${patterns}" "${scan_dirs[@]}" > "${files}"; then
+# Fast file-type scan: only look in files known to contain path references.
+# This skips source code (.c/.h/.cpp), images, binaries, and other irrelevant files.
+if find "${scan_dirs[@]}" -maxdepth 3 -type f \
+    \( -name '*.pc' -o -name '*.pc.in' -o -name '*.la' -o -name '*.cmake' \
+       -o -name 'CMakeLists.txt' -o -name '*.mk' -o -name '*.conf' \
+       -o -name '*.cfg' -o -name '*.ini' -o -name '*.sh' -o -name '*.py' \
+       -o -name '*.txt' -o -name '*.json' -o -name '*.yaml' -o -name '*.yml' \
+       -o -name 'Makefile' -o -name '*.in' -o -name '*.env' \
+       -o -name '*.service' -o -name '*.desktop' -o -name '.config' \
+       -o -name '*.stamp*' -o -name '.applied_patches_list' \
+    \) -print0 2>/dev/null \
+  | xargs -0 grep --files-with-matches -F -f "${patterns}" > "${files}" 2>/dev/null; then
     if [ -s "${files}" ]; then
         count="$(
             python3 - "${rewrites}" "${files}" <<'PY'
@@ -244,3 +270,6 @@ PY
 fi
 
 repair_host_tool_rpaths "${output_abs}/host"
+
+# Write stamp file to avoid re-scanning on subsequent runs
+printf '%s' "${builder_root}" > "${stamp_file}"

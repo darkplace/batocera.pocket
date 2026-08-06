@@ -138,13 +138,13 @@ def default_led_config_for(led):
     # For split devices, keep the battery/status LED independent from the ES accent colour.
     # This matches the common "green = ok, red = low, amber = charging" expectation.
     if hasattr(led, "set_status_color") and is_split_status_led_device(led):
-        # read_color() uses >= threshold matching, so we express "at/under X%" cutoffs by placing
-        # the next bucket just above X (ex: 21 for "above 20%").
-        # - Charging: orange (100 bucket is used when status == Charging)
-        # - <=20%: yellow
-        # - <=5%: red (solid)
-        # - <=3%: pulse
-        return ["100=FF8000", "21=00FF00", "6=FFFF00", "4=FF0000", "3=PULSE", "0=FF0000"]
+        # Status/power LED is battery-owned only (accent LEDs keep ES colour separately).
+        # read_color() uses >= threshold matching:
+        # - Charging: yellow/amber via the synthetic "100" bucket
+        # - Full (100%): handled in get_status_colour_for_battery() as green
+        # - <=20%: red
+        # - otherwise: OFF (do not mirror accent colour / "healthy green")
+        return ["100=FFCC00", "21=OFF", "0=FF0000"]
     if hasattr(led, "status_paths") and hasattr(led, "accent_paths"):
         status_paths = getattr(led, "status_paths", [])
         accent_paths = getattr(led, "accent_paths", [])
@@ -519,8 +519,12 @@ if len(sys.argv)>1:
             finally:
                 block_color_changes(False)
     elif sys.argv[1] == "suspend_status":
-        if is_odin_sleep_status_device() and hasattr(led, "set_status_sleep_amber"):
-            led.set_status_sleep_amber()
+        # Keep the status/power LED off during suspend. Battery indication resumes
+        # on wake via the daemon; do not show a permanent amber "sleep" colour.
+        if is_odin_sleep_status_device() and hasattr(led, "set_status_color"):
+            led.set_status_color("OFF")
+        elif is_odin_sleep_status_device() and hasattr(led, "set_status_sleep_amber"):
+            led.set_status_sleep_amber(pulse=False)
     elif sys.argv[1] == "rainbow":
         os.system("batocera-settings-set led.mode rainbow >/dev/null 2>&1")
     elif sys.argv[1] == "chroma":

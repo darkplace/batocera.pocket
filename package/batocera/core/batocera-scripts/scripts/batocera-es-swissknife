@@ -117,20 +117,52 @@ case ${1,,} in
           test "${BOARD}" = "rpi4" && BOARD=rpi464 # "temporarily" download on rpi464 for rpi4
 
         if [[ "${1,,}" == "--update" && $ret -eq 0 ]]; then
-            URL="https://updates.batocera.org/$BOARD/$BRANCH/last/batocera.version"
-            NET_VER=$(wget -q -O - "$URL")
-            [[ $? -eq 0 ]] || NET_VER="Connection failed!"
-            echo "Installed:   $VER"
-            echo "Webversion:  $NET_VER"
-            echo "Update URL:  $(dirname $URL)"
-            echo "Branch:      ${BRANCH^^}-branch searched"
-            echo "Used arch:   $BOARD"
-            if [[ $(version_update "$VER") -lt $(version_update "$NET_VER") ]]; then
-                echo "Status:      Possible Update found!"
-                ret=0
+            # batocera.pocket: use GitHub Releases by default
+            GITHUB_OWNER_REPO="darkplace/batocera.pocket"
+            settingsupdateurl="$(/usr/bin/batocera-settings-get updates.url 2>/dev/null)"
+            if [[ -n "${settingsupdateurl}" ]] && echo "${settingsupdateurl}" | grep -q "github.com"; then
+                GITHUB_OWNER_REPO=$(echo "${settingsupdateurl}" | sed -E 's|https?://github.com/||; s|/+$||; s|\.git$||')
+            elif [[ -n "${settingsupdateurl}" ]]; then
+                URL="${settingsupdateurl}/$BOARD/$BRANCH/last/batocera.version"
+                NET_VER=$(wget -q -O - "$URL")
+                [[ $? -eq 0 ]] || NET_VER="Connection failed!"
+                echo "Installed:   $VER"
+                echo "Webversion:  $NET_VER"
+                echo "Update URL:  $(dirname $URL)"
+                echo "Branch:      ${BRANCH^^}-branch searched"
+                echo "Used arch:   $BOARD"
+                if [[ $(version_update "$VER") -lt $(version_update "$NET_VER") ]]; then
+                    echo "Status:      Possible Update found!"
+                    ret=0
+                else
+                    echo "Status:      No Update found!"
+                    ret=1
+                fi
             else
-                echo "Status:      No Update found!"
-                ret=1
+                :
+            fi
+            if [[ -z "${NET_VER:-}" ]]; then
+                GITHUB_API="https://api.github.com/repos/${GITHUB_OWNER_REPO}/releases/latest"
+                _gh_json=$(curl -sfL -H "Accept: application/vnd.github+json" "${GITHUB_API}" 2>/dev/null)
+                LATEST_TAG=$(echo "${_gh_json}" | grep '"tag_name"' | head -1 | sed -E 's/.*"tag_name":[[:space:]]*"([^"]+)".*/\1/')
+                if [[ -n "${LATEST_TAG}" ]]; then
+                    NET_VER=$(curl -sfL "https://github.com/${GITHUB_OWNER_REPO}/releases/download/${LATEST_TAG}/batocera.version" 2>/dev/null | head -1 | tr -d '\r')
+                    [[ -z "${NET_VER}" ]] && NET_VER="${LATEST_TAG}"
+                else
+                    NET_VER="Connection failed!"
+                fi
+                echo "Installed:   $VER"
+                echo "Webversion:  $NET_VER"
+                echo "Update URL:  https://github.com/${GITHUB_OWNER_REPO}/releases"
+                echo "Channel:     latest GitHub Release (stable == butterfly)"
+                echo "Used arch:   $BOARD"
+                if [[ "$NET_VER" != "Connection failed!" && "$VER" != "$NET_VER" ]]; then
+                    echo "Status:      Possible Update found!"
+                    ret=0
+                else
+                    echo "Status:      No Update found!"
+                    ret=1
+                fi
             fi
         else
             [[ ${1,,} == "--version" ]] && batocera-version

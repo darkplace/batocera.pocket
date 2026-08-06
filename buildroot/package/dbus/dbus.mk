@@ -91,6 +91,15 @@ endef
 
 DBUS_POST_INSTALL_TARGET_HOOKS += DBUS_REMOVE_DEVFILES
 
+# Fix session.conf: replace build TMPDIR with /tmp so dbus-daemon
+# always creates its socket in /tmp at runtime (build machines may
+# have a custom TMPDIR that doesn't exist on the target device).
+define DBUS_FIX_SESSION_CONF
+	sed -i 's|<listen>unix:tmpdir=.*</listen>|<listen>unix:tmpdir=/tmp</listen>|' \
+		$(TARGET_DIR)/usr/share/dbus-1/session.conf 2>/dev/null || true
+endef
+DBUS_POST_INSTALL_TARGET_HOOKS += DBUS_FIX_SESSION_CONF
+
 define DBUS_INSTALL_INIT_SYSV
 	$(INSTALL) -m 0755 -D package/dbus/S30dbus \
 		$(TARGET_DIR)/etc/init.d/S30dbus

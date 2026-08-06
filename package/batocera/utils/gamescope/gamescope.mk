@@ -13,12 +13,7 @@ GAMESCOPE_GIT_SUBMODULES = YES
 GAMESCOPE_DEPENDENCIES += hwdata libdisplay-info libdecor seatd
 GAMESCOPE_DEPENDENCIES += vulkan-headers vulkan-loader wayland wayland-protocols
 GAMESCOPE_DEPENDENCIES += xlib_libX11 xlib_libXmu xlib_libXres xwayland
-
-ifeq ($(BR2_PACKAGE_LUA),y)
-GAMESCOPE_DEPENDENCIES += lua
-else
-GAMESCOPE_DEPENDENCIES += luajit
-endif
+GAMESCOPE_DEPENDENCIES += batocera-luajit
 
 GAMESCOPE_CONF_OPTS = --wrap-mode=default
 GAMESCOPE_CONF_OPTS += -Dbenchmark=disabled

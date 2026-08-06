@@ -1045,6 +1045,29 @@ apply_steam_launch_environment
 
 export BATOCERA_STEAM_GS_BACKEND="${BATOCERA_STEAM_GS_BACKEND:-$(default_gamescope_backend)}"
 
+# After exclusive DRM sessions on DSI panels (Odin3), force a connector reset so ES recovers.
+if [[ -z "${BATOCERA_STEAM_RESET_DSI_AFTER_GAMESCOPE:-}" ]]; then
+    _reset_dsi="$(settings_get_effective steam.gamescope.reset_dsi_after || true)"
+    case "${_reset_dsi}" in
+        1|true|TRUE|yes|YES|on|ON)
+            export BATOCERA_STEAM_RESET_DSI_AFTER_GAMESCOPE="1"
+            ;;
+        0|false|FALSE|no|NO|off|OFF)
+            export BATOCERA_STEAM_RESET_DSI_AFTER_GAMESCOPE="0"
+            ;;
+        *)
+            case "$(batocera-info 2>/dev/null | awk -F': ' '/^Model:/ {print $2; exit}')" in
+                AYN_Odin_3|AYN_Thor)
+                    if [[ "${BATOCERA_STEAM_GS_BACKEND}" == "drm" ]]; then
+                        export BATOCERA_STEAM_RESET_DSI_AFTER_GAMESCOPE="1"
+                    fi
+                    ;;
+            esac
+            ;;
+    esac
+fi
+unset _reset_dsi
+
 apply_steam_launcher_overrides "$@"
 
 steam_args=()

@@ -9,7 +9,7 @@
 
  function(guest_thunk_add_sysroot_include TARGET INCLUDE_DIR)
    if (GUEST_THUNK_SYSROOT AND INCLUDE_DIR MATCHES "^/usr(/|$)")
-@@ -145,6 +147,26 @@ function(generate NAME SOURCE_FILE)
+@@ -145,6 +147,30 @@ function(generate NAME SOURCE_FILE)
    endif()
    list(APPEND BITNESS_FLAGS2 "--sysroot" "${X86_DEV_ROOTFS}")
 
@@ -21,6 +21,10 @@
 +    list(APPEND CLANG_RESOURCE_FLAGS "-isystem" "${CLANG_BUILTIN_HEADERS}")
 +  endif()
 +  if (GUEST_THUNK_SYSROOT)
++    # Add base sysroot include path first so libclang can find stdint.h,
++    # bits/libc-header-start.h, features.h, etc. --sysroot alone is not
++    # enough because libclang does not resolve <bits/*> through it.
++    list(APPEND CLANG_RESOURCE_FLAGS "-isystem" "${GUEST_THUNK_SYSROOT}/usr/include")
 +    file(GLOB GUEST_CXX_INCLUDE_DIRS LIST_DIRECTORIES true "${GUEST_THUNK_SYSROOT}/usr/include/c++/*")
 +    foreach(GUEST_CXX_DIR IN LISTS GUEST_CXX_INCLUDE_DIRS)
 +      if (IS_DIRECTORY "${GUEST_CXX_DIR}")
@@ -36,7 +40,7 @@
    add_custom_command(
      OUTPUT "${OUTFILE}"
      DEPENDS "${GENERATOR_EXE}"
-@@ -152,7 +174,7 @@ function(generate NAME SOURCE_FILE)
+@@ -152,7 +178,7 @@ function(generate NAME SOURCE_FILE)
      OUTPUT "${OUTFILE}"
      DEPENDS "${GENERATOR_EXE}"
      DEPENDS "${SOURCE_FILE}"

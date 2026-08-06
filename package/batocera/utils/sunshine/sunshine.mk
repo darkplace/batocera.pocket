@@ -4,7 +4,7 @@
 #
 ################################################################################
 
-SUNSHINE_VERSION = v2026.713.170739
+SUNSHINE_VERSION = v2026.726.710
 SUNSHINE_SITE = https://github.com/LizardByte/Sunshine.git
 SUNSHINE_SITE_METHOD = git
 SUNSHINE_LICENSE = GPL-3.0

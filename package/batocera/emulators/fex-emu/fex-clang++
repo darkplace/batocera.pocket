@@ -1,0 +1,76 @@
+#!/bin/sh
+# fex-clang++: Smart clang++ wrapper for fex-emu builds.
+# Detects target triple from args and strips ARM-specific flags
+# when cross-compiling for x86_64 (guest thunks).
+
+unset CCC_OVERRIDE_OPTIONS CFLAGS CXXFLAGS CPPFLAGS LDFLAGS TARGET_CFLAGS TARGET_CXXFLAGS TARGET_LDFLAGS
+
+# Detect target triple from arguments
+target=""
+for arg in "$@"; do
+	case "$arg" in
+		--target=*)
+			target="${arg#--target=}"
+			;;
+	esac
+done
+
+# Build filtered argument list
+set -- "$@"
+filtered_args=
+for arg in "$@"; do
+	case "$arg" in
+		# Strip ARM-specific CPU flags when targeting x86_64
+		-march=*|-mcpu=*|-mtune=*|-mabi=*)
+			if echo "$target" | grep -q '^x86_64'; then
+				continue
+			fi
+			;;
+	esac
+	filtered_args="${filtered_args}
+${arg}"
+done
+
+# Reconstruct args from filtered list
+set --
+old_ifs=$IFS
+IFS='
+'
+for arg in $filtered_args; do
+	set -- "$@" "$arg"
+done
+IFS=$old_ifs
+
+# Find the real clang++ binary (clang++.br_real from buildroot)
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+for compiler in \
+	"$script_dir/clang++.br_real" \
+	"$script_dir/clang++-20.br_real"
+do
+	if [ -x "$compiler" ]; then
+		exec "$compiler" "$@"
+	fi
+done
+
+# Fallback: system clang++
+for compiler in \
+	/proc/1/root/usr/bin/clang++-21 \
+	/proc/1/root/usr/sbin/clang++-21 \
+	/proc/1/root/bin/clang++-21 \
+	/proc/1/root/usr/bin/clang++ \
+	/proc/1/root/usr/sbin/clang++ \
+	/proc/1/root/bin/clang++ \
+	/usr/bin/clang++-21 \
+	/usr/sbin/clang++-21 \
+	/bin/clang++-21 \
+	/usr/bin/clang++ \
+	/usr/sbin/clang++ \
+	/bin/clang++
+do
+	if [ -x "$compiler" ]; then
+		exec "$compiler" "$@"
+	fi
+done
+
+echo "fex-clang++: no real host clang++ found" >&2
+exit 127
