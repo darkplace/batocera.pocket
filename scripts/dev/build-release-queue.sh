@@ -16,8 +16,8 @@ LOG_DIR="${PROJECT_DIR}/output/release-build-logs"
 mkdir -p "$LOG_DIR"
 MASTER_LOG="${LOG_DIR}/queue-$(date -u +%Y%m%dT%H%M%SZ).log"
 
-# Prefer Docker (reproducible). Override with DIRECT_BUILD=y if needed.
-DIRECT_BUILD="${DIRECT_BUILD:-}"
+# Direct host build by default (Docker -t breaks under nohup). Use DIRECT_BUILD= to force Docker.
+DIRECT_BUILD="${DIRECT_BUILD-y}"
 MAKE_JLEVEL="${MAKE_JLEVEL:-$(nproc)}"
 MAKE_LLEVEL="${MAKE_LLEVEL:-$(nproc)}"
 
@@ -44,15 +44,15 @@ for t in $TARGETS; do
             DIRECT_BUILD=y \
             MAKE_JLEVEL="$MAKE_JLEVEL" \
             MAKE_LLEVEL="$MAKE_LLEVEL" \
-            BATCH_MODE=1 \
-            2>&1 | tee "$TLOG"
+            BATCH_MODE= \
+            2>&1 | tee -a "$TLOG"
         rc=${PIPESTATUS[0]}
     else
         make "${t}-build" \
             MAKE_JLEVEL="$MAKE_JLEVEL" \
             MAKE_LLEVEL="$MAKE_LLEVEL" \
-            BATCH_MODE=1 \
-            2>&1 | tee "$TLOG"
+            BATCH_MODE= \
+            2>&1 | tee -a "$TLOG"
         rc=${PIPESTATUS[0]}
     fi
     set -e
