@@ -11,7 +11,8 @@ set -uo pipefail
 PROJECT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$PROJECT_DIR"
 
-TARGETS="${TARGETS:-sm8750 sm8550 sm8250 odin}"
+# odin (SD845) skipped by default: unmet qt5base/libxcb deps on this tree
+TARGETS="${TARGETS:-sm8750 sm8550 sm8250}"
 LOG_DIR="${PROJECT_DIR}/output/release-build-logs"
 mkdir -p "$LOG_DIR"
 MASTER_LOG="${LOG_DIR}/queue-$(date -u +%Y%m%dT%H%M%SZ).log"

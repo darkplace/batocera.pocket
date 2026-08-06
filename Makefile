@@ -43,8 +43,7 @@ ifdef DIRECT_BUILD
 
 define MAKE_BUILDROOT
 	BUILDROOT_HOST_LIB="$(OUTPUT_DIR)/$*/host/lib"; \
-	BUILDROOT_HOST_PYTHON="$(OUTPUT_DIR)/$*/host/bin/python3"; \
-	if [ -d "$$BUILDROOT_HOST_LIB" ] && [ -x "$$BUILDROOT_HOST_PYTHON" ] && ! "$$BUILDROOT_HOST_PYTHON" -V >/dev/null 2>&1; then \
+	if [ -d "$$BUILDROOT_HOST_LIB" ]; then \
 		export LD_LIBRARY_PATH="$$BUILDROOT_HOST_LIB$${LD_LIBRARY_PATH:+:$$LD_LIBRARY_PATH}"; \
 	fi; \
 	SANITIZED_PATH="$$(printf '%s' "$$PATH" | tr ':' '\n' | awk 'NF && $$0 !~ /[[:space:]]/ { if (!seen[$$0]++) printf("%s%s", sep, $$0); sep=":" }')"; \
@@ -63,11 +62,14 @@ else # DIRECT_BUILD
 		DOCKER_OPTS += -i
 	endif
 
+	# -t only when stdout is a TTY (breaks under nohup/CI otherwise)
+	DOCKER_TTY := $(shell [ -t 1 ] && echo -t)
+
 	DOCKER_REPO    ?= batoceralinux
 	IMAGE_NAME     ?= batocera.linux-build
 
 define RUN_DOCKER
-	$(DOCKER) run -t --init --rm \
+	$(DOCKER) run $(DOCKER_TTY) --init --rm \
 		-e HOME \
 		-v $(PROJECT_DIR):/build \
 		-v $(DL_DIR):/build/buildroot/dl \
@@ -84,7 +86,7 @@ endef
 
 define MAKE_BUILDROOT
 	$(RUN_DOCKER) sh -c ' \
-		if [ -d "/$*/host/lib" ] && [ -x "/$*/host/bin/python3" ] && ! "/$*/host/bin/python3" -V >/dev/null 2>&1; then \
+		if [ -d "/$*/host/lib" ]; then \
 			export LD_LIBRARY_PATH="/$*/host/lib$${LD_LIBRARY_PATH:+:$$LD_LIBRARY_PATH}"; \
 		fi; \
 		exec make $(MAKE_OPTS) O=/$* \
