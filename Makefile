@@ -87,8 +87,6 @@ endef
 define MAKE_BUILDROOT
 	$(RUN_DOCKER) sh -c ' \
 		if [ -d "/$*/host/lib" ]; then \
-			# Append host/lib AFTER system paths so Ubuntu cmake/libcrypt win,
-			# while host python can still resolve libpython from host/lib.
 			export LD_LIBRARY_PATH="$${LD_LIBRARY_PATH:+$$LD_LIBRARY_PATH:}/usr/lib/x86_64-linux-gnu:/lib/x86_64-linux-gnu:/$*/host/lib"; \
 		fi; \
 		exec make $(MAKE_OPTS) O=/$* \
