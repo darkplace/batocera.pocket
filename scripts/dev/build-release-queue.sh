@@ -17,8 +17,9 @@ LOG_DIR="${PROJECT_DIR}/output/release-build-logs"
 mkdir -p "$LOG_DIR"
 MASTER_LOG="${LOG_DIR}/queue-$(date -u +%Y%m%dT%H%M%SZ).log"
 
-# Direct host build by default (Docker -t breaks under nohup). Use DIRECT_BUILD= to force Docker.
-DIRECT_BUILD="${DIRECT_BUILD-y}"
+# Docker by default (Arch host breaks older host-* pkgs / libcrypt.so.1).
+# Override with DIRECT_BUILD=y only on Ubuntu-like hosts.
+DIRECT_BUILD="${DIRECT_BUILD-}"
 MAKE_JLEVEL="${MAKE_JLEVEL:-$(nproc)}"
 MAKE_LLEVEL="${MAKE_LLEVEL:-$(nproc)}"
 
@@ -26,7 +27,11 @@ log() { echo "[$(date '+%F %T')] $*" | tee -a "$MASTER_LOG"; }
 
 log "=== batocera.pocket release build queue ==="
 log "Targets: $TARGETS"
-log "DIRECT_BUILD=${DIRECT_BUILD:-n (docker)}"
+if [ -n "$DIRECT_BUILD" ]; then
+    log "DIRECT_BUILD=y"
+else
+    log "DIRECT_BUILD=n (docker)"
+fi
 log "MAKE_JLEVEL=$MAKE_JLEVEL MAKE_LLEVEL=$MAKE_LLEVEL"
 log "Commit: $(git rev-parse --short HEAD) — $(git log -1 --pretty=%s)"
 log ""
@@ -41,7 +46,6 @@ for t in $TARGETS; do
     if [ -n "$DIRECT_BUILD" ]; then
         export TMPDIR="${PROJECT_DIR}/output/${t}/tmp"
         mkdir -p "$TMPDIR"
-        # Ensure host-zstd exists before packages that extract .tar.zst (vkd3d-proton)
         make "${t}-build" DIRECT_BUILD=y MAKE_JLEVEL="$MAKE_JLEVEL" MAKE_LLEVEL="$MAKE_LLEVEL" BATCH_MODE= CMD=host-zstd \
             >>"$TLOG" 2>&1
         make "${t}-build" \
