@@ -44,7 +44,7 @@ ifdef DIRECT_BUILD
 define MAKE_BUILDROOT
 	BUILDROOT_HOST_LIB="$(OUTPUT_DIR)/$*/host/lib"; \
 	if [ -d "$$BUILDROOT_HOST_LIB" ]; then \
-		export LD_LIBRARY_PATH="$$BUILDROOT_HOST_LIB$${LD_LIBRARY_PATH:+:$$LD_LIBRARY_PATH}"; \
+		export LD_LIBRARY_PATH="$${LD_LIBRARY_PATH:+$$LD_LIBRARY_PATH:}$$BUILDROOT_HOST_LIB"; \
 	fi; \
 	SANITIZED_PATH="$$(printf '%s' "$$PATH" | tr ':' '\n' | awk 'NF && $$0 !~ /[[:space:]]/ { if (!seen[$$0]++) printf("%s%s", sep, $$0); sep=":" }')"; \
 	if [ -n "$$SANITIZED_PATH" ]; then export PATH="$$SANITIZED_PATH"; fi; \
@@ -87,7 +87,9 @@ endef
 define MAKE_BUILDROOT
 	$(RUN_DOCKER) sh -c ' \
 		if [ -d "/$*/host/lib" ]; then \
-			export LD_LIBRARY_PATH="/$*/host/lib$${LD_LIBRARY_PATH:+:$$LD_LIBRARY_PATH}"; \
+			# Append host/lib AFTER system paths so Ubuntu cmake/libcrypt win,
+			# while host python can still resolve libpython from host/lib.
+			export LD_LIBRARY_PATH="$${LD_LIBRARY_PATH:+$$LD_LIBRARY_PATH:}/usr/lib/x86_64-linux-gnu:/lib/x86_64-linux-gnu:/$*/host/lib"; \
 		fi; \
 		exec make $(MAKE_OPTS) O=/$* \
 			BR2_EXTERNAL=/build \
