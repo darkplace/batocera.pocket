@@ -49,11 +49,11 @@ for t in $TARGETS; do
     export TMPDIR="${PROJECT_DIR}/output/${t}/tmp"
     mkdir -p "$TMPDIR"
     if [ -d "${PROJECT_DIR}/output/${t}/host/lib" ]; then
-        export LD_LIBRARY_PATH="${PROJECT_DIR}/output/${t}/host/lib"
+        export LD_LIBRARY_PATH="/usr/lib:${PROJECT_DIR}/output/${t}/host/lib"
     else
         unset LD_LIBRARY_PATH || true
     fi
-
+    export PATH="/usr/bin:/bin:/usr/sbin:/sbin:${PROJECT_DIR}/output/${t}/host/bin"
     if [ -n "$DIRECT_BUILD" ]; then
         make "${t}-build" \
             DIRECT_BUILD=y \
