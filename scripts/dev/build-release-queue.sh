@@ -41,6 +41,9 @@ for t in $TARGETS; do
     if [ -n "$DIRECT_BUILD" ]; then
         export TMPDIR="${PROJECT_DIR}/output/${t}/tmp"
         mkdir -p "$TMPDIR"
+        # Ensure host-zstd exists before packages that extract .tar.zst (vkd3d-proton)
+        make "${t}-build" DIRECT_BUILD=y MAKE_JLEVEL="$MAKE_JLEVEL" MAKE_LLEVEL="$MAKE_LLEVEL" BATCH_MODE= CMD=host-zstd \
+            >>"$TLOG" 2>&1
         make "${t}-build" \
             DIRECT_BUILD=y \
             MAKE_JLEVEL="$MAKE_JLEVEL" \
@@ -49,6 +52,8 @@ for t in $TARGETS; do
             2>&1 | tee -a "$TLOG"
         rc=${PIPESTATUS[0]}
     else
+        make "${t}-build" BATCH_MODE= CMD=host-zstd \
+            MAKE_JLEVEL="$MAKE_JLEVEL" MAKE_LLEVEL="$MAKE_LLEVEL" >>"$TLOG" 2>&1
         make "${t}-build" \
             MAKE_JLEVEL="$MAKE_JLEVEL" \
             MAKE_LLEVEL="$MAKE_LLEVEL" \
