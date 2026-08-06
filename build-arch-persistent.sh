@@ -17,10 +17,10 @@ export TMPDIR="$PROJECT_DIR/output/sm8750/tmp"
 mkdir -p "$TMPDIR"
 
 # Keep argv/env under ARG_MAX (Cursor injects huge PATH/env otherwise).
-export PATH="/usr/bin:/bin:/usr/sbin:/sbin"
-export LD_LIBRARY_PATH="$PROJECT_DIR/output/sm8750/host/lib"
+# System tools first; host/lib last so libpython resolves without breaking git/perl.
+export PATH="/usr/bin:/bin:/usr/sbin:/sbin:${PROJECT_DIR}/output/sm8750/host/bin"
+export LD_LIBRARY_PATH="/usr/lib:${PROJECT_DIR}/output/sm8750/host/lib"
 export CMAKE_POLICY_VERSION_MINIMUM=3.5
-
 LOG_FILE="$PROJECT_DIR/build-arch-sm8750.log"
 
 {

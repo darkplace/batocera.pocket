@@ -44,10 +44,10 @@ ifdef DIRECT_BUILD
 define MAKE_BUILDROOT
 	BUILDROOT_HOST_LIB="$(OUTPUT_DIR)/$*/host/lib"; \
 	BUILDROOT_HOST_BIN="$(OUTPUT_DIR)/$*/host/bin"; \
+	export PATH="/usr/bin:/bin:/usr/sbin:/sbin:$$BUILDROOT_HOST_BIN"; \
 	if [ -d "$$BUILDROOT_HOST_LIB" ]; then \
-		export LD_LIBRARY_PATH="$$BUILDROOT_HOST_LIB"; \
+		export LD_LIBRARY_PATH="/usr/lib:$$BUILDROOT_HOST_LIB"; \
 	fi; \
-	export PATH="$$BUILDROOT_HOST_BIN:/usr/bin:/bin:/usr/sbin:/sbin"; \
 	export TMPDIR="$(OUTPUT_DIR)/$*/tmp"; \
 	mkdir -p "$$TMPDIR"; \
 	make $(MAKE_OPTS) O=$(OUTPUT_DIR)/$* \
