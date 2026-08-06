@@ -44,7 +44,7 @@ ifdef DIRECT_BUILD
 define MAKE_BUILDROOT
 	BUILDROOT_HOST_LIB="$(OUTPUT_DIR)/$*/host/lib"; \
 	if [ -d "$$BUILDROOT_HOST_LIB" ]; then \
-		export LD_LIBRARY_PATH="$${LD_LIBRARY_PATH:+$$LD_LIBRARY_PATH:}$$BUILDROOT_HOST_LIB"; \
+		export LD_LIBRARY_PATH="$$BUILDROOT_HOST_LIB$${LD_LIBRARY_PATH:+:$$LD_LIBRARY_PATH}"; \
 	fi; \
 	SANITIZED_PATH="$$(printf '%s' "$$PATH" | tr ':' '\n' | awk 'NF && $$0 !~ /[[:space:]]/ { if (!seen[$$0]++) printf("%s%s", sep, $$0); sep=":" }')"; \
 	if [ -n "$$SANITIZED_PATH" ]; then export PATH="$$SANITIZED_PATH"; fi; \

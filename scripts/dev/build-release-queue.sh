@@ -17,11 +17,14 @@ LOG_DIR="${PROJECT_DIR}/output/release-build-logs"
 mkdir -p "$LOG_DIR"
 MASTER_LOG="${LOG_DIR}/queue-$(date -u +%Y%m%dT%H%M%SZ).log"
 
-# Docker by default (Arch host breaks older host-* pkgs / libcrypt.so.1).
-# Override with DIRECT_BUILD=y only on Ubuntu-like hosts.
-DIRECT_BUILD="${DIRECT_BUILD-}"
+# Direct build by default on this host (output/*/host was built on Arch;
+# Docker glibc is older and cannot run those host tools). Use DIRECT_BUILD=
+# only with a clean output tree built entirely inside Docker.
+DIRECT_BUILD="${DIRECT_BUILD-y}"
 MAKE_JLEVEL="${MAKE_JLEVEL:-$(nproc)}"
 MAKE_LLEVEL="${MAKE_LLEVEL:-$(nproc)}"
+# Arch system cmake >= 4 rejects old host-* CMakeLists; allow configure anyway.
+export CMAKE_POLICY_VERSION_MINIMUM="${CMAKE_POLICY_VERSION_MINIMUM:-3.5}"
 
 log() { echo "[$(date '+%F %T')] $*" | tee -a "$MASTER_LOG"; }
 
