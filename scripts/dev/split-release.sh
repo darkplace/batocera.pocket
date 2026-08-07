@@ -123,18 +123,18 @@ fi
 NUM_PARTS=$(( (INPUT_SIZE + MAX_SIZE_BYTES - 1) / MAX_SIZE_BYTES ))
 echo "Parts:    ${NUM_PARTS} (at most ${MAX_SIZE_MB}MB each)"
 
-rm -f "${INPUT}".part[0-9][0-9] "${INPUT}.parts.md5"
+rm -f "${INPUT}".part[0-9][0-9] "${INPUT}".part[0-9][0-9].tmp "${INPUT}.parts.md5"
 echo "Splitting..."
-split -b "$MAX_SIZE_BYTES" -d -a 2 "$INPUT" "${INPUT}.part"
+# Use .tmp suffix then rename to 1-based .partNN to avoid clobbering during mv
+# (split -d starts at 00; renaming 00→01 would overwrite the real .part01).
+split -b "$MAX_SIZE_BYTES" -d -a 2 --additional-suffix=.tmp "$INPUT" "${INPUT}.part"
 
 PART_NUM=0
-for part in "${INPUT}".part[0-9][0-9]; do
+for part in "${INPUT}".part[0-9][0-9].tmp; do
     [ -f "$part" ] || continue
     PART_NUM=$((PART_NUM + 1))
     NEW_NAME="${INPUT}.part$(printf '%02d' $PART_NUM)"
-    if [ "$part" != "$NEW_NAME" ]; then
-        mv "$part" "$NEW_NAME"
-    fi
+    mv "$part" "$NEW_NAME"
     PART_SIZE=$(stat -c%s "$NEW_NAME" 2>/dev/null || stat -f%z "$NEW_NAME" 2>/dev/null)
     echo "  $(basename "$NEW_NAME") ($((PART_SIZE / 1024 / 1024))MB)"
 done
