@@ -16,6 +16,20 @@ cd "$PROJECT_DIR"
 export TMPDIR="$PROJECT_DIR/output/sm8750/tmp"
 mkdir -p "$TMPDIR"
 
+# PARALLEL_BUILD host tools were configured with prefix /sm8750/... (short
+# BASE_DIR / bind-mount path). fakeroot and many other host wrappers look for
+# libs under that absolute path — keep a stable symlink for finalize steps.
+if [[ ! -e /sm8750 ]] || [[ "$(readlink -f /sm8750 2>/dev/null || true)" != "$(readlink -f "$PROJECT_DIR/output/sm8750")" ]]; then
+  if ln -sfn "$PROJECT_DIR/output/sm8750" /sm8750 2>/dev/null; then
+    :
+  elif command -v sudo >/dev/null 2>&1; then
+    sudo ln -sfn "$PROJECT_DIR/output/sm8750" /sm8750
+  else
+    echo "ERROR: need /sm8750 -> $PROJECT_DIR/output/sm8750 (host-fakeroot PREFIX)" >&2
+    exit 1
+  fi
+fi
+
 # Keep argv/env under ARG_MAX (Cursor injects huge PATH/env otherwise).
 # System tools first; host/lib last so libpython resolves without breaking git/perl.
 export PATH="/usr/bin:/bin:/usr/sbin:/sbin:${PROJECT_DIR}/output/sm8750/host/bin"

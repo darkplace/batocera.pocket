@@ -439,6 +439,7 @@ cleanup_hotkeys_on_exit() {
     resume_batocera_nightmode
     stop_steam_install_callouts
     stop_thor_backlight_mirror
+    release_steam_touchscreens || true
     cleanup_steam_portal_session
     cleanup_fex_session_leftovers
     run_ally_hotkey_hook gameStop || true
@@ -1422,20 +1423,9 @@ if command -v gamescope >/dev/null 2>&1 && [[ "${BATOCERA_STEAM_USE_GAMESCOPE:-1
         gs_args+=(-f)
     fi
 
-    # Touch mode:
-    # - DRM/embedded (Steam Deck style): default passthrough (4). This is what
-    #   Valve uses on Deck and keeps the physical gamepad mapping intact.
-    # - Nested Wayland: leave unset. Forcing touch-mode there made Steam Input
-    #   treat the Odin as a touch device and scramble the pad; also 3.16.20
-    #   drops wl_touch unless the rocknix Wayland touch patch is applied.
-    if [[ -z "${BATOCERA_STEAM_GS_DEFAULT_TOUCH_MODE+x}" ]]; then
-        if [[ "${BATOCERA_STEAM_GS_BACKEND:-}" == "drm" ]]; then
-            BATOCERA_STEAM_GS_DEFAULT_TOUCH_MODE="4"
-        else
-            BATOCERA_STEAM_GS_DEFAULT_TOUCH_MODE=""
-        fi
-    fi
-    if [[ -n "${BATOCERA_STEAM_GS_DEFAULT_TOUCH_MODE}" ]]; then
+    # Touch off by default: Steam GamepadUI remapped the pad when touch was enabled.
+    # Do not pass --default-touch-mode unless explicitly set in the environment.
+    if [[ -n "${BATOCERA_STEAM_GS_DEFAULT_TOUCH_MODE:-}" ]]; then
         append_gamescope_option "--default-touch-mode" "${BATOCERA_STEAM_GS_DEFAULT_TOUCH_MODE}"
     fi
 

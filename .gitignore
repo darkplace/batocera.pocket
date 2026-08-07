@@ -9,3 +9,18 @@ keys.txt
 # Private EmulationStation credentials; never publish this package-local file.
 package/batocera/emulationstation/batocera-emulationstation/keys.txt
 package/batocera/emulators/fex-emu/.host-bin/
+
+# Local build locks / PIDs
+*.pid
+.build-pid
+.docker-pid
+.rebuild-lock-pid
+.rebuild-*-pid
+
+# Build / docker logs (never push)
+*.log
+*.log.bak*
+build-exit*
+build-exit-code*.txt
+docker-build.log
+docker-rebuild.log

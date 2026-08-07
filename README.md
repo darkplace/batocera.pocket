@@ -1,74 +1,162 @@
+<p align="center">
+  <img src="media/batocera.pocket-logo.png" alt="batocera.pocket" width="420">
+</p>
+
 # batocera.pocket
 
-Community Batocera builds for Qualcomm handhelds (AYN Odin 3 / SM8750 and related boards), continuing the work started by suckbluefrog under a new maintainer.
+Community Batocera images for Qualcomm Snapdragon handhelds. Continues the Qualcomm Batocera work started by **suckbluefrog**.
 
-**Repository:** [github.com/darkplace/batocera.pocket](https://github.com/darkplace/batocera.pocket)
+Built on [Batocera.linux](https://batocera.org/) / [Buildroot](https://buildroot.org/). On top of the normal Batocera stack: Steam GamepadUI (SteamOS-style session via gamescope), FEX with a Fedora rootfs squashfs for x86_64 Proton/Windows titles, and LXC desktops where the board supports them.
 
----
-
-## Supported devices
-
-| Device | SoC | Board id | Status |
-|--------|-----|----------|--------|
-| AYN Odin 3 | SM8750 | `cq8725s` | Primary target |
-| Other Qualcomm boards in-tree | SM8550 / SM8250 / … | varies | Best-effort |
+**Repo:** [github.com/darkplace/batocera.pocket](https://github.com/darkplace/batocera.pocket)  
+**Maintainer:** lukemotion (GitHub: [darkplace](https://github.com/darkplace))
 
 ---
 
-## Download & flash (Windows)
+## First launch & hotkeys
 
-1. Open the latest [GitHub Release](https://github.com/darkplace/batocera.pocket/releases/latest).
-2. Download **all** volumes of the image set, for example:
-   - `batocera-sm8750-….zip`
-   - `batocera-sm8750-….z01`
-   - `batocera-sm8750-….z02`
-   - (and any further `.z0N` files)
-3. Keep every volume in the **same folder**. Do not rename them.
-4. Open the `.zip` with **7-Zip** or **WinZip** and extract. You get a single `.img.gz`.
-5. Flash that `.img.gz` to a microSD card with **balenaEtcher**, **Rufus**, or **Raspberry Pi Imager**.
+The first start of **Steam** and of the **Arch / Ubuntu Plasma LXC** containers can take a while (downloads, rootfs setup, first boot). That is normal — let them finish.
 
-No shell scripts are required on Windows.
+| Combo | Action |
+|-------|--------|
+| **Home + A** | Batocera menu (utilities) |
+| **Home + B** | Emulator / Steam options menu (Decky and related tools) |
+| **Home + Touch** | Toggle on-screen keyboard |
+| **Home + Select + Start** | Toggle built-in mouse |
+| **Home + L1 + R1** | Force quit and return to Batocera |
 
----
-
-## Updates (on device)
-
-batocera.pocket uses **GitHub Releases** for OTA updates (`updates.url` → this repository).
-
-- **stable** and **butterfly** resolve to the **same** latest release. There is no separate development channel.
-- The device downloads `boot.tar.xz` (or split `boot.tar.xz.part01…N` when the archive exceeds GitHub’s 2 GB limit) and applies it like stock Batocera.
+**Home** can be remapped; it uses Batocera’s standard hotkey mapping.
 
 ---
 
-## Features (highlights)
+## Devices & builds
 
-- Steam / SteamOS-like GamepadUI via gamescope (Wayland nested on Odin 3)
-- Touchscreen support in Steam (gamescope wl_touch)
-- Arch Plasma LXC (desktop + Plasma Mobile switch)
-- LED policy: accent RGB vs battery/status LED
-- FEX / Proton path for Windows titles on aarch64
-- decky-bcc installable from Steam/Wine Tools ([darkplace/decky-bcc](https://github.com/darkplace/decky-bcc))
+Images are per SoC. Every build also includes the usual Batocera systems (RetroArch cores, Wine/Proton tooling, etc.). Headline ports and extras are listed under each build. **AYN Odin 3** is the only device smoke-tested on this tree so far.
+
+### SM8750 — `batocera-sm8750`
+
+| Device | Tested |
+|--------|--------|
+| AYN Odin 3 | ✅ |
+
+Emulators / extras:
+
+- Steam (GamepadUI / gamescope)
+- FEX + Fedora squashfs
+- Arch Plasma LXC
+- Ubuntu Plasma LXC
+- Lutris
+- Eden
+- Yuzu
+- Ryujinx
+- Dolphin
+- RPCS3
+- shadPS4 (FEX)
+- AetherSX2 / ARMSX2
+- PCSX2
+- Play!
+- Cemu
+- Vita3K
+- Xemu
+- Xenia Canary / Edge
+- BigPemu
+- + the rest of the Batocera set for this board
+
+Not included:
+
+- Waydroid (disabled on Odin 3 / SM8750)
+
+### SM8550 — `batocera-sm8550`
+
+Devices: AYN Odin 2 / Mini / Portal, AYN Thor, AYANEO Pocket ACE / DS / DMG / EVO / S2K, Retroid Pocket 6 (+ TOP-DPAD DTB).
+
+Emulators / extras:
+
+- Steam (GamepadUI / gamescope)
+- FEX + Fedora squashfs
+- Arch Plasma LXC
+- Ubuntu Plasma LXC
+- Lutris
+- Waydroid
+- Eden
+- Yuzu
+- Ryujinx
+- Dolphin
+- RPCS3
+- shadPS4 (FEX)
+- AetherSX2 / ARMSX2
+- PCSX2
+- Play!
+- Cemu
+- Vita3K
+- Xemu
+- Xenia Canary / Edge
+- BigPemu
+- + the rest of the Batocera set for this board
+
+### SM8250 — `batocera-sm8250`
+
+Devices: Retroid Pocket 5, Mini, Mini V2, Flip 2.
+
+Emulators / extras:
+
+- Steam (GamepadUI / gamescope)
+- FEX + Fedora squashfs
+- Eden
+- Yuzu
+- Ryujinx
+- Dolphin
+- RPCS3
+- AetherSX2 / ARMSX2
+- Cemu
+- Vita3K
+- Xemu
+- Xenia Edge
+- + the rest of the Batocera set for this board
+
+Not included:
+
+- Waydroid
+- Arch / Ubuntu Plasma LXC
+- Lutris
+- shadPS4
+- PCSX2 / Play!
+
+### Other (best-effort)
+
+AYN Odin 1 (SD845), Radxa Dragon Q6A (QCS6490) — in-tree, not a focus of current builds.
 
 ---
 
-## Documentation
+## Extras
 
-| Doc | Description |
-|-----|-------------|
-| [docs/INSTALL.md](docs/INSTALL.md) | Flash & first boot |
-| [docs/UPDATES.md](docs/UPDATES.md) | OTA / GitHub Releases layout |
-| [docs/BUILD.md](docs/BUILD.md) | Build from source (Docker) |
-| [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) | How to contribute |
-| [docs/HOTPATCH.md](docs/HOTPATCH.md) | Live device hotpatch (dev, no reflash) |
+- [decky-bcc](https://github.com/darkplace/decky-bcc) — Decky Loader install helper for Steam
+
+---
+
+## Download & flash
+
+1. Get the latest [GitHub Release](https://github.com/darkplace/batocera.pocket/releases/latest).
+2. Download every volume for your SoC (`.zip` + `.z01`, `.z02`, …). Keep them in the same folder; do not rename.
+3. Extract the `.zip` with 7-Zip or WinZip → one `.img.gz`.
+4. Write that `.img.gz` to a microSD with balenaEtcher, Rufus, or Raspberry Pi Imager.
+
+Boot from the card on the device (same flow as other Batocera Qualcomm builds).
+
+---
+
+## Support
+
+Bugs and feedback: **@lukemotion** on Discord (device + image version + logs under `/userdata/system/logs/` help a lot).
 
 ---
 
 ## Credits
 
-- Original Qualcomm Batocera work: **suckbluefrog**
+- Qualcomm Batocera groundwork: **suckbluefrog**
 - Upstream: [Batocera.linux](https://batocera.org/)
-- Maintainer: **darkplace** / batocera.pocket community
+- Maintainer: **lukemotion**
 
 ## License
 
-Same as upstream Batocera / Buildroot package licenses unless noted otherwise in individual package files.
+batocera.pocket is licensed under the **GNU General Public License v2.0 (GPLv2)**, same as [Batocera.linux](https://github.com/batocera-linux/batocera.linux). See [LICENSE](LICENSE) for the full text. Individual packages may carry additional licenses; see each package directory.
