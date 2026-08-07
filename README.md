@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="media/batocera.pocket-logo.png" alt="batocera.pocket" width="420">
+  <img src="media/batocera.pocket-logo.png" alt="batocera.pocket" width="640">
 </p>
 
 # batocera.pocket
@@ -8,24 +8,10 @@ Community Batocera images for Qualcomm Snapdragon handhelds. Continues the Qualc
 
 Built on [Batocera.linux](https://batocera.org/) / [Buildroot](https://buildroot.org/). On top of the normal Batocera stack: Steam GamepadUI (SteamOS-style session via gamescope), FEX with a Fedora rootfs squashfs for x86_64 Proton/Windows titles, and LXC desktops where the board supports them.
 
-**Repo:** [github.com/darkplace/batocera.pocket](https://github.com/darkplace/batocera.pocket)  
-**Maintainer:** lukemotion (GitHub: [darkplace](https://github.com/darkplace))
-
 ---
 
-## First launch & hotkeys
-
-The first start of **Steam** and of the **Arch / Ubuntu Plasma LXC** containers can take a while (downloads, rootfs setup, first boot). That is normal — let them finish.
-
-| Combo | Action |
-|-------|--------|
-| **Home + A** | Batocera menu (utilities) |
-| **Home + B** | Emulator / Steam options menu (Decky and related tools) |
-| **Home + Touch** | Toggle on-screen keyboard |
-| **Home + Select + Start** | Toggle built-in mouse |
-| **Home + L1 + R1** | Force quit and return to Batocera |
-
-**Home** can be remapped; it uses Batocera’s standard hotkey mapping.
+### ⚠️ Important Note on Bootloader
+This Batocera build **requires** the [ROCKNIX ABL](https://github.com/ROCKNIX/abl). Make sure your device's boot partition is updated with the ROCKNIX ABL before flashing this image.
 
 ---
 
@@ -128,6 +114,24 @@ AYN Odin 1 (SD845), Radxa Dragon Q6A (QCS6490) — in-tree, not a focus of curre
 
 ---
 
+## First launch & hotkeys
+
+The first start of **Steam** and of the **Arch / Ubuntu Plasma LXC** containers can take a while (downloads, rootfs setup, first boot). That is normal — let them finish.
+
+**Container Initialization:** When first time running containers, switch to keyboard mode and press the `Enter` key repeatedly to progress through initialization.
+
+| Combo | Action |
+|-------|--------|
+| **Home + A** | Batocera menu (utilities) |
+| **Home + B** | Emulator / Steam options menu (Decky and related tools) |
+| **Home + Touch** | Toggle on-screen keyboard |
+| **Home + Select + Start** | Toggle built-in mouse |
+| **Home + L1 + R1** | Force quit and return to Batocera |
+
+**Home** can be remapped; it uses Batocera’s standard hotkey mapping.
+
+---
+
 ## Extras
 
 - [decky-bcc](https://github.com/darkplace/decky-bcc) — Decky Loader install helper for Steam
@@ -153,9 +157,9 @@ Bugs and feedback: **@lukemotion** on Discord (device + image version + logs und
 
 ## Credits
 
-- Qualcomm Batocera groundwork: **suckbluefrog**
+- Batocera groundwork: [suckbluefrog](https://github.com/suckbluefrog)
 - Upstream: [Batocera.linux](https://batocera.org/)
-- Maintainer: **lukemotion**
+- ABL (Bootloader): [ROCKNIX](https://rocknix.org/)
 
 ## License
 
