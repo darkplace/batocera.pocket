@@ -24,3 +24,14 @@ build-exit*
 build-exit-code*.txt
 docker-build.log
 docker-rebuild.log
+docker-sm*-build.log*
+docker-sm*-OK
+docker-sm*-FAILED
+.docker-sm*
+.tmp-*
+
+# Private local-only: upstream sync / package lifecycle tooling + state
+# (reports live under output/ which is already ignored)
+scripts/dev/upstream/
+local.mk
+.local/

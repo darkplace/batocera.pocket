@@ -1,37 +1,76 @@
 #!/bin/bash
-# Reinstall product locks (plasma scrub, splash logos, version) and remake sm8750 image.
-# With PARALLEL_BUILD=y, package *-reinstall only updates per-package/<pkg>/target.
-# Merged output/.../target is refreshed by target-finalize (also part of all-images).
+# Reinstall product locks and remake sm8750 image.
+#
+# Default: Docker primary tree at output/sm8750 (no DIRECT_BUILD / PARALLEL_BUILD).
+# Emergency Arch: ARCH_BACKUP=1 → output/sm8750-arch-backup (swapped into slot for Make).
 #
 # Usage:
 #   ./rebuild-sm8750-product-lock.sh
-#   SKIP_REINSTALL=1 ./rebuild-sm8750-product-lock.sh   # PP already updated; merge + image only
+#   SKIP_REINSTALL=1 ./rebuild-sm8750-product-lock.sh
+#   ARCH_BACKUP=1 ./rebuild-sm8750-product-lock.sh
+#
+# See docs/BUILD.md.
+
 set -euo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$PROJECT_DIR"
 
-export TMPDIR="$PROJECT_DIR/output/sm8750/tmp"
-mkdir -p "$TMPDIR"
+ARCH_BACKUP="${ARCH_BACKUP:-0}"
+SKIP_REINSTALL="${SKIP_REINSTALL:-0}"
+LOG_FILE="${LOG_FILE:-$PROJECT_DIR/rebuild-sm8750-product-lock.log}"
+PRIMARY="$PROJECT_DIR/output/sm8750"
+ARCH_OUT="${SM8750_ARCH_OUT:-$PROJECT_DIR/output/sm8750-arch-backup}"
+SWAP_DOCKER="$PROJECT_DIR/output/sm8750-docker-aside"
+SWAPPED=0
 
-if [[ ! -e /sm8750 ]] || [[ "$(readlink -f /sm8750 2>/dev/null || true)" != "$(readlink -f "$PROJECT_DIR/output/sm8750")" ]]; then
-  if ln -sfn "$PROJECT_DIR/output/sm8750" /sm8750 2>/dev/null; then
-    :
-  elif command -v sudo >/dev/null 2>&1; then
-    sudo ln -sfn "$PROJECT_DIR/output/sm8750" /sm8750
-  else
-    echo "ERROR: need /sm8750 -> $PROJECT_DIR/output/sm8750" >&2
+if [ "$ARCH_BACKUP" = "1" ]; then
+  DIRECT_BUILD=y
+  PARALLEL_BUILD=y
+  BUILD_LABEL=arch-backup
+  if [ ! -d "$ARCH_OUT/host" ] && [ ! -d "$ARCH_OUT/build" ]; then
+    echo "ERROR: Arch backup missing: $ARCH_OUT" >&2
     exit 1
   fi
+  restore_layout() {
+    [ "$SWAPPED" -eq 1 ] || return 0
+    if [ -d "$PRIMARY" ]; then
+      rm -rf "$ARCH_OUT"
+      mv "$PRIMARY" "$ARCH_OUT"
+      echo arch > "$ARCH_OUT/.batocera-build-env" 2>/dev/null || true
+    fi
+    if [ -d "$SWAP_DOCKER" ]; then
+      mv "$SWAP_DOCKER" "$PRIMARY"
+      echo docker > "$PRIMARY/.batocera-build-env" 2>/dev/null || true
+    fi
+  }
+  trap restore_layout EXIT
+  if [ -e "$PRIMARY" ] || [ -L "$PRIMARY" ]; then
+    rm -rf "$SWAP_DOCKER"
+    mv "$PRIMARY" "$SWAP_DOCKER"
+  fi
+  mv "$ARCH_OUT" "$PRIMARY"
+  SWAPPED=1
+  echo arch > "$PRIMARY/.batocera-build-env"
+  export PATH="/usr/bin:/bin:/usr/sbin:/sbin:${PRIMARY}/host/bin"
+  export LD_LIBRARY_PATH="/usr/lib:${PRIMARY}/host/lib"
+  if [[ "$(readlink -f /sm8750 2>/dev/null || true)" != "$(readlink -f "$PRIMARY")" ]]; then
+    ln -sfn "$PRIMARY" /sm8750 2>/dev/null || sudo ln -sfn "$PRIMARY" /sm8750
+  fi
+else
+  DIRECT_BUILD=
+  PARALLEL_BUILD=
+  BUILD_LABEL=docker-primary
+  mkdir -p "$PRIMARY"
+  echo docker > "$PRIMARY/.batocera-build-env"
 fi
 
-export PATH="/usr/bin:/bin:/usr/sbin:/sbin:${PROJECT_DIR}/output/sm8750/host/bin"
-export LD_LIBRARY_PATH="/usr/lib:${PROJECT_DIR}/output/sm8750/host/lib"
+OUT_TREE="$PRIMARY"
+export TMPDIR="$OUT_TREE/tmp"
+mkdir -p "$TMPDIR"
 export CMAKE_POLICY_VERSION_MINIMUM=3.5
 
-LOG_FILE="$PROJECT_DIR/rebuild-sm8750-product-lock.log"
-IMG_DIR="$PROJECT_DIR/output/sm8750/images/batocera/images/sm8750"
-SKIP_REINSTALL="${SKIP_REINSTALL:-0}"
+IMG_DIR="$OUT_TREE/images/batocera/images/sm8750"
 
 log() {
   echo "$@" | tee -a "$LOG_FILE"
@@ -41,11 +80,12 @@ log() {
   echo "=== batocera.pocket product lock rebuild ==="
   echo "Date: $(date)"
   echo "PID: $$"
-  echo "SKIP_REINSTALL=$SKIP_REINSTALL"
+  echo "Mode: $BUILD_LABEL"
+  echo "SKIP_REINSTALL=$SKIP_REINSTALL ARCH_BACKUP=$ARCH_BACKUP"
+  echo "Tree: $OUT_TREE"
   echo ""
 } | tee "$LOG_FILE"
 
-# Package reinstalls go through sm8750-pkg (PKG= is a real package name).
 run_pkg() {
   local pkg="$1"
   log ""
@@ -53,10 +93,10 @@ run_pkg() {
   set +e
   make sm8750-pkg \
       PKG="$pkg" \
-      DIRECT_BUILD=y \
-      PARALLEL_BUILD=y \
-      MAKE_JLEVEL="${MAKE_JLEVEL:-20}" \
-      MAKE_LLEVEL="${MAKE_LLEVEL:-20}" \
+      DIRECT_BUILD="$DIRECT_BUILD" \
+      PARALLEL_BUILD="$PARALLEL_BUILD" \
+      MAKE_JLEVEL="${MAKE_JLEVEL:-12}" \
+      MAKE_LLEVEL="${MAKE_LLEVEL:-12}" \
       2>&1 | tee -a "$LOG_FILE"
   local ec=${PIPESTATUS[0]}
   set -e
@@ -66,8 +106,6 @@ run_pkg() {
   fi
 }
 
-# Non-package Buildroot targets (target-finalize, all-images) must use CMD=, not PKG=.
-# PKG=target-finalize breaks PARALLEL_BUILD with: per-package//target
 run_cmd() {
   local cmd="$1"
   log ""
@@ -75,10 +113,10 @@ run_cmd() {
   set +e
   make sm8750-build \
       CMD="$cmd" \
-      DIRECT_BUILD=y \
-      PARALLEL_BUILD=y \
-      MAKE_JLEVEL="${MAKE_JLEVEL:-20}" \
-      MAKE_LLEVEL="${MAKE_LLEVEL:-20}" \
+      DIRECT_BUILD="$DIRECT_BUILD" \
+      PARALLEL_BUILD="$PARALLEL_BUILD" \
+      MAKE_JLEVEL="${MAKE_JLEVEL:-12}" \
+      MAKE_LLEVEL="${MAKE_LLEVEL:-12}" \
       2>&1 | tee -a "$LOG_FILE"
   local ec=${PIPESTATUS[0]}
   set -e
@@ -89,35 +127,35 @@ run_cmd() {
 }
 
 if [ "$SKIP_REINSTALL" != "1" ]; then
+  run_pkg batocera-scripts-reinstall
   run_pkg batocera-system-reinstall
   run_pkg batocera-splash-odin3-reinstall
-  # Arch first, then Ubuntu (Ubuntu PP vendors a copy of the arch script and can
-  # overwrite target with a stale binary during target-finalize if left old).
   run_pkg batocera-arch-plasma-lxc-reinstall
   run_pkg batocera-ubuntu-plasma-lxc-reinstall
-  run_pkg batocera-scripts-reinstall
 else
-  log ">>> Skipping package reinstalls (SKIP_REINSTALL=1); using existing per-package trees"
+  log ">>> Skipping package reinstalls (SKIP_REINSTALL=1)"
 fi
 
 run_cmd target-finalize
 
-# Belt-and-suspenders: Ubuntu PP may still race-overwrite arch script on merge.
-# Force the current source script into merged target + both plasma PPs.
 PLASMA_SRC="$PROJECT_DIR/package/batocera/utils/batocera-arch-plasma-lxc/batocera-arch-plasma-lxc"
 PLASMA_DST_REL="usr/bin/batocera-arch-plasma-lxc"
 if [ -f "$PLASMA_SRC" ]; then
   log ">>> Force-sync batocera-arch-plasma-lxc from source into target + plasma PPs"
-  install -D -m 0755 "$PLASMA_SRC" "$PROJECT_DIR/output/sm8750/target/$PLASMA_DST_REL"
-  install -D -m 0755 "$PLASMA_SRC" \
-    "$PROJECT_DIR/output/sm8750/per-package/batocera-arch-plasma-lxc/target/$PLASMA_DST_REL"
-  install -D -m 0755 "$PLASMA_SRC" \
-    "$PROJECT_DIR/output/sm8750/per-package/batocera-ubuntu-plasma-lxc/target/$PLASMA_DST_REL"
+  install -D -m 0755 "$PLASMA_SRC" "$OUT_TREE/target/$PLASMA_DST_REL"
+  if [ -d "$OUT_TREE/per-package/batocera-arch-plasma-lxc/target" ]; then
+    install -D -m 0755 "$PLASMA_SRC" \
+      "$OUT_TREE/per-package/batocera-arch-plasma-lxc/target/$PLASMA_DST_REL"
+  fi
+  if [ -d "$OUT_TREE/per-package/batocera-ubuntu-plasma-lxc/target" ]; then
+    install -D -m 0755 "$PLASMA_SRC" \
+      "$OUT_TREE/per-package/batocera-ubuntu-plasma-lxc/target/$PLASMA_DST_REL"
+  fi
 fi
 
 log ""
 log ">>> Target lock greps (post target-finalize)"
-TARGET="$PROJECT_DIR/output/sm8750/target"
+TARGET="$OUT_TREE/target"
 fail=0
 set +e
 
@@ -133,6 +171,21 @@ if grep -q 'darkplace/batocera.pocket' "$TARGET/usr/bin/batocera-upgrade"; then
   log "PASS upgrade"
 else
   log "FAIL upgrade"
+  fail=1
+fi
+
+if [ -x "$TARGET/usr/bin/batocera-pocket-github-release" ]; then
+  log "PASS ota_helper"
+else
+  log "FAIL ota_helper (batocera-pocket-github-release missing)"
+  fail=1
+fi
+
+if grep -q 'batocera-pocket-github-release' "$TARGET/usr/bin/batocera-upgrade" \
+  && ! grep -qE 'api\.github\.com/.*/releases/latest' "$TARGET/usr/bin/batocera-upgrade"; then
+  log "PASS ota_per_board"
+else
+  log "FAIL ota_per_board (upgrade still uses /releases/latest or missing helper)"
   fail=1
 fi
 
@@ -208,11 +261,11 @@ log "prechecks fail=$fail"
 [ "$fail" -eq 0 ] || exit 1
 
 log ">>> Removing rootfs.squashfs and prior images"
-rm -f "$PROJECT_DIR/output/sm8750/images/rootfs.squashfs"
+rm -f "$OUT_TREE/images/rootfs.squashfs"
 rm -f "$IMG_DIR"/batocera-sm8750-*.img.gz
 rm -f "$IMG_DIR"/boot.tar.xz
 
-run_cmd all-images
+run_cmd all
 
 {
   echo ""

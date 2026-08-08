@@ -89,7 +89,7 @@ endef
 define MAKE_BUILDROOT
 	$(RUN_DOCKER) sh -c ' \
 		if [ -d "/$*/host/lib" ]; then \
-			export LD_LIBRARY_PATH="$${LD_LIBRARY_PATH:+$$LD_LIBRARY_PATH:}/usr/lib/x86_64-linux-gnu:/lib/x86_64-linux-gnu:/$*/host/lib"; \
+			unset LD_LIBRARY_PATH; \
 		fi; \
 		exec make $(MAKE_OPTS) O=/$* \
 			BR2_EXTERNAL=/build \
@@ -386,3 +386,7 @@ uart:
 	$(if $(SERIAL_BAUDRATE),,$(error "SERIAL_BAUDRATE not specified!"))
 	$(if $(wildcard $(SERIAL_DEV)),,$(error "$(SERIAL_DEV) not available!"))
 	@picocom $(SERIAL_DEV) -b $(SERIAL_BAUDRATE)
+
+# Optional private maintainer overrides (gitignored — see local.mk.example if present)
+-include local.mk
+

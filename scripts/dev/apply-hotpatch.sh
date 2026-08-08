@@ -65,6 +65,7 @@ copy_file() {
 }
 
 copy_bin "$ROOT/package/batocera/core/batocera-scripts/scripts/batocera-upgrade"       batocera-upgrade
+copy_bin "$ROOT/package/batocera/core/batocera-scripts/scripts/batocera-pocket-github-release" batocera-pocket-github-release
 copy_bin "$ROOT/package/batocera/core/batocera-scripts/scripts/batocera-config"        batocera-config
 copy_bin "$ROOT/package/batocera/core/batocera-scripts/scripts/batocera-es-swissknife" batocera-es-swissknife
 copy_bin "$ROOT/package/batocera/utils/batocera-led-handheld/batocera-led-handheld.py" batocera-led-handheld

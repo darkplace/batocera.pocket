@@ -6,7 +6,13 @@ batocera.pocket serves updates from **GitHub Releases** of this repository:
 
 ## Channel behaviour
 
-Stock Batocera exposes `updates.type` (`stable` / `butterfly`). On batocera.pocket **both map to the same payload**: the GitHub **latest** release. Changing the type in the UI has no effect on which build is fetched.
+Stock Batocera exposes `updates.type` (`stable` / `butterfly`). On batocera.pocket
+both map to the same payload for a given board: the newest GitHub Release whose
+tag contains `-<board>-` (e.g. `v44-sm8750-20260807`). Devices must **not** use
+`/releases/latest` once multiple SoCs publish releases.
+
+Images from `v44-sm8750-20260807` still use `/releases/latest`. Install
+`batocera-pocket-ota-per-board-prep.zip` once (see [HOTPATCH.md](HOTPATCH.md)).
 
 ## Release asset layout
 
