@@ -126,7 +126,7 @@ The first start of **Steam** and of the **Arch / Ubuntu Plasma LXC** containers 
 | **Home + B** | Emulator / Steam options menu (Decky and related tools) |
 | **Home + Touch** | Toggle on-screen keyboard |
 | **Home + Select + Start** | Toggle built-in mouse |
-| **Home + L1 + R1** | Force quit and return to Batocera |
+| **L1 + R1 + Select + Start** | Force quit and return to Batocera |
 
 **Home** can be remapped; it uses Batocera’s standard hotkey mapping.
 
