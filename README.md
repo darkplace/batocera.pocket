@@ -114,6 +114,34 @@ AYN Odin 1 (SD845), Radxa Dragon Q6A (QCS6490) — in-tree, not a focus of curre
 
 ---
 
+## What's new — SM8750 `v44-sm8750-20260809`
+
+Latest **AYN Odin 3 / SM8750** release. Clean reflash baseline (see *Download & flash*).
+
+**Fan control**
+- Fixed the automatic fan **not starting at boot** (it could get stuck at a stale manual PWM). The auto curve now comes up on its own every boot.
+- New selectable **fan modes** in the Batocera Control Deck (**Home + A → Fan Mode**): **Silent**, **Auto**, **Aggressive**, **Off**.
+- Fan mode / speed now **persists across reboots**.
+- Gentler default curve: quiet under normal emulation, ramps hard only near the thermal ceiling.
+
+**Performance / thermals**
+- Default CPU governor is now **`ondemand`** on Qualcomm boards (scales down properly at idle → lower idle temps and heat). The *Balanced* power profile respects this instead of forcing `schedutil`.
+
+**Updates (OTA)**
+- Fixed the updater offering an **older** build as an "update" (no more false *update available* popup for a build you already surpass).
+- Per-board release resolution hardened (fixes an issue that could blind the device to updates).
+
+**Desktop / apps**
+- **UI scaling** for the Apps/Tools configuration windows and the Arch/Ubuntu Plasma LXC desktops, so they're usable with mouse/touch on the handheld screen (sharp 1080p framebuffer, scaled UI).
+
+**Wine**
+- `wine` / `wine64` runner normalization + WoW64 fallback for modern unified Wine builds.
+
+**Input**
+- More robust **Force quit** (`L1 + R1 + Select + Start`) — cleanly tears down emulators, including Wine.
+
+---
+
 ## First launch & hotkeys
 
 The first start of **Steam** and of the **Arch / Ubuntu Plasma LXC** containers can take a while (downloads, rootfs setup, first boot). That is normal — let them finish.
