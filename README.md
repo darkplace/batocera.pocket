@@ -2,9 +2,18 @@
   <img src="media/batocera.pocket-logo.png" alt="batocera.pocket" width="640">
 </p>
 
-# batocera.pocket
+<h1 align="center">batocera.pocket</h1>
 
-Community Batocera images for Qualcomm Snapdragon handhelds. Continues the Qualcomm Batocera work started by **suckbluefrog**.
+<p align="center">
+  <img src="https://img.shields.io/badge/Batocera-v44-5b2be7" alt="Batocera v44">
+  <img src="https://img.shields.io/badge/SoC-SM8750%20%C2%B7%20SM8550%20%C2%B7%20SM8250-0a9fb0" alt="SoCs">
+  <a href="https://github.com/darkplace/batocera.pocket/releases/latest"><img src="https://img.shields.io/github/v/release/darkplace/batocera.pocket?label=latest%20release&color=2ea043" alt="Latest release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPLv2-blue" alt="License GPLv2"></a>
+</p>
+
+<p align="center">
+  Community <b>Batocera</b> images for <b>Qualcomm Snapdragon</b> handhelds — continuing the Qualcomm Batocera work started by <b>suckbluefrog</b>.
+</p>
 
 Built on [Batocera.linux](https://batocera.org/) / [Buildroot](https://buildroot.org/). On top of the normal Batocera stack: Steam GamepadUI (SteamOS-style session via gamescope), FEX with a Fedora rootfs squashfs for x86_64 Proton/Windows titles, and LXC desktops where the board supports them.
 
@@ -17,96 +26,74 @@ This Batocera build **requires** the [ROCKNIX ABL](https://github.com/ROCKNIX/ab
 
 ## Devices & builds
 
-Images are per SoC. Every build also includes the usual Batocera systems (RetroArch cores, Wine/Proton tooling, etc.). Headline ports and extras are listed under each build. **AYN Odin 3** is the only device smoke-tested on this tree so far.
+Images are per SoC. Every build ships the full Batocera stack (RetroArch cores, Wine/Proton tooling, etc.); the lists below highlight the headline ports and extras.
 
-### SM8750 — `batocera-sm8750`
+> **Testing status** — only the **AYN Odin 3 (SM8750)** is smoke-tested on this tree. The **SM8550** and **SM8250** images are **community / untested**: flash at your own risk and please report back.
 
-| Device | Tested |
+### SM8750 — `batocera-sm8750` &nbsp;·&nbsp; ✅ Smoke-tested
+
+| Device | Status |
 |--------|--------|
-| AYN Odin 3 | ✅ |
+| AYN Odin 3 | ✅ Tested |
 
-Emulators / extras:
+<details>
+<summary><b>Emulators &amp; extras</b></summary>
 
 - Steam (GamepadUI / gamescope)
 - FEX + Fedora squashfs
-- Arch Plasma LXC
-- Ubuntu Plasma LXC
+- Arch Plasma LXC · Ubuntu Plasma LXC
 - Lutris
-- Eden
-- Yuzu
-- Ryujinx
-- Dolphin
-- RPCS3
+- Eden · Yuzu · Ryujinx
+- Dolphin · RPCS3
 - shadPS4 (FEX)
-- AetherSX2 / ARMSX2
-- PCSX2
-- Play!
-- Cemu
-- Vita3K
-- Xemu
+- AetherSX2 / ARMSX2 · PCSX2 · Play!
+- Cemu · Vita3K · Xemu
 - Xenia Canary / Edge
-- BigPemu
-- + the rest of the Batocera set for this board
+- *+ the rest of the Batocera set for this board*
 
-Not included:
+**Not included:** Waydroid (disabled on Odin 3 / SM8750)
+</details>
 
-- Waydroid (disabled on Odin 3 / SM8750)
+### SM8550 — `batocera-sm8550` &nbsp;·&nbsp; ⚠️ Untested
 
-### SM8550 — `batocera-sm8550`
+**Devices:** AYN Odin 2 / Mini / Portal · AYN Thor · AYANEO Pocket ACE / DS / DMG / EVO / S2K · Retroid Pocket 6 (+ TOP-DPAD DTB).
 
-Devices: AYN Odin 2 / Mini / Portal, AYN Thor, AYANEO Pocket ACE / DS / DMG / EVO / S2K, Retroid Pocket 6 (+ TOP-DPAD DTB).
+> No SM8550 hardware is available to the maintainer, so this image is **untested**. Deep sleep (S2RAM) is intentionally left off; the board uses the working s2idle path.
 
-Emulators / extras:
+<details>
+<summary><b>Emulators &amp; extras</b></summary>
 
 - Steam (GamepadUI / gamescope)
 - FEX + Fedora squashfs
-- Arch Plasma LXC
-- Ubuntu Plasma LXC
-- Lutris
-- Waydroid
-- Eden
-- Yuzu
-- Ryujinx
-- Dolphin
-- RPCS3
+- Arch Plasma LXC · Ubuntu Plasma LXC
+- Lutris · Waydroid
+- Eden · Yuzu · Ryujinx
+- Dolphin · RPCS3
 - shadPS4 (FEX)
-- AetherSX2 / ARMSX2
-- PCSX2
-- Play!
-- Cemu
-- Vita3K
-- Xemu
+- AetherSX2 / ARMSX2 · PCSX2 · Play!
+- Cemu · Vita3K · Xemu
 - Xenia Canary / Edge
-- BigPemu
-- + the rest of the Batocera set for this board
+- *+ the rest of the Batocera set for this board*
+</details>
 
-### SM8250 — `batocera-sm8250`
+### SM8250 — `batocera-sm8250` &nbsp;·&nbsp; ⚠️ Untested
 
-Devices: Retroid Pocket 5, Mini, Mini V2, Flip 2.
+**Devices:** Retroid Pocket 5 · Mini · Mini V2 · Flip 2.
 
-Emulators / extras:
+<details>
+<summary><b>Emulators &amp; extras</b></summary>
 
 - Steam (GamepadUI / gamescope)
 - FEX + Fedora squashfs
-- Eden
-- Yuzu
-- Ryujinx
-- Dolphin
-- RPCS3
+- Eden · Yuzu · Ryujinx
+- Dolphin · RPCS3
 - AetherSX2 / ARMSX2
-- Cemu
-- Vita3K
-- Xemu
+- Cemu · Vita3K · Xemu
 - Xenia Edge
-- + the rest of the Batocera set for this board
+- *+ the rest of the Batocera set for this board*
 
-Not included:
-
-- Waydroid
-- Arch / Ubuntu Plasma LXC
-- Lutris
-- shadPS4
-- PCSX2 / Play!
+**Not included:** Waydroid · Arch / Ubuntu Plasma LXC · Lutris · shadPS4 · PCSX2 / Play!
+</details>
 
 ### Other (best-effort)
 
@@ -114,9 +101,9 @@ AYN Odin 1 (SD845), Radxa Dragon Q6A (QCS6490) — in-tree, not a focus of curre
 
 ---
 
-## What's new — SM8750 `v44-sm8750-20260809`
+## What's new — 2026-08-09
 
-Latest **AYN Odin 3 / SM8750** release. Clean reflash baseline (see *Download & flash*).
+Applies to **SM8750** (`v44-sm8750-20260809`, tested on AYN Odin 3) and **SM8550** (`v44-sm8550-20260809`, **untested**). Both ship the same userspace fixes below and are **clean reflash baselines** (see *Download & flash*).
 
 **Fan control**
 - Fixed the automatic fan **not starting at boot** (it could get stuck at a stale manual PWM). The auto curve now comes up on its own every boot.
