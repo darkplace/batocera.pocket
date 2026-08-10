@@ -5,7 +5,13 @@ BR2_aarch64=y
 BR2_cortex_a77=y
 BR2_ARM_FPU_NEON_FP_ARMV8=y
 BR2_TOOLCHAIN_BUILDROOT_WCHAR=y
+# Same as sm8550/sm8750: GCC 15 libsanitizer no longer references removed glibc struct termio
+BR2_GCC_VERSION_15_X=y
 BR2_PACKAGE_BATOCERA_TARGET_SM8250=y
+# Use top-level ABL/mkbootimg image script (not per-device EFI/grub paths).
+# Matches sm8550/sm8750. Default Kconfig still points at rpflip2 EFI scripts which
+# need BR2_TARGET_GRUB2 + efi-part; we boot via ROCKNIX ABL instead.
+BR2_TARGET_BATOCERA_IMAGES="qualcomm/sm8250"
 BR2_TARGET_OPTIMIZATION="-pipe -fsigned-char -mcpu=cortex-a77"
 BR2_STRIP_EXCLUDE_FILES="gk goalc extractor"
 BR2_TARGET_GENERIC_GETTY_PORT="ttyMSM0"

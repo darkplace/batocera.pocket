@@ -80,6 +80,8 @@ Images are per SoC. Every build ships the full Batocera stack (RetroArch cores, 
 
 **Devices:** Retroid Pocket 5 · Mini · Mini V2 · Flip 2.
 
+> No SM8250 hardware is available to the maintainer, so this image is **untested**. Flash at your own risk and please report back.
+
 <details>
 <summary><b>Emulators &amp; extras</b></summary>
 
@@ -101,9 +103,27 @@ AYN Odin 1 (SD845), Radxa Dragon Q6A (QCS6490) — in-tree, not a focus of curre
 
 ---
 
-## What's new — 2026-08-09
+## Preview
 
-Applies to **SM8750** (`v44-sm8750-20260809`, tested on AYN Odin 3) and **SM8550** (`v44-sm8550-20260809`, **untested**). Both ship the same userspace fixes below and are **clean reflash baselines** (see *Download & flash*).
+In-device footage ([@lukemotionYT](https://www.youtube.com/@lukemotionYT)) — performance examples, no commentary required:
+
+<p align="center">
+  <a href="https://www.youtube.com/watch?v=vI6bw7iIS5s"><img src="https://img.youtube.com/vi/vI6bw7iIS5s/hqdefault.jpg" alt="Gameplay preview 1" width="32%"></a>
+  <a href="https://www.youtube.com/watch?v=XKcJsCEH1OY"><img src="https://img.youtube.com/vi/XKcJsCEH1OY/hqdefault.jpg" alt="Gameplay preview 2" width="32%"></a>
+  <a href="https://www.youtube.com/watch?v=qwIUdKckz4w"><img src="https://img.youtube.com/vi/qwIUdKckz4w/hqdefault.jpg" alt="Gameplay preview 3" width="32%"></a>
+</p>
+
+---
+
+## What's new — August 2026
+
+Clean reflash baselines (see *Download & flash*). Per-board GitHub tags so OTA only matches the device SoC:
+
+| Tag | Board | Status |
+|-----|--------|--------|
+| `v44-sm8750-20260809` | SM8750 (Odin 3) | ✅ Tested |
+| `v44-sm8550-20260809` | SM8550 | ⚠️ Untested |
+| `v44-sm8250-20260810` | SM8250 | ⚠️ Untested |
 
 **Fan control**
 - Fixed the automatic fan **not starting at boot** (it could get stuck at a stale manual PWM). The auto curve now comes up on its own every boot.
@@ -116,6 +136,7 @@ Applies to **SM8750** (`v44-sm8750-20260809`, tested on AYN Odin 3) and **SM8550
 
 **Updates (OTA)**
 - Fixed the updater offering an **older** build as an "update" (no more false *update available* popup for a build you already surpass).
+- Per-board release tags (`v44-<soc>-YYYYMMDD`) — devices only see updates for their SoC.
 - Per-board release resolution hardened (fixes an issue that could blind the device to updates).
 
 **Desktop / apps**
@@ -128,7 +149,6 @@ Applies to **SM8750** (`v44-sm8750-20260809`, tested on AYN Odin 3) and **SM8550
 - More robust **Force quit** (`L1 + R1 + Select + Start`) — cleanly tears down emulators, including Wine.
 
 ---
-
 ## First launch & hotkeys
 
 The first start of **Steam** and of the **Arch / Ubuntu Plasma LXC** containers can take a while (downloads, rootfs setup, first boot). That is normal — let them finish.
@@ -155,12 +175,12 @@ The first start of **Steam** and of the **Arch / Ubuntu Plasma LXC** containers 
 
 ## Download & flash
 
-1. Get the latest [GitHub Release](https://github.com/darkplace/batocera.pocket/releases/latest).
-2. Download every volume for your SoC (`.zip` + `.z01`, `.z02`, …). Keep them in the same folder; do not rename.
+1. Open [Releases](https://github.com/darkplace/batocera.pocket/releases) and pick the tag for **your SoC** (`v44-sm8750-…`, `v44-sm8550-…`, or `v44-sm8250-…`). Do not install another board’s image.
+2. Download every volume for that release (`.zip` + `.z01`, `.z02`, …). Keep them in the same folder; do not rename.
 3. Extract the `.zip` with 7-Zip or WinZip → one `.img.gz`.
 4. Write that `.img.gz` to a microSD with balenaEtcher, Rufus, or Raspberry Pi Imager.
 
-Boot from the card on the device (same flow as other Batocera Qualcomm builds).
+Boot from the card on the device (same flow as other Batocera Qualcomm builds). Later OTAs use the same per-board tags — a device only sees updates for its SoC.
 
 ---
 

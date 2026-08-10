@@ -5,13 +5,18 @@
 
 start() {
 	printf "Starting fan daemon: "
-	start-stop-daemon -S -q -p /var/run/qcom-fan.pid --exec /usr/bin/qcom-fan start &
+	# `boot` restores the user's last choice (auto / manual N% / off) and spawns
+	# the right detached daemon itself; default is the automatic curve.
+	/usr/bin/qcom-fan boot >/dev/null 2>&1
 	[ $? = 0 ] && echo "OK" || echo "FAIL"
 }
 
 stop() {
 	printf "Stopping fan daemon: "
-	/usr/bin/qcom-fan stop
+	# `daemon-stop` tears down the daemon WITHOUT persisting "off", so the user's
+	# saved choice (auto / manual N% / off) survives across reboots. Using plain
+	# `stop` here would clobber fan.state to off on every shutdown.
+	/usr/bin/qcom-fan daemon-stop
 	start-stop-daemon -K -q -p /var/run/qcom-fan.pid
 	[ $? = 0 ] && echo "OK" || echo "FAIL"
 }

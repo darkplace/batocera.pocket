@@ -1,0 +1,61 @@
+Subject: [PATCH] sm8250: harden Dawn dependency fetch (no shallow)
+
+Board-only via BR2_GLOBAL_PATCH_DIR (sm8250). Not applied on sm8550/sm8750.
+
+--- a/extern/aurora/cmake/patches/force-dawn-no-shallow.cmake	2026-08-10 14:39:36.559018837 +0200
++++ b/extern/aurora/cmake/patches/force-dawn-no-shallow.cmake	2026-08-10 14:39:36.559059522 +0200
+@@ -2,20 +2,45 @@
+   message(FATAL_ERROR "DAWN_PATCH_SOURCE_DIR is required")
+ endif()
+ 
++message(STATUS "sm8250: hardening Dawn dependency fetch under ${DAWN_PATCH_SOURCE_DIR}")
++
+ set(_third_party_cmake "${DAWN_PATCH_SOURCE_DIR}/third_party/CMakeLists.txt")
+ file(READ "${_third_party_cmake}" _content)
+ 
+-if(_content MATCHES "--no-shallow")
+-  return()
+-endif()
+-
+-set(_needle [=[            "${PROJECT_SOURCE_DIR}/tools/fetch_dawn_dependencies.py"
++if(NOT _content MATCHES "--no-shallow")
++  set(_needle [=[            "${PROJECT_SOURCE_DIR}/tools/fetch_dawn_dependencies.py"
+             --directory ${PROJECT_SOURCE_DIR}]=])
+-set(_replacement [=[            "${PROJECT_SOURCE_DIR}/tools/fetch_dawn_dependencies.py"
++  set(_replacement [=[            "${PROJECT_SOURCE_DIR}/tools/fetch_dawn_dependencies.py"
+             --no-shallow
+             --directory ${PROJECT_SOURCE_DIR}]=])
++  string(REPLACE "${_needle}" "${_replacement}" _patched "${_content}")
++  if(_patched STREQUAL _content)
++    string(REPLACE
++      [=["${PROJECT_SOURCE_DIR}/tools/fetch_dawn_dependencies.py"]=]
++      [=["${PROJECT_SOURCE_DIR}/tools/fetch_dawn_dependencies.py"
++            --no-shallow]=]
++      _patched "${_content}")
++  endif()
++  if(_patched STREQUAL _content)
++    message(FATAL_ERROR "Could not patch Dawn dependency fetch command")
++  endif()
++  file(WRITE "${_third_party_cmake}" "${_patched}")
++endif()
+ 
+-string(REPLACE "${_needle}" "${_replacement}" _patched "${_content}")
+-if(_patched STREQUAL _content)
+-  message(FATAL_ERROR "Could not patch Dawn dependency fetch command")
++set(_fetch_py "${DAWN_PATCH_SOURCE_DIR}/tools/fetch_dawn_dependencies.py")
++if(EXISTS "${_fetch_py}")
++  file(READ "${_fetch_py}" _py)
++  if(NOT _py MATCHES "batocera_pocket_sm8250_dawn_fetch_hardened")
++    string(REPLACE
++      "action='store_true',\n                    default=True,"
++      "action='store_true',\n                    default=False,  # batocera_pocket_sm8250_dawn_fetch_hardened"
++      _py2 "${_py}")
++    if(_py2 STREQUAL _py)
++      message(FATAL_ERROR "Could not patch fetch_dawn_dependencies.py shallow default")
++    endif()
++    file(WRITE "${_fetch_py}" "${_py2}")
++    message(STATUS "sm8250: patched fetch_dawn_dependencies.py (shallow default=False)")
++  endif()
++else()
++  message(FATAL_ERROR "Dawn fetch_dawn_dependencies.py missing at ${_fetch_py}")
+ endif()
