@@ -123,7 +123,7 @@ Clean reflash baselines (see *Download & flash*). Per-board GitHub tags so OTA o
 |-----|--------|--------|
 | `v44-sm8750-20260809` | SM8750 (Odin 3) | ✅ Tested |
 | `v44-sm8550-20260811` | SM8550 | ⚠️ Untested |
-| `v44-sm8250-20260810` | SM8250 | ⚠️ Untested |
+| `v44-sm8250-20260811` | SM8250 | ⚠️ Untested |
 
 **Fan control**
 - Fixed the automatic fan **not starting at boot** (it could get stuck at a stale manual PWM). The auto curve now comes up on its own every boot.
