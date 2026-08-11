@@ -122,7 +122,7 @@ Clean reflash baselines (see *Download & flash*). Per-board GitHub tags so OTA o
 | Tag | Board | Status |
 |-----|--------|--------|
 | `v44-sm8750-20260809` | SM8750 (Odin 3) | ✅ Tested |
-| `v44-sm8550-20260809` | SM8550 | ⚠️ Untested |
+| `v44-sm8550-20260811` | SM8550 | ⚠️ Untested |
 | `v44-sm8250-20260810` | SM8250 | ⚠️ Untested |
 
 **Fan control**

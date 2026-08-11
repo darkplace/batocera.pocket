@@ -31,7 +31,7 @@ for dtb in "${BINARIES_DIR}"/*.dtb; do
     fi
 done
 
-CMDLINE="label=BATOCERA rootwait console=ttyMSM0,115200n8 clk_ignore_unused allow_mismatched_32bit_el0 pd_ignore_unused logo.nologo quiet vt.cur_default=1 cgroup_no_v1=all"
+CMDLINE="label=BATOCERA rootwait video=efifb:off console=tty0 console=ttyMSM0,115200n8 irqaffinity=0-1 cgroup.memory=nokmem,nosocket nosoftlockup clk_ignore_unused allow_mismatched_32bit_el0 pd_ignore_unused logo.nologo quiet vt.cur_default=1 cgroup_no_v1=all"
 MKBOOTIMG="${HOST_DIR}/usr/bin/mkbootimg"
 if [ ! -x "${MKBOOTIMG}" ] && [ -x "${HOST_DIR}/usr/bin/mkbootimg.py" ]; then
     MKBOOTIMG="${HOST_DIR}/usr/bin/mkbootimg.py"
