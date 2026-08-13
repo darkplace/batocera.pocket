@@ -28,13 +28,13 @@ This Batocera build **requires** the [ROCKNIX ABL](https://github.com/ROCKNIX/ab
 
 Images are per SoC. Every build ships the full Batocera stack (RetroArch cores, Wine/Proton tooling, etc.); the lists below highlight the headline ports and extras.
 
-> **Testing status** — only the **AYN Odin 3 (SM8750)** is smoke-tested on this tree. The **SM8550** and **SM8250** images are **community / untested**: flash at your own risk and please report back.
+> **Testing status** — **AYN Odin 3 (SM8750)** and **AYN Odin 2 Portal (SM8550)** are smoke-tested via community beta testers. Other SM8550 devices and **SM8250** remain community / limited testing: flash at your own risk and please report back.
 
 ### SM8750 — `batocera-sm8750` &nbsp;·&nbsp; ✅ Smoke-tested
 
-| Device | Status |
-|--------|--------|
-| AYN Odin 3 | ✅ Tested |
+| Device | Status | Beta tester |
+|--------|--------|-------------|
+| AYN Odin 3 | ✅ Tested | **b_bloodcart99x** |
 
 <details>
 <summary><b>Emulators &amp; extras</b></summary>
@@ -54,11 +54,17 @@ Images are per SoC. Every build ships the full Batocera stack (RetroArch cores, 
 **Not included:** Waydroid (disabled on Odin 3 / SM8750)
 </details>
 
-### SM8550 — `batocera-sm8550` &nbsp;·&nbsp; ⚠️ Untested
+### SM8550 — `batocera-sm8550` &nbsp;·&nbsp; ✅ Tested (Odin 2 Portal)
 
-**Devices:** AYN Odin 2 / Mini / Portal · AYN Thor · AYANEO Pocket ACE / DS / DMG / EVO / S2K · Retroid Pocket 6 (+ TOP-DPAD DTB).
+| Device | Status | Beta tester |
+|--------|--------|-------------|
+| AYN Odin 2 Portal | ✅ Tested | **Colt45RPM**, **Jordanius** |
+| AYN Odin 2 / Mini | Community | — |
+| AYN Thor | Community | — |
+| AYANEO Pocket ACE / DS / DMG / EVO / S2K | Community | — |
+| Retroid Pocket 6 (+ TOP-DPAD DTB) | Community | — |
 
-> No SM8550 hardware is available to the maintainer, so this image is **untested**. Deep sleep (S2RAM) is intentionally left off; the board uses the working s2idle path.
+> Deep sleep (S2RAM) is intentionally left off; the board uses the working s2idle path. Official flash baseline: `v44-sm8550-20260813` (toolchain nosve / `sgdisk` SIGILL fix).
 
 <details>
 <summary><b>Emulators &amp; extras</b></summary>
@@ -122,7 +128,7 @@ Clean reflash baselines (see *Download & flash*). Per-board GitHub tags so OTA o
 | Tag | Board | Status |
 |-----|--------|--------|
 | `v44-sm8750-20260809` | SM8750 (Odin 3) | ✅ Tested |
-| `v44-sm8550-20260811` | SM8550 | ⚠️ Untested |
+| `v44-sm8550-20260813` | SM8550 (Odin 2 Portal) | ✅ Tested |
 | `v44-sm8250-20260811` | SM8250 | ⚠️ Untested |
 
 **Fan control**
@@ -195,6 +201,10 @@ Bugs and feedback: **@lukemotion** on Discord (device + image version + logs und
 - Batocera groundwork: [suckbluefrog](https://github.com/suckbluefrog)
 - Upstream: [Batocera.linux](https://batocera.org/)
 - ABL (Bootloader): [ROCKNIX](https://rocknix.org/)
+- **Beta testers**
+  - **Colt45RPM** — SM8550 (AYN Odin 2 Portal)
+  - **Jordanius** — SM8550 (AYN Odin 2 Portal)
+  - **b_bloodcart99x** — SM8750 (AYN Odin 3)
 
 ## License
 
