@@ -5,7 +5,7 @@
 ################################################################################
 # Version: Commits on May 31, 2026
 ES_THEME_CARBON_VERSION = 27e58be2f872866e680d48bedfd008c44ffb001a
-ES_THEME_CARBON_SITE = $(call github,suckbluefrog,es-theme-carbon,$(ES_THEME_CARBON_VERSION))
+ES_THEME_CARBON_SITE = $(call github,darkplace,es-theme-carbon,$(ES_THEME_CARBON_VERSION))
 
 define ES_THEME_CARBON_INSTALL_TARGET_CMDS
 	mkdir -p $(TARGET_DIR)/usr/share/emulationstation/themes/es-theme-carbon

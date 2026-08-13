@@ -5,7 +5,7 @@
 ################################################################################
 
 MELONDS_VERSION = 6ab4118d04a4d1e1b6c47c996fc9a0057b3704cd
-MELONDS_SITE = https://github.com/suckbluefrog/melonDS.git
+MELONDS_SITE = https://github.com/darkplace/melonDS.git
 MELONDS_SITE_METHOD=git
 MELONDS_GIT_SUBMODULES=YES
 MELONDS_LICENSE = GPLv2

@@ -5,7 +5,7 @@
 ################################################################################
 # Last update: Commits on May 21, 2026
 BATOCERA_EMULATIONSTATION_VERSION = 71a7dbe1f03ed0746c0fc5e9d7e8955af08fb8e0
-BATOCERA_EMULATIONSTATION_SITE = https://github.com/suckbluefrog/batocera-emulationstation
+BATOCERA_EMULATIONSTATION_SITE = https://github.com/darkplace/batocera-emulationstation
 BATOCERA_EMULATIONSTATION_SITE_METHOD = git
 BATOCERA_EMULATIONSTATION_LICENSE = MIT
 BATOCERA_EMULATIONSTATION_GIT_SUBMODULES = YES
