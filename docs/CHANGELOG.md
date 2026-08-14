@@ -67,6 +67,34 @@ When you publish a tag, copy the matching section into the Release body.
 
 ---
 
+## `v44-sm8550-20260815` — Odin 2 Portal (OTA)
+
+> First sm8550 **OTA-capable** public cut after the 20260813 flash-only
+> baseline. Includes Screenscraper, Waydroid 1.6.3, and Wi-Fi resilience parity
+> with the sm8750 watchdog. Intended as a single update for Portal testers.
+
+<details>
+<summary><b>Updates</b></summary>
+
+- **OTA payload** (`boot.tar.xz.part01…` + `boot.tar.xz.md5` + `batocera.version`).
+- **Waydroid** 1.6.2 → **1.6.3**.
+- **WiFi (sm8550):** dead-air / IPv4LL recovery, country stamp (no churn), PS-off verify — aligned with sm8750.
+- Version string: `44-dev-pocket-rc1-f065cf6fca 2026/08/14 21:55`.
+
+</details>
+
+<details>
+<summary><b>Fixes</b></summary>
+
+- Fixed Screenscraper support.
+- **AetherSX2 / configgen:** `get_str(...)` for PS2 options.
+- **RPCS3 / configgen:** `RPCS3_PATCH_YML` / patch.yml path.
+- WiFi “connected but no Internet” zombie recovery improvements.
+
+</details>
+
+---
+
 ## `v44-sm8550-20260813` — Odin 2 Portal (baseline)
 
 <details>
