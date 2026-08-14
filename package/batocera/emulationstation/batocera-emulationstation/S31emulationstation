@@ -59,6 +59,11 @@ case "$1" in
 
 	suspend)
 		echo "Suspending EmulationStation process only..."
+		# Already waiting on the resume fifo: do not stamp a new flag or the
+		# next ES exit will block on the splash screen again.
+		if ! pidof emulationstation >/dev/null; then
+			exit 0
+		fi
 		# Create the suspend flag file before telling ES to quit.
 		touch "${SUSPEND_FLAG}"
 		# Now, tell the running ES process to quit gracefully.
@@ -67,6 +72,9 @@ case "$1" in
 
 	resume)
 		echo "Resuming EmulationStation process..."
+		# Drop a stale suspend flag so the standalone loop does not wait
+		# on the fifo again after the next ES exit.
+		rm -f "${SUSPEND_FLAG}"
 		# Write to the pipe to unblock the waiting 'read' command in the launcher script.
 		if [ -p "${FIFO_PATH}" ]; then
 			echo "resume" > "${FIFO_PATH}"

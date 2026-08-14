@@ -1,0 +1,57 @@
+#!/usr/bin/env python3
+"""Launch emulatorlauncher as a Steam non-Steam Batocera ROM child.
+
+Steam's session already runs under gamescope and exports
+BATOCERA_STEAM_USE_GAMESCOPE=1. Configgen would otherwise nest a second
+gamescope around the emulator, which steals focus and can crash GamepadUI on
+exit. This wrapper keeps Steam's gamescope and runs the emulator as a normal
+child window.
+"""
+
+from __future__ import annotations
+
+import os
+import sys
+from pathlib import Path
+
+EMULATORLAUNCHER = os.environ.get(
+    "BATOCERA_STEAM_SYNC_EMULATORLAUNCHER",
+    "/usr/bin/emulatorlauncher",
+)
+PULSE_ALSA_MODULE = Path("/usr/lib/alsa-lib/libasound_module_pcm_pulse.so")
+
+
+def main() -> int:
+    if len(sys.argv) < 2:
+        print(
+            "usage: batocera-steam-emu-launch -system SYSTEM -rom ROM [emulatorlauncher args...]",
+            file=sys.stderr,
+        )
+        return 2
+
+    command = [EMULATORLAUNCHER, *sys.argv[1:]]
+    environment = os.environ.copy()
+    environment.pop("LD_LIBRARY_PATH", None)
+    environment.pop("LD_PRELOAD", None)
+    environment.pop("SDL_AUDIODRIVER", None)
+    if os.uname().machine in {"aarch64", "arm64"} and PULSE_ALSA_MODULE.exists():
+        environment.setdefault("AUDIODEV", "pulse")
+
+    environment["BATOCERA_LAUNCH_SOURCE"] = "steam"
+    environment["BATOCERA_SKIP_GAMESCOPE"] = "1"
+    environment["BATOCERA_STEAM_USE_GAMESCOPE"] = "0"
+
+    try:
+        os.setsid()
+    except OSError:
+        try:
+            os.setpgid(0, 0)
+        except OSError as exc:
+            print(f"Unable to isolate Steam emulator launch: {exc}", file=sys.stderr)
+
+    os.execvpe(command[0], command, environment)
+    return 127
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

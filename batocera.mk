@@ -6,8 +6,7 @@
 #   make sm8250-build
 # (see docs/BUILD.md for DIRECT_BUILD= PARALLEL_BUILD= BATCH_MODE=1 flags)
 #
-# Arch DIRECT_BUILD is emergency-only for sm8750; tree lives at
-# output/sm8750-arch-backup (see docs/BUILD.md and ./build-arch-persistent.sh).
+# Docker-only. Arch DIRECT_BUILD / sm8750-arch-backup is retired.
 #
 # Do NOT set DIRECT_BUILD here.
 # Do NOT force PARALLEL_BUILD here — it breaks virtual provides

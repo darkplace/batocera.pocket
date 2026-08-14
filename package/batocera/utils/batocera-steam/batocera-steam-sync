@@ -335,7 +335,8 @@ def game_entry(game: dict[str, Any]) -> dict[str, Any]:
         "LaunchOptions": managed_id,
         "IsHidden": 0,
         "AllowDesktopConfig": 1,
-        "AllowOverlay": 1,
+        # Overlay on nested Batocera emulators often steals focus from GamepadUI.
+        "AllowOverlay": 0,
         "OpenVR": 0,
         "Devkit": 0,
         "DevkitGameID": "",

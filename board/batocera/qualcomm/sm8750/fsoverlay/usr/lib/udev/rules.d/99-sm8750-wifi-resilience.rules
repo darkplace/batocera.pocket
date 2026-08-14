@@ -1,7 +1,6 @@
-# Keep WCN7860 out of Wi-Fi power save; it helps avoid idle disconnects.
+# Keep WCN7860 out of Wi-Fi power save on iface create.
+# Do not run on ACTION==change: that re-enters iw/rfkill on every net
+# event (DHCP, flags) and can knock ath12k into IPv4LL.
 ACTION=="add", SUBSYSTEM=="net", KERNEL=="wlan*", RUN+="/usr/bin/sm8750-wifi-resilience %k"
-ACTION=="change", SUBSYSTEM=="net", KERNEL=="wlan*", RUN+="/usr/bin/sm8750-wifi-resilience %k"
 ACTION=="add", SUBSYSTEM=="net", KERNEL=="wlp*", RUN+="/usr/bin/sm8750-wifi-resilience %k"
-ACTION=="change", SUBSYSTEM=="net", KERNEL=="wlp*", RUN+="/usr/bin/sm8750-wifi-resilience %k"
 ACTION=="add", SUBSYSTEM=="net", KERNEL=="wlx*", RUN+="/usr/bin/sm8750-wifi-resilience %k"
-ACTION=="change", SUBSYSTEM=="net", KERNEL=="wlx*", RUN+="/usr/bin/sm8750-wifi-resilience %k"

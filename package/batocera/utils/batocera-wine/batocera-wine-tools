@@ -11,6 +11,9 @@ KRON4EK_RELEASES_URL="https://api.github.com/repos/Kron4ek/Wine-Builds/releases?
 WINE_GE_RELEASES_URL="https://api.github.com/repos/GloriousEggroll/wine-ge-custom/releases?per_page=100"
 PROTON_GE_RELEASES_URL="https://api.github.com/repos/GloriousEggroll/proton-ge-custom/releases?per_page=100"
 CACHYOS_PROTON_RELEASES_URL="https://api.github.com/repos/CachyOS/proton-cachyos/releases?per_page=100"
+# Keep in sync with BATOCERA_STEAM_PROTON_CACHYOS_DEFAULT_VERSION in batocera-steam-aarch64.
+CACHYOS_PROTON_DEFAULT_VERSION="${CACHYOS_PROTON_DEFAULT_VERSION:-11.0-20260703-slr}"
+CACHYOS_PROTON_SAMPLE_URL="${CACHYOS_PROTON_SAMPLE_URL:-https://github.com/CachyOS/proton-cachyos/releases/download/cachyos-${CACHYOS_PROTON_DEFAULT_VERSION}/proton-cachyos-${CACHYOS_PROTON_DEFAULT_VERSION}-arm64.tar.xz}"
 GE_PROTON_SAMPLE_URL="https://github.com/GloriousEggroll/proton-ge-custom/releases/download/GE-Proton10-34/GE-Proton10-34.tar.gz"
 FREE_WINDOWS_GAMES_BASE_URL="https://raw.githubusercontent.com/foclabroc/toolbox/refs/heads/main/windows"
 STEAM_PROTON_CACHYOS_CONFIG="/userdata/system/configs/steam/proton-cachyos.conf"
@@ -1022,9 +1025,13 @@ steam_proton_cachyos_menu() {
          | {
              label: ("Proton build for Steam: CachyOS ARM64 " + (.name | ltrimstr("proton-cachyos-") | rtrimstr("-arm64.tar.xz")) + " [" + $r.tag_name + "]"),
              archive: .name,
-             url: .browser_download_url
+             url: .browser_download_url,
+             published_at: $r.published_at
            }
-        ]') || {
+        ]
+        | sort_by(.published_at) | reverse
+        | map(del(.published_at))
+    ') || {
         msg_box "Failed to parse Steam Proton-CachyOS releases."
         return 1
     }

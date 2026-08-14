@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
-# Sequential release builds for batocera.pocket Qualcomm targets.
-# Default method matches the working Odin 3 path: Arch DIRECT_BUILD + PARALLEL_BUILD.
+# Sequential release builds for batocera.pocket Qualcomm targets (Docker-only).
 #
 # Usage:
 #   ./scripts/dev/build-release-queue.sh
 #   TARGETS="sm8750" ./scripts/dev/build-release-queue.sh
-#   DIRECT_BUILD= TARGETS="sm8550" ./scripts/dev/build-release-queue.sh   # Docker only on clean trees
+#   TARGETS="sm8550 sm8250" ./scripts/dev/build-release-queue.sh
 
 set -uo pipefail
 
@@ -17,11 +16,11 @@ LOG_DIR="${PROJECT_DIR}/output/release-build-logs"
 mkdir -p "$LOG_DIR"
 MASTER_LOG="${LOG_DIR}/queue-$(date -u +%Y%m%dT%H%M%SZ).log"
 
-# Match build-arch-persistent.sh / working Odin builds
-DIRECT_BUILD="${DIRECT_BUILD-y}"
-PARALLEL_BUILD="${PARALLEL_BUILD-y}"
-MAKE_JLEVEL="${MAKE_JLEVEL:-20}"
-MAKE_LLEVEL="${MAKE_LLEVEL:-20}"
+# Docker-only (empty DIRECT_BUILD / PARALLEL_BUILD). Override only for experiments.
+DIRECT_BUILD="${DIRECT_BUILD-}"
+PARALLEL_BUILD="${PARALLEL_BUILD-}"
+MAKE_JLEVEL="${MAKE_JLEVEL:-12}"
+MAKE_LLEVEL="${MAKE_LLEVEL:-12}"
 export CMAKE_POLICY_VERSION_MINIMUM="${CMAKE_POLICY_VERSION_MINIMUM:-3.5}"
 # Shrink env so target-finalize does not hit ARG_MAX under Cursor
 export PATH="/usr/bin:/bin:/usr/sbin:/sbin"
@@ -31,9 +30,9 @@ log() { echo "[$(date '+%F %T')] $*" | tee -a "$MASTER_LOG"; }
 log "=== batocera.pocket release build queue ==="
 log "Targets: $TARGETS"
 if [ -n "$DIRECT_BUILD" ]; then
-    log "Method: DIRECT_BUILD=y PARALLEL_BUILD=${PARALLEL_BUILD:-n}"
+    log "Method: DIRECT_BUILD=y PARALLEL_BUILD=${PARALLEL_BUILD:-n} (non-canonical)"
 else
-    log "Method: Docker (only safe on trees whose host/ was built in Docker)"
+    log "Method: Docker (canonical)"
 fi
 log "MAKE_JLEVEL=$MAKE_JLEVEL"
 log "Commit: $(git rev-parse --short HEAD) — $(git log -1 --pretty=%s)"

@@ -16,6 +16,21 @@ BATOCERA_BINARIES_DIR=$6
 
 mkdir -p "${BATOCERA_BINARIES_DIR}/boot/boot" || exit 1
 
+# Static note on the FAT "BATOCERA" volume (sm8250 diag image).
+cat > "${BATOCERA_BINARIES_DIR}/boot/READ_ME_DIAG.txt" <<'EOF'
+batocera.pocket SM8250 — display diagnostic image
+
+After ONE boot (even if the screen stays black), power off and reopen this
+BATOCERA drive. Look for these files at the ROOT of this volume:
+
+  BATOCERA-DIAG.txt   — DRM / dmesg / init dump (send this)
+  DIAG-RAN.txt        — tiny stamp proving the diag script ran
+  RESIZE-ERROR.log    — present only if first-boot resize failed
+
+If NONE of those appear but you DO see this READ_ME_DIAG.txt, the device
+never reached userspace far enough to write — tell @lukemotion that.
+EOF
+
 echo "*** Copying the Batocera base system files ***"
 cp "${BINARIES_DIR}/rootfs.squashfs" "${BATOCERA_BINARIES_DIR}/boot/boot/batocera.update" || exit 1
 cp "${BINARIES_DIR}/rufomaculata"    "${BATOCERA_BINARIES_DIR}/boot/boot/rufomaculata.update" || exit 1
@@ -31,7 +46,7 @@ for dtb in "${BINARIES_DIR}"/*.dtb; do
     fi
 done
 
-CMDLINE="label=BATOCERA rootwait video=efifb:off console=tty0 console=ttyMSM0,115200n8 irqaffinity=0-1 cgroup.memory=nokmem,nosocket nosoftlockup clk_ignore_unused allow_mismatched_32bit_el0 pd_ignore_unused logo.nologo quiet vt.cur_default=1 cgroup_no_v1=all"
+CMDLINE="label=BATOCERA rootwait console=ttyMSM0,115200n8 clk_ignore_unused allow_mismatched_32bit_el0 pd_ignore_unused logo.nologo quiet vt.cur_default=1 cgroup_no_v1=all"
 MKBOOTIMG="${HOST_DIR}/usr/bin/mkbootimg"
 if [ ! -x "${MKBOOTIMG}" ] && [ -x "${HOST_DIR}/usr/bin/mkbootimg.py" ]; then
     MKBOOTIMG="${HOST_DIR}/usr/bin/mkbootimg.py"

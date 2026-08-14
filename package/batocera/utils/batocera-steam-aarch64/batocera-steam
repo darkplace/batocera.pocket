@@ -19,6 +19,9 @@ export PROTON11_ARM64_DIR_NAME="Proton 11.0 (ARM64)"
 export PROTON11_ARM64_INSTALL_URI="steam://install/${PROTON11_ARM64_APPID}"
 export BATOCERA_STEAM_PROTON_CACHYOS_CONFIG="${BATOCERA_STEAM_PROTON_CACHYOS_CONFIG:-/userdata/system/configs/steam/proton-cachyos.conf}"
 export BATOCERA_STEAM_PROTON_GE_CONFIG="${BATOCERA_STEAM_PROTON_GE_CONFIG:-/userdata/system/configs/steam/proton-ge.conf}"
+# Default Steam Proton-CachyOS ARM64 tip (override via proton-cachyos.conf / wine-tools).
+# Bump when CachyOS publishes a newer *-arm64.tar.xz on https://github.com/CachyOS/proton-cachyos/releases
+export BATOCERA_STEAM_PROTON_CACHYOS_DEFAULT_VERSION="${BATOCERA_STEAM_PROTON_CACHYOS_DEFAULT_VERSION:-11.0-20260703-slr}"
 
 load_proton_cachyos_config() {
     local key
@@ -101,7 +104,7 @@ load_proton_ge_config() {
 load_proton_cachyos_config
 load_proton_ge_config
 
-export PROTON_CACHYOS_VERSION_FULL="${BATOCERA_STEAM_PROTON_CACHYOS_VERSION:-11.0-20260702-slr}"
+export PROTON_CACHYOS_VERSION_FULL="${BATOCERA_STEAM_PROTON_CACHYOS_VERSION:-${BATOCERA_STEAM_PROTON_CACHYOS_DEFAULT_VERSION}}"
 export PROTON_CACHYOS_TAR="proton-cachyos-${PROTON_CACHYOS_VERSION_FULL}-arm64.tar.xz"
 export PROTON_CACHYOS_DIR="proton-cachyos-${PROTON_CACHYOS_VERSION_FULL}-arm64"
 export PROTON_CACHYOS_URL="${BATOCERA_STEAM_PROTON_CACHYOS_URL:-https://github.com/CachyOS/proton-cachyos/releases/download/cachyos-${PROTON_CACHYOS_VERSION_FULL}/${PROTON_CACHYOS_TAR}}"

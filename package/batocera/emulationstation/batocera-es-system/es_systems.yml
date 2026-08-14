@@ -2254,13 +2254,14 @@ ps3:
   manufacturer: Sony
   release: 2006
   hardware: console
-  extensions: [ps3, psn, squashfs]
+  extensions: [ps3, psn, squashfs, iso]
   emulators:
     rpcs3:
       rpcs3: { requireAnyOf: [BR2_PACKAGE_RPCS3] }
   comment_en: |
     You must first load the firmware by running rpcs3-config from menu>f1>Applications then File>Install firmware.
     PS3 roms are directories must be renamed to end with .ps3.
+    Disc images ending in .iso are also accepted (RPCS3).
     PSN digital games are installed in rpcs3-config, create a text file ending with .psn that contains the game's ID.
     First time you load a game, it takes time (a progress bar is visible). It doesn't happen next times.
     Batocera includes an initial RPCS3 game profile database for the "RPCS3 Database (Game Profile)" advanced options.
@@ -3155,8 +3156,11 @@ heroic:
       regular: { requireAnyOf: [BR2_PACKAGE_HEROIC] }
       console: { requireAnyOf: [BR2_PACKAGE_HEROIC] }
   comment_en: |
-          Launch Heroic shortcuts.
-          Run batocera-heroic-update to generate launchers from installed .desktop entries.
+          Launch Heroic (Epic / GOG / Amazon) and per-game shortcuts.
+          Install games in Heroic, then run batocera-heroic-update (also runs when ES refreshes gamelists).
+  comment_es: |
+          Lanza Heroic (Epic / GOG / Amazon) y los atajos de cada juego.
+          Instala en Heroic y ejecuta batocera-heroic-update (también al refrescar gamelists).
   comment_br: |
           Inicie atalhos do Heroic.
           Execute batocera-heroic-update para gerar lançadores a partir dos arquivos .desktop instalados.
@@ -3174,8 +3178,11 @@ lutris:
       regular: { requireAnyOf: [BR2_PACKAGE_LUTRIS, BR2_PACKAGE_LUTRIS_APPIMAGE] }
       console: { requireAnyOf: [BR2_PACKAGE_LUTRISVIEW] }
   comment_en: |
-          Launch Lutris shortcuts.
-          Run batocera-lutris-update to generate launchers from installed .desktop entries.
+          Launch Lutris and per-game shortcuts.
+          Install games in Lutris, then run batocera-lutris-update (also runs when ES refreshes gamelists).
+  comment_es: |
+          Lanza Lutris y los atajos de cada juego.
+          Instala en Lutris y ejecuta batocera-lutris-update (también al refrescar gamelists).
   comment_br: |
           Inicie atalhos do Lutris.
           Execute batocera-lutris-update para gerar lançadores a partir dos arquivos .desktop instalados.

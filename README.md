@@ -123,53 +123,100 @@ In-device footage ([@lukemotionYT](https://www.youtube.com/@lukemotionYT)) — p
 
 ## What's new — August 2026
 
-Clean reflash baselines (see *Download & flash*). Per-board GitHub tags so OTA only matches the device SoC:
+Per-board GitHub tags so OTA only matches the device SoC. Full history with collapsible **Updates** / **Fixes**: [docs/CHANGELOG.md](docs/CHANGELOG.md).
 
 | Tag | Board | Status |
 |-----|--------|--------|
-| `v44-sm8750-20260809` | SM8750 (Odin 3) | ✅ Tested |
+| `v44-sm8750-20260814` | SM8750 (Odin 3) | ✅ Tested — **OTA + flash** |
 | `v44-sm8550-20260813` | SM8550 (Odin 2 Portal) | ✅ Tested |
 | `v44-sm8250-20260811` | SM8250 | ⚠️ Untested |
+| `v44-sm8750-20260809` | SM8750 (Odin 3) | Flash baseline (superseded for OTA) |
 
-**Fan control**
-- Fixed the automatic fan **not starting at boot** (it could get stuck at a stale manual PWM). The auto curve now comes up on its own every boot.
-- New selectable **fan modes** in the Batocera Control Deck (**Home + A → Fan Mode**): **Silent**, **Auto**, **Aggressive**, **Off**.
-- Fan mode / speed now **persists across reboots**.
-- Gentler default curve: quiet under normal emulation, ramps hard only near the thermal ceiling.
+### Since `v44-sm8750-20260809` (Odin 3) — `v44-sm8750-20260814`
 
-**Performance / thermals**
-- Default CPU governor is now **`ondemand`** on Qualcomm boards (scales down properly at idle → lower idle temps and heat). The *Balanced* power profile respects this instead of forcing `schedutil`.
+<details>
+<summary><b>Updates</b></summary>
 
-**Updates (OTA)**
-- Fixed the updater offering an **older** build as an "update" (no more false *update available* popup for a build you already surpass).
-- Per-board release tags (`v44-<soc>-YYYYMMDD`) — devices only see updates for their SoC.
-- Per-board release resolution hardened (fixes an issue that could blind the device to updates).
+- **In-device OTA** for SM8750 (`boot.tar.xz` parts on the Release) — use **Updates** in EmulationStation after this build (or flash once from the ZIP set).
+- **WiFi resilience** on Odin 3 (dead-air / no IPv4 / weak-signal recovery).
+- **Docs pack:** ROMs, controls/FAQ, changelog — see [Docs](#docs) below.
+- **Configure Heroic / Lutris** helpers under Apps & Tools.
+- Fan init ordering (`S12qcom-fan`).
 
-**Desktop / apps**
-- **UI scaling** for the Apps/Tools configuration windows and the Arch/Ubuntu Plasma LXC desktops, so they're usable with mouse/touch on the handheld screen (sharp 1080p framebuffer, scaled UI).
+</details>
 
-**Wine**
-- `wine` / `wine64` runner normalization + WoW64 fallback for modern unified Wine builds.
+<details>
+<summary><b>Fixes</b></summary>
 
-**Input**
-- More robust **Force quit** (`L1 + R1 + Select + Start`) — cleanly tears down emulators, including Wine.
+- WiFi “connected but no Internet” zombie on Odin 3.
+- **AetherSX2:** configgen crash (`option values must be strings` → `get_str`).
+- **RPCS3:** configgen patch path (`RPCS3_PATCH_YML` / `patch.yml`).
+- Brightness **Back** after Steam / force-kill; charge-limit helper hardening.
+
+</details>
+
+<details>
+<summary><b>Earlier August baselines (all boards)</b></summary>
+
+- **Fan modes** in Control Deck (**Home + A → Fan Mode**): Silent, Auto, Aggressive, Off — persist across reboots.
+- Default CPU governor **`ondemand`** on Qualcomm boards.
+- **OTA** per-board tags (`v44-<soc>-YYYYMMDD`).
+- **UI scaling** for Apps/Tools and Arch/Ubuntu Plasma LXC.
+- Wine / `wine64` runner normalization + WoW64 fallback.
+- Fan auto at boot; updater false-positives; force quit (`L1 + R1 + Select + Start`).
+
+</details>
 
 ---
+
 ## First launch & hotkeys
 
 The first start of **Steam** and of the **Arch / Ubuntu Plasma LXC** containers can take a while (downloads, rootfs setup, first boot). That is normal — let them finish.
 
 **Container Initialization:** When first time running containers, switch to keyboard mode and press the `Enter` key repeatedly to progress through initialization.
 
+**Home** = physical Guide/Mode button (`hotkey`, SDL id 9). Same mapping on **Odin 2** and **Odin 3** (GUID `03000000202000000130000001000000`).
+
 | Combo | Action |
 |-------|--------|
-| **Home + A** | Batocera menu (utilities) |
-| **Home + B** | Emulator / Steam options menu (Decky and related tools) |
-| **Home + Touch** | Toggle on-screen keyboard |
-| **Home + Select + Start** | Toggle built-in mouse |
-| **L1 + R1 + Select + Start** | Force quit and return to Batocera |
+| **Home + A** | Batocera Control Center / Control Deck |
+| **Home + B** | Emulator / options menu |
+| **Home + Start** | Exit emulator (clean) |
+| **Home + Y** | Save state |
+| **Home + X** | Load state |
+| **Home + ↑ / ↓** | Previous / next save slot |
+| **Home + ← / →** | Rewind / fast-forward (if supported) |
+| **Home + L1** | Screenshot |
+| **Home + Touch** | On-screen keyboard (hold Home, tap screen) |
+| **Home + Start + Select** | Toggle mouse mode (`hotkeygen`) |
+| **R1 + Select + Start** | Toggle mouse mode (evmapy) |
+| **L1 + Select + Start** | Force quit → Batocera |
+| **L1 + R1 + Select + Start** | Force quit (same; harder by accident) |
+| **Back** (Odin) | Brightness cycle in ES; Steam chord inside Steam |
 
-**Home** can be remapped; it uses Batocera’s standard hotkey mapping.
+### Mini FAQ (start here)
+
+| Question | Doc |
+|----------|-----|
+| How do I flash / first boot? | [docs/INSTALL.md](docs/INSTALL.md) |
+| Where do ROMs / Windows / Steam / Heroic / Lutris go? | [docs/ADDING_ROMS.md](docs/ADDING_ROMS.md) |
+| Hotkeys, brightness after Steam, GameCube folder, WiFi dead-air… | [docs/CONTROLS_AND_FAQ.md](docs/CONTROLS_AND_FAQ.md) |
+| How do in-device Updates (OTA) work? | [docs/UPDATES.md](docs/UPDATES.md) |
+| What changed in each release? | [docs/CHANGELOG.md](docs/CHANGELOG.md) |
+| Build from source? | [docs/BUILD.md](docs/BUILD.md) |
+
+---
+
+## Docs
+
+| Doc | Content |
+|-----|---------|
+| [docs/INSTALL.md](docs/INSTALL.md) | Flash / first boot |
+| [docs/ADDING_ROMS.md](docs/ADDING_ROMS.md) | ROM paths (consoles + PC platforms) |
+| [docs/CONTROLS_AND_FAQ.md](docs/CONTROLS_AND_FAQ.md) | Odin mappings + FAQ |
+| [docs/UPDATES.md](docs/UPDATES.md) | OTA from GitHub Releases |
+| [docs/CHANGELOG.md](docs/CHANGELOG.md) | Per-release Updates / Fixes (collapsible) |
+| [docs/BUILD.md](docs/BUILD.md) | Building from source |
 
 ---
 
@@ -182,17 +229,16 @@ The first start of **Steam** and of the **Arch / Ubuntu Plasma LXC** containers 
 ## Download & flash
 
 1. Open [Releases](https://github.com/darkplace/batocera.pocket/releases) and pick the tag for **your SoC** (`v44-sm8750-…`, `v44-sm8550-…`, or `v44-sm8250-…`). Do not install another board’s image.
-2. Download every volume for that release (`.zip` + `.z01`, `.z02`, …). Keep them in the same folder; do not rename.
-3. Extract the `.zip` with 7-Zip or WinZip → one `.img.gz`.
-4. Write that `.img.gz` to a microSD with balenaEtcher, Rufus, or Raspberry Pi Imager.
+2. **Fresh install (Windows):** download every volume (`.zip` + `.z01`, `.z02`, …). Keep them in the same folder; do not rename. Extract the `.zip` with 7-Zip or WinZip → one `.img.gz`. Write that `.img.gz` to a microSD with balenaEtcher, Rufus, or Raspberry Pi Imager.
+3. **In-device OTA (already on batocera.pocket):** EmulationStation → Updates. Releases that ship OTA include `batocera.version`, `boot.tar.xz.md5`, and `boot.tar.xz.part01…` (see [docs/UPDATES.md](docs/UPDATES.md)). A device only sees tags for its SoC.
 
-Boot from the card on the device (same flow as other Batocera Qualcomm builds). Later OTAs use the same per-board tags — a device only sees updates for its SoC.
+Boot from the card on the device (same flow as other Batocera Qualcomm builds).
 
 ---
 
 ## Support
 
-Bugs and feedback: **@lukemotion** on Discord (device + image version + logs under `/userdata/system/logs/` help a lot).
+Bugs and feedback: **@lukemotion** on Discord (device + image version + logs under `/userdata/system/logs/` help a lot). Check [docs/CONTROLS_AND_FAQ.md](docs/CONTROLS_AND_FAQ.md) before opening a duplicate issue.
 
 ---
 

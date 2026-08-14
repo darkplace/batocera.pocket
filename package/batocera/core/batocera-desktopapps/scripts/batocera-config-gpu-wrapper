@@ -7,6 +7,12 @@ if [ "$#" -eq 0 ]; then
     exit 1
 fi
 
+# Enlarge Qt/GTK chrome on handhelds while keeping native 1080p output.
+if command -v batocera-ui-scale >/dev/null 2>&1; then
+    # shellcheck disable=SC2046
+    eval "$(batocera-ui-scale env)"
+fi
+
 GPU_PROFILE_STATE=""
 
 restore_gpu_profile() {

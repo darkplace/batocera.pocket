@@ -288,7 +288,10 @@ def send_keys(target: evdev.UInput, keys: int | list[int] | str, begin: bool) ->
         n = 0
 
     if isinstance(keys, list):
-        for x in keys:
+        # Release modifiers last (reverse press order) so chords like Ctrl+1/2
+        # actually complete for gamescope --steam / Steam GamepadUI QAM.
+        ordered = keys if begin else list(reversed(keys))
+        for x in ordered:
             if gdebug:
                print(f"sending EV_KEY {x} {n}")
             target.write(ecodes.EV_KEY, x, n)

@@ -11,7 +11,7 @@ XAPP_MKFONTSCALE_LICENSE = MIT
 XAPP_MKFONTSCALE_LICENSE_FILES = COPYING
 XAPP_MKFONTSCALE_DEPENDENCIES = zlib freetype xlib_libfontenc xorgproto
 HOST_XAPP_MKFONTSCALE_DEPENDENCIES = \
-	host-zlib host-freetype host-xlib_libfontenc host-xorgproto
+	host-zlib host-freetype host-xlib_libfontenc host-xorgproto host-pkgconf
 
 $(eval $(autotools-package))
 $(eval $(host-autotools-package))

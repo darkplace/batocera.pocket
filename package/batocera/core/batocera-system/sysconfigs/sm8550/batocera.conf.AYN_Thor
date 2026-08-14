@@ -34,3 +34,9 @@ global.hud_custom=position=bottom-left\nbackground_alpha=0.9\nlegacy_layout=fals
 # default suspend on handled boards
 system.suspendmode=suspend
 system.lidaction=suspend
+
+# CPU scaling governor. Mainline schedutil keeps the mid cluster pinned near max
+# at idle on this SoC (Android's WALT/Perf-HAL tuning is not ported), wasting
+# power and heat. ondemand scales down properly at idle and pairs with the quiet
+# auto fan curve. Users can still override to performance/schedutil in the menu.
+system.cpu.governor=ondemand

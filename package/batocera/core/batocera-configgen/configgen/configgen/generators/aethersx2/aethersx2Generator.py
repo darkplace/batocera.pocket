@@ -107,36 +107,36 @@ class AetherSX2Generator(Generator):
         ini.set("UI", "DoubleClickTogglesFullscreen", "false")
 
         ini.set("EmuCore/GS", "Renderer",
-                system.config.get("aethersx2_renderer", "-1"))
+                system.config.get_str("aethersx2_renderer", "-1"))
         ini.set("EmuCore/GS", "upscale_multiplier",
-                system.config.get("aethersx2_resolution", "1"))
+                system.config.get_str("aethersx2_resolution", "1"))
         ini.set("EmuCore/GS", "MaxAnisotropy",
-                system.config.get("aethersx2_anisotropic", "0"))
+                system.config.get_str("aethersx2_anisotropic", "0"))
         ini.set("EmuCore/GS", "fxaa",
                 system.config.get_bool("aethersx2_fxaa",
                                        return_values=("true", "false")))
         ini.set("EmuCore/GS", "mipmap_hw",
-                system.config.get("aethersx2_mipmapping", "-1"))
+                system.config.get_str("aethersx2_mipmapping", "-1"))
         ini.set("EmuCore/GS", "TriFilter",
-                system.config.get("aethersx2_trilinear_filtering", "-1"))
+                system.config.get_str("aethersx2_trilinear_filtering", "-1"))
         ini.set("EmuCore/GS", "texture_preloading",
-                system.config.get("aethersx2_texture_preload", "2"))
+                system.config.get_str("aethersx2_texture_preload", "2"))
         ini.set("EmuCore/GS", "accurate_blending_unit",
-                system.config.get("aethersx2_blending", "1"))
+                system.config.get_str("aethersx2_blending", "1"))
         ini.set("EmuCore/GS", "AspectRatio",
-                system.config.get("aethersx2_aspect_ratio", "4:3"))
+                system.config.get_str("aethersx2_aspect_ratio", "4:3"))
         ini.set("EmuCore/GS", "FMVAspectRatioSwitch",
-                system.config.get("aethersx2_fmv_ratio", "off"))
+                system.config.get_str("aethersx2_fmv_ratio", "off"))
         ini.set("EmuCore/GS", "filter",
-                system.config.get("aethersx2_bilinear", "2"))
+                system.config.get_str("aethersx2_bilinear", "2"))
         ini.set("EmuCore/GS", "linear_present_mode",
-                system.config.get("aethersx2_bilinear_filtering", "1"))
+                system.config.get_str("aethersx2_bilinear_filtering", "1"))
         ini.set("EmuCore/GS", "VsyncEnable",
-                system.config.get("aethersx2_vsync", "0"))
+                system.config.get_str("aethersx2_vsync", "0"))
         ini.set("EmuCore/GS", "deinterlace_mode",
-                system.config.get("aethersx2_deinterlace", "0"))
+                system.config.get_str("aethersx2_deinterlace", "0"))
         ini.set("EmuCore/GS", "dithering_ps2",
-                system.config.get("aethersx2_dithering", "2"))
+                system.config.get_str("aethersx2_dithering", "2"))
         ini.set("EmuCore/GS", "IntegerScaling",
                 system.config.get_bool("aethersx2_integer_scaling",
                                        return_values=("true", "false")))
@@ -150,19 +150,19 @@ class AetherSX2Generator(Generator):
                 system.config.get_bool("aethersx2_osd_messages", True,
                                        return_values=("true", "false")))
         ini.set("EmuCore/GS", "OsdMessagesPos",
-                system.config.get("aethersx2_osd_messages_position", "2"))
+                system.config.get_str("aethersx2_osd_messages_position", "2"))
         ini.set("EmuCore/GS", "OsdPerformancePos",
-                system.config.get("aethersx2_osd_performance_position", "0"))
+                system.config.get_str("aethersx2_osd_performance_position", "0"))
         ini.set("EmuCore/GS", "OsdShowFPS",
                 system.config.get_bool("aethersx2_show_fps",
                                        return_values=("true", "false")))
         ini.set("EmuCore/GS", "HWDownloadMode",
-                system.config.get("aethersx2_hw_download", "0"))
+                system.config.get_str("aethersx2_hw_download", "0"))
 
         ini.set("EmuCore/Speedhacks", "EECycleRate",
-                system.config.get("aethersx2_ee_cycle_rate", "0"))
+                system.config.get_str("aethersx2_ee_cycle_rate", "0"))
         ini.set("EmuCore/Speedhacks", "EECycleSkip",
-                system.config.get("aethersx2_ee_cycle_skip", "0"))
+                system.config.get_str("aethersx2_ee_cycle_skip", "0"))
         ini.set("EmuCore/Speedhacks", "vuThread",
                 system.config.get_bool("aethersx2_mtvu", True,
                                        return_values=("true", "false")))
@@ -196,9 +196,9 @@ class AetherSX2Generator(Generator):
                                        return_values=("true", "false")))
 
         ini.set("SPU2/Mixing", "Interpolation",
-                system.config.get("aethersx2_audio_interpolation", "5"))
+                system.config.get_str("aethersx2_audio_interpolation", "5"))
         ini.set("SPU2/Output", "Latency",
-                system.config.get("aethersx2_audio_latency", "100"))
+                system.config.get_str("aethersx2_audio_latency", "100"))
 
         ini.set("Achievements", "Enabled", "false")
         ini.set("Achievements", "Notifications", "true")
@@ -206,9 +206,9 @@ class AetherSX2Generator(Generator):
         if system.config.get_bool("retroachievements"):
             ini.set("Achievements", "Enabled", "true")
             ini.set("Achievements", "Username",
-                    system.config.get("retroachievements.username", ""))
+                    system.config.get_str("retroachievements.username", ""))
             ini.set("Achievements", "Token",
-                    system.config.get("retroachievements.token", ""))
+                    system.config.get_str("retroachievements.token", ""))
             ini.set("Achievements", "LoginTimestamp", str(int(time.time())))
             ini.set("Achievements", "ChallengeMode",
                     system.config.get_bool("retroachievements.hardcore",
@@ -307,7 +307,7 @@ class AetherSX2Generator(Generator):
 
         multitap = 2
         joystick_count = len(controllers)
-        multitap_config = system.config.get("aethersx2_multitap")
+        multitap_config = system.config.get_str("aethersx2_multitap")
         if multitap_config == "4":
             if joystick_count > 2:
                 ini.set("Pad", "MultitapPort1", "true")

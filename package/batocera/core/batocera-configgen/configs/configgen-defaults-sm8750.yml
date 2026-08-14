@@ -4,6 +4,10 @@ default:
     gpu_performance_profile: highperformance
     opengl_driver: native
 
+ps4:
+  options:
+    shadps4_resolution: 1280x720
+
 odcommander:
   options:
     gpu_performance_profile: highperformance

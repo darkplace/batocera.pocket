@@ -1,9 +1,11 @@
 #!/bin/sh
 
 SETTING="system.battery.charge_limit"
+BYPASS_SETTING="system.battery.charge_bypass"
 BATTERY="/sys/class/power_supply/battery"
 START_NODE="${BATTERY}/charge_control_start_threshold"
 END_NODE="${BATTERY}/charge_control_end_threshold"
+BEHAVIOUR_NODE="${BATTERY}/charge_behaviour"
 LOG="/userdata/system/logs/qcom-charge-limit.log"
 OPTIONS="100 95 90 85 80 75 70"
 DEFAULT_LIMIT="100"
@@ -118,6 +120,63 @@ apply_limit() {
     return 1
 }
 
+bypass_available() {
+    [ -e "${BEHAVIOUR_NODE}" ] && [ -w "${BEHAVIOUR_NODE}" ]
+}
+
+get_bypass() {
+    [ -r "${BEHAVIOUR_NODE}" ] || { echo "unavailable"; return 0; }
+    # sysfs may list: [auto] inhibit-charge
+    cat "${BEHAVIOUR_NODE}" 2>/dev/null | tr -d '[]' | awk '{print $1; exit}'
+}
+
+set_bypass() {
+    mode="${1:-auto}"
+    case "${mode}" in
+        on|1|inhibit|inhibit-charge)
+            value="inhibit-charge"
+            ;;
+        off|0|auto)
+            value="auto"
+            ;;
+        *)
+            echo "Usage: $0 bypass on|off" >&2
+            return 1
+            ;;
+    esac
+
+    if ! bypass_available; then
+        log_msg "charge_behaviour unavailable; bypass not applied"
+        return 1
+    fi
+
+    echo "${value}" > "${BEHAVIOUR_NODE}" || return 1
+    if command -v batocera-settings-set >/dev/null 2>&1; then
+        if [ "${value}" = "inhibit-charge" ]; then
+            batocera-settings-set "${BYPASS_SETTING}" "1" >/dev/null 2>&1 || true
+        else
+            batocera-settings-set "${BYPASS_SETTING}" "0" >/dev/null 2>&1 || true
+        fi
+    fi
+    log_msg "applied charge_behaviour=${value}"
+    return 0
+}
+
+apply_saved_bypass() {
+    bypass_available || return 0
+    value=""
+    if command -v batocera-settings-get-master >/dev/null 2>&1; then
+        value="$(batocera-settings-get-master "${BYPASS_SETTING}" 2>/dev/null || true)"
+    fi
+    if [ -z "${value}" ] && command -v batocera-settings-get >/dev/null 2>&1; then
+        value="$(batocera-settings-get "${BYPASS_SETTING}" 2>/dev/null || true)"
+    fi
+    case "${value}" in
+        1|on|true|inhibit|inhibit-charge) set_bypass on ;;
+        *) set_bypass off ;;
+    esac
+}
+
 case "${1:-status}" in
     --available|available)
         nodes_exist && nodes_writable
@@ -130,6 +189,15 @@ case "${1:-status}" in
         ;;
     apply-saved|--apply-saved)
         apply_limit "$(get_saved_limit)" "${2:-30}"
+        apply_saved_bypass || true
+        ;;
+    bypass|--bypass)
+        case "${2:-status}" in
+            --available|available) bypass_available ;;
+            on|off|1|0|auto|inhibit|inhibit-charge) set_bypass "${2}" ;;
+            ''|status|--status) echo "behaviour=$(get_bypass)" ;;
+            *) echo "Usage: $0 bypass on|off|status" >&2; exit 1 ;;
+        esac
         ;;
     set|--set)
         limit="$(normalize_limit "${2}")"
@@ -140,9 +208,10 @@ case "${1:-status}" in
         echo "saved=$(get_saved_limit)"
         echo "start=$(cat "${START_NODE}" 2>/dev/null || true)"
         echo "end=$(cat "${END_NODE}" 2>/dev/null || true)"
+        echo "behaviour=$(get_bypass)"
         ;;
     *[!0-9]*)
-        echo "Usage: $0 [--available|--options|--saved|--status|apply-saved [timeout]|set <70-100>|<70-100>]" >&2
+        echo "Usage: $0 [--available|--options|--saved|--status|apply-saved [timeout]|set <70-100>|bypass on|off|<70-100>]" >&2
         exit 1
         ;;
     *)

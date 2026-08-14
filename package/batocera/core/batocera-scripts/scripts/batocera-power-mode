@@ -96,8 +96,15 @@ handle_powermode() {
             fi
             ;;
         "balanced")
-            # Handle governor
-            if check_governor "schedutil"; then
+            # Handle governor. Prefer the board/user default (system.cpu.governor)
+            # so a SoC where mainline schedutil misbehaves (Qualcomm sm8xxx keeps
+            # the mid cluster pinned near max at idle) can pin a saner default like
+            # ondemand. Without this, "balanced" (the battery/AC default) would
+            # silently re-impose schedutil right after S18governor set ondemand.
+            SYSTEM_GOVERNOR="$(/usr/bin/batocera-settings-get-master system.cpu.governor)"
+            if [ -n "$SYSTEM_GOVERNOR" ] && [ "$SYSTEM_GOVERNOR" != "auto" ] && check_governor "$SYSTEM_GOVERNOR"; then
+                set_governor "$SYSTEM_GOVERNOR"
+            elif check_governor "schedutil"; then
                 set_governor "schedutil"
             elif check_governor "ondemand"; then
                 set_governor "ondemand"

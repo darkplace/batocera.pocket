@@ -96,6 +96,9 @@ define BATOCERA_STEAM_AARCH64_INSTALL_TARGET_CMDS
 		$(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/utils/batocera-steam/batocera-steam-rom-launch \
 		$(TARGET_DIR)/usr/bin/batocera-steam-rom-launch
 	install -D -m 0755 \
+		$(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/utils/batocera-steam/batocera-steam-emu-launch \
+		$(TARGET_DIR)/usr/bin/batocera-steam-emu-launch
+	install -D -m 0755 \
 		$(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/utils/batocera-wine/batocera-wine-tools \
 		$(TARGET_DIR)/usr/bin/batocera-steam-tools
 	install -D -m 0755 \

@@ -198,24 +198,17 @@ if [ "$command" = "canupdate" ];then
 	test "${board}" = "rpi4" && board=rpi464 # "temporarly" download on rpi464 for rpi4
 	installed=`cat /usr/share/batocera/batocera.version`
 
-	# batocera.pocket: GitHub Releases — fetch batocera.version from latest release assets
+	# batocera.pocket: GitHub Releases — per-board tag (never /releases/latest)
 	if echo "${updateurl}" | grep -q "github.com"; then
 	    _gh_owner_repo=$(echo "${updateurl}" | sed -E 's|https?://github.com/||; s|/+$||; s|\.git$||')
-	    _gh_api="https://api.github.com/repos/${_gh_owner_repo}/releases/latest"
-	    _gh_response=$(curl -sfL -H "Accept: application/vnd.github+json" "${_gh_api}" 2>/dev/null)
-	    if [ "$?" != "0" ] || [ -z "${_gh_response}" ]; then
-	        echo "Unable to access GitHub API" >&2
+	    if ! command -v batocera-pocket-github-release >/dev/null 2>&1; then
+	        echo "Unable to resolve board release (helper missing)" >&2
 	        exit 2
 	    fi
-	    _gh_tag=$(echo "${_gh_response}" | grep '"tag_name"' | head -1 | sed -E 's/.*"tag_name":[[:space:]]*"([^"]+)".*/\1/')
-	    if [ -z "${_gh_tag}" ]; then
-	        echo "No releases found" >&2
+	    available=$(GITHUB_OWNER_REPO="${_gh_owner_repo}" batocera-pocket-github-release version "${board}" "${_gh_owner_repo}" 2>/dev/null) || available=""
+	    if [ -z "${available}" ]; then
+	        echo "No release found for board ${board}" >&2
 	        exit 2
-	    fi
-	    available=$(curl -sfL "https://github.com/${_gh_owner_repo}/releases/download/${_gh_tag}/batocera.version" 2>/dev/null)
-	    if [ "$?" != "0" ] || [ -z "${available}" ]; then
-	        # fallback: use release tag as version string
-	        available="${_gh_tag}"
 	    fi
 	    available=$(echo "${available}" | head -1 | tr -d '\r')
 	else
@@ -235,7 +228,17 @@ if [ "$command" = "canupdate" ];then
 
 	echo "${available}"
 
-	if [ "$available" != "$installed" ]; then
+	# Compare NUMERICALLY (YYYYMMDDHHMM from the trailing "date time" of the
+	# batocera.version string), NOT a raw string diff. A plain "!=" flagged an
+	# update whenever the strings differed at all, so an OLDER published release
+	# was offered as an "update" (downgrade) -- e.g. device on 08/09 kept being
+	# nagged to "update" to the 08/08 release. Only offer an update when the
+	# available build is strictly newer than the installed one. This mirrors
+	# batocera-es-swissknife's version_update() so both code paths agree.
+	_ver_num() { echo "$1" | awk '{ $0=$(NF-1)$NF; gsub(/[^0-9]/,""); print }'; }
+	installed_n=$(_ver_num "${installed}")
+	available_n=$(_ver_num "${available}")
+	if [ -n "${installed_n}" ] && [ -n "${available_n}" ] && [ "${available_n}" -gt "${installed_n}" ]; then
 		exit 0
 	fi
 	exit 12

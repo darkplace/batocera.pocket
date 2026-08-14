@@ -1,21 +1,21 @@
 # Building batocera.pocket
 
-English documentation for developers. Chat / support with maintainers may be in other languages; all project docs stay in English.
+English documentation for developers. Chat / support with maintainers may be in other languages; **all project docs under `docs/` and the README must stay in English** (including user guides such as ADDING_ROMS and CONTROLS_AND_FAQ).
 
 ## Requirements
 
 - Linux host with Docker
-- Plenty of disk (200 GB+ free recommended under `output/`; more if keeping an Arch backup tree)
+- Plenty of disk (≈200 GB free recommended **per active board** under `output/<board>/`; three boards ≈600 GB+)
+- Shared download cache `dl/` (≈90 GB once warm)
 - Image: `batoceralinux/batocera.linux-build`
 
 Optional: see `batocera.mk` for `MAKE_JLEVEL`, Docker image name, and paths.
 
-## Canonical: Docker (all boards, including sm8750)
+## Canonical: Docker (all boards)
 
-Primary path — same as the successful **sm8550** Docker build:
+Primary path for **sm8750**, **sm8550**, and **sm8250**:
 
 ```bash
-# Same flags for all three Qualcomm release boards:
 make sm8750-build DIRECT_BUILD= PARALLEL_BUILD= BATCH_MODE=1 MAKE_JLEVEL=12 MAKE_LLEVEL=12
 make sm8550-build DIRECT_BUILD= PARALLEL_BUILD= BATCH_MODE=1 MAKE_JLEVEL=12 MAKE_LLEVEL=12
 make sm8250-build DIRECT_BUILD= PARALLEL_BUILD= BATCH_MODE=1 MAKE_JLEVEL=12 MAKE_LLEVEL=12
@@ -23,53 +23,54 @@ make sm8250-build DIRECT_BUILD= PARALLEL_BUILD= BATCH_MODE=1 MAKE_JLEVEL=12 MAKE
 
 - Do **not** set `DIRECT_BUILD` or `PARALLEL_BUILD` for Docker trees.
 - `output/<target>/host` must have been produced **inside** the Docker image (or start from an empty `output/<target>`).
-- Never point Docker at an Arch-linked `host/` (openssl/glib ABI mismatch).
 - Prefer one board at a time on a single machine (disk + CPU); queue with `scripts/dev/build-release-queue.sh` if needed.
 
-### sm8750 layout
+### Layout
 
 | Path | Role |
 |------|------|
-| `output/sm8750` | **Primary** Docker tree (releases after smoke) |
-| `output/sm8750-arch-backup` | Frozen Arch tree that produced known-good images; emergency only |
+| `output/sm8750` | Docker tree — AYN Odin 3 |
+| `output/sm8550` | Docker tree — Odin 2 / Thor / AYANEO / RP6 |
+| `output/sm8250` | Docker tree — RP5 / Mini / Flip2 |
+| `dl/` | Shared source download cache (safe to move to NAS + symlink) |
 
-Do not mix the two. Do not `mv` Arch backup back over `output/sm8750` while a Docker build is in progress.
+Arch `DIRECT_BUILD` / `output/sm8750-arch-backup` is **retired**. Builds are Docker-only.
 
-Product-lock rebuild (Docker primary):
+Product-lock rebuild examples:
 
 ```bash
 ./rebuild-sm8750-product-lock.sh
-# ARCH_BACKUP=1 ./rebuild-sm8750-product-lock.sh   # emergency: Arch tree only
+./rebuild-sm8550-product-lock.sh
+./rebuild-sm8250-product-lock.sh
 ```
 
-## Emergency: Arch DIRECT_BUILD (sm8750 only)
+## Disk hygiene (after GitHub upload)
 
-Only if Docker sm8750 is broken and you need the last known-good incremental tree.
+Published releases live on GitHub. Local copies of flash/OTA packages are optional.
 
-Requirements: Arch host + `libxcrypt-compat`.
+**Safe to delete after upload** (does not break incremental Docker builds):
 
-```bash
-sudo pacman -S libxcrypt-compat
-./build-arch-persistent.sh
-```
+- `output/<board>/images/batocera/images/<board>/batocera-*.img.gz`
+- `output/<board>/images/batocera/images/<board>/batocera-*.{zip,z01,z02}`
+- `output/<board>/images/batocera/images/<board>/boot.tar.xz*`
+- `output/<board>/images/batocera/boot_<board>/boot/{batocera,rufomaculata}` (duplicates of squashfs/rufoma; regenerable)
+- Root `docker-*-build.log*` / `rebuild-*.log` / fail logs
 
-The script builds against `output/sm8750-arch-backup` (override with `SM8750_ARCH_OUT`). It temporarily swaps that tree into `output/sm8750` for Make (target name is always `sm8750`), then restores any Docker tree that was present.
+**Keep for incremental builds:**
 
-Equivalent manual flags:
+- `output/<board>/{build,host,target,Makefile}`
+- `dl/`
+- `buildroot-ccache/` (optional speed)
 
-```bash
-make sm8750-build DIRECT_BUILD=y PARALLEL_BUILD=y MAKE_JLEVEL=12 MAKE_LLEVEL=12
-```
-
-(only while `output/sm8750` is the Arch tree)
+**NAS migration (recommended):** keep one active `output/<board>` on the build PC; put idle board trees and `dl/` on the NAS (symlink `dl` locally).
 
 ## Other Qualcomm targets
 
 ```bash
-TARGETS="sm8550 sm8250" ./scripts/dev/build-release-queue.sh
+TARGETS="sm8550 sm8250" DIRECT_BUILD= ./scripts/dev/build-release-queue.sh
 ```
 
-`sm8550` covers Odin 2 / Thor / AYANEO / RP6. `sm8250` covers RP5 / Mini / Flip2.
+Force Docker in the queue script (`DIRECT_BUILD=`). Defaults that still mention Arch are legacy — override on the CLI.
 
 ## Outputs
 
@@ -78,11 +79,11 @@ After a successful build:
 ```
 output/sm8750/images/batocera/images/sm8750/
   batocera-sm8750-*.img.gz   # full flash image
-  boot.tar.xz                # OTA payload
+  boot.tar.xz                # OTA payload (optional to publish)
   batocera.version
 ```
 
-Prepare GitHub assets with `scripts/dev/split-release.sh` (see [UPDATES.md](UPDATES.md)). Prefer publishing from the **Docker** tree after device smoke. Keep Arch backup until that smoke passes; reclaim disk later if needed (at minimum keep `images/` under the backup).
+Prepare GitHub assets with `scripts/dev/split-release.sh` (see [UPDATES.md](UPDATES.md)). Prefer publishing from the Docker tree after device smoke, then delete local packages (see Disk hygiene).
 
 ## Targets
 

@@ -1003,6 +1003,13 @@ cleanup() {
     CLEANUP_DONE=1
 
     log "Steam session exited with status ${rc}"
+    # Drop pad grab before DRM/gamescope teardown — mouse-mode in Steam can
+    # leave the session half-dead and freeze on the Batocera splash.
+    if command -v batocera-mouse-mode >/dev/null 2>&1; then
+        batocera-mouse-mode disable >/dev/null 2>&1 || true
+    fi
+    pkill -KILL -f '(^|[[:space:]/])batocera-mouse-mode([[:space:]]|$)' >/dev/null 2>&1 || true
+    rm -f /var/run/batocera-mouse-mode.enabled /var/run/batocera-mouse-mode.pid /var/run/batocera-mouse-mode.cmd
     [[ -e "${GAMESCOPE_ES_SESSION_FLAG}" ]] && es_gamescope_session=1
     rm -f "${DIRECT_APP_SESSION_FLAG}"
     rm -f "${GAMESCOPE_ES_SESSION_FLAG}"
@@ -1044,6 +1051,20 @@ apply_sm8550_gpu_profile
 apply_steam_launch_environment
 
 export BATOCERA_STEAM_GS_BACKEND="${BATOCERA_STEAM_GS_BACKEND:-$(default_gamescope_backend)}"
+
+# Nested Wayland (Odin3/Thor default) can starve keyboard chords once a game
+# steals focus. Keep a low unfocused refresh so Steam QAM/Ctrl+1 stay responsive.
+if [[ -z "${BATOCERA_STEAM_GS_NESTED_UNFOCUSED_REFRESH:-}" ]]; then
+    case "${BATOCERA_STEAM_GS_BACKEND}" in
+        wayland|sdl)
+            case "$(batocera-info 2>/dev/null | awk -F': ' '/^Model:/ {print $2; exit}')" in
+                AYN_Odin_3|AYN_Thor)
+                    export BATOCERA_STEAM_GS_NESTED_UNFOCUSED_REFRESH="30"
+                    ;;
+            esac
+            ;;
+    esac
+fi
 
 # After exclusive DRM sessions on DSI panels (Odin3), force a connector reset so ES recovers.
 if [[ -z "${BATOCERA_STEAM_RESET_DSI_AFTER_GAMESCOPE:-}" ]]; then

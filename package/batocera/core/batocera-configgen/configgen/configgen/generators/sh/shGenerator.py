@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 from ... import Command
 from ...batoceraPaths import BATOCERA_SHARE_DIR
 from ...controller import generate_sdl_game_controller_config, write_sdl_controller_db
+from ...utils import lsfg
 from ..Generator import Generator
 
 if TYPE_CHECKING:
@@ -132,9 +133,11 @@ class ShGenerator(Generator):
             env["SDL_JOYSTICK_RAWINPUT"] = "0"
             env["SDL_JOYSTICK_DIRECTINPUT"] = "0"
             env["SDL_DIRECTINPUT_ENABLED"] = "0"
+            lsfg.apply_lsfg_vk(system, env, process_name="heroic")
         elif system.config.emulator == "lutris":
             env["BATOCERA_LUTRIS_EXTRA_ARGS"] = system.config.get_str("lutris_extra_args", "")
             env["BATOCERA_LUTRIS_MODE"] = system.config.core
+            lsfg.apply_lsfg_vk(system, env, process_name="lutris")
         elif system.config.emulator == "n64recomp":
             env["BATOCERA_N64RECOMP_EXTRA_ARGS"] = system.config.get_str("n64recomp_extra_args", "")
         elif system.config.emulator == "apps":

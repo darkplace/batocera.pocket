@@ -39,13 +39,14 @@ def batocera_model():
     l = '/sys/class/leds/multicolor:chassis/multi_intensity'
     if os.path.exists(l):
         return("rgb")
-    # Thor/Odin3-style addressable rings can expose per-channel l:/r: LEDs
-    # or grouped multicolor class LEDs such as rgb:l1/rgb:r1.
-    has_multicolor_groups = bool(multicolor_led_paths())
-    if glob.glob('/sys/class/leds/l:b?') and not has_multicolor_groups:
+    # Thor/Odin2 Portal addressable stick rings: per-channel l:/r: LEDs
+    # (l:r1, l:g1, l:b1, …). Prefer this over multicolor detection: power-led
+    # alone also has multi_intensity, which previously forced "rgb" and left
+    # the stick channels untouched (static white/dim).
+    if glob.glob('/sys/class/leds/l:b?'):
         return("rgbaddr")
-    # Odin2/SM8550 power indicator LED or grouped multicolor accent LEDs.
-    if has_multicolor_groups:
+    # Grouped multicolor class LEDs (rgb:l1/rgb:r1, joystick_rings, chassis…).
+    if multicolor_led_paths():
         return("rgb")
     # PWM check
     c = glob.glob('/sys/class/pwm/pwmchip*/device/name')

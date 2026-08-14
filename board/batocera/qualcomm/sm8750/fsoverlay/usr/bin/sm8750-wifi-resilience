@@ -1,21 +1,89 @@
 #!/bin/sh
 
 # WCN7860 can become unreliable after idle/resume with power save enabled.
+# ath12k sometimes re-enables PS after association; re-apply and verify.
+# Inspired by ROCKNIX #3170 / #3173: keep PS off and apply wifi.country once.
+#
+# ath12k on this SoC is self-managed: `iw reg get` stays country 00 even after
+# `iw reg set`. Re-applying every watchdog tick (and on every udev CHANGE)
+# churns the phy while associated and can drop DHCP into IPv4LL (169.254).
+
+COUNTRY_STAMP="/var/run/sm8750-wifi.country"
+
+power_save_state() {
+    iface="$1"
+    /usr/sbin/iw dev "${iface}" get power_save 2>/dev/null | awk '{print tolower($NF); exit}'
+}
 
 disable_power_save() {
     iface="$1"
+    state=""
+    attempt=0
 
     [ -n "${iface}" ] || return 0
     [ -d "/sys/class/net/${iface}" ] || return 0
 
-    if /usr/sbin/iw dev "${iface}" set power_save off >/dev/null 2>&1; then
-        echo "*** SM8750 wifi: disabled power save on ${iface} ***" > /dev/kmsg
+    state="$(power_save_state "${iface}")"
+    if [ "${state}" = "off" ]; then
+        return 0
+    fi
+
+    while [ "${attempt}" -lt 3 ]; do
+        attempt=$((attempt + 1))
+        /usr/sbin/iw dev "${iface}" set power_save off >/dev/null 2>&1 || true
+        state="$(power_save_state "${iface}")"
+        case "${state}" in
+            off)
+                echo "*** SM8750 wifi: power_save off on ${iface} ***" > /dev/kmsg
+                return 0
+                ;;
+        esac
+        sleep 0.2
+    done
+
+    echo "*** SM8750 wifi: power_save still ${state:-unknown} on ${iface} ***" > /dev/kmsg
+}
+
+unblock_wifi_if_needed() {
+    command -v rfkill >/dev/null 2>&1 || return 0
+    # Only touch rfkill when the phy is actually soft-blocked.
+    if rfkill list wifi 2>/dev/null | grep -q 'Soft blocked: yes'; then
+        rfkill unblock wifi >/dev/null 2>&1 || true
+        echo "*** SM8750 wifi: rfkill unblock wifi ***" > /dev/kmsg
     fi
 }
 
-if command -v rfkill >/dev/null 2>&1; then
-    rfkill unblock wifi >/dev/null 2>&1
-fi
+# Apply batocera.conf wifi.country via iw reg set at most once per boot
+# (or when the setting changes). Self-managed ath12k never reports the
+# new country, so "current != target" must not be re-tried every 30s.
+apply_wifi_country() {
+    country=""
+    target=""
+    stamped=""
+
+    if command -v batocera-settings-get >/dev/null 2>&1; then
+        country="$(batocera-settings-get wifi.country 2>/dev/null | tr -d '[:space:]')"
+    fi
+    case "${country}" in
+        [A-Za-z][A-Za-z])
+            target="$(printf '%s' "${country}" | tr '[:lower:]' '[:upper:]')"
+            ;;
+        *)
+            return 0
+            ;;
+    esac
+
+    [ -f "${COUNTRY_STAMP}" ] && stamped="$(cat "${COUNTRY_STAMP}" 2>/dev/null | tr -d '[:space:]')"
+    [ "${stamped}" = "${target}" ] && return 0
+
+    if /usr/sbin/iw reg set "${target}" >/dev/null 2>&1; then
+        echo "${target}" > "${COUNTRY_STAMP}" 2>/dev/null || true
+        echo "*** SM8750 wifi: iw reg set ${target} (once) ***" > /dev/kmsg
+    fi
+}
+
+unblock_wifi_if_needed
+apply_wifi_country
 
 if [ "$#" -gt 0 ]; then
     for iface in "$@"; do

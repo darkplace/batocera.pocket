@@ -1,10 +1,10 @@
 diff --git a/parallel-rdp/interface.cpp b/parallel-rdp/interface.cpp
-index c94550f..83023eb 100644
+index 0b7ffd2..f685e77 100644
 --- a/parallel-rdp/interface.cpp
 +++ b/parallel-rdp/interface.cpp
-@@ -100,6 +100,10 @@ static size_t fragment_size;
- std::vector<bool> rdram_dirty;
- uint64_t sync_signal;
+@@ -119,6 +119,10 @@ static size_t fragment_size;
+ static std::vector<bool> rdram_dirty;
+ static uint64_t sync_signal;
  
 +static bool guide_held = false;
 +static bool r2_held = false;
@@ -12,10 +12,10 @@ index c94550f..83023eb 100644
 +
  static TTF_Font *message_font;
  static std::queue<Message> messages;
- static uint64_t message_timer;
-@@ -212,7 +216,117 @@ bool sdl_event_filter(void *userdata, SDL_Event *event) {
-       break;
-     }
+ 
+@@ -301,7 +305,117 @@ bool sdl_event_filter(void *userdata, SDL_Event *event) {
+     wsi->init_surface_swapchain();
+     wsi->begin_frame();
    }
 +else if (event->type == SDL_EVENT_GAMEPAD_BUTTON_DOWN)
 +{
@@ -131,7 +131,7 @@ index c94550f..83023eb 100644
    return 0;
  }
  
-@@ -317,9 +431,9 @@ void rdp_init(void *_window, GFX_INFO _gfx_info, const void *font,
+@@ -428,9 +542,9 @@ void rdp_init(void *_window, GFX_INFO _gfx_info, const void *font,
    }
  
    message_font =
@@ -143,39 +143,3 @@ index c94550f..83023eb 100644
    if (!message_font || !achievement_challenge_indicator_font) {
      rdp_close();
      return;
-diff --git a/src/ui/input.rs b/src/ui/input.rs
-index af59d65..6b7798e 100644
---- a/src/ui/input.rs
-+++ b/src/ui/input.rs
-@@ -418,6 +418,13 @@ pub fn get(ui: &ui::Ui, channel: usize) -> InputData {
-                 .offset(i32::from(sdl3_sys::scancode::SDL_SCANCODE_RALT) as isize)
-     };
- 
-+    let guide_pressed = !controller.is_null() && unsafe {
-+        sdl3_sys::gamepad::SDL_GetGamepadButton(
-+            controller,
-+            sdl3_sys::gamepad::SDL_GamepadButton::GUIDE,
-+        )
-+    };
-+
-     for i in 0..14 {
-         if profile_name != "default" || channel == 0 {
-             let profile_key = profile.keys[i];
-@@ -428,7 +435,7 @@ pub fn get(ui: &ui::Ui, channel: usize) -> InputData {
-             }
-         }
- 
--        if !controller.is_null() {
-+        if !controller.is_null() && !guide_pressed {
-             set_buttons_from_controller(profile, i, controller, &mut keys);
-         } else if !joystick.is_null() {
-             set_buttons_from_joystick(profile, i, joystick, &mut keys);
-@@ -442,7 +449,7 @@ pub fn get(ui: &ui::Ui, channel: usize) -> InputData {
-         (x, y) = set_axis_from_keys(profile, ui.input.keyboard_state);
-     }
- 
--    if !controller.is_null() {
-+    if !controller.is_null() && !guide_pressed {
-         (x, y) = set_axis_from_controller(profile, controller);
-         apply_deadzone(&mut x, &mut y, profile.deadzone);
-     } else if !joystick.is_null() {

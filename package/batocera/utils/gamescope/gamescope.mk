@@ -5,7 +5,7 @@
 #
 ################################################################################
 
-GAMESCOPE_VERSION = 3.16.20
+GAMESCOPE_VERSION = 3.16.25
 GAMESCOPE_SITE = https://github.com/ValveSoftware/gamescope
 GAMESCOPE_SITE_METHOD = git
 GAMESCOPE_GIT_SUBMODULES = YES

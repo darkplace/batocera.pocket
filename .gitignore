@@ -35,3 +35,22 @@ docker-sm*-FAILED
 scripts/dev/upstream/
 local.mk
 .local/
+
+# Private RC / local OTA bundles (boot.tar.xz ~multi-GB; never publish)
+releases/private/
+
+# Maintainer device scripts (LAN IPs / default passwords — never publish)
+scripts/dev/apply-sm8750-ota.sh
+scripts/dev/smoke-emu-odin3.sh
+scripts/dev/package-private-rc-ota.sh
+
+# Local Cursor rules / agent noise
+.cursor/
+
+# Ephemeral rebuild / smoke artifacts at repo root
+rebuild-*.out
+rpcs3-spu-*.png
+*.DONE
+check_hydra_sources.sh
+hydra_sources_complete.json
+HYDRA_SOURCES_*.md

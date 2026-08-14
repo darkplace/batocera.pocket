@@ -109,4 +109,18 @@
     <image>./images/ubukde.png</image>
     <thumbnail>./images/ubukde.png</thumbnail>
   </game>
+  <game>
+    <path>./Configure_Heroic.sh</path>
+    <name>Configure Heroic</name>
+    <desc>Open Heroic Games Launcher (Epic / GOG / Amazon) to install games and manage accounts.</desc>
+    <image>./images/heroic.png</image>
+    <thumbnail>./images/heroic.png</thumbnail>
+  </game>
+  <game>
+    <path>./Configure_Lutris.sh</path>
+    <name>Configure Lutris</name>
+    <desc>Open Lutris to install, configure and launch PC games and runners.</desc>
+    <image>./images/lutris.png</image>
+    <thumbnail>./images/lutris.png</thumbnail>
+  </game>
 </gameList>

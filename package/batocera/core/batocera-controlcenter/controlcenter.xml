@@ -67,7 +67,10 @@
 		</feature>
 		<feature display="Fan Mode" if='${qcom-fan available &amp;&amp; echo 1}' refresh="2">
 			<text display="${qcom-fan label}" refresh="1" />
-			<choice display="Auto" action="qcom-fan auto" afterclick="bcc_refresh" />
+			<choice display="Silent" action="qcom-fan silent" selected='${[ "$(qcom-fan mode)" = "silent" ] &amp;&amp; echo 1}' afterclick="bcc_refresh" />
+			<choice display="Auto" action="qcom-fan auto" selected='${[ "$(qcom-fan mode)" = "auto" ] &amp;&amp; echo 1}' afterclick="bcc_refresh" />
+			<choice display="Aggressive" action="qcom-fan aggressive" selected='${[ "$(qcom-fan mode)" = "aggressive" ] &amp;&amp; echo 1}' afterclick="bcc_refresh" />
+			<choice display="Off" action="qcom-fan stop" selected='${[ "$(qcom-fan mode)" = "off" ] &amp;&amp; echo 1}' afterclick="bcc_refresh" />
 		</feature>
 	</hgroup>
 
@@ -174,7 +177,7 @@
 			<progressbar display="${ { head -n1 /proc/stat; sleep 0.2; head -n1 /proc/stat; } | awk '/^cpu /{u=$2-u; s=$4-s; i=$5-i; w=$6-w} END {print int(0.5+100*(u+s+w)/(u+s+i+w))}'}" min="0" max="100" refresh="1" />
 		</feature>
 		<feature display="Temp">
-			<text display='${ TEMPE=$(cat /sys/devices/virtual/thermal/thermal_zone*/temp /sys/class/hwmon/hwmon*/temp*_input 2&gt;/dev/null | sort -rn | head -1 | sed -e s+"[0-9][0-9][0-9]$"++); [ -n "$TEMPE" ] &amp;&amp; echo "$TEMPE"C || echo "N/A" }' refresh="3" />
+			<text display='${ TEMPE=$(batocera-temp --cpu 2&gt;/dev/null); [ -n "$TEMPE" ] &amp;&amp; echo "$TEMPE"C || echo "N/A" }' refresh="2" />
 		</feature>
 		<feature display="Resolution">
 			<text display="${batocera-resolution currentResolution}" />

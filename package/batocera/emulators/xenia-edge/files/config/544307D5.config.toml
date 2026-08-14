@@ -1,0 +1,4 @@
+# Ninja Gaiden 2 — XenDroid GAME_COMPAT (portable to Linux/Turnip)
+[GPU]
+clear_memory_page_state = true
+depth_float24_convert_in_pixel_shader = true

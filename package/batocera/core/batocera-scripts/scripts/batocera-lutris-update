@@ -384,5 +384,8 @@ PY
     fi
 fi
 
+write_launcher_entry "${roms_dir}/Lutris.sh"
+es_add_game "./Lutris.sh" "Lutris"
+
 es_add_game_end
 echo "Lutris launcher update complete: ${game_count} game launcher(s) generated." >> "${log}"

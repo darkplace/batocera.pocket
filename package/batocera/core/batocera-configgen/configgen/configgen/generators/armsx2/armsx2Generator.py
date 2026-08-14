@@ -46,7 +46,7 @@ def _prepare_armsx2_layout() -> None:
 
 
 def _retroachievements_sound_path(system) -> str | None:
-    sound = system.config.get("retroachievements.sound", "mario-1up")
+    sound = system.config.get_str("retroachievements.sound", "mario-1up")
     if _retroachievements_sound_disabled(sound):
         return None
 
@@ -124,12 +124,12 @@ def _prepare_armsx2_settings(system) -> None:
     ini.set("UI", "HideMainWindowWhenRunning", "true")
     ini.set("UI", "DoubleClickTogglesFullscreen", "false")
 
-    renderer = system.config.get("aethersx2_renderer", "-1")
+    renderer = system.config.get_str("aethersx2_renderer", "-1")
     if renderer == "-1":
         renderer = "14" if _is_sm8550() else ini.get("EmuCore/GS", "Renderer", fallback="-1")
     if renderer == "-1":
         renderer = "14"
-    ini.set("EmuCore/GS", "Renderer", renderer)
+    ini.set("EmuCore/GS", "Renderer", str(renderer))
     ini.set("EmuCore/GS", "DisableFramebufferFetch", "false")
     ini.set("EmuCore/GS", "OverrideTextureBarriers", "-1")
     ini.set("EmuCore/GS", "DisableMailboxPresentation", "false")
@@ -138,7 +138,7 @@ def _prepare_armsx2_settings(system) -> None:
     ini.set("Achievements", "Notifications", "true")
     ini.set("Achievements", "LeaderboardNotifications", "true")
     sound_enabled = not _retroachievements_sound_disabled(
-        system.config.get("retroachievements.sound", "mario-1up"))
+        system.config.get_str("retroachievements.sound", "mario-1up"))
     ini.set("Achievements", "SoundEffects", "true" if sound_enabled else "false")
     ini.set("Achievements", "InfoSound", "true")
     ini.set("Achievements", "UnlockSound", "true")
@@ -150,9 +150,9 @@ def _prepare_armsx2_settings(system) -> None:
     if system.config.get_bool("retroachievements"):
         ini.set("Achievements", "Enabled", "true")
         ini.set("Achievements", "Username",
-                system.config.get("retroachievements.username", ""))
+                system.config.get_str("retroachievements.username", ""))
         ini.set("Achievements", "Token",
-                system.config.get("retroachievements.token", ""))
+                system.config.get_str("retroachievements.token", ""))
         ini.set("Achievements", "LoginTimestamp", str(int(time.time())))
         challenge_indicators = system.config.get_bool("retroachievements.challenge_indicators",
                                                       return_values=("true", "false"))

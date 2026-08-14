@@ -304,5 +304,8 @@ for game in iter_installed_records(nile):
 PY
 )
 
+write_launcher_entry "${roms_dir}/Heroic.sh"
+es_add_game "./Heroic.sh" "Heroic"
+
 es_add_game_end
 echo "Heroic launcher update complete: ${game_count} game launcher(s) generated." >> "${log}"

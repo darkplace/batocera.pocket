@@ -194,6 +194,13 @@ def main() -> int:
 
     environment["BATOCERA_LAUNCH_SOURCE"] = "steam"
     environment["BATOCERA_STEAM_MANAGED_GAME_ID"] = managed_id
+    # Steam itself already runs under gamescope and exports
+    # BATOCERA_STEAM_USE_GAMESCOPE=1. If configgen inherits that, it nests a
+    # second gamescope around the emulator; on exit that fights the outer
+    # session (focus steal / GamepadUI crash). Keep Steam's gamescope; do not
+    # wrap the child emulator again.
+    environment["BATOCERA_SKIP_GAMESCOPE"] = "1"
+    environment["BATOCERA_STEAM_USE_GAMESCOPE"] = "0"
 
     # Steam's native ARM reaper leaves shortcuts in the client's process
     # group. Isolate configgen and its emulator so "Exit game" cannot signal

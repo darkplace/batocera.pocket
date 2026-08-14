@@ -10,11 +10,12 @@ HEROIC_TOOLCHAIN = manual
 HEROIC_DEPENDENCIES = gdk-pixbuf jpeg libgtk3 libnss librsvg openal
 
 ifeq ($(BR2_aarch64),y)
-HEROIC_VERSION = 2.21.0
+# Official GitHub has no Linux arm64 build yet; ROCKNIX rebuild tracks 2.22.0.
+HEROIC_VERSION = 2.22.0
 HEROIC_SITE = https://codeberg.org/trescenzi/rocknix-ports/raw/branch/main/heroic
 HEROIC_SOURCE = Heroic-$(HEROIC_VERSION)-linux-arm64.tar.xz
 else
-HEROIC_VERSION = 2.20.0
+HEROIC_VERSION = 2.22.1
 HEROIC_SITE = https://github.com/Heroic-Games-Launcher/HeroicGamesLauncher/releases/download/v$(HEROIC_VERSION)
 HEROIC_SOURCE = Heroic-$(HEROIC_VERSION)-linux-x86_64.AppImage
 endif

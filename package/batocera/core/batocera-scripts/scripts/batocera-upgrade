@@ -81,7 +81,7 @@ settingsupdateurl="$(/usr/bin/batocera-settings-get updates.url)"
 test -n "${settingsupdateurl}" && updateurl="${settingsupdateurl}"
 
 # force a default value in case the value is removed or miswritten
-# batocera.pocket: all channels map to the same GitHub latest release
+# batocera.pocket: stable == butterfly; GitHub resolve is per-board (never /latest)
 test "${updatetype}" != "stable" -a "${updatetype}" != "unstable" -a "${updatetype}" != "butterfly" && updatetype="stable"
 if echo "${updateurl}" | grep -q "github.com"; then
     updatetype="stable"
@@ -93,18 +93,15 @@ if [ $# -eq 1 ] && [ "$1" != "manual" ]; then
     DWD_HTTP_DIR="$1"
     CUSTOM_DIR=1
 elif echo "${updateurl}" | grep -q "github.com"; then
-    # batocera.pocket: always use GitHub Releases /latest (stable == butterfly)
+    # Per-SoC tags: v44-sm8550-YYYYMMDD (must not use /releases/latest)
     _gh_owner_repo=$(echo "${updateurl}" | sed -E 's|https?://github.com/||; s|/+$||; s|\.git$||')
-    GITHUB_API_URL="https://api.github.com/repos/${_gh_owner_repo}/releases/latest"
-    LATEST_TAG=$(curl -sfL -H "Accept: application/vnd.github+json" "${GITHUB_API_URL}" 2>/dev/null \
-        | grep '"tag_name"' | head -1 | sed -E 's/.*"tag_name":[[:space:]]*"([^"]+)".*/\1/')
-    if test -n "${LATEST_TAG}"; then
-        DWD_HTTP_DIR="https://github.com/${_gh_owner_repo}/releases/download/${LATEST_TAG}"
-        echo "Found release: ${LATEST_TAG}"
-    else
-        echo "No releases found at https://github.com/${_gh_owner_repo}"
+    if ! command -v batocera-pocket-github-release >/dev/null 2>&1; then
+        echo "Error: batocera-pocket-github-release missing (OTA per-board)"
         exit 1
     fi
+    LATEST_TAG=$(GITHUB_OWNER_REPO="${_gh_owner_repo}" batocera-pocket-github-release tag "${board}" "${_gh_owner_repo}") || exit 1
+    DWD_HTTP_DIR=$(GITHUB_OWNER_REPO="${_gh_owner_repo}" batocera-pocket-github-release url "${board}" "${_gh_owner_repo}") || exit 1
+    echo "Found release for ${board}: ${LATEST_TAG}"
 else
     # Original batocera update URL format
     DWD_HTTP_DIR="${updateurl}/${board}/${updatetype}/last"
@@ -263,11 +260,32 @@ do
 done
 
 # extract file on /boot
+# From ES badge (TERMINAL=0): quiet + ionice so the UI is less likely to OOM/freeze
+# while xz|tar floods /boot. OTA still completes; reboot applies the image.
 do_upgmsg "Extracting files ..."
-if ! (cd /boot && xz -dc < "/userdata/system/upgrade/boot.tar.xz" | tar xvf - --no-same-owner)
-then
-    exit 1
+TAR_FLAGS="-xf - --no-same-owner"
+[ $TERMINAL -eq 1 ] && TAR_FLAGS="-xvf - --no-same-owner"
+if [ $TERMINAL -eq 0 ]; then
+    # ES badge path: prefer ionice when available (missing on some handheld images).
+    if command -v ionice >/dev/null 2>&1; then
+        if ! (cd /boot && ionice -c3 nice -n 19 sh -c "xz -dc < /userdata/system/upgrade/boot.tar.xz | tar ${TAR_FLAGS}")
+        then
+            exit 1
+        fi
+    else
+        if ! (cd /boot && nice -n 19 sh -c "xz -dc < /userdata/system/upgrade/boot.tar.xz | tar ${TAR_FLAGS}")
+        then
+            exit 1
+        fi
+    fi
+else
+    if ! (cd /boot && xz -dc < "/userdata/system/upgrade/boot.tar.xz" | tar ${TAR_FLAGS})
+    then
+        exit 1
+    fi
 fi
+
+sync
 
 # restore boot files
 do_upgmsg "Restoring config files ..." 0.5

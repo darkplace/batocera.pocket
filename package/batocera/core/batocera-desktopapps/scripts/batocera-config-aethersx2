@@ -1,4 +1,7 @@
 #!/bin/bash
+
+# Enlarge toolkit UI on handhelds; keep native 1080p framebuffer.
+command -v batocera-ui-scale >/dev/null 2>&1 && eval "$(batocera-ui-scale env)"
 batocera-mouse show
 trap 'batocera-mouse hide' EXIT
 batocera-config-gpu-wrapper aethersx2 -bigpicture -fullscreen "$@"

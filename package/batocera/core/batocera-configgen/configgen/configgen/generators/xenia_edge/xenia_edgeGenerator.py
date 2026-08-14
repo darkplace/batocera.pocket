@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import filecmp
 import logging
+import platform
 import re
+import shutil
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -20,9 +23,12 @@ if TYPE_CHECKING:
 _logger = logging.getLogger(__name__)
 
 XENIA_EDGE_BIN     = Path('/usr/xenia_edge/xenia_edge')
-XENIA_EDGE_PATCHES_SRC = Path('/usr/xenia_edge/patches')
+XENIA_EDGE_PATCHES_SRC = Path('/usr/share/xenia-edge/patches')
+XENIA_EDGE_CONFIG_SRC = Path('/usr/share/xenia-edge/config')
 XENIA_ACHIEVEMENT_SOUND_ROOT = Path('/usr/share/libretro/assets/sounds')
 XENIA_DEFAULT_ACHIEVEMENT_SOUND = 'xbox360-achievement'
+# XenDroid GAME_COMPAT: Adreno/Turnip mid-frame submits cut GPU idle bubbles.
+XENIA_EDGE_QCOM_MID_FRAME_DRAWS = 1300
 
 
 def _normalize_xenia_profile_xuid(value: Any) -> str:
@@ -89,6 +95,25 @@ def _achievement_sound_path(system: Any) -> str:
 
 class XeniaEdgeGenerator(Generator):
 
+    @staticmethod
+    def sync_directories(source_dir: Path, dest_dir: Path) -> None:
+        dcmp = filecmp.dircmp(source_dir, dest_dir)
+        for file in dcmp.diff_files + dcmp.left_only:
+            shutil.copy2(source_dir / file, dest_dir / file)
+
+    @staticmethod
+    def seed_missing_files(source_dir: Path, dest_dir: Path) -> None:
+        """Copy share templates that the user does not already have (never overwrite)."""
+        if not source_dir.is_dir():
+            return
+        mkdir_if_not_exists(dest_dir)
+        for src in source_dir.iterdir():
+            if not src.is_file():
+                continue
+            dest = dest_dir / src.name
+            if not dest.exists():
+                shutil.copy2(src, dest)
+
     def getHotkeysContext(self) -> HotkeysContext:
         return {
             "name": "xenia-edge",
@@ -115,6 +140,11 @@ class XeniaEdgeGenerator(Generator):
 
         xeniaPatches = xeniaConfig / 'patches'
         mkdir_if_not_exists(xeniaPatches)
+        if XENIA_EDGE_PATCHES_SRC.is_dir():
+            self.sync_directories(XENIA_EDGE_PATCHES_SRC, xeniaPatches)
+
+        # XenDroid GAME_COMPAT per-title TOMLs (NG2, Fable II, …).
+        self.seed_missing_files(XENIA_EDGE_CONFIG_SRC, xeniaConfig / 'config')
 
         if rom.suffix == '.xbox360':
             _logger.debug('Found .xbox360 playlist: %s', rom)
@@ -171,6 +201,9 @@ class XeniaEdgeGenerator(Generator):
         config['GPU']['texture_cache_memory_limit_render_to_texture'] = system.config.get_int('xenia_limit_render_to_texture', 24)
         config['GPU']['texture_cache_memory_limit_soft'] = system.config.get_int('xenia_limit_soft', 384)
         config['GPU']['texture_cache_memory_limit_soft_lifetime'] = system.config.get_int('xenia_limit_soft_lifetime', 30)
+        # Opt-in mid-frame submits on aarch64 (Adreno/Turnip); user toml wins if set.
+        if platform.machine() == 'aarch64' and 'vulkan_mid_frame_submission_draws' not in config['GPU']:
+            config['GPU']['vulkan_mid_frame_submission_draws'] = XENIA_EDGE_QCOM_MID_FRAME_DRAWS
 
         config['HID'] = {
             'hid': 'sdl'

@@ -1991,6 +1991,23 @@ init_wine() {
     fi
 
     echo "*** Directory checks complete, WINE runner is ${WINE_VERSION} ***"
+
+    # Normalize runner binary names. Modern Wine (10+) ships a single "wine"
+    # (WoW64) with no separate "wine64"; a few builds ship only "wine64". The
+    # rest of this launcher (WINE64, box64/FEX wrappers, helpers) expects both
+    # names, so create the missing alias when the runner dir is writable
+    # (custom runners under /userdata). Bundled read-only runners already ship
+    # both, and the resolution below also falls back — this is best-effort.
+    _wine_bindir="${DIR}/${WINE_VERSION}/bin"
+    if [[ -d "${_wine_bindir}" && -w "${_wine_bindir}" ]]; then
+        if [[ -e "${_wine_bindir}/wine" && ! -e "${_wine_bindir}/wine64" ]]; then
+            ln -sf wine "${_wine_bindir}/wine64" 2>/dev/null || true
+        elif [[ -e "${_wine_bindir}/wine64" && ! -e "${_wine_bindir}/wine" ]]; then
+            ln -sf wine64 "${_wine_bindir}/wine" 2>/dev/null || true
+        fi
+    fi
+    unset _wine_bindir
+
     USER_DIR="/userdata/system/wine"
     WOW64_WRAPPERS="$(get_setting wow64_wrappers "${SYSTEM}" "${ROMGAMENAME}")"
     [[ -z "${WOW64_WRAPPERS}" ]] && WOW64_WRAPPERS=1
@@ -2066,11 +2083,14 @@ init_wine() {
     # - aarch64 + FORCE_BOX86_MODE=1 => 32-bit wine + box86
     # - aarch64 + FORCE_BOX86_MODE=0 => wine64 + box64 (WoW64)
     if [[ "${HOST_ARCH}" == "aarch64" && "${FORCE_BOX86_MODE}" -ne 1 ]]; then
-        # WoW64 mode
+        # WoW64 mode: prefer wine64, but fall back to the unified "wine"
+        # binary shipped by modern Wine (10+) that dropped separate wine64.
         if [[ -e "${DIR}/${WINE_VERSION}/lib/wine/x86_64-unix/wine64" ]]; then
             WINE="${DIR}/${WINE_VERSION}/lib/wine/x86_64-unix/wine64"
-        else
+        elif [[ -e "${DIR}/${WINE_VERSION}/bin/wine64" ]]; then
             WINE="${DIR}/${WINE_VERSION}/bin/wine64"
+        else
+            WINE="${DIR}/${WINE_VERSION}/bin/wine"
         fi
         WINE64="${WINE}"
         echo "*** aarch64: Using wine64 for WoW64 mode: ${WINE} ***"

@@ -256,16 +256,23 @@ define BATOCERA_EMULATIONSTATION_BOOT
 	    $(TARGET_DIR)/etc/init.d/S31emulationstation
 	$(INSTALL) -D -m 0755 $(BATOCERA_EMULATIONSTATION_SOURCE_PATH)/emulationstation-standalone \
 	    $(TARGET_DIR)/usr/bin/emulationstation-standalone
-	sed -i -e 's;%BATOCERA_EMULATIONSTATION_PREFIX%;${BATOCERA_EMULATIONSTATION_PREFIX};g' \
-		-e 's;%BATOCERA_EMULATIONSTATION_CMD%;${BATOCERA_EMULATIONSTATION_CMD};g' \
-		-e 's;%BATOCERA_EMULATIONSTATION_ARGS%;${BATOCERA_EMULATIONSTATION_ARGS};g' \
-		-e 's;%BATOCERA_EMULATIONSTATION_POSTFIX%;${BATOCERA_EMULATIONSTATION_POSTFIX};g' \
-		$(TARGET_DIR)/usr/bin/emulationstation-standalone
-	sed -i -e 's;%BATOCERA_EMULATIONSTATION_PREFIX%;${BATOCERA_EMULATIONSTATION_PREFIX};g' \
-		-e 's;%BATOCERA_EMULATIONSTATION_CMD%;${BATOCERA_EMULATIONSTATION_CMD};g' \
-		-e 's;%BATOCERA_EMULATIONSTATION_ARGS%;${BATOCERA_EMULATIONSTATION_ARGS};g' \
-		-e 's;%BATOCERA_EMULATIONSTATION_POSTFIX%;${BATOCERA_EMULATIONSTATION_POSTFIX};g' \
-		$(TARGET_DIR)/etc/init.d/S31emulationstation
+	# Substitute placeholders. POSTFIX must be a literal '&' in the sed
+	# replacement (GNU sed: '\&'); never expand $(BATOCERA_EMULATIONSTATION_POSTFIX)
+	# here — Make/sed would turn it into "matched text" or background the recipe.
+	for f in \
+		$(TARGET_DIR)/usr/bin/emulationstation-standalone \
+		$(TARGET_DIR)/etc/init.d/S31emulationstation ; do \
+		sed -i \
+			-e 's;%BATOCERA_EMULATIONSTATION_PREFIX%;$(BATOCERA_EMULATIONSTATION_PREFIX);g' \
+			-e 's;%BATOCERA_EMULATIONSTATION_CMD%;$(BATOCERA_EMULATIONSTATION_CMD);g' \
+			-e 's;%BATOCERA_EMULATIONSTATION_ARGS%;$(BATOCERA_EMULATIONSTATION_ARGS);g' \
+			-e 's;%BATOCERA_EMULATIONSTATION_POSTFIX%;\&;g' \
+			"$${f}" ; \
+		if grep -q '%BATOCERA_EMULATIONSTATION_' "$${f}" ; then \
+			echo "ERROR: unsubstituted BATOCERA_EMULATIONSTATION_* in $${f}" ; \
+			exit 1 ; \
+		fi ; \
+	done
 endef
 
 BATOCERA_EMULATIONSTATION_PRE_CONFIGURE_HOOKS += BATOCERA_EMULATIONSTATION_RPI_FIXUP

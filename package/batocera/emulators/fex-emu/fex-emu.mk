@@ -4,7 +4,7 @@
 #
 ################################################################################
 
-FEX_EMU_VERSION = FEX-2607
+FEX_EMU_VERSION = FEX-2608
 FEX_EMU_SITE = https://github.com/FEX-Emu/FEX.git
 FEX_EMU_SITE_METHOD = git
 FEX_EMU_GIT_SUBMODULES = YES

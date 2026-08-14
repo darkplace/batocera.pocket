@@ -2,6 +2,10 @@ default:
   options:
     opengl_driver: zink
 
+ps4:
+  options:
+    shadps4_resolution: 1280x720
+
 advision:
   emulator: mame
   core:     mame

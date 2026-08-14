@@ -12,6 +12,18 @@ export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
 mkdir -p "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_CACHE_HOME" "$XDG_RUNTIME_DIR" \
     2>/dev/null || true
 
+if command -v batocera-ui-scale >/dev/null 2>&1; then
+    # shellcheck disable=SC2046
+    eval "$(batocera-ui-scale env)"
+    chromium_arg="$(batocera-ui-scale chromium-arg || true)"
+    if [ -n "${chromium_arg}" ]; then
+        case " $* " in
+            *" --force-device-scale-factor="*) ;;
+            *) set -- "${chromium_arg}" "$@" ;;
+        esac
+    fi
+fi
+
 if [ ! -x "$app" ]; then
     echo "Google Chrome executable not found: $app" >&2
     exit 1

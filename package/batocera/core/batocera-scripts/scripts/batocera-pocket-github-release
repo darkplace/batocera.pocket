@@ -1,0 +1,166 @@
+#!/bin/bash
+# batocera-pocket-github-release — resolve the GitHub Release for this board.
+#
+# Tags must contain "-${token}-" for one of the board's aliases
+# (e.g. v44-sm8550-20260808, v44-sm8750-20260807). Never uses
+# /releases/latest (that would mix SoCs).
+#
+# Board aliasing: some devices report a board id that differs from the SoC
+# token used in release tags. The AYN Odin 3 reports batocera.board=cq8725s
+# but releases are tagged -sm8750-. We therefore search a *set* of tokens
+# (the board, batocera.arch, and any known aliases) so a plain -sm8750- tag is
+# discoverable on a device that only knows itself as cq8725s.
+#
+# Usage:
+#   batocera-pocket-github-release tag [board] [owner/repo]
+#   batocera-pocket-github-release url [board] [owner/repo]
+#   batocera-pocket-github-release version [board] [owner/repo]
+#
+# Env:
+#   GITHUB_OWNER_REPO / updates.url override via 3rd arg
+# Exit 0 on success; prints result to stdout. Exit 1 on failure.
+
+set -euo pipefail
+
+cmd="${1:-tag}"
+board="${2:-}"
+repo="${3:-}"
+
+# Track whether the caller pinned a board. When it did, we trust it verbatim
+# (only its aliases) and must NOT mix in this device's batocera.arch, or a
+# request for another SoC would leak into the local one.
+board_explicit=0
+[ -n "${board}" ] && board_explicit=1
+
+if [ -z "${board}" ]; then
+    if [ -f /boot/boot/batocera.board ]; then
+        board=$(cat /boot/boot/batocera.board)
+    else
+        echo "batocera-pocket-github-release: no board" >&2
+        exit 1
+    fi
+fi
+# historical batocera quirk
+[ "${board}" = "rpi4" ] && board=rpi464
+
+# Map a token to its known equivalents (SoC id <-> board id). Keep symmetric
+# so it works whether the device reports the board id or the SoC id.
+board_aliases() {
+    case "$1" in
+        cq8725s|sm8750) echo "sm8750 cq8725s" ;;
+        *)              echo "$1" ;;
+    esac
+}
+
+# Build the ordered, de-duplicated set of tag tokens to search for:
+#   1. explicit board (+ aliases)
+#   2. batocera.arch (+ aliases)  — canonical SoC name on our images
+search_tokens=""
+add_token() {
+    local t="$1"
+    [ -n "${t}" ] || return 0
+    case " ${search_tokens} " in
+        *" ${t} "*) : ;;
+        *) search_tokens="${search_tokens} ${t}" ;;
+    esac
+}
+for t in $(board_aliases "${board}"); do add_token "${t}"; done
+# Only fold in this device's SoC name when the board was auto-detected.
+if [ "${board_explicit}" -eq 0 ] && [ -r /usr/share/batocera/batocera.arch ]; then
+    arch=$(tr -d '\0\r\n' </usr/share/batocera/batocera.arch 2>/dev/null || true)
+    if [ -n "${arch}" ]; then
+        for t in $(board_aliases "${arch}"); do add_token "${t}"; done
+    fi
+fi
+# strip leading space
+search_tokens="${search_tokens# }"
+
+if [ -z "${repo}" ]; then
+    if [ -n "${GITHUB_OWNER_REPO:-}" ]; then
+        repo="${GITHUB_OWNER_REPO}"
+    else
+        settingsupdateurl="$(/usr/bin/batocera-settings-get updates.url 2>/dev/null || true)"
+        # Avoid `grep -q` in a pipeline under pipefail (see SIGPIPE note below).
+        if [ -n "${settingsupdateurl}" ] && [ "${settingsupdateurl}" != "${settingsupdateurl#*github.com}" ]; then
+            repo=$(printf '%s' "${settingsupdateurl}" | sed -E 's|https?://github.com/||; s|/+$||; s|\.git$||')
+        else
+            repo="darkplace/batocera.pocket"
+        fi
+    fi
+fi
+
+# Match tags like v44-sm8550-20260808 (token between hyphens). Accept a tag
+# that carries ANY of our search tokens; API order is newest-first so the
+# first match is the newest applicable release.
+tag_matches() {
+    local t="$1" token
+    for token in ${search_tokens}; do
+        case "${t}" in
+            *"-${token}-"*) return 0 ;;
+        esac
+    done
+    return 1
+}
+
+# Paginate a few pages; GitHub returns newest first.
+#
+# NOTE: do not pipe into `grep -q` under `set -o pipefail`: grep exits at the
+# first match and closes the pipe, which makes the upstream producer die with
+# SIGPIPE (141) and turns the whole pipeline non-zero — that previously tripped
+# `|| break` and made the helper give up on page 1 (OTA silently broken).
+tag=""
+page=1
+while [ "${page}" -le 5 ] && [ -z "${tag}" ]; do
+    json=$(curl -sfL -H "Accept: application/vnd.github+json" \
+        "https://api.github.com/repos/${repo}/releases?per_page=30&page=${page}" 2>/dev/null || true)
+    [ -n "${json}" ] || break
+
+    # Extract tag_name values in API order (newest first). grep/sed read the
+    # whole stream, so no early-close SIGPIPE here.
+    tag_lines=$(printf '%s\n' "${json}" \
+        | grep '"tag_name"' \
+        | sed -E 's/.*"tag_name":[[:space:]]*"([^"]+)".*/\1/' || true)
+    # Empty page → nothing more to scan.
+    [ -n "${tag_lines}" ] || break
+
+    # Prefer non-draft; allow prerelease (sm8550 untested, etc.)
+    while IFS= read -r t; do
+        [ -n "${t}" ] || continue
+        if tag_matches "${t}"; then
+            tag="${t}"
+            break
+        fi
+    done <<EOF
+${tag_lines}
+EOF
+    page=$((page + 1))
+done
+
+if [ -z "${tag}" ]; then
+    echo "batocera-pocket-github-release: no release for board '${board}' (tokens: ${search_tokens}) in ${repo}" >&2
+    exit 1
+fi
+
+download_base="https://github.com/${repo}/releases/download/${tag}"
+
+case "${cmd}" in
+    tag)
+        echo "${tag}"
+        ;;
+    url)
+        echo "${download_base}"
+        ;;
+    version)
+        ver=$(curl -sfL "${download_base}/batocera.version" 2>/dev/null | head -1 | tr -d '\r' || true)
+        if [ -z "${ver}" ]; then
+            # Fallback so canupdate still sees *something* board-scoped
+            ver="${tag}"
+        fi
+        echo "${ver}"
+        ;;
+    *)
+        echo "usage: batocera-pocket-github-release tag|url|version [board] [owner/repo]" >&2
+        exit 1
+        ;;
+esac
+exit 0

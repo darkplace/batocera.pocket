@@ -71,6 +71,15 @@ function display_error() {
     if (( dialog_height >= term_height )); then dialog_height=$((term_height - 1)); fi
     if (( dialog_width >= term_width )); then dialog_width=$((term_width - 1)); fi
 
+    # Persist resize log onto the FAT boot volume so testers can recover it
+    # offline (UFS Explorer / any PC) when the display is black or /userdata
+    # fell back to a tmpfs RAM disk after a failed autoresize.
+    if mount -o remount,rw /boot 2>/dev/null; then
+        cp -f "$LOG" /boot/RESIZE-ERROR.log 2>/dev/null || true
+        sync
+        mount -o remount,ro /boot 2>/dev/null || true
+    fi
+
     dialog --title "Resize Error" --timeout 10 \
            --msgbox "\nPlease check the resize log at: /tmp/resize.log" \
            "$dialog_height" "$dialog_width" &>"${ACTIVE_TTY_PATH}"

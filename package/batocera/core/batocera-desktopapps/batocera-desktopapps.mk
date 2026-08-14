@@ -146,8 +146,17 @@ endif
 
 # heroic
 ifeq ($(BR2_PACKAGE_HEROIC),y)
+  BATOCERA_DESKTOPAPPS_SCRIPTS += batocera-config-heroic
   BATOCERA_DESKTOPAPPS_APPS    += heroic.desktop
+  BATOCERA_DESKTOPAPPS_APPS    += heroic-config.desktop
   BATOCERA_DESKTOPAPPS_ICONS   += heroic.png
+endif
+
+# lutris
+ifneq ($(filter y,$(BR2_PACKAGE_LUTRIS) $(BR2_PACKAGE_LUTRIS_APPIMAGE)),)
+  BATOCERA_DESKTOPAPPS_SCRIPTS += batocera-config-lutris
+  BATOCERA_DESKTOPAPPS_APPS    += lutris-config.desktop
+  BATOCERA_DESKTOPAPPS_ICONS   += lutris.png
 endif
 
 # n64 recomp launcher

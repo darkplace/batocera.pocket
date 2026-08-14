@@ -1,5 +1,7 @@
 #!/bin/bash
 
+export LC_ALL=C
+
 do_usage() {
     echo "$1 list"
     echo "$1 get"
@@ -126,12 +128,16 @@ case "${ACTION}" in
                 if echo "${VOLUME}" | grep -qE '^[0-9]+$'; then
                     if [[ "${VOLUME}" -ge 0 && "${VOLUME}" -le "${MAX_VOLUME}" ]]; then
                         LC_ALL=C pactl set-sink-volume @DEFAULT_SINK@ "${VOLUME}%" || exit 1
+                        echo "${VOLUME}" > /var/run/batocera-pending-volume
+                        (sleep 2 && VOL=$(cat /var/run/batocera-pending-volume 2>/dev/null) && [ -n "${VOL}" ] && /usr/bin/batocera-settings-set audio.volume "${VOL}") &
                         exit 0
                     fi
                 elif echo "${VOLUME}" | grep -qE '^[+-][0-9]+$'; then
                     let NEW_VOLUME=${DETECT_VOLUME}${VOLUME}
                     NEW_VOLUME=$(( NEW_VOLUME < 0 ? 0 : (NEW_VOLUME > MAX_VOLUME ? MAX_VOLUME : NEW_VOLUME) ))
                     LC_ALL=C pactl set-sink-volume @DEFAULT_SINK@ "${NEW_VOLUME}%" || exit 1
+                    echo "${NEW_VOLUME}" > /var/run/batocera-pending-volume
+                    (sleep 2 && VOL=$(cat /var/run/batocera-pending-volume 2>/dev/null) && [ -n "${VOL}" ] && /usr/bin/batocera-settings-set audio.volume "${VOL}") &
                     exit 0
                 fi
                 echo "invalid volume value" >&2

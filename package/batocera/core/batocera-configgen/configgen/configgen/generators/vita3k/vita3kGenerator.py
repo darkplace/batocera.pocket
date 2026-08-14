@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import logging
 import shutil
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 import ruamel.yaml
@@ -9,6 +11,8 @@ import ruamel.yaml.util
 from ... import Command
 from ...batoceraPaths import CACHE, CONFIGS, SAVES, mkdir_if_not_exists
 from ...controller import generate_sdl_game_controller_config
+from ...utils import vulkan
+from ...utils.configparser import CaseSensitiveConfigParser
 from ..Generator import Generator
 
 if TYPE_CHECKING:
@@ -17,9 +21,41 @@ if TYPE_CHECKING:
 vitaConfig = CONFIGS / 'vita3k'
 vitaSaves = SAVES / 'psvita'
 vitaConfigFile = vitaConfig / 'config.yml'
+vitaGuiConfigs = vitaConfig / 'gui-configs'
+vitaIniFile = vitaGuiConfigs / 'CurrentSettings.ini'
+
+_logger = logging.getLogger(__name__)
+
+
+# Helper function to check if desktop OpenGL 4.4+ is supported
+def has_opengl_4_4_support() -> bool:
+    import platform
+    machine = platform.machine().lower()
+
+    # ARM systems only natively support OpenGL ES, not desktop OpenGL 4.4
+    if "arm" in machine or "aarch64" in machine:
+        _logger.debug("ARM system detected. Desktop OpenGL 4.4 is not supported (only OpenGL ES is available).")
+        return False
+
+    try:
+        import re
+        import subprocess
+        # Query OpenGL version using glxinfo
+        res = subprocess.run(["glxinfo", "-B"], capture_output=True, text=True, timeout=2)
+        if res.returncode == 0:
+            for line in res.stdout.splitlines():
+                if "OpenGL core profile version string" in line or "OpenGL version string" in line:
+                    match = re.search(r"OpenGL (?:core profile )?version string:\s*([0-9]+)\.([0-9]+)", line, re.IGNORECASE)
+                    if match:
+                        major = int(match.group(1))
+                        minor = int(match.group(2))
+                        return major > 4 or (major == 4 and minor >= 4)
+    except Exception as e:
+        _logger.debug("OpenGL 4.4 check failed or glxinfo not available: %s", e)
+    return False
+
 
 class Vita3kGenerator(Generator):
-
 
     def getHotkeysContext(self) -> HotkeysContext:
         return {
@@ -39,16 +75,48 @@ class Vita3kGenerator(Generator):
                 if item.name not in ['data', 'lang', 'shaders-builtin'] and item.is_dir():
                     shutil.move(item, vitaSaves)
 
-        # Create the config.yml file if it doesn't exist
+        # Create the config folders if they don't exist
         mkdir_if_not_exists(vitaConfig)
+        mkdir_if_not_exists(vitaGuiConfigs)
+
+        # Handle CurrentSettings.ini
+        iniConfig = CaseSensitiveConfigParser()
+
+        if vitaIniFile.is_file():
+            iniConfig.read(vitaIniFile)
+
+        if not iniConfig.has_section('MainWindow'):
+            iniConfig.add_section('MainWindow')
+
+        iniConfig.set('MainWindow', 'warnAdminPrivileges', 'false')
+
+        with vitaIniFile.open('w') as configfile:
+            # space_around_delimiters=False ensures it writes as key=value without spaces
+            iniConfig.write(configfile, space_around_delimiters=False)
 
         vita3kymlconfig: dict[str, Any] | None = None
         indent: int | None = None
         block_seq_indent: int | None = None
 
-        if vitaConfigFile.is_file():
-            with vitaConfigFile.open('r') as stream:
-                vita3kymlconfig, indent, block_seq_indent = cast('tuple[dict[str, Any] | None, int | None, int | None]', ruamel.yaml.util.load_yaml_guess_indent(stream))
+        # Vita3K rejects sparse config.yml when passed with -c (missing keyboard-* etc.).
+        # Seed from an existing full config when present.
+        seed_candidates = [
+            vitaConfigFile,
+            Path("/userdata/system/.config/vita3k/config.yml"),
+            Path.home() / ".config" / "vita3k" / "config.yml",
+        ]
+        for seed in seed_candidates:
+            if seed.is_file():
+                try:
+                    with seed.open('r') as stream:
+                        vita3kymlconfig, indent, block_seq_indent = cast(
+                            'tuple[dict[str, Any] | None, int | None, int | None]',
+                            ruamel.yaml.util.load_yaml_guess_indent(stream),
+                        )
+                    if vita3kymlconfig is not None:
+                        break
+                except Exception as e:
+                    _logger.debug("Failed to load Vita3K config seed %s: %s", seed, e)
 
         if vita3kymlconfig is None:
             vita3kymlconfig = {}
@@ -59,29 +127,79 @@ class Vita3kGenerator(Generator):
         if block_seq_indent is None:
             block_seq_indent = 0
 
-        # ensure the correct path is set
+        # Ensure the correct path is set
         vita3kymlconfig["pref-path"] = f"{vitaSaves!s}"
 
-        # Set the renderer
-        vita3kymlconfig["backend-renderer"] = system.config.get("vita3k_gfxbackend", "OpenGL")
+        # Quiet first-run prompts when keys exist in this build
+        vita3kymlconfig["initial-setup"] = False
+        vita3kymlconfig["show-welcome"] = False
+        vita3kymlconfig["discord-rich-presence"] = False
+        vita3kymlconfig["validation-layer"] = False
+
+        # Set the renderer (ARM/Adreno: OpenGL 4.4 unavailable → Vulkan)
+        gfx_backend = system.config.get("vita3k_gfxbackend")
+        _logger.debug("User selected graphics backend: %s", gfx_backend)
+
+        use_vulkan = False
+        if gfx_backend == "Vulkan":
+            use_vulkan = True
+        elif gfx_backend == "OpenGL":
+            _logger.debug("OpenGL backend selected. Verifying if OpenGL 4.4 is supported...")
+            if has_opengl_4_4_support():
+                _logger.debug("OpenGL 4.4 is supported on this system. Sticking with OpenGL.")
+                vita3kymlconfig["backend-renderer"] = "OpenGL"
+            else:
+                _logger.debug("OpenGL 4.4 is NOT supported. Attempting to fall back to Vulkan...")
+                use_vulkan = True
+        else:
+            # Default / unset: prefer OpenGL only when desktop GL 4.4 exists
+            if has_opengl_4_4_support():
+                vita3kymlconfig["backend-renderer"] = "OpenGL"
+            else:
+                use_vulkan = True
+
+        if use_vulkan:
+            if vulkan.is_available():
+                _logger.debug("Vulkan driver is available on the system.")
+                vita3kymlconfig["backend-renderer"] = "Vulkan"
+
+                if vulkan.has_discrete_gpu():
+                    _logger.debug("A discrete GPU is available on the system. We will use that for performance")
+                    discrete_index = vulkan.get_discrete_gpu_index()
+                    if discrete_index:
+                        _logger.debug("Using Discrete GPU Index: %s for Vita3K", discrete_index)
+                        vita3kymlconfig["gpu-idx"] = discrete_index
+                    else:
+                        _logger.debug("Couldn't get discrete GPU index")
+                else:
+                    _logger.debug("Discrete GPU is not available on the system. Using default.")
+                    vita3kymlconfig["gpu-idx"] = 0
+            else:
+                _logger.debug("Vulkan was requested or triggered as fallback, but the Vulkan driver is not available. Falling back to OpenGL.")
+                vita3kymlconfig["backend-renderer"] = "OpenGL"
 
         # Set the resolution multiplier
-        vita3kymlconfig["resolution-multiplier"] = system.config.get_int("vita3k_resolution", 1)
+        res_val = system.config.get("vita3k_resolution", "1")
+        try:
+            res_mult = float(res_val)
+            vita3kymlconfig["resolution-multiplier"] = int(res_mult) if res_mult.is_integer() else res_mult
+        except (TypeError, ValueError):
+            vita3kymlconfig["resolution-multiplier"] = 1
 
-        # Set FXAA
-        vita3kymlconfig["enable-fxaa"] = system.config.get_bool("vita3k_fxaa", return_values=("true", "false"))
-
-        # Set VSync
-        vita3kymlconfig["v-sync"] = system.config.get_bool("vita3k_vsync", True, return_values=("true", "false"))
-
-        # Set the anisotropic filtering
+        # Keep legacy FXAA / linear keys when the build still understands them
+        vita3kymlconfig["enable-fxaa"] = system.config.get_bool("vita3k_fxaa", False)
+        vita3kymlconfig["v-sync"] = system.config.get_bool("vita3k_vsync", True)
         vita3kymlconfig["anisotropic-filtering"] = system.config.get_int("vita3k_anisotropic", 1)
-
-        # Set the linear filtering option
-        vita3kymlconfig["enable-linear-filter"] = system.config.get_bool("vita3k_linear", return_values=("true", "false"))
-
-        # Surface Sync
-        vita3kymlconfig["disable-surface-sync"] = system.config.get_bool("vita3k_surface", True, return_values=("true", "false"))
+        vita3kymlconfig["enable-linear-filter"] = system.config.get_bool("vita3k_linear", False)
+        vita3kymlconfig["screen-filter"] = system.config.get("vita3k_filter", "Bilinear")
+        vita3kymlconfig["disable-surface-sync"] = system.config.get_bool("vita3k_surface", True)
+        vita3kymlconfig["async-pipeline-compilation"] = system.config.get_bool("vita3k_sync", True)
+        vita3kymlconfig["fullscreen_hd_res_pixel_perfect"] = system.config.get_bool("vita3k_hd_pixel", False)
+        vita3kymlconfig["high-accuracy"] = system.config.get_bool("vita3k_accuracy", False)
+        vita3kymlconfig["texture-cache"] = system.config.get_bool("vita3k_texture", True)
+        vita3kymlconfig["shader-cache"] = system.config.get_bool("vita3k_shader", True)
+        vita3kymlconfig["memory-mapping"] = system.config.get("vita3k_mapping", "double-buffer")
+        vita3kymlconfig["sys-lang"] = system.config.get_int("vita3k_system_language", 1)
 
         # Vita3k is fussy over its yml file
         # We try to match it as close as possible, but the 'vectors' cause yml formatting issues

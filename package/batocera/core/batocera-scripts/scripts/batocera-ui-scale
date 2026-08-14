@@ -1,0 +1,161 @@
+#!/bin/sh
+# Resolve a UI scale factor for desktop Tools / Apps / Plasma LXC on handhelds.
+#
+# Keep the framebuffer at native 1080p (sharp); enlarge widgets/cursors via
+# toolkit scale instead of dropping the output mode.
+#
+# Priority:
+#   1. BATOCERA_UI_SCALE (env override)
+#   2. system.ui.scale (batocera.conf)
+#   3. global.dpi / 96 (batocera.conf; documented DPI knob)
+#   4. board default (sm8550/sm8750 → 1.75)
+#   5. 1.0
+#
+# Usage:
+#   batocera-ui-scale              # print factor
+#   batocera-ui-scale factor       # print factor
+#   batocera-ui-scale env          # shell exports (eval "$(batocera-ui-scale env)")
+#   batocera-ui-scale chromium-arg # print --force-device-scale-factor=N if >1
+
+set -eu
+
+is_handheld_board() {
+    arch=""
+    if [ -r /usr/share/batocera/batocera.arch ]; then
+        arch="$(tr -d '\0\r\n' </usr/share/batocera/batocera.arch 2>/dev/null || true)"
+    fi
+    case "${arch}" in
+        sm8550|sm8750|sm8250|qcs6490)
+            return 0
+            ;;
+    esac
+
+    model=""
+    compatible=""
+    if [ -r /sys/firmware/devicetree/base/model ]; then
+        model="$(tr -d '\0' </sys/firmware/devicetree/base/model 2>/dev/null || true)"
+    fi
+    if [ -r /sys/firmware/devicetree/base/compatible ]; then
+        compatible="$(tr -d '\0' </sys/firmware/devicetree/base/compatible 2>/dev/null || true)"
+    fi
+    case "${model} ${compatible}" in
+        *"AYN Odin"*|*"ayn,odin"*|*"AYN Thor"*|*"ayn,thor"*|*"Retroid"*|*"retroid"*)
+            return 0
+            ;;
+    esac
+    return 1
+}
+
+conf_get() {
+    key="$1"
+    if command -v batocera-settings-get >/dev/null 2>&1; then
+        batocera-settings-get "${key}" 2>/dev/null || true
+    fi
+}
+
+normalize_factor() {
+    # Accept integers or simple decimals; reject junk.
+    printf '%s' "$1" | grep -Eq '^[0-9]+([.][0-9]+)?$' || return 1
+    # Clamp to a sane handheld range.
+    awk -v s="$1" 'BEGIN {
+        if (s+0 < 1) s=1
+        if (s+0 > 3) s=3
+        # Trim trailing zeros for cleaner env (1.50 → 1.5, 2.00 → 2)
+        printf "%g\n", s+0
+    }'
+}
+
+resolve_factor() {
+    val=""
+
+    if [ -n "${BATOCERA_UI_SCALE:-}" ]; then
+        val="${BATOCERA_UI_SCALE}"
+    else
+        val="$(conf_get system.ui.scale)"
+    fi
+
+    if [ -z "${val}" ]; then
+        dpi="$(conf_get global.dpi)"
+        if printf '%s' "${dpi}" | grep -Eq '^[0-9]+([.][0-9]+)?$'; then
+            val="$(awk -v d="${dpi}" 'BEGIN { printf "%g\n", (d+0)/96.0 }')"
+        fi
+    fi
+
+    if [ -z "${val}" ] && is_handheld_board; then
+        # ~1080p on a ~6" panel: 1× chrome is unusable with mouse/touch.
+        # Fractional KWin/Qt scale keeps 1920x1080 output mode.
+        val="1.75"
+    fi
+
+    if [ -z "${val}" ]; then
+        val="1"
+    fi
+
+    normalize_factor "${val}" || echo "1"
+}
+
+gdk_pair_for() {
+    # GDK_SCALE is integer; fold the fraction into GDK_DPI_SCALE.
+    factor="$1"
+    awk -v s="${factor}" 'BEGIN {
+        if (s+0 <= 1.01) { print "1 1"; exit }
+        g = int(s+0.999999)   # ceil
+        if (g < 1) g = 1
+        if (g > 3) g = 3
+        dpi = s / g
+        printf "%d %g\n", g, dpi
+    }'
+}
+
+print_env() {
+    factor="$(resolve_factor)"
+    gdk="$(gdk_pair_for "${factor}")"
+    gdk_scale="$(printf '%s' "${gdk}" | awk '{print $1}')"
+    gdk_dpi="$(printf '%s' "${gdk}" | awk '{print $2}')"
+
+    # Do not clobber an explicit toolkit override already set by the caller.
+    if [ -z "${QT_SCALE_FACTOR:-}" ]; then
+        printf 'export QT_SCALE_FACTOR=%s\n' "${factor}"
+        printf 'export QT_AUTO_SCREEN_SCALE_FACTOR=0\n'
+        printf 'export QT_ENABLE_HIGHDPI_SCALING=1\n'
+    fi
+    if [ -z "${GDK_SCALE:-}" ]; then
+        printf 'export GDK_SCALE=%s\n' "${gdk_scale}"
+    fi
+    if [ -z "${GDK_DPI_SCALE:-}" ]; then
+        printf 'export GDK_DPI_SCALE=%s\n' "${gdk_dpi}"
+    fi
+    # Plasma LXC / kscreen-doctor consume this when callers leave it empty.
+    if [ -z "${BATOCERA_ARCH_PLASMA_OUTPUT_SCALE:-}" ]; then
+        printf 'export BATOCERA_ARCH_PLASMA_OUTPUT_SCALE=%s\n' "${factor}"
+    fi
+    printf 'export BATOCERA_UI_SCALE=%s\n' "${factor}"
+}
+
+print_chromium_arg() {
+    factor="$(resolve_factor)"
+    awk -v s="${factor}" 'BEGIN {
+        if (s+0 > 1.01)
+            printf "--force-device-scale-factor=%g\n", s+0
+    }'
+}
+
+cmd="${1:-factor}"
+case "${cmd}" in
+    factor|"")
+        resolve_factor
+        ;;
+    env)
+        print_env
+        ;;
+    chromium-arg|chromium)
+        print_chromium_arg
+        ;;
+    -h|--help|help)
+        sed -n '2,20p' "$0"
+        ;;
+    *)
+        echo "Usage: $0 [factor|env|chromium-arg]" >&2
+        exit 2
+        ;;
+esac

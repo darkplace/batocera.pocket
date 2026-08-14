@@ -1,0 +1,141 @@
+#!/bin/bash
+#
+# Early + late display/resize diagnostic for sm8550 black-screen triage.
+#
+# Runs as S03 (right after S02resize) AND again if invoked later. Writes
+# IMMEDIATELY (no sleep) to the FAT "BATOCERA" partition so the dump survives
+# even when /userdata is a tmpfs fallback after a failed autoresize.
+#
+# Offline recovery: open the BATOCERA volume on any PC and grab:
+#   BATOCERA-DIAG.txt   (this dump)
+#   RESIZE-ERROR.log    (if S02resize failed)
+#   READ_ME_DIAG.txt    (ships in the image — proves you have the right volume)
+
+DUMP_TMP="/tmp/batocera-diag.txt"
+MARKER="/tmp/batocera-diag.ran"
+
+write_to_batocera_fat() {
+	local src="$1"
+	local name="$2"
+	local ok=1
+	local dev
+
+	# 1) Normal path: /boot is the moved initramfs mount (usually ro).
+	if [ -d /boot ] && grep -q ' /boot ' /proc/mounts 2>/dev/null; then
+		if mount -o remount,rw /boot 2>/dev/null; then
+			if cp -f "$src" "/boot/${name}" 2>/dev/null; then
+				sync
+				ok=0
+			fi
+			mount -o remount,ro /boot 2>/dev/null || true
+			[ "$ok" -eq 0 ] && return 0
+		fi
+	fi
+
+	# 2) Direct mount by LABEL=BATOCERA (in case /boot remount failed).
+	dev=$(blkid -L BATOCERA 2>/dev/null || true)
+	if [ -n "$dev" ]; then
+		mkdir -p /tmp/diag-batocera
+		# If already mounted on /boot, remount that mountpoint rw again with force.
+		if mount -o remount,rw /boot 2>/dev/null; then
+			if cp -f "$src" "/boot/${name}" 2>/dev/null; then
+				sync
+				ok=0
+			fi
+			mount -o remount,ro /boot 2>/dev/null || true
+			[ "$ok" -eq 0 ] && return 0
+		fi
+		# Last resort: mtools write without needing a free mount (device busy OK for mcopy -i).
+		if command -v mcopy >/dev/null 2>&1; then
+			if MTOOLS_SKIP_CHECK=1 mcopy -o -i "$dev" "$src" "::${name}" 2>/dev/null; then
+				sync
+				return 0
+			fi
+		fi
+	fi
+
+	return 1
+}
+
+run_dump() {
+	local tag="$1"
+	{
+		echo "==================== batocera.pocket display diag ===================="
+		echo "tag: ${tag}"
+		date
+		echo "## uptime";   cat /proc/uptime 2>/dev/null
+		echo "## model";    cat /proc/device-tree/model 2>/dev/null; echo
+		echo "## cmdline";  cat /proc/cmdline 2>/dev/null
+		echo "## mounts";   grep -E ' /boot | /userdata |vfat|ext4|BATOCERA|SHARE' /proc/mounts 2>/dev/null
+		echo "## blkid";    blkid 2>/dev/null
+
+		echo; echo "==================== DRM connectors ===================="
+		for s in /sys/class/drm/card*/status;  do [ -e "$s" ] && echo "$s = $(cat "$s" 2>/dev/null)"; done
+		for e in /sys/class/drm/card*/enabled; do [ -e "$e" ] && echo "$e = $(cat "$e" 2>/dev/null)"; done
+		echo "## modes"
+		for m in /sys/class/drm/card*/modes; do [ -e "$m" ] && { echo "-- $m"; cat "$m" 2>/dev/null; }; done
+		echo "## /dev/dri + fb"
+		ls -l /dev/dri 2>/dev/null
+		ls -l /dev/fb* 2>/dev/null
+
+		echo; echo "==================== dmesg: drm/dpu/dsi/panel/gpu ===================="
+		dmesg 2>/dev/null | grep -Ei 'drm|dpu|dsi|mdss|panel|icna|td4328|xm91080|ch13726|adreno|gpu|msm|efifb|simple-?frame|cont_splash|backlight' | tail -200
+
+		echo; echo "==================== dmesg: errors/timeouts ===================="
+		dmesg 2>/dev/null | grep -Ei 'error|fail|timeout|-ETIME|-EINVAL|-EPROBE|deferred|not bound|panic|Oops|Unable to handle' | tail -160
+
+		echo; echo "==================== processes ===================="
+		ps -ef 2>/dev/null | grep -Ei 'weston|emulationstation|gamescope|batocera|dialog|resize' | grep -v grep
+
+		echo; echo "==================== resize.log ===================="
+		cat /tmp/resize.log 2>/dev/null
+
+		echo; echo "==================== boot.log (init.d) ===================="
+		cat /var/run/boot.log 2>/dev/null | tail -80
+
+		echo; echo "==================== logs (if userdata real) ===================="
+		for f in /userdata/system/logs/weston.log \
+			 /userdata/system/logs/es_launch_stdout.log \
+			 /userdata/system/logs/es_log.txt \
+			 /userdata/system/logs/emulationstation.log \
+			 /userdata/system/logs/display.log \
+			 /var/log/messages; do
+			echo "---- $f ----"; tail -60 "$f" 2>/dev/null
+		done
+
+		echo; echo "==================== lsblk / df ===================="
+		lsblk 2>/dev/null
+		echo; df -h 2>/dev/null
+
+		echo; echo "==================== end (${tag}) ===================="
+	} > "${DUMP_TMP}" 2>&1
+
+	# Always try FAT first (survives power-off even if userdata is tmpfs).
+	write_to_batocera_fat "${DUMP_TMP}" "BATOCERA-DIAG.txt"
+	# Also keep a stamp so we know the script ran even if the big dump failed.
+	echo "diag ran tag=${tag} at $(date)" > /tmp/diag-ran.txt
+	write_to_batocera_fat /tmp/diag-ran.txt "DIAG-RAN.txt"
+
+	# Best-effort copies onto SHARE (only useful if it is a real disk, not tmpfs).
+	if [ -d /userdata ] && ! grep -q 'tmpfs /userdata' /proc/mounts 2>/dev/null; then
+		mkdir -p /userdata/system/logs 2>/dev/null
+		cp -f "${DUMP_TMP}" /userdata/system/logs/batocera-diag.txt 2>/dev/null
+		cp -f "${DUMP_TMP}" /userdata/BATOCERA-DIAG.txt 2>/dev/null
+		sync
+	fi
+}
+
+start() {
+	# Immediate dump — do NOT background the first pass.
+	run_dump "S03-immediate"
+	touch "$MARKER"
+	# Second pass after display stack / ES may have started (still write to FAT).
+	( sleep 45; run_dump "S03-plus45s" ) >/dev/null 2>&1 &
+}
+
+case "$1" in
+	start) start ;;
+	stop)  : ;;
+	*)     start ;;
+esac
+exit 0

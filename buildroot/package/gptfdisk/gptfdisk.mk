@@ -33,8 +33,19 @@ GPTFDISK_LDLIBS += -liconv
 endif
 endif
 
+# gptfdisk 1.0.10 is legacy C++; GCC 15 plus board -mcpu=cortex-a715* can emit
+# instructions that SIGILL at runtime on sm8550/sm8750. Build with baseline armv8-a.
+ifeq ($(BR2_aarch64),y)
+GPTFDISK_CFLAGS = $(filter-out -march=% -mcpu=% -mtune=%,$(TARGET_CFLAGS)) -march=armv8-a -mtune=generic
+GPTFDISK_CXXFLAGS = $(filter-out -march=% -mcpu=% -mtune=%,$(TARGET_CXXFLAGS)) -march=armv8-a -mtune=generic
+else
+GPTFDISK_CFLAGS = $(TARGET_CFLAGS)
+GPTFDISK_CXXFLAGS = $(TARGET_CXXFLAGS)
+endif
+
 define GPTFDISK_BUILD_CMDS
 	$(TARGET_MAKE_ENV) $(MAKE) $(TARGET_CONFIGURE_OPTS) -C $(@D) \
+		CFLAGS="$(GPTFDISK_CFLAGS)" CXXFLAGS="$(GPTFDISK_CXXFLAGS)" \
 		LDLIBS='$(GPTFDISK_LDLIBS)' \
 		SGDISK_LDLIBS='$(GPTFDISK_SGDISK_LDLIBS)' $(GPTFDISK_TARGETS_y)
 endef

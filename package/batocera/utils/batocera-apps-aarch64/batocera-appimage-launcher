@@ -31,6 +31,19 @@ if [ ! -x "$appimage" ]; then
     fi
 fi
 
+# Enlarge toolkit/Chromium chrome on handhelds; keep native 1080p.
+if command -v batocera-ui-scale >/dev/null 2>&1; then
+    # shellcheck disable=SC2046
+    eval "$(batocera-ui-scale env)"
+    chromium_arg="$(batocera-ui-scale chromium-arg || true)"
+    if [ -n "${chromium_arg}" ]; then
+        case " $* " in
+            *" --force-device-scale-factor="*) ;;
+            *) set -- "${chromium_arg}" "$@" ;;
+        esac
+    fi
+fi
+
 setup_sdl_controller_env() {
     if [ -f /userdata/system/gamecontrollerdb.txt ]; then
         SDL_GAMECONTROLLERCONFIG="$(cat /userdata/system/gamecontrollerdb.txt)"

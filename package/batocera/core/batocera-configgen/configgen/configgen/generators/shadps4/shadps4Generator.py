@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -41,10 +42,105 @@ SHADPS4_FEX_APP_CONFIG_DIR = Path("/usr/share/fex-emu/shadps4-fex")
 SHADPS4_FEX_APP_CONFIG = SHADPS4_FEX_APP_CONFIG_DIR / "shadps4-fex.json"
 SHADPS4_TROPHY_SOUND_SOURCE = Path("/usr/share/libretro/assets/sounds/ps3-trophy.ogg")
 SHADPS4_TROPHY_SOUND_MARKER = ".batocera-ps3-trophy"
+SHADPS4_PATCHES_SHARE = Path("/usr/share/shadps4/patches/shadPS4")
+_SHADPS4_HANDHELD_PATCHES = frozenset({
+    "Skip Intro",
+    "Performance Patch (perf increase)",
+    "Disable Motion Blur (perf increase)",
+    "Disable Dynamic Light Shadows (perf increase)",
+    "Disable Chromatic Aberration",
+    "Disable AA",
+    "Disable DoF",
+    "FMOD Crash Fix",
+    "Resolution Patch 1280x720 (16:9)",
+})
+_SHADPS4_PATCH_DENY = re.compile(
+    r"(?i)60\s*fps|90\s*fps|uncap|no dead|stealth|silent|debug menu|"
+    r"4k|1440|2160|2560|3840|5120|1080p|1440p"
+)
 
 
 def _is_aarch64() -> bool:
     return os.uname().machine.lower() in ("aarch64", "arm64")
+
+
+def _render_size(system, gameResolution) -> tuple[int, int]:
+    native = (int(gameResolution["width"]), int(gameResolution["height"]))
+    raw = system.config.get_str("shadps4_resolution", "").strip().lower()
+    if not raw:
+        raw = "1280x720" if _is_aarch64() else "native"
+    if raw in {"native", "display", "auto"}:
+        return native
+    if "x" not in raw:
+        return native
+    width_str, height_str = raw.split("x", 1)
+    try:
+        width, height = int(width_str), int(height_str)
+    except ValueError:
+        return native
+    if width < 320 or height < 240:
+        return native
+    return width, height
+
+
+def _should_enable_community_patch(name: str) -> bool:
+    if name in _SHADPS4_HANDHELD_PATCHES:
+        return True
+    if _SHADPS4_PATCH_DENY.search(name):
+        return False
+    return "(perf increase)" in name or name.startswith("Skip Intro") or "FMOD Crash Fix" in name
+
+
+def _apply_community_patch_enables(xml_path: Path) -> None:
+    text = xml_path.read_text(encoding="utf-8", errors="replace")
+    if 'isEnabled="true"' in text:
+        return
+
+    def _repl(match: re.Match[str]) -> str:
+        tag = re.sub(r'\s+isEnabled="[^"]*"', "", match.group(0))
+        name_match = re.search(r'\bName="([^"]+)"', tag)
+        name = name_match.group(1) if name_match else ""
+        enabled = "true" if _should_enable_community_patch(name) else "false"
+        return tag[:-1] + f' isEnabled="{enabled}">'
+
+    updated, count = re.subn(r"<Metadata\b[^>]*>", _repl, text)
+    if count:
+        xml_path.write_text(updated, encoding="utf-8")
+
+
+def _write_patches_index(patch_dir: Path) -> None:
+    index: dict[str, list[str]] = {}
+    for xml_path in sorted(patch_dir.glob("*.xml")):
+        text = xml_path.read_text(encoding="utf-8", errors="replace")
+        index[xml_path.name] = re.findall(r"<ID>\s*(CUSA\d+)\s*</ID>", text, flags=re.I)
+    (patch_dir / "files.json").write_text(json.dumps(index, indent=2) + "\n", encoding="utf-8")
+
+
+def _seed_community_patches(user_config_path: Path) -> None:
+    dest = user_config_path / "patches" / "shadPS4"
+    mkdir_if_not_exists(dest)
+    copied = False
+    if SHADPS4_PATCHES_SHARE.is_dir():
+        for xml_path in SHADPS4_PATCHES_SHARE.glob("*.xml"):
+            target = dest / xml_path.name
+            if target.exists():
+                continue
+            try:
+                shutil.copy2(xml_path, target)
+                copied = True
+            except OSError as exc:
+                _logger.warning("Unable to install shadPS4 community patch %s: %s", xml_path.name, exc)
+    if _is_aarch64():
+        for xml_path in dest.glob("*.xml"):
+            try:
+                _apply_community_patch_enables(xml_path)
+            except OSError as exc:
+                _logger.warning("Unable to enable shadPS4 community patch %s: %s", xml_path.name, exc)
+    if copied or not (dest / "files.json").is_file():
+        try:
+            _write_patches_index(dest)
+        except OSError as exc:
+            _logger.warning("Unable to index shadPS4 community patches: %s", exc)
 
 
 def _fex_app_environment() -> dict[str, str]:
@@ -134,6 +230,7 @@ class shadPS4Generator(Generator):
 
         mkdir_if_not_exists(userConfigPath)
         mkdir_if_not_exists(savesPath)
+        _seed_community_patches(userConfigPath)
 
         # Check Vulkan first before doing anything
         discrete_index = -1
@@ -286,12 +383,14 @@ class shadPS4Generator(Generator):
 
         _prepare_ps3_trophy_sound(userConfigPath)
 
+        render_width, render_height = _render_size(system, gameResolution)
+
         # GPU
         gpu_config = config.setdefault("GPU", {})
         gpu_config["Fullscreen"] = True
         gpu_config["FullscreenMode"] = "Fullscreen (Borderless)"
-        gpu_config["screenWidth"] = int(gameResolution["width"])
-        gpu_config["screenHeight"] = int(gameResolution["height"])
+        gpu_config["screenWidth"] = render_width
+        gpu_config["screenHeight"] = render_height
 
         hdr_enabled = system.config.get_bool("shadps4_hdr", False)
         copy_gpu_buffers = system.config.get_bool("shadps4_copy_gpu_buffers", False)
@@ -328,10 +427,10 @@ class shadPS4Generator(Generator):
         gui_config["addonInstallDir"] = str(dlcPath)
         gui_config["installDirs"] = [str(romDir)]
         gui_config["saveDataPath"] = str(savesPath)
-        gui_config["mw_width"] = int(gameResolution["width"])
-        gui_config["mw_height"] = int(gameResolution["height"])
-        gui_config["geometry_w"] = int(gameResolution["width"])
-        gui_config["geometry_h"] = int(gameResolution["height"])
+        gui_config["mw_width"] = render_width
+        gui_config["mw_height"] = render_height
+        gui_config["geometry_w"] = render_width
+        gui_config["geometry_h"] = render_height
         gui_config["pkgDirs"] = [str(romDir)]
 
         # Vulkan - Set the detected GPU ID
@@ -394,8 +493,8 @@ class shadPS4Generator(Generator):
                     "rcas_enabled": rcas_enabled,
                     "readbacks_mode": readbacks_mode,
                     "vblank_frequency": vblank_frequency,
-                    "window_height": int(gameResolution["height"]),
-                    "window_width": int(gameResolution["width"]),
+                    "window_height": render_height,
+                    "window_width": render_width,
                 },
                 "Log": {
                     "enable": logging_enabled,

@@ -4,7 +4,7 @@
 #
 ################################################################################
 
-CEMU_VERSION = acb105bd58a06ce93fc140ce0c2f55f1688ab2fd
+CEMU_VERSION = daacdda0bab55dd78a2b5aac2c12d6ebe8c8e868
 CEMU_SITE = https://github.com/cemu-project/Cemu
 CEMU_LICENSE = GPLv2
 CEMU_SITE_METHOD=git
@@ -71,7 +71,9 @@ endif
 
 define CEMU_INSTALL_TARGET_CMDS
 	mkdir -p $(TARGET_DIR)/usr/bin/cemu/
-	mv -f $(@D)/bin/Cemu_release $(@D)/bin/cemu
+	if [ -f $(@D)/bin/Cemu_release ]; then \
+		mv -f $(@D)/bin/Cemu_release $(@D)/bin/cemu; \
+	fi
 	cp -pr $(@D)/bin/{cemu,gameProfiles,resources} $(TARGET_DIR)/usr/bin/cemu/
 	$(INSTALL) -m 0755 -D \
 	    $(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/emulators/cemu/get-audio-device \
@@ -79,5 +81,18 @@ define CEMU_INSTALL_TARGET_CMDS
 	# create dir for keys.txt
 	mkdir -p $(TARGET_DIR)/usr/share/batocera/datainit/bios/cemu
 endef
+
+define CEMU_INSTALL_GRAPHIC_PACKS
+	mkdir -p $(@D)/graphic-packs-dl $(TARGET_DIR)/usr/share/cemu/graphicPacks
+	$(HOST_DIR)/bin/curl -fL --retry 3 \
+		-o $(@D)/graphic-packs-dl/packs.zip \
+		https://github.com/cemu-project/cemu_graphic_packs/archive/refs/heads/master.zip
+	PATH="$(HOST_DIR)/bin:$(PATH)" python3 \
+		$(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/emulators/cemu/install-graphic-packs.py \
+		$(@D)/graphic-packs-dl/packs.zip \
+		$(TARGET_DIR)/usr/share/cemu/graphicPacks
+endef
+
+CEMU_POST_INSTALL_TARGET_HOOKS += CEMU_INSTALL_GRAPHIC_PACKS
 
 $(eval $(cmake-package))

@@ -1,0 +1,170 @@
+# Controls and FAQ (Odin 2 / Odin 3)
+
+Quick reference for **real** AYN pad mappings on batocera.pocket (sm8550 /
+sm8750). GUIDs and combos come from `es_input.cfg`, `evmapy/hotkeys.keys`, and
+`hotkeygen` on device.
+
+> **Home** = Guide / Mode button on the pad (physical home / logo).
+> In Batocera this is `hotkey` (SDL button id **9**, code **316**).
+
+Recognized devices:
+
+| Name | GUID |
+|------|------|
+| AYN Odin2 Gamepad | `03000000202000000130000001000000` |
+| AYN Odin3 Gamepad | `03000000202000000130000001000000` |
+
+(Same GUID on both; ES mapping is identical.)
+
+---
+
+## Essential hotkeys (EmulationStation / emulators)
+
+| Combo | Action |
+|-------|--------|
+| **Home + Start** | Exit emulator (clean exit) |
+| **L1 + Select + Start** | Force quit (`batocera-es-swissknife --emukill`) |
+| **L1 + R1 + Select + Start** | Force quit (same; harder to press by accident) |
+| **R1 + Select + Start** | Toggle mouse mode |
+| **Home + Start + Select** | Toggle mouse mode (via `hotkeygen`) |
+| **Home + A** | Batocera Control Center / Control Deck |
+| **Home + B** | Emulator / options menu |
+| **Home + Touch** | On-screen keyboard (hold Home, tap the screen) |
+| **Home + Y** | Save state |
+| **Home + X** | Load state |
+| **Home + ↑ / ↓** | Previous / next save slot |
+| **Home + ← / →** | Rewind / fast-forward (if the core supports it) |
+| **Home + L1** | Screenshot |
+| **Back** (next to Home on Odin) | Brightness cycle (`brightness-cycle`) |
+
+In **Steam** (GamepadUI), Back becomes `steam_chord` (not brightness).
+On Steam exit / force-kill, `51-odin-brightness-hotkeys.sh` restores the ES
+mapping so brightness works again.
+
+---
+
+## Batocera logical name ↔ physical button
+
+| Batocera name | Typical Odin button |
+|---------------|---------------------|
+| `hotkey` | Home / Guide / Mode |
+| `pageup` | L1 |
+| `pagedown` | R1 |
+| `l2` / `r2` | L2 / R2 (analog axes) |
+| `l3` / `r3` | Stick clicks |
+| `select` / `start` | Select / Start |
+| `a` `b` `x` `y` | Face buttons (Xbox layout: A bottom, B right, …) |
+
+---
+
+<details>
+<summary><b>FAQ — Controls and input</b></summary>
+
+### Brightness button “dies” after Steam or a force quit
+
+After Steam or `L1+R1+Select+Start`, the `.mapping.steam` profile can stick, or
+`hotkeygen` may not come back. Recent builds restore the map via
+`/userdata/system/scripts/51-odin-brightness-hotkeys.sh` on `gameStop` /
+forcekill. If it stays dead: restart ES or the device; confirm the script
+exists under `/userdata/system/scripts/`.
+
+### Mouse mode will not turn off / cursor stuck
+
+Press **R1 + Select + Start** (or **Home + Start + Select**) again.
+If that fails: `batocera-mouse-mode disable` over SSH.
+
+### Force quit does not close Wine / Steam / an emulator
+
+Use **L1 + R1 + Select + Start** (not only Home+Start). Home+Start is a polite
+exit; force kill runs `emukill`.
+
+### Can I remap Home?
+
+Yes — EmulationStation → Controllers. If you change the `hotkey` button, **all**
+Home+… combos move with it.
+
+</details>
+
+<details>
+<summary><b>FAQ — ROMs, paths, and systems</b></summary>
+
+### A system does not show up in ES
+
+Only systems with **at least one game** (valid extension) are listed. A lone
+`_info.txt` does not count. After copying: update gamelist / restart ES.
+Guide: [ADDING_ROMS.md](ADDING_ROMS.md).
+
+### GameCube cannot find the game
+
+Official folder is `/userdata/roms/gamecube/` (not `gc`).
+
+### Where do Windows / Steam / Heroic / Lutris go?
+
+| Platform | Path |
+|----------|------|
+| Wine / `.pc` | `/userdata/roms/windows/` |
+| Steam | `/userdata/roms/steam/` |
+| Heroic | `/userdata/roms/heroic/` |
+| Lutris | `/userdata/roms/lutris/` |
+
+Details and extensions: [ADDING_ROMS.md](ADDING_ROMS.md).
+
+### BIOS
+
+`/userdata/bios/` — **Settings → System → Check BIOS** or the
+[Batocera wiki](https://wiki.batocera.org/batocera-os:add_games_bios#bios).
+
+</details>
+
+<details>
+<summary><b>FAQ — WiFi, fan, boot</b></summary>
+
+### WiFi “connected” but no Internet (Odin 3 / sm8750)
+
+The `S09sm8750-wifi-resilience` watchdog detects association without usable
+IPv4, no gateway path (“dead-air”), and weak signal; it forces reassociation or
+a `batocera-wifi` toggle. Logs: `/userdata/system/logs/wifi/`.
+If it persists after a recent OTA: toggle WiFi in Settings or reboot.
+
+### Fan does not start / stuck on manual PWM
+
+On August 2026+ builds, auto-fan starts at boot. Mode (Silent / Auto /
+Aggressive / Off) is set via **Home + A → Fan Mode** and persists across reboots.
+
+### First Steam or Plasma LXC launch takes a long time
+
+Normal (downloads / rootfs / first boot). In containers: keyboard mode and press
+`Enter` repeatedly to walk through initialization.
+
+### Splash / ES does not start after a hotfix
+
+S31 fail-closed boot (P01+ builds): if splash/ES fails, the system still
+continues; check `/userdata/system/logs/` and avoid custom generators that block
+ES startup.
+
+</details>
+
+<details>
+<summary><b>FAQ — Updates and support</b></summary>
+
+### OTA offers an older build / I see no updates
+
+Use only tags for **your SoC** (`v44-sm8750-…`, `v44-sm8550-…`, …). See
+[UPDATES.md](UPDATES.md). Older images that still used `/releases/latest` need
+the per-board prep (HOTPATCH).
+
+### What to send when asking for help
+
+Device + image tag + logs under `/userdata/system/logs/`
+(Discord: **@lukemotion**).
+
+</details>
+
+---
+
+## References
+
+- [ADDING_ROMS.md](ADDING_ROMS.md) — ROMs and PC platforms  
+- [INSTALL.md](INSTALL.md) — Flashing  
+- [UPDATES.md](UPDATES.md) — OTA  
+- [CHANGELOG.md](CHANGELOG.md) — Per-release Updates / Fixes (collapsible)

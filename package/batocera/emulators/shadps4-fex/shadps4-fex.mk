@@ -34,4 +34,12 @@ define SHADPS4_FEX_INSTALL_TARGET_CMDS
 	fi
 endef
 
+define SHADPS4_FEX_INSTALL_COMMUNITY_PATCHES
+	PATH="$(HOST_DIR)/bin:$(HOST_DIR)/sbin:$(PATH)" \
+		$(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/emulators/shadps4/install-community-patches.sh \
+		"$(TARGET_DIR)/usr/share/shadps4/patches/shadPS4"
+endef
+
+SHADPS4_FEX_POST_INSTALL_TARGET_HOOKS += SHADPS4_FEX_INSTALL_COMMUNITY_PATCHES
+
 $(eval $(generic-package))

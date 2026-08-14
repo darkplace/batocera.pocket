@@ -1,5 +1,8 @@
 #!/bin/bash
 
+
+# Enlarge toolkit UI on handhelds; keep native 1080p framebuffer.
+command -v batocera-ui-scale >/dev/null 2>&1 && eval "$(batocera-ui-scale env)"
 # when the program is called from a non X environment, handle the mouse
 if test -z "${DISPLAY}"
 then

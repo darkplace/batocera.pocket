@@ -145,6 +145,8 @@ class AzaharGenerator(Generator):
         azaharConfig.set("Layout", r"swap_screen\default", "false")
         azaharConfig.set("Layout", "layout_option", layout_option)
         azaharConfig.set("Layout", r"layout_option\default", "false")
+        azaharConfig.set("Layout", "large_screen_proportion", system.config.get("azahar_large_screen_proportion", "4"))
+        azaharConfig.set("Layout", r"large_screen_proportion\default", "false")
 
         ## [SYSTEM]
         if not azaharConfig.has_section("System"):
@@ -216,9 +218,12 @@ class AzaharGenerator(Generator):
         azaharConfig.set("Renderer", r"use_hw_renderer\default", "false")
         azaharConfig.set("Renderer", "use_hw_shader", system.config.get_bool("azahar_use_hw_shader", True, return_values=("true", "false")))
         azaharConfig.set("Renderer", r"use_hw_shader\default", "false")
-        azaharConfig.set("Renderer", "use_shader_jit",  "true")
+        azaharConfig.set("Renderer", "use_shader_jit", system.config.get_bool("azahar_use_shader_jit", True, return_values=("true", "false")))
         azaharConfig.set("Renderer", r"use_hw_shader_jit\default", "false")
-        # Software, OpenGL or Vulkan (default)
+        # Accurate Multiplication
+        azaharConfig.set("Renderer", "shaders_accurate_mul", system.config.get_bool("azahar_accurate_multiplication", False, return_values=("true", "false")))
+        azaharConfig.set("Renderer", r"shaders_accurate_mul\default", "false")
+        # Software, OpenGL or Vulkan (default Vulkan on handhelds)
         graphics_api = system.config.get("azahar_graphics_api", "2")
         azaharConfig.set("Renderer", "graphics_api", graphics_api)
         azaharConfig.set("Renderer", r"graphics_api\default", "false")
@@ -245,6 +250,9 @@ class AzaharGenerator(Generator):
         # Async Shader Compilation
         azaharConfig.set("Renderer", "async_shader_compilation", system.config.get_bool("azahar_async_shader_compilation", return_values=("true", "false")))
         azaharConfig.set("Renderer", r"async_shader_compilation\default", "false")
+        # Async Presentation
+        azaharConfig.set("Renderer", "async_presentation", system.config.get_bool("azahar_async_presentation", False, return_values=("true", "false")))
+        azaharConfig.set("Renderer", r"async_presentation\default", "false")
         # Use Frame Limit
         azaharConfig.set("Renderer", "use_frame_limit", system.config.get_bool("azahar_use_frame_limit", True, return_values=("true", "false")))
         azaharConfig.set("Renderer", r"use_frame_limit\default", "false")

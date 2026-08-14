@@ -1,6 +1,8 @@
 #!/bin/sh
 #
-# Starts qualcomm fan control daemon on Batocera
+# Starts Qualcomm fan control after userdata (S11share) is mounted so
+# /userdata/system/configs/fan.state is readable and silent/auto/aggressive
+# persist across reboots. Must not run as S06 (before share).
 #
 
 start() {
@@ -20,6 +22,7 @@ stop() {
 	start-stop-daemon -K -q -p /var/run/qcom-fan.pid
 	[ $? = 0 ] && echo "OK" || echo "FAIL"
 }
+
 restart() {
 	stop
 	start
@@ -27,13 +30,13 @@ restart() {
 
 case "$1" in
   start)
-  	start
+	start
 	;;
   stop)
-  	stop
+	stop
 	;;
   restart|reload)
-  	restart
+	restart
 	;;
   *)
 	echo "Usage: $0 {start|stop|restart}"

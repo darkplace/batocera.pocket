@@ -3,8 +3,10 @@ from __future__ import annotations
 import codecs
 import logging
 import os
+import shutil
 import subprocess
 from os import environ
+from pathlib import Path
 from typing import TYPE_CHECKING, cast
 from xml.dom import minidom
 
@@ -12,17 +14,17 @@ from ... import Command
 from ...batoceraPaths import CACHE, CONFIGS, SAVES, configure_emulator, mkdir_if_not_exists
 from ...controller import generate_sdl_game_controller_config
 from ...utils import vulkan
+from ...utils import lsfg
 from ..Generator import Generator
 from . import cemuControllers
 from .cemuPaths import CEMU_BIOS, CEMU_CONFIG, CEMU_CONTROLLER_PROFILES, CEMU_ROMDIR, CEMU_SAVES
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     from ...Emulator import Emulator
     from ...types import HotkeysContext
 
 _logger = logging.getLogger(__name__)
+_CEMU_SHARE_PACKS = Path("/usr/share/cemu/graphicPacks")
 
 
 def _is_dual_screen_handheld() -> bool:
@@ -44,6 +46,25 @@ def _is_dual_screen_handheld() -> bool:
 
     return bool(secondary_output) and display_position == "top-bottom"
 
+
+def _seed_cemu_graphic_packs() -> None:
+    dest = CEMU_SAVES / "graphicPacks"
+    mkdir_if_not_exists(dest)
+    if not _CEMU_SHARE_PACKS.is_dir():
+        return
+    for item in _CEMU_SHARE_PACKS.iterdir():
+        target = dest / item.name
+        if target.exists():
+            continue
+        try:
+            if item.is_dir():
+                shutil.copytree(item, target)
+            elif item.is_file():
+                shutil.copy2(item, target)
+        except OSError as exc:
+            _logger.warning("Unable to install Cemu graphic pack %s: %s", item.name, exc)
+
+
 class CemuGenerator(Generator):
 
     def getHotkeysContext(self) -> HotkeysContext:
@@ -57,6 +78,10 @@ class CemuGenerator(Generator):
             }
         }
 
+    # disable hud & bezels for now - causes game issues
+    def hasInternalMangoHUDCall(self):
+        return True
+
     def generate(self, system, rom, playersControllers, metadata, guns, wheels, gameResolution):
         # in case of squashfs, the root directory is passed
         paths = list(rom.glob('**/code/*.rpx'))
@@ -69,6 +94,7 @@ class CemuGenerator(Generator):
         #graphic packs
         mkdir_if_not_exists(CEMU_SAVES / "graphicPacks")
         mkdir_if_not_exists(CEMU_CONTROLLER_PROFILES)
+        _seed_cemu_graphic_packs()
 
         # Create the settings file
         CemuGenerator.CemuConfig(CEMU_CONFIG / "settings.xml", system)
@@ -99,6 +125,8 @@ class CemuGenerator(Generator):
                 "DISPLAY": environ.get("DISPLAY", ":0"),
                 "WAYLAND_DISPLAY": ""
             })
+
+        lsfg.apply_lsfg_vk(system, env, backend_key="cemu_gfxbackend", process_name="Cemu")
 
         return Command.Command(array=commandArray, env=env)
 

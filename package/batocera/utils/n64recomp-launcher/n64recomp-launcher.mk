@@ -4,9 +4,10 @@
 #
 ################################################################################
 
-N64RECOMP_LAUNCHER_VERSION = 1.70
+N64RECOMP_LAUNCHER_VERSION = 1.73
 N64RECOMP_LAUNCHER_SITE = https://github.com/SirDiabo/N64RecompLauncher/releases/download/v$(N64RECOMP_LAUNCHER_VERSION)
-N64RECOMP_LAUNCHER_SOURCE = N64RecompLauncher-v$(N64RECOMP_LAUNCHER_VERSION)-Linux-ARM64.zip
+# Upstream renamed the zip/binary to GitHubLauncher starting with 1.73.
+N64RECOMP_LAUNCHER_SOURCE = GitHubLauncher-v$(N64RECOMP_LAUNCHER_VERSION)-Linux-ARM64.zip
 N64RECOMP_LAUNCHER_LICENSE = MIT
 N64RECOMP_LAUNCHER_STRIP = NO
 N64RECOMP_LAUNCHER_DEPENDENCIES = sdl2 es-theme-carbon
@@ -18,7 +19,8 @@ endef
 
 define N64RECOMP_LAUNCHER_INSTALL_TARGET_CMDS
 	mkdir -p $(TARGET_DIR)/usr/share/n64recomp-launcher
-	$(INSTALL) -m 0644 $(@D)/N64RecompLauncher \
+	# Keep the historical N64RecompLauncher name so the batocera wrapper stays stable.
+	$(INSTALL) -m 0644 $(@D)/GithubLauncher \
 		$(TARGET_DIR)/usr/share/n64recomp-launcher/N64RecompLauncher
 	$(INSTALL) -m 0644 $(@D)/libHarfBuzzSharp.so \
 		$(TARGET_DIR)/usr/share/n64recomp-launcher/libHarfBuzzSharp.so
@@ -28,7 +30,7 @@ define N64RECOMP_LAUNCHER_INSTALL_TARGET_CMDS
 	fi
 	$(INSTALL) -m 0644 $(@D)/libSkiaSharp.so \
 		$(TARGET_DIR)/usr/share/n64recomp-launcher/libSkiaSharp.so
-	$(INSTALL) -m 0644 $(@D)/N64RecompLauncher.dll.config \
+	$(INSTALL) -m 0644 $(@D)/GithubLauncher.dll.config \
 		$(TARGET_DIR)/usr/share/n64recomp-launcher/N64RecompLauncher.dll.config
 	$(INSTALL) -m 0644 $(N64RECOMP_LAUNCHER_PKGDIR)/files/default-settings.json \
 		$(TARGET_DIR)/usr/share/n64recomp-launcher/default-settings.json

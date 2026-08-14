@@ -5,7 +5,7 @@
 #
 ################################################################################
 
-LUTRIS_VERSION = 0.5.20
+LUTRIS_VERSION = 0.5.22
 LUTRIS_SITE = https://github.com/lutris/lutris/archive/refs/tags
 LUTRIS_SOURCE = v$(LUTRIS_VERSION).tar.gz
 LUTRIS_LICENSE = GPL-3.0

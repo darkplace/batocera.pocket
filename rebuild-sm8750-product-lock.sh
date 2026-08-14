@@ -1,13 +1,9 @@
 #!/bin/bash
-# Reinstall product locks and remake sm8750 image.
-#
-# Default: Docker primary tree at output/sm8750 (no DIRECT_BUILD / PARALLEL_BUILD).
-# Emergency Arch: ARCH_BACKUP=1 → output/sm8750-arch-backup (swapped into slot for Make).
+# Reinstall product locks and remake sm8750 image (Docker tree only).
 #
 # Usage:
 #   ./rebuild-sm8750-product-lock.sh
 #   SKIP_REINSTALL=1 ./rebuild-sm8750-product-lock.sh
-#   ARCH_BACKUP=1 ./rebuild-sm8750-product-lock.sh
 #
 # See docs/BUILD.md.
 
@@ -16,54 +12,19 @@ set -euo pipefail
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$PROJECT_DIR"
 
-ARCH_BACKUP="${ARCH_BACKUP:-0}"
+if [ "${ARCH_BACKUP:-0}" = "1" ]; then
+  echo "ERROR: Arch backup path is retired (Docker-only). Unset ARCH_BACKUP." >&2
+  exit 1
+fi
+
 SKIP_REINSTALL="${SKIP_REINSTALL:-0}"
 LOG_FILE="${LOG_FILE:-$PROJECT_DIR/rebuild-sm8750-product-lock.log}"
 PRIMARY="$PROJECT_DIR/output/sm8750"
-ARCH_OUT="${SM8750_ARCH_OUT:-$PROJECT_DIR/output/sm8750-arch-backup}"
-SWAP_DOCKER="$PROJECT_DIR/output/sm8750-docker-aside"
-SWAPPED=0
-
-if [ "$ARCH_BACKUP" = "1" ]; then
-  DIRECT_BUILD=y
-  PARALLEL_BUILD=y
-  BUILD_LABEL=arch-backup
-  if [ ! -d "$ARCH_OUT/host" ] && [ ! -d "$ARCH_OUT/build" ]; then
-    echo "ERROR: Arch backup missing: $ARCH_OUT" >&2
-    exit 1
-  fi
-  restore_layout() {
-    [ "$SWAPPED" -eq 1 ] || return 0
-    if [ -d "$PRIMARY" ]; then
-      rm -rf "$ARCH_OUT"
-      mv "$PRIMARY" "$ARCH_OUT"
-      echo arch > "$ARCH_OUT/.batocera-build-env" 2>/dev/null || true
-    fi
-    if [ -d "$SWAP_DOCKER" ]; then
-      mv "$SWAP_DOCKER" "$PRIMARY"
-      echo docker > "$PRIMARY/.batocera-build-env" 2>/dev/null || true
-    fi
-  }
-  trap restore_layout EXIT
-  if [ -e "$PRIMARY" ] || [ -L "$PRIMARY" ]; then
-    rm -rf "$SWAP_DOCKER"
-    mv "$PRIMARY" "$SWAP_DOCKER"
-  fi
-  mv "$ARCH_OUT" "$PRIMARY"
-  SWAPPED=1
-  echo arch > "$PRIMARY/.batocera-build-env"
-  export PATH="/usr/bin:/bin:/usr/sbin:/sbin:${PRIMARY}/host/bin"
-  export LD_LIBRARY_PATH="/usr/lib:${PRIMARY}/host/lib"
-  if [[ "$(readlink -f /sm8750 2>/dev/null || true)" != "$(readlink -f "$PRIMARY")" ]]; then
-    ln -sfn "$PRIMARY" /sm8750 2>/dev/null || sudo ln -sfn "$PRIMARY" /sm8750
-  fi
-else
-  DIRECT_BUILD=
-  PARALLEL_BUILD=
-  BUILD_LABEL=docker-primary
-  mkdir -p "$PRIMARY"
-  echo docker > "$PRIMARY/.batocera-build-env"
-fi
+DIRECT_BUILD=
+PARALLEL_BUILD=
+BUILD_LABEL=docker-primary
+mkdir -p "$PRIMARY"
+echo docker > "$PRIMARY/.batocera-build-env"
 
 OUT_TREE="$PRIMARY"
 export TMPDIR="$OUT_TREE/tmp"
@@ -81,7 +42,7 @@ log() {
   echo "Date: $(date)"
   echo "PID: $$"
   echo "Mode: $BUILD_LABEL"
-  echo "SKIP_REINSTALL=$SKIP_REINSTALL ARCH_BACKUP=$ARCH_BACKUP"
+  echo "SKIP_REINSTALL=$SKIP_REINSTALL"
   echo "Tree: $OUT_TREE"
   echo ""
 } | tee "$LOG_FILE"
@@ -129,9 +90,17 @@ run_cmd() {
 if [ "$SKIP_REINSTALL" != "1" ]; then
   run_pkg batocera-scripts-reinstall
   run_pkg batocera-system-reinstall
+  # A1 fan modes UI (Silent/Auto/Aggressive/Off) live in controlcenter.xml.
+  run_pkg batocera-controlcenter-reinstall
   run_pkg batocera-splash-odin3-reinstall
   run_pkg batocera-arch-plasma-lxc-reinstall
   run_pkg batocera-ubuntu-plasma-lxc-reinstall
+  # Packages whose *installed* (copied, not compiled) scripts we edited and
+  # that buildroot would otherwise ship stale: A2 wine wine64/fallback, A6 UI
+  # scale hooks in desktop apps / aarch64 app launchers.
+  run_pkg batocera-wine-reinstall
+  run_pkg batocera-desktopapps-reinstall
+  run_pkg batocera-apps-aarch64-reinstall
 else
   log ">>> Skipping package reinstalls (SKIP_REINSTALL=1)"
 fi

@@ -4,6 +4,23 @@ batocera.pocket serves updates from **GitHub Releases** of this repository:
 
 `https://github.com/darkplace/batocera.pocket`
 
+Per-tag notes (collapsible **Updates** / **Fixes**): **[CHANGELOG.md](CHANGELOG.md)**.  
+Controls / user FAQ: **[CONTROLS_AND_FAQ.md](CONTROLS_AND_FAQ.md)**.
+
+<details>
+<summary><b>Recent baselines (August 2026)</b></summary>
+
+| Tag | Board | Notes |
+|-----|--------|--------|
+| `v44-sm8750-20260814` | SM8750 | Odin 3 — **OTA + flash** (RC1) |
+| `v44-sm8550-20260813` | SM8550 | Odin 2 Portal — tested (nosve / sgdisk) |
+| `v44-sm8250-20260811` | SM8250 | Community / untested |
+| `v44-sm8750-20260809` | SM8750 | Flash baseline (no OTA payload) |
+
+Full Updates/Fixes: [CHANGELOG.md](CHANGELOG.md).
+
+</details>
+
 ## Channel behaviour
 
 Stock Batocera exposes `updates.type` (`stable` / `butterfly`). On batocera.pocket
@@ -50,6 +67,33 @@ Upload the generated files plus `batocera.version` to a new GitHub Release. Pref
 batocera-upgrade manual
 ```
 (with the file at `/userdata/system/upgrade/boot.tar.xz`)
+
+<details>
+<summary><b>Private Release Candidate (no GitHub)</b></summary>
+
+For maintainer RC smoke: package a full OTA that **you** can install with
+`batocera-upgrade` / `batocera-config update`, without publishing a
+`v44-<soc>-…` GitHub Release (so devices never see it via `canupdate`).
+
+```bash
+./scripts/dev/package-private-rc-ota.sh --board sm8750
+# → releases/private/sm8750-rc-…/  (gitignored)
+```
+
+**Apply (manual):** copy `ota/boot.tar.xz{,.md5}` to
+`/userdata/system/upgrade/` on the device, then `batocera-upgrade manual`.
+
+**Apply (ES / batocera-config update):** serve `http-root/` on your LAN, set
+`updates.url` to that HTTP base temporarily, run the update, then **restore**
+`updates.url` to `https://github.com/darkplace/batocera.pocket`.
+
+Do **not** upload the RC under a `-<soc>-` tag. After install, `canupdate`
+compares dates: a newer RC will not be nagged to downgrade to an older public
+tag; the next *newer* public release will still show up normally.
+
+Host SSH smoke (no `batocera-upgrade`): `scripts/dev/apply-sm8750-ota.sh`.
+
+</details>
 
 ## Live hotpatch (developers)
 

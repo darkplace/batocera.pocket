@@ -1,0 +1,19 @@
+#!/bin/bash
+
+# Enlarge toolkit UI on handhelds; keep native 1080p framebuffer.
+command -v batocera-ui-scale >/dev/null 2>&1 && eval "$(batocera-ui-scale env)"
+
+if test -z "${DISPLAY}"
+then
+    export DISPLAY=$(getLocalXDisplay)
+fi
+
+batocera-mouse show
+trap 'batocera-mouse hide' EXIT
+
+if [[ -x /usr/bin/heroic ]]; then
+    exec /usr/bin/heroic "$@"
+else
+    echo "Heroic not found."
+    exit 1
+fi

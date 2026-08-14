@@ -177,6 +177,19 @@ apply_common_runtime_env() {
 append_library_paths
 apply_common_runtime_env
 
+# Enlarge toolkit/Chromium chrome on handhelds; keep native 1080p.
+if command -v batocera-ui-scale >/dev/null 2>&1; then
+    # shellcheck disable=SC2046
+    eval "$(batocera-ui-scale env)"
+    chromium_arg="$(batocera-ui-scale chromium-arg || true)"
+    if [ -n "${chromium_arg}" ]; then
+        case " $* " in
+            *" --force-device-scale-factor="*) ;;
+            *) set -- "${chromium_arg}" "$@" ;;
+        esac
+    fi
+fi
+
 extract_and_run=0
 case "${BATOCERA_APPIMAGE_EXTRACT_AND_RUN:-}" in
     1|true|yes|on|enabled)

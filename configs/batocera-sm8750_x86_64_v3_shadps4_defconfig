@@ -109,3 +109,4 @@ BR2_GLOBAL_PATCH_DIR="$(BR2_EXTERNAL_BATOCERA_PATH)/board/batocera/patches $(BR2
 
 # Keep userspace ABI in sync with the SM8750 host build.
 BR2_KERNEL_HEADERS_7_1=y
+

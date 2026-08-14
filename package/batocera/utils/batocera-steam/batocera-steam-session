@@ -84,21 +84,51 @@ start_session_supervisor() {
     batocera-steam-session-supervisor start "batocera-steam-session" >/dev/null 2>&1 || true
 }
 
+# Prefer a clean ES backup for BTN_BACK devices (Odin/Ally): never seed .mapping.es
+# from an already-swapped steam profile, or gameStop leaves brightness broken.
+hotkey_es_backup_source() {
+    local base="$1"
+    local candidate=""
+
+    for candidate in \
+        "${HOTKEY_PROFILE_SYSTEM_DIR}/${base}.es" \
+        "${HOTKEY_PROFILE_SYSTEM_DIR}/${base}" \
+        "${ALLY_DATAINIT_DIR}/${base}.es" \
+        "${ALLY_DATAINIT_DIR}/${base}"
+    do
+        if [[ -f "${candidate}" ]] && ! grep -q '"BTN_BACK"[[:space:]]*:[[:space:]]*"steam_chord"' "${candidate}" 2>/dev/null; then
+            echo "${candidate}"
+            return 0
+        fi
+    done
+    return 1
+}
+
 apply_hotkey_profile_maps() {
     local profile="$1"
     local src=""
     local base=""
     local target=""
+    local es_src=""
     local applied=0
     local -a sources=()
 
     mkdir -p "${ALLY_HOTKEY_DIR}" 2>/dev/null || true
     shopt -s nullglob
-    sources=(
-        "${ALLY_HOTKEY_DIR}"/*.mapping."${profile}"
-        "${HOTKEY_PROFILE_SYSTEM_DIR}"/*.mapping."${profile}"
-        "${ALLY_DATAINIT_DIR}"/*.mapping."${profile}"
-    )
+    # For ES restore, prefer system maps over possibly-corrupted userdata .mapping.es
+    if [[ "${profile}" == "es" ]]; then
+        sources=(
+            "${HOTKEY_PROFILE_SYSTEM_DIR}"/*.mapping.es
+            "${ALLY_DATAINIT_DIR}"/*.mapping.es
+            "${ALLY_HOTKEY_DIR}"/*.mapping.es
+        )
+    else
+        sources=(
+            "${ALLY_HOTKEY_DIR}"/*.mapping."${profile}"
+            "${HOTKEY_PROFILE_SYSTEM_DIR}"/*.mapping."${profile}"
+            "${ALLY_DATAINIT_DIR}"/*.mapping."${profile}"
+        )
+    fi
     shopt -u nullglob
 
     for src in "${sources[@]}"; do
@@ -111,8 +141,15 @@ apply_hotkey_profile_maps() {
         base="$(basename "${src}")"
         base="${base%.${profile}}"
         target="${ALLY_HOTKEY_DIR}/${base}"
-        if [[ "${profile}" == "steam" && -f "${target}" && ! -f "${target}.es" ]]; then
-            cp -f "${target}" "${target}.es" 2>/dev/null || true
+        if [[ "${profile}" == "steam" ]]; then
+            if es_src="$(hotkey_es_backup_source "${base}")"; then
+                cp -f "${es_src}" "${target}.es" 2>/dev/null || true
+            elif [[ -f "${target}" && ! -f "${target}.es" ]]; then
+                # Only seed from active map if it is not already the steam profile.
+                if ! grep -q '"BTN_BACK"[[:space:]]*:[[:space:]]*"steam_chord"' "${target}" 2>/dev/null; then
+                    cp -f "${target}" "${target}.es" 2>/dev/null || true
+                fi
+            fi
         fi
         cp -f "${src}" "${target}" 2>/dev/null || continue
         applied=1
@@ -1468,7 +1505,10 @@ if command -v gamescope >/dev/null 2>&1 && [[ "${BATOCERA_STEAM_USE_GAMESCOPE:-1
         append_gamescope_flag "--mangoapp"
     fi
 
-    if [[ "${BATOCERA_STEAM_GS_FORCE_WINDOWS_FULLSCREEN:-0}" != "0" ]] || steam_update_terminal_enabled; then
+    # Do not couple --force-windows-fullscreen to the update-terminal child.
+    # That flag fights focus when a game opens and makes Steam QAM/chords flaky
+    # (~50% after launch, worse once the nested compositor loses focus).
+    if [[ "${BATOCERA_STEAM_GS_FORCE_WINDOWS_FULLSCREEN:-0}" != "0" ]]; then
         append_gamescope_flag "--force-windows-fullscreen"
     fi
 

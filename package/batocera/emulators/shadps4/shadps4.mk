@@ -17,7 +17,8 @@
 #
 ################################################################################
 
-SHADPS4_VERSION = 16d5f9c54c5302b9fb8075321ec95cd2ed89423b
+# Tip oleada B: v0.17.0 (needs x86_64_v3_shadps4 side build + FEX inject on SM8x50).
+SHADPS4_VERSION = 5a4373c80e32c7a9d5d6e5a0b7d31d371d194caa
 SHADPS4_SITE = https://github.com/shadps4-emu/shadPS4
 SHADPS4_SITE_METHOD = git
 SHADPS4_GIT_SUBMODULES = YES
@@ -61,6 +62,14 @@ define SHADPS4_INSTALL_TARGET_CMDS
 		cp -pr $(@D)/buildroot-build/translations $(TARGET_DIR)/usr/bin/shadps4/; \
 	 fi
 endef
+
+define SHADPS4_INSTALL_COMMUNITY_PATCHES
+	PATH="$(HOST_DIR)/bin:$(HOST_DIR)/sbin:$(PATH)" \
+		$(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/emulators/shadps4/install-community-patches.sh \
+		"$(TARGET_DIR)/usr/share/shadps4/patches/shadPS4"
+endef
+
+SHADPS4_POST_INSTALL_TARGET_HOOKS += SHADPS4_INSTALL_COMMUNITY_PATCHES
 
 define HOST_SHADPS4_BUILD_CMDS
 	$(CXX) $(@D)/externals/dear_imgui/misc/fonts/binary_to_compressed_c.cpp -o \

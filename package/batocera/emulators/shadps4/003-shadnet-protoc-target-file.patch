@@ -1,19 +1,30 @@
-diff --git a/CMakeLists.txt b/CMakeLists.txt
-index 1b248099..de1f22f4 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
-@@ -1200,13 +1200,13 @@ file(MAKE_DIRECTORY "${SHADNET_PROTO_OUT}")
+@@ -1204,11 +1204,26 @@
+ # shadNet protobuf generation
+ set(SHADNET_PROTO_OUT "${CMAKE_CURRENT_BINARY_DIR}/shadnet_proto_gen")
+ file(MAKE_DIRECTORY "${SHADNET_PROTO_OUT}")
++# Target-built protoc links against the Buildroot sysroot glibc, which is often
++# newer than the docker/build-host libc. Run it via the sysroot dynamic linker.
++set(SHADNET_PROTOC_WRAPPER)
++if(CMAKE_SYSROOT)
++    file(GLOB _shadnet_ld
++        "${CMAKE_SYSROOT}/lib/ld-linux-*.so.*"
++        "${CMAKE_SYSROOT}/lib64/ld-linux-*.so.*")
++    if(_shadnet_ld)
++        list(GET _shadnet_ld 0 _shadnet_ld0)
++        set(SHADNET_PROTOC_WRAPPER
++            "${_shadnet_ld0}"
++            "--library-path"
++            "${CMAKE_SYSROOT}/lib:${CMAKE_SYSROOT}/usr/lib:${CMAKE_SYSROOT}/lib64")
++    endif()
++endif()
  add_custom_command(
      OUTPUT
          "${SHADNET_PROTO_OUT}/shadnet.pb.cc"
          "${SHADNET_PROTO_OUT}/shadnet.pb.h"
 -    COMMAND protobuf::protoc
-+    COMMAND $<TARGET_FILE:protobuf::protoc>
++    COMMAND ${SHADNET_PROTOC_WRAPPER} $<TARGET_FILE:protobuf::protoc>
          "--proto_path=${CMAKE_CURRENT_SOURCE_DIR}/src/shadnet"
          "--cpp_out=${SHADNET_PROTO_OUT}"
          "${CMAKE_CURRENT_SOURCE_DIR}/src/shadnet/shadnet.proto"
-     DEPENDS
-         "${CMAKE_CURRENT_SOURCE_DIR}/src/shadnet/shadnet.proto"
-     COMMENT "Generating shadnet protobuf sources"
-     VERBATIM
- )

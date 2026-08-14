@@ -178,6 +178,26 @@ configure_device_input_defaults() {
     log "applying AYN Odin input defaults: gamepad_mouse=${BATOCERA_ARCH_PLASMA_THOR_GAMEPAD_MOUSE}"
 }
 
+configure_device_ui_scale_defaults() {
+    # Odin/Thor: native 1080p is fine for sharpness; 1× Plasma chrome is too
+    # small for mouse/touch. Prefer KWin output scale over lowering mode.
+    if ! is_ayn_odin && ! is_ayn_thor; then
+        return 0
+    fi
+
+    if [ -n "${BATOCERA_ARCH_PLASMA_OUTPUT_SCALE:-}" ]; then
+        return 0
+    fi
+
+    if command -v batocera-ui-scale >/dev/null 2>&1; then
+        export BATOCERA_ARCH_PLASMA_OUTPUT_SCALE="$(batocera-ui-scale factor)"
+    else
+        export BATOCERA_ARCH_PLASMA_OUTPUT_SCALE="1.75"
+    fi
+
+    log "applying handheld Plasma UI scale default: ${BATOCERA_ARCH_PLASMA_OUTPUT_SCALE}"
+}
+
 run_detached() {
     if command -v setsid >/dev/null 2>&1; then
         setsid "$@" </dev/null >>"${LOG}" 2>&1 &
@@ -318,6 +338,7 @@ EOF
 ensure_runtime_dir() {
     configure_device_display_defaults
     configure_device_input_defaults
+    configure_device_ui_scale_defaults
 
     mkdir -p "${HOST_RUNTIME_DIR}/pulse" "${HOST_RUNTIME_DIR}/udev"
     chown 1000:1000 "${HOST_RUNTIME_DIR}" "${HOST_RUNTIME_DIR}/pulse" 2>/dev/null || true

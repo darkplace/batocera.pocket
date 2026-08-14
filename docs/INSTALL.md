@@ -18,6 +18,9 @@
 
 - The first boot may take several minutes (filesystem resize / datainit).
 - Default SSH: user `root`, password `linux` (change it if the device is on a shared network).
+- How to add ROMs (consoles + Windows / Steam / Heroic / Lutris): see [ADDING_ROMS.md](ADDING_ROMS.md) (same for sm8550 and sm8750).
+- Hotkeys / FAQ (Odin 2 & 3 mappings): see [CONTROLS_AND_FAQ.md](CONTROLS_AND_FAQ.md).
+- Release notes (collapsible Updates / Fixes): see [CHANGELOG.md](CHANGELOG.md).
 
 ## Linux / macOS
 

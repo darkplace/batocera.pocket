@@ -18,7 +18,15 @@ export BATOCERA_ARCH_PLASMA_LOG=/userdata/system/logs/arch-plasma-lxc.log
 export BATOCERA_ARCH_PLASMA_RUNTIME=/userdata/system/.runtime-arch-plasma
 export BATOCERA_ARCH_PLASMA_SESSION_NAME=arch-plasma-lxc
 export BATOCERA_ARCH_PLASMA_ENABLE_INPUTMETHOD="${BATOCERA_ARCH_PLASMA_ENABLE_INPUTMETHOD:-1}"
-export BATOCERA_ARCH_PLASMA_OUTPUT_SCALE="${BATOCERA_ARCH_PLASMA_OUTPUT_SCALE:-1}"
+# Keep FORCE_OUTPUT_MODE at 1080p; scale widgets via KWin (see batocera-ui-scale).
+if [ -z "${BATOCERA_ARCH_PLASMA_OUTPUT_SCALE:-}" ]; then
+    if command -v batocera-ui-scale >/dev/null 2>&1; then
+        BATOCERA_ARCH_PLASMA_OUTPUT_SCALE="$(batocera-ui-scale factor)"
+    else
+        BATOCERA_ARCH_PLASMA_OUTPUT_SCALE="1.75"
+    fi
+fi
+export BATOCERA_ARCH_PLASMA_OUTPUT_SCALE
 export BATOCERA_ARCH_PLASMA_TOUCH_CALIBRATION_MATRIX="${BATOCERA_ARCH_PLASMA_TOUCH_CALIBRATION_MATRIX:-auto}"
 export BATOCERA_ARCH_PLASMA_POINTER_ACCEL="${BATOCERA_ARCH_PLASMA_POINTER_ACCEL:--0.5}"
 exec /usr/bin/batocera-arch-plasma-lxc "$@"

@@ -73,6 +73,9 @@ class DolphinGenerator(Generator):
             dolphinSettings.add_section("Analytics")
         if not dolphinSettings.has_section("Display"):
             dolphinSettings.add_section("Display")
+        if not dolphinSettings.has_section("GBA"):
+            dolphinSettings.add_section("GBA")
+
         # Define default games path
         if "ISOPaths" not in dolphinSettings["General"]:
             dolphinSettings.set("General", "ISOPath0", "/userdata/roms/wii")
@@ -144,19 +147,29 @@ class DolphinGenerator(Generator):
         for i in range(4):
             key = f"dolphin_port_{i+1}_type"
             if value := system.config.get(key):
-                # Set value to 6 if it is 6a or 6b. This is to differentiate between Standard Controller and GameCube Controller type.
-                value = "6" if value in ["6a", "6b"] else value
+                # Set value to 6 if it is 6a/6b/6c. This is to differentiate between Standard Controller and GameCube Controller type.
+                value = "6" if value in ["6a", "6b", "6c"] else value
                 if value in ["5", "13"]:
                     value = "6"
                 # Sub in the appropriate values from es_features, accounting for the 1 integer difference.
                 dolphinSettings.set("Core", f"SIDevice{i}", value)
             else:
+                # Triforce arcade I/O needs AM-Baseboard on port 1 (SIDEVICE_AM_BASEBOARD = 11).
+                # Wheel setups override both ports below.
+                if system.name == "triforce":
+                    dolphinSettings.set("Core", f"SIDevice{i}", "11" if i == 0 else "6")
                 # if the pad is a wheel and on gamecube, use it
-                if system.name == "gamecube" and system.config.use_wheels and wheels and i < len(playersControllers) and playersControllers[i].device_path in wheels:
+                elif system.name == "gamecube" and system.config.use_wheels and wheels and i < len(playersControllers) and playersControllers[i].device_path in wheels:
                     dolphinSettings.set("Core", f"SIDevice{i}", "8")
                 else:
                     dolphinSettings.set("Core", f"SIDevice{i}", "6")
 
+        # Triforce wheel: both ports must be GC Steering (8) for baseboard detection.
+        if system.name == "triforce" and system.config.use_wheels and wheels:
+            if not system.config.get("dolphin_port_1_type"):
+                dolphinSettings.set("Core", "SIDevice0", "8")
+            if not system.config.get("dolphin_port_2_type"):
+                dolphinSettings.set("Core", "SIDevice1", "8")
 
         # [Light Gun] HiResTextures for crosshair (part 1/2)
         if system.config.use_guns and guns and not system.config.get_bool('dolphin_crosshair'):
@@ -474,7 +487,11 @@ class DolphinGenerator(Generator):
         return {
             "name": "dolphin",
             "keys": { "exit": ["KEY_LEFTALT", "KEY_F4"],
-                      "previous_slot": [ "KEY_LEFTSHIFT", "KEY_F2" ], "next_slot": [ "KEY_LEFTSHIFT", "KEY_F1" ], "save_state": "KEY_F5", "restore_state": "KEY_F8" }
+                      "previous_slot": [ "KEY_LEFTSHIFT", "KEY_F2" ],
+                      "next_slot": [ "KEY_LEFTSHIFT", "KEY_F1" ],
+                      "save_state": "KEY_F5",
+                      "restore_state": "KEY_F8",
+                      "pause": "KEY_F10" }
         }
 
 # Get the language from the environment if user didn't set it in ES.

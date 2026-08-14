@@ -1,21 +1,69 @@
 #!/bin/sh
 
 # WCN7850 can become unreliable after idle/resume with power save enabled.
+# Re-apply PS off after assoc; optionally sync wifi.country (ROCKNIX #3173 idea).
+
+power_save_state() {
+    iface="$1"
+    /usr/sbin/iw dev "${iface}" get power_save 2>/dev/null | awk '{print tolower($NF); exit}'
+}
 
 disable_power_save() {
     iface="$1"
+    state=""
+    attempt=0
 
     [ -n "${iface}" ] || return 0
     [ -d "/sys/class/net/${iface}" ] || return 0
 
-    if /usr/sbin/iw dev "${iface}" set power_save off >/dev/null 2>&1; then
-        echo "*** SM8550 wifi: disabled power save on ${iface} ***" > /dev/kmsg
+    while [ "${attempt}" -lt 3 ]; do
+        attempt=$((attempt + 1))
+        /usr/sbin/iw dev "${iface}" set power_save off >/dev/null 2>&1 || true
+        state="$(power_save_state "${iface}")"
+        case "${state}" in
+            off)
+                echo "*** SM8550 wifi: power_save off on ${iface} ***" > /dev/kmsg
+                return 0
+                ;;
+        esac
+        sleep 0.2
+    done
+
+    echo "*** SM8550 wifi: power_save still ${state:-unknown} on ${iface} ***" > /dev/kmsg
+}
+
+apply_wifi_country() {
+    country=""
+    current=""
+    target=""
+
+    if command -v batocera-settings-get >/dev/null 2>&1; then
+        country="$(batocera-settings-get wifi.country 2>/dev/null | tr -d '[:space:]')"
+    fi
+    case "${country}" in
+        [A-Za-z][A-Za-z])
+            target="$(printf '%s' "${country}" | tr '[:lower:]' '[:upper:]')"
+            ;;
+        *)
+            return 0
+            ;;
+    esac
+
+    current="$(/usr/sbin/iw reg get 2>/dev/null | sed -n '/^phy#/,$p' | awk '/^country/ { print substr($2, 1, 2); exit }')"
+    [ -n "${current}" ] || current="$(/usr/sbin/iw reg get 2>/dev/null | awk '/^country/ { print substr($2, 1, 2); exit }')"
+    current="$(printf '%s' "${current}" | tr '[:lower:]' '[:upper:]')"
+
+    [ "${current}" = "${target}" ] && return 0
+    if /usr/sbin/iw reg set "${target}" >/dev/null 2>&1; then
+        echo "*** SM8550 wifi: iw reg set ${target} (was ${current:-unknown}) ***" > /dev/kmsg
     fi
 }
 
 if command -v rfkill >/dev/null 2>&1; then
     rfkill unblock wifi >/dev/null 2>&1
 fi
+
+apply_wifi_country
 
 if [ "$#" -gt 0 ]; then
     for iface in "$@"; do

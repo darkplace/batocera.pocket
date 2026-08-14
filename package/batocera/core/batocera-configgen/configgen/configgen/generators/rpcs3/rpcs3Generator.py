@@ -14,15 +14,26 @@ from ... import Command
 from ...batoceraPaths import BIOS, CACHE, CONFIGS, configure_emulator, mkdir_if_not_exists
 from ...exceptions import BatoceraException
 from ...utils import vulkan
+from ...utils import lsfg
 from ...utils.configparser import CaseSensitiveConfigParser
 from ..Generator import Generator
 from . import rpcs3Controllers
-from .rpcs3Paths import RPCS3_BIN, RPCS3_CONFIG, RPCS3_CONFIG_DIR, RPCS3_CURRENT_CONFIG
+from .rpcs3Paths import RPCS3_BIN, RPCS3_CONFIG, RPCS3_CONFIG_DIR, RPCS3_CURRENT_CONFIG, RPCS3_PATCH_YML, RPCS3_SHARE_PATCH
 
 if TYPE_CHECKING:
     from ...types import HotkeysContext, Resolution
 
 _logger = logging.getLogger(__name__)
+
+
+def _seed_rpcs3_community_patches() -> None:
+    if RPCS3_PATCH_YML.is_file() or not RPCS3_SHARE_PATCH.is_file():
+        return
+    try:
+        mkdir_if_not_exists(RPCS3_PATCH_YML.parent)
+        shutil.copy2(RPCS3_SHARE_PATCH, RPCS3_PATCH_YML)
+    except OSError as exc:
+        _logger.warning("Unable to install RPCS3 community patches: %s", exc)
 
 _ACHIEVEMENT_SOUND_ROOT: Final = Path("/usr/share/libretro/assets/sounds")
 _DEFAULT_RPCS3_TROPHY_SOUND: Final = "ps3-trophy"
@@ -407,6 +418,8 @@ class Rpcs3Generator(Generator):
 
         rpcs3Controllers.generateControllerConfig(system, playersControllers, rom)
 
+        _seed_rpcs3_community_patches()
+
         # Taking care of the CurrentSettings.ini file
         mkdir_if_not_exists(RPCS3_CURRENT_CONFIG.parent)
 
@@ -739,6 +752,9 @@ class Rpcs3Generator(Generator):
 
             if romName is None:
                 raise BatoceraException(f'No game ID found in {rom}')
+        elif rom.suffix.lower() == ".iso":
+            # Disc image: pass the ISO path directly to RPCS3.
+            romName = rom
         elif configure_emulator(rom):
             romName: Path | None = None
         else:
@@ -764,6 +780,10 @@ class Rpcs3Generator(Generator):
         if _cfg_get_bool(system, "rpcs3_achievement_sound", True):
             if sound_path := _retroachievements_sound_path(system):
                 env["BATOCERA_RPCS3_TROPHY_SOUND"] = sound_path
+
+        # RPCS3 uses string backends ("Vulkan"/"OpenGL"), not "1"/"0".
+        if system.config.get_str("rpcs3_gfxbackend", "Vulkan") == "Vulkan":
+            lsfg.apply_lsfg_vk(system, env, process_name="rpcs3")
 
         return Command.Command(
             array=commandArray,

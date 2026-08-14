@@ -1,0 +1,46 @@
+#!/bin/sh
+#
+# Starts Qualcomm fan control after userdata (S11share) is mounted so
+# /userdata/system/configs/fan.state is readable and silent/auto/aggressive
+# persist across reboots. Must not run as S06 (before share).
+#
+
+start() {
+	printf "Starting fan daemon: "
+	# `boot` restores the user's last choice (auto / manual N% / off) and spawns
+	# the right detached daemon itself; default is the automatic curve.
+	/usr/bin/qcom-fan boot >/dev/null 2>&1
+	[ $? = 0 ] && echo "OK" || echo "FAIL"
+}
+
+stop() {
+	printf "Stopping fan daemon: "
+	# `daemon-stop` tears down the daemon WITHOUT persisting "off", so the user's
+	# saved choice (auto / manual N% / off) survives across reboots. Using plain
+	# `stop` here would clobber fan.state to off on every shutdown.
+	/usr/bin/qcom-fan daemon-stop
+	start-stop-daemon -K -q -p /var/run/qcom-fan.pid
+	[ $? = 0 ] && echo "OK" || echo "FAIL"
+}
+
+restart() {
+	stop
+	start
+}
+
+case "$1" in
+  start)
+	start
+	;;
+  stop)
+	stop
+	;;
+  restart|reload)
+	restart
+	;;
+  *)
+	echo "Usage: $0 {start|stop|restart}"
+	exit 1
+esac
+
+exit $?

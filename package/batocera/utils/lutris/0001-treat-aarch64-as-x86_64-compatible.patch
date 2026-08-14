@@ -14,7 +14,7 @@ diff --git a/lutris/util/linux.py b/lutris/util/linux.py
 index 81d886f..761b586 100644
 --- a/lutris/util/linux.py
 +++ b/lutris/util/linux.py
-@@ -197,7 +197,7 @@ class LinuxSystem:
+@@ -202,7 +202,7 @@ class LinuxSystem:
          with the supported architectures from the Lutris API
          """
          machine = platform.machine()

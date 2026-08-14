@@ -2,20 +2,33 @@
 """
 Qualcomm PWM fan helper for Batocera.
 
+Automatic fan modes (selectable from the Batocera Control Deck / CLI):
+  qcom-fan silent      quiet-first curve (higher temps, minimal noise)
+  qcom-fan auto        balanced default
+  qcom-fan aggressive  cool-first curve (spins earlier/harder)
+  qcom-fan manual / set N   fixed speed
+  qcom-fan stop        fan off
+
 The default automatic curve can be overridden in:
   /userdata/system/configs/fan.conf
 
 # temperatures are in Celsius
 # fan speeds are from 0-100 percent of max speed
 # syntax is: temp_threshold=fan_speed
-# default is:
-# 20=0
-# 30=20
-# 40=30
-# 50=40
-# 60=60
-# 70=80
-# 80=100
+# default (handheld-friendly: quiet under normal emulation, stays <=40%
+# until ~72C, only ramps hard near the thermal ceiling):
+# 48=0
+# 56=15
+# 64=25
+# 72=40
+# 80=55
+# 85=80
+# 90=100
+
+The chosen mode/speed is persisted across reboots in:
+  /userdata/system/configs/fan.state
+so `qcom-fan boot` (run from the init script) can restore what the user last
+selected (auto / manual N% / off) instead of always forcing auto.
 """
 
 import glob
@@ -27,14 +40,55 @@ import sys
 import time
 
 DEBUG = 0
-CHECK_INTERVAL = 15
+# Poll quickly: Control Deck / load spikes can jump 40C+ in a second. A 15s
+# interval left the fan stuck low while the UI already showed dangerous temps.
+CHECK_INTERVAL = 1
+CHECK_INTERVAL_HOT = 1
+HOT_TEMP_C = 65
 MANUAL_INTERVAL = 0.2
+# At early boot the hwmon/cooling fan node may not be registered/writable yet
+# when the init script fires. Poll for it this long (seconds) before giving up,
+# so the auto daemon survives the boot race instead of dying and falling back
+# to a stale manual PWM. Init should run after S11share (S12qcom-fan); we still
+# wait for /userdata/system so fan.state / fan.conf are readable before the
+# first curve decision.
+READY_TIMEOUT = 60
+READY_INTERVAL = 1
+USERDATA_WAIT_TIMEOUT = 60
+# Fast-rise / slow-fall control temperature. Opening Control Deck spikes cores
+# to 80-100C then the reading collapses to ~50-60C within seconds; without
+# hold the fan drops to near-idle while the UI still shows "hot". Hold the
+# peak briefly, then decay slowly so cooling stays on until the SoC is actually
+# comfortable again.
+TEMP_RISE_ALPHA = 0.7
+TEMP_FALL_ALPHA = 0.08
+TEMP_PEAK_HOLD_S = 12
 CONFIG_FILE = "/userdata/system/configs/fan.conf"
+STATE_FILE = "/userdata/system/configs/fan.state"
 PID_FILE = "/var/run/qcom-fan.pid"
 MANUAL_PID_FILE = "/var/run/qcom-fan-manual.pid"
 MANUAL_TARGET_FILE = "/var/run/qcom-fan.manual"
 PWM_MAX = 255
-DEFAULT_FAN_CONFIG = ["80=100", "70=80", "60=60", "50=40", "40=30", "30=20", "20=0"]
+# Named automatic fan curves selectable from the Control Deck / CLI. Each curve
+# is a list of "temp=percent" high -> low thresholds (get_fanspeed returns the
+# first entry whose temp is reached).
+#   - silent:     prioritise noise; stays off until it's genuinely warm and
+#                 never screams. Accepts slightly higher idle/light-load temps.
+#   - auto:       balanced default (quiet under typical emulation, ramps hard
+#                 only near the thermal ceiling).
+#   - aggressive: prioritise temps; clearly audible from ~40C and strong by
+#                 ~55-60C so a "hot" Control Deck reading never pairs with a
+#                 near-idle fan.
+FAN_CURVES = {
+    "silent":     ["92=100", "86=65", "80=40", "74=22", "66=10", "58=0"],
+    "auto":       ["90=100", "85=80", "80=55", "72=40", "64=25", "56=15", "48=0"],
+    # Tuned for handheld UX: at ~60C the fan must be obviously running.
+    "aggressive": ["75=100", "68=90", "60=75", "52=55", "45=40", "38=25", "32=15"],
+}
+# Modes that run the automatic (curve-driven) daemon.
+AUTO_MODES = ("auto", "silent", "aggressive")
+# Back-compat alias: the plain automatic curve.
+DEFAULT_FAN_CONFIG = FAN_CURVES["auto"]
 
 
 def read_file(path):
@@ -48,6 +102,43 @@ def read_file(path):
 def write_file(path, value):
     with open(path, "w") as fp:
         fp.write(str(value))
+
+
+def save_state(mode, target=None):
+    """Persist the user's fan choice so it survives reboots.
+
+    mode: "auto" | "manual" | "off"
+    target: percent (only meaningful for "manual")
+    """
+    try:
+        os.makedirs(os.path.dirname(STATE_FILE), exist_ok=True)
+        lines = ["mode={}".format(mode)]
+        if mode == "manual" and target is not None:
+            lines.append("target={}".format(int(clamp(int(target), 0, 100))))
+        write_file(STATE_FILE, "\n".join(lines) + "\n")
+    except Exception:
+        pass
+
+
+def load_state():
+    mode = None
+    target = None
+    try:
+        with open(STATE_FILE, "r") as fp:
+            for line in fp:
+                line = line.strip()
+                if not line or line[0] == "#" or "=" not in line:
+                    continue
+                key, _, value = line.partition("=")
+                key = key.strip()
+                value = value.strip()
+                if key == "mode":
+                    mode = value
+                elif key == "target":
+                    target = parse_int(value)
+    except Exception:
+        pass
+    return mode, target
 
 
 def parse_int(value):
@@ -169,11 +260,21 @@ def pid_matches_daemon(pid, modes=None):
     try:
         with open("/proc/{}/cmdline".format(pid), "rb") as fp:
             raw = fp.read().decode("utf-8", "ignore")
-        if "qcom-fan" not in raw:
-            return False
-        return any("\0{}\0".format(mode) in raw or raw.endswith("\0{}".format(mode)) for mode in modes)
     except Exception:
         return False
+    tokens = [tok for tok in raw.split("\0") if tok]
+    if not tokens:
+        return False
+    # Must be the actual helper (a token whose basename is exactly "qcom-fan"),
+    # NOT the init script "/etc/init.d/S*qcom-fan" nor any unrelated process that
+    # merely mentions the string. This is critical: at boot rcS runs
+    # `/bin/sh /etc/init.d/S12qcom-fan start`, whose cmdline contains both
+    # "qcom-fan" and the token "start", so the old substring match flagged the
+    # init shell itself as a running "start" daemon -> start_daemon() bailed out
+    # ("already running") and never spawned the real auto daemon.
+    if not any(os.path.basename(tok) == "qcom-fan" for tok in tokens):
+        return False
+    return any(tok in modes for tok in tokens)
 
 
 def daemon_pids(modes=None):
@@ -307,10 +408,17 @@ def read_status():
 
     mode = ""
     manual_target = parse_int(read_file(MANUAL_TARGET_FILE))
+    smode, _ = load_state()
     if auto_running():
-        mode = "auto"
+        # Reflect the named auto curve (silent/auto/aggressive) so the Control
+        # Deck and CLI can show/toggle the exact mode the user picked.
+        mode = smode if smode in AUTO_MODES else "auto"
     elif manual_running() or manual_target is not None:
         mode = "manual"
+    elif smode == "off":
+        # User chose Off: keep reporting "off" even if pwm_enable still reads as
+        # kernel "driver auto" (2) after we parked the PWM at 0.
+        mode = "off"
     elif enable == 2:
         mode = "driver auto"
     elif control:
@@ -456,40 +564,137 @@ def set_speed(value, stop_first=True, quiet=False):
     raw_set_speed(percent, quiet=True)
     if stop_first:
         start_manual_daemon(percent)
+        save_state("manual", percent)
 
     if not quiet:
         print(percent)
     return 0
 
 
-def temp_check():
-    fanconfig = DEFAULT_FAN_CONFIG
+def userdata_ready():
+    """True once batocera share is mounted and configs can be read/written."""
+    return os.path.isdir("/userdata/system")
+
+
+def wait_userdata(timeout=USERDATA_WAIT_TIMEOUT):
+    waited = 0
+    while not userdata_ready() and waited < timeout:
+        time.sleep(READY_INTERVAL)
+        waited += READY_INTERVAL
+    return userdata_ready()
+
+
+def active_curve():
+    """Resolve the curve the auto daemon should follow.
+
+    Priority: a user custom curve in fan.conf wins; otherwise the named curve
+    for the persisted mode (silent/auto/aggressive); otherwise plain auto.
+    """
     tmpconfig = load_config(CONFIG_FILE)
     if tmpconfig:
-        fanconfig = tmpconfig
+        return tmpconfig
+    mode, _ = load_state()
+    if mode in FAN_CURVES:
+        return list(FAN_CURVES[mode])
+    return list(FAN_CURVES["auto"])
 
+
+def poll_sleep(temp_c, block, prevblock):
+    """Always poll fast — thermal safety first on handhelds."""
+    return CHECK_INTERVAL_HOT if (
+        (temp_c is not None and temp_c >= HOT_TEMP_C) or block > prevblock
+    ) else CHECK_INTERVAL
+
+
+class TempTracker:
+    """Instant on heat, slow to forget — matches what users see in Control Deck."""
+
+    def __init__(self):
+        self.smoothed = None
+        self.peak = None
+        self.peak_at = 0.0
+
+    def update(self, current):
+        now = time.time()
+        if current is None:
+            return self.smoothed
+        if self.smoothed is None:
+            self.smoothed = current
+            self.peak = current
+            self.peak_at = now
+            return current
+        if current >= self.smoothed:
+            self.smoothed = (TEMP_RISE_ALPHA * current) + ((1.0 - TEMP_RISE_ALPHA) * self.smoothed)
+        else:
+            self.smoothed = (TEMP_FALL_ALPHA * current) + ((1.0 - TEMP_FALL_ALPHA) * self.smoothed)
+        if self.peak is None or current >= self.peak:
+            self.peak = current
+            self.peak_at = now
+        elif (now - self.peak_at) > TEMP_PEAK_HOLD_S:
+            # After hold, decay peak toward smoothed.
+            self.peak = max(self.smoothed, self.peak - 1.5)
+            self.peak_at = now
+        # Control on the higher of smoothed and held peak.
+        return max(self.smoothed, self.peak if self.peak is not None else self.smoothed)
+
+
+def temp_check():
+    # Prefer reading fan.state after userdata is mounted (S11share). Init is
+    # ordered as S12qcom-fan, but keep this wait so a misplaced early start
+    # still picks up silent/aggressive instead of freezing on plain auto.
+    wait_userdata()
+
+    # Wait (bounded) for the fan control node to appear. Avoids the boot race
+    # where init starts us before hwmon/cooling is registered, which used to
+    # make the auto daemon exit immediately and leave the fan stuck.
     status = read_status()
+    waited = 0
+    while (not status["available"] or not status["control"]) and waited < READY_TIMEOUT:
+        time.sleep(READY_INTERVAL)
+        waited += READY_INTERVAL
+        status = read_status()
     if not status["available"] or not status["control"]:
         print("Error: no writable fan control found.", file=sys.stderr)
         return 1
 
+    tracker = TempTracker()
     prevblock = 0
     while True:
-        val = get_temp()
-        if val is None:
+        # Re-resolve every loop: fan.state may appear after a late userdata mount,
+        # and Control Deck can change silent/auto/aggressive without restarting us.
+        fanconfig = active_curve()
+        raw = get_temp()
+        if raw is None:
             time.sleep(CHECK_INTERVAL)
             continue
+        val = tracker.update(raw)
         block = get_fanspeed(val, fanconfig)
-        if block < prevblock:
-            time.sleep(CHECK_INTERVAL)
-        prevblock = block
         try:
             raw_set_speed(block, quiet=True)
             if DEBUG:
-                print("Set fan speed {}% for temp {:5.1f}C".format(block, val))
+                print("Set fan speed {}% for temp {:5.1f}C (raw {:5.1f}C)".format(block, val, raw))
         except Exception:
             pass
-        time.sleep(CHECK_INTERVAL)
+        delay = poll_sleep(val, block, prevblock)
+        prevblock = block
+        time.sleep(delay)
+
+
+def restore_boot_state():
+    """Restore the last user selection at boot (called from the init script).
+
+    Falls back to the automatic curve when no state is stored, so a fresh
+    install behaves exactly like before.
+    """
+    wait_userdata()
+    mode, target = load_state()
+    if mode == "manual" and target is not None:
+        return set_speed(str(int(clamp(int(target), 0, 100))), stop_first=True, quiet=True)
+    if mode == "off":
+        stop_daemon(reset_speed=True)
+        return 0
+    stop_daemon(reset_speed=False, modes=("manual-daemon",))
+    return 0 if start_daemon() else 1
 
 
 def write_pid():
@@ -535,13 +740,27 @@ def main():
         return manual_check()
     if command == "stop":
         stop_daemon(reset_speed=True)
+        save_state("off")
+        return 0
+    if command == "daemon-stop":
+        # Shutdown/reboot path (init S06 stop): just tear down the daemon WITHOUT
+        # touching fan.state, so the user's persisted choice (auto / manual N% /
+        # off) survives the next boot. `stop` above is the *user* "turn it off"
+        # action and is the only one allowed to persist "off".
+        stop_daemon(reset_speed=False)
         return 0
     if command == "manual":
         stop_daemon(reset_speed=False, modes=("start",))
         return 0
-    if command == "auto":
+    if command in AUTO_MODES:
+        # auto / silent / aggressive: persist the chosen curve then (re)spawn the
+        # automatic daemon, which reads the mode back via active_curve().
         stop_daemon(reset_speed=False)
-        return 0 if start_daemon() else 1
+        save_state(command)
+        ok = start_daemon()
+        return 0 if ok else 1
+    if command == "boot":
+        return restore_boot_state()
 
     status = read_status()
     if command == "available":
@@ -573,7 +792,7 @@ def main():
     if command == "set" and len(sys.argv) > 2:
         return set_speed(sys.argv[2])
 
-    print("Usage: qcom-fan [start|stop|auto|manual|available|status|label|json|percent|rpm|mode|set <0-100|+N|-N>]", file=sys.stderr)
+    print("Usage: qcom-fan [start|boot|stop|daemon-stop|auto|silent|aggressive|manual|available|status|label|json|percent|rpm|mode|set <0-100|+N|-N>]", file=sys.stderr)
     return 1
 
 

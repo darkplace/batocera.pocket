@@ -8843,6 +8843,99 @@ cemu:
       choices:
         OpenGL: 0
         Vulkan (Default): 1
+    lsfg_vk:
+      archs_include:
+      - qcs6490
+      - sm8250
+      - sm8550
+      - sm8750
+      submenu: LSFG-VK
+      prompt: LSFG-VK FRAME GENERATION
+      description: Enables the Lossless Scaling Frame Generation Vulkan layer when
+        the Vulkan backend is selected (or for native Vulkan games under Heroic/Lutris).
+        Requires Lossless.dll from a purchased Lossless Scaling install.
+      choices:
+        'Off': 0
+        'On': 1
+    lsfg_vk_dll:
+      archs_include:
+      - qcs6490
+      - sm8250
+      - sm8550
+      - sm8750
+      submenu: LSFG-VK
+      prompt: LOSSLESS.DLL PATH
+      description: Put Lossless.dll at the default path /userdata/system/wine/lossless-scaling/Lossless.dll, or choose a full path to Lossless.dll inside a Lossless Scaling install.
+      preset: input
+    lsfg_vk_multiplier:
+      archs_include:
+      - qcs6490
+      - sm8250
+      - sm8550
+      - sm8750
+      submenu: LSFG-VK
+      prompt: LSFG MULTIPLIER
+      description: Set the target frame-rate multiplication. Higher values insert
+        more generated frames and can increase artifacts and GPU load.
+      choices:
+        2x (Default): 2
+        3x: 3
+        4x: 4
+    lsfg_vk_flow_scale:
+      archs_include:
+      - qcs6490
+      - sm8250
+      - sm8550
+      - sm8750
+      submenu: LSFG-VK
+      prompt: LSFG FLOW SCALE
+      description: Scale the optical-flow processing resolution. Lower values reduce
+        GPU load but can reduce frame-generation quality.
+      choices:
+        1.0 (Default x86): '1.0'
+        0.75 (Default ARM): '0.75'
+        0.5: '0.5'
+        0.25: '0.25'
+    lsfg_vk_performance:
+      archs_include:
+      - qcs6490
+      - sm8250
+      - sm8550
+      - sm8750
+      submenu: LSFG-VK
+      prompt: LSFG PERFORMANCE MODE
+      description: Use a lower-cost frame-generation path for better performance
+        at a possible image-quality cost.
+      choices:
+        'Off': 0
+        'On': 1
+    lsfg_vk_hdr:
+      archs_include:
+      - qcs6490
+      - sm8250
+      - sm8550
+      - sm8750
+      submenu: LSFG-VK
+      prompt: LSFG HDR MODE
+      description: Enable HDR-aware frame generation when the game outputs HDR.
+      choices:
+        'Off': 0
+        'On': 1
+    lsfg_vk_present_mode:
+      archs_include:
+      - qcs6490
+      - sm8250
+      - sm8550
+      - sm8750
+      submenu: LSFG-VK
+      prompt: LSFG PRESENT MODE
+      description: Select Vulkan presentation behavior. Auto is recommended; FIFO
+        avoids tearing, Mailbox can reduce latency, and Immediate may tear.
+      choices:
+        Auto (Default): ''
+        FIFO: fifo
+        Mailbox: mailbox
+        Immediate: immediate
     cemu_async:
       group: ADVANCED OPTIONS
       prompt: ASYNC SHADER COMPILE (VULKAN ONLY)
@@ -11740,6 +11833,99 @@ rpcs3:
             choices:
                 "OpenGL": OpenGL
                 "Vulkan": Vulkan
+        lsfg_vk:
+          archs_include:
+          - qcs6490
+          - sm8250
+          - sm8550
+          - sm8750
+          submenu: LSFG-VK
+          prompt: LSFG-VK FRAME GENERATION
+          description: Enables the Lossless Scaling Frame Generation Vulkan layer when
+            the Vulkan backend is selected (or for native Vulkan games under Heroic/Lutris).
+            Requires Lossless.dll from a purchased Lossless Scaling install.
+          choices:
+            'Off': 0
+            'On': 1
+        lsfg_vk_dll:
+          archs_include:
+          - qcs6490
+          - sm8250
+          - sm8550
+          - sm8750
+          submenu: LSFG-VK
+          prompt: LOSSLESS.DLL PATH
+          description: Put Lossless.dll at the default path /userdata/system/wine/lossless-scaling/Lossless.dll, or choose a full path to Lossless.dll inside a Lossless Scaling install.
+          preset: input
+        lsfg_vk_multiplier:
+          archs_include:
+          - qcs6490
+          - sm8250
+          - sm8550
+          - sm8750
+          submenu: LSFG-VK
+          prompt: LSFG MULTIPLIER
+          description: Set the target frame-rate multiplication. Higher values insert
+            more generated frames and can increase artifacts and GPU load.
+          choices:
+            2x (Default): 2
+            3x: 3
+            4x: 4
+        lsfg_vk_flow_scale:
+          archs_include:
+          - qcs6490
+          - sm8250
+          - sm8550
+          - sm8750
+          submenu: LSFG-VK
+          prompt: LSFG FLOW SCALE
+          description: Scale the optical-flow processing resolution. Lower values reduce
+            GPU load but can reduce frame-generation quality.
+          choices:
+            1.0 (Default x86): '1.0'
+            0.75 (Default ARM): '0.75'
+            0.5: '0.5'
+            0.25: '0.25'
+        lsfg_vk_performance:
+          archs_include:
+          - qcs6490
+          - sm8250
+          - sm8550
+          - sm8750
+          submenu: LSFG-VK
+          prompt: LSFG PERFORMANCE MODE
+          description: Use a lower-cost frame-generation path for better performance
+            at a possible image-quality cost.
+          choices:
+            'Off': 0
+            'On': 1
+        lsfg_vk_hdr:
+          archs_include:
+          - qcs6490
+          - sm8250
+          - sm8550
+          - sm8750
+          submenu: LSFG-VK
+          prompt: LSFG HDR MODE
+          description: Enable HDR-aware frame generation when the game outputs HDR.
+          choices:
+            'Off': 0
+            'On': 1
+        lsfg_vk_present_mode:
+          archs_include:
+          - qcs6490
+          - sm8250
+          - sm8550
+          - sm8750
+          submenu: LSFG-VK
+          prompt: LSFG PRESENT MODE
+          description: Select Vulkan presentation behavior. Auto is recommended; FIFO
+            avoids tearing, Mailbox can reduce latency, and Immediate may tear.
+          choices:
+            Auto (Default): ''
+            FIFO: fifo
+            Mailbox: mailbox
+            Immediate: immediate
         rpcs3_framelimit:
             submenu: MANUAL GAME PROFILE
             prompt: ADDITIONAL FRAMELIMIT
@@ -15819,6 +16005,99 @@ heroic:
       prompt: EXTRA HEROIC ARGUMENTS
       description: Extra arguments appended to generated Heroic launch commands.
       preset: input
+    lsfg_vk:
+      archs_include:
+      - qcs6490
+      - sm8250
+      - sm8550
+      - sm8750
+      submenu: LSFG-VK
+      prompt: LSFG-VK FRAME GENERATION
+      description: Enables the Lossless Scaling Frame Generation Vulkan layer when
+        the Vulkan backend is selected (or for native Vulkan games under Heroic/Lutris).
+        Requires Lossless.dll from a purchased Lossless Scaling install.
+      choices:
+        'Off': 0
+        'On': 1
+    lsfg_vk_dll:
+      archs_include:
+      - qcs6490
+      - sm8250
+      - sm8550
+      - sm8750
+      submenu: LSFG-VK
+      prompt: LOSSLESS.DLL PATH
+      description: Put Lossless.dll at the default path /userdata/system/wine/lossless-scaling/Lossless.dll, or choose a full path to Lossless.dll inside a Lossless Scaling install.
+      preset: input
+    lsfg_vk_multiplier:
+      archs_include:
+      - qcs6490
+      - sm8250
+      - sm8550
+      - sm8750
+      submenu: LSFG-VK
+      prompt: LSFG MULTIPLIER
+      description: Set the target frame-rate multiplication. Higher values insert
+        more generated frames and can increase artifacts and GPU load.
+      choices:
+        2x (Default): 2
+        3x: 3
+        4x: 4
+    lsfg_vk_flow_scale:
+      archs_include:
+      - qcs6490
+      - sm8250
+      - sm8550
+      - sm8750
+      submenu: LSFG-VK
+      prompt: LSFG FLOW SCALE
+      description: Scale the optical-flow processing resolution. Lower values reduce
+        GPU load but can reduce frame-generation quality.
+      choices:
+        1.0 (Default x86): '1.0'
+        0.75 (Default ARM): '0.75'
+        0.5: '0.5'
+        0.25: '0.25'
+    lsfg_vk_performance:
+      archs_include:
+      - qcs6490
+      - sm8250
+      - sm8550
+      - sm8750
+      submenu: LSFG-VK
+      prompt: LSFG PERFORMANCE MODE
+      description: Use a lower-cost frame-generation path for better performance
+        at a possible image-quality cost.
+      choices:
+        'Off': 0
+        'On': 1
+    lsfg_vk_hdr:
+      archs_include:
+      - qcs6490
+      - sm8250
+      - sm8550
+      - sm8750
+      submenu: LSFG-VK
+      prompt: LSFG HDR MODE
+      description: Enable HDR-aware frame generation when the game outputs HDR.
+      choices:
+        'Off': 0
+        'On': 1
+    lsfg_vk_present_mode:
+      archs_include:
+      - qcs6490
+      - sm8250
+      - sm8550
+      - sm8750
+      submenu: LSFG-VK
+      prompt: LSFG PRESENT MODE
+      description: Select Vulkan presentation behavior. Auto is recommended; FIFO
+        avoids tearing, Mailbox can reduce latency, and Immediate may tear.
+      choices:
+        Auto (Default): ''
+        FIFO: fifo
+        Mailbox: mailbox
+        Immediate: immediate
 lutris:
   features:
   - padtokeyboard
@@ -15865,6 +16144,99 @@ lutris:
       prompt: EXTRA LUTRIS ARGUMENTS
       description: Extra arguments appended to generated Lutris launch commands.
       preset: input
+    lsfg_vk:
+      archs_include:
+      - qcs6490
+      - sm8250
+      - sm8550
+      - sm8750
+      submenu: LSFG-VK
+      prompt: LSFG-VK FRAME GENERATION
+      description: Enables the Lossless Scaling Frame Generation Vulkan layer when
+        the Vulkan backend is selected (or for native Vulkan games under Heroic/Lutris).
+        Requires Lossless.dll from a purchased Lossless Scaling install.
+      choices:
+        'Off': 0
+        'On': 1
+    lsfg_vk_dll:
+      archs_include:
+      - qcs6490
+      - sm8250
+      - sm8550
+      - sm8750
+      submenu: LSFG-VK
+      prompt: LOSSLESS.DLL PATH
+      description: Put Lossless.dll at the default path /userdata/system/wine/lossless-scaling/Lossless.dll, or choose a full path to Lossless.dll inside a Lossless Scaling install.
+      preset: input
+    lsfg_vk_multiplier:
+      archs_include:
+      - qcs6490
+      - sm8250
+      - sm8550
+      - sm8750
+      submenu: LSFG-VK
+      prompt: LSFG MULTIPLIER
+      description: Set the target frame-rate multiplication. Higher values insert
+        more generated frames and can increase artifacts and GPU load.
+      choices:
+        2x (Default): 2
+        3x: 3
+        4x: 4
+    lsfg_vk_flow_scale:
+      archs_include:
+      - qcs6490
+      - sm8250
+      - sm8550
+      - sm8750
+      submenu: LSFG-VK
+      prompt: LSFG FLOW SCALE
+      description: Scale the optical-flow processing resolution. Lower values reduce
+        GPU load but can reduce frame-generation quality.
+      choices:
+        1.0 (Default x86): '1.0'
+        0.75 (Default ARM): '0.75'
+        0.5: '0.5'
+        0.25: '0.25'
+    lsfg_vk_performance:
+      archs_include:
+      - qcs6490
+      - sm8250
+      - sm8550
+      - sm8750
+      submenu: LSFG-VK
+      prompt: LSFG PERFORMANCE MODE
+      description: Use a lower-cost frame-generation path for better performance
+        at a possible image-quality cost.
+      choices:
+        'Off': 0
+        'On': 1
+    lsfg_vk_hdr:
+      archs_include:
+      - qcs6490
+      - sm8250
+      - sm8550
+      - sm8750
+      submenu: LSFG-VK
+      prompt: LSFG HDR MODE
+      description: Enable HDR-aware frame generation when the game outputs HDR.
+      choices:
+        'Off': 0
+        'On': 1
+    lsfg_vk_present_mode:
+      archs_include:
+      - qcs6490
+      - sm8250
+      - sm8550
+      - sm8750
+      submenu: LSFG-VK
+      prompt: LSFG PRESENT MODE
+      description: Select Vulkan presentation behavior. Auto is recommended; FIFO
+        avoids tearing, Mailbox can reduce latency, and Immediate may tear.
+      choices:
+        Auto (Default): ''
+        FIFO: fifo
+        Mailbox: mailbox
+        Immediate: immediate
 n64recomp:
   features:
   - padtokeyboard
@@ -20739,6 +21111,17 @@ shadps4:
         3 Seconds: 3
         6 Seconds (Default): 6
         10 Seconds: 10
+    shadps4_resolution:
+      submenu: GRAPHICS
+      prompt: INTERNAL RESOLUTION
+      description: Render resolution used by ShadPS4. 1280x720 is the default on ARM
+        handhelds because 1080p is much heavier under FEX. Native follows the current
+        display mode.
+      choices:
+        1280x720 (Default on ARM): 1280x720
+        960x540: 960x540
+        1920x1080: 1920x1080
+        Native display: native
     shadps4_fsr:
       submenu: GRAPHICS
       prompt: FSR UPSCALING

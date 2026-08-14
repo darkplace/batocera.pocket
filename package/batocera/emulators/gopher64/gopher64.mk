@@ -4,6 +4,8 @@
 #
 ################################################################################
 
+# Stay on 1.96-compatible tip until host rust is bumped to >= 1.97.1.
+# (c2b64adb / rust-version = "1.97.1" fails cargo with rustc 1.96.0)
 GOPHER64_VERSION = a23ede433b46687b48cb13ae4305ce5a5857d616
 GOPHER64_SITE = https://github.com/gopher64/gopher64.git
 GOPHER64_SITE_METHOD = git

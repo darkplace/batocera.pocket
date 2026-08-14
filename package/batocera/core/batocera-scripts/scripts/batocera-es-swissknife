@@ -31,26 +31,71 @@ function check_esrun() {
 }
 
 # Kill emulators running in a proper way! (SAVE SRM STATE!), timeout is 5s per default
+function kill_orphaned_emulators() {
+    # SSH / FEX sessions can outlive emulatorlauncher. Force-kill must still
+    # tear them down or the compositor stays on the Batocera splash.
+    pkill -TERM -f '/usr/bin/evmapy' >/dev/null 2>&1 || true
+    pkill -TERM -f 'FEX .*/shadps4' >/dev/null 2>&1 || true
+    pkill -TERM -f '/usr/bin/shadps4-fex' >/dev/null 2>&1 || true
+    pkill -KILL -f '/usr/bin/evmapy' >/dev/null 2>&1 || true
+}
+
+function resume_es_if_suspended() {
+    if [[ $(check_esrun) -eq 0 ]] && [[ -p /tmp/es-resume.fifo ]]; then
+        /etc/init.d/S31emulationstation resume
+    fi
+}
+
 function emu_kill() {
     RC_PID=$(check_emurun)
-    if [[ $RC_PID -ne 0 ]]; then
-        # 1. try, regular exit with hotkeygen command, after 5s (default) use 2nd method
-        hotkeygen --send exit &
-        # Detect WINE process and let hotkeygen with batocera-wine windows stop do it's pretty good job, reason is that WINE can took longer to finish
-        # timeout reports 0 if process is finished before t/o
-        pgrep -f -n wineserver >/dev/null && return 25 || ret=20
-        timeout ${waitTimer} tail -q --pid=${RC_PID} -f /dev/null 2>/dev/null && return $ret
-        # 2. try, crawl PIDs recursiv and SIGKILL
-        getcpid $RC_PID
-        for ((z=${#pidarray[*]}-1; z>-1; z--)); do
-            kill -9 ${pidarray[z]}; sleep 1
-        done
-        unset pidarray
-        ret=22
-    else
-        ret=21
+    if [[ $RC_PID -eq 0 ]]; then
+        kill_orphaned_emulators
+        return 21
     fi
-    return $ret
+
+    # Release exclusive pad grab before killing the session (Steam + mouse-mode).
+    if command -v batocera-mouse-mode >/dev/null 2>&1; then
+        batocera-mouse-mode disable >/dev/null 2>&1 || true
+    fi
+    pkill -KILL -f '(^|[[:space:]/])batocera-mouse-mode([[:space:]]|$)' >/dev/null 2>&1 || true
+    rm -f /var/run/batocera-mouse-mode.enabled /var/run/batocera-mouse-mode.pid /var/run/batocera-mouse-mode.cmd
+
+    # 1. try: graceful exit via hotkeygen (lets libretro save SRM/state and
+    #    lets batocera-wine run its "windows stop" teardown).
+    hotkeygen --send exit &
+
+    # WINE tears down slower (wineserver + prefix flush) so give it a longer
+    # grace window; everything else uses waitTimer (5s default). Unlike before
+    # we no longer *return* early for WINE — a hung prefix must still be forced.
+    if pgrep -f -n wineserver >/dev/null; then
+        graceTimer="${WINE_WAIT_TIMER:-15}"
+        ret=25
+    else
+        graceTimer="${waitTimer}"
+        ret=20
+    fi
+    # timeout returns 0 if the emulator finished on its own before the window.
+    timeout "${graceTimer}" tail -q --pid=${RC_PID} -f /dev/null 2>/dev/null && return $ret
+
+    # 2. force: SIGTERM the whole process tree (children first, incl. RC_PID),
+    #    a short bounded grace, then SIGKILL survivors. No per-PID sleep, so a
+    #    stuck Play!/Wine dies within ~3s regardless of child count.
+    getcpid $RC_PID
+    pidarray+=($RC_PID)
+    for ((z=${#pidarray[*]}-1; z>-1; z--)); do
+        kill -TERM "${pidarray[z]}" 2>/dev/null
+    done
+    for _i in 1 2 3; do
+        kill -0 "$RC_PID" 2>/dev/null || break
+        sleep 1
+    done
+    for ((z=${#pidarray[*]}-1; z>-1; z--)); do
+        kill -0 "${pidarray[z]}" 2>/dev/null && kill -9 "${pidarray[z]}" 2>/dev/null
+    done
+    # A lingering wineserver would respawn children — make sure it's gone.
+    pgrep -f -n wineserver >/dev/null && pkill -9 -f wineserver 2>/dev/null
+    unset pidarray
+    return 22
 }
 
 # Future proof update check, depends just on build-date and build-time
@@ -87,6 +132,10 @@ case ${1,,} in
     --emukill|--shutdown|--reboot)
         [[ $2 =~ ^[0-9]*[.]?[0-9]+$ ]] && waitTimer="$2"
         emu_kill; ret=$?
+        if [[ "${1,,}" == "--emukill" ]]; then
+            kill_orphaned_emulators
+            resume_es_if_suspended
+        fi
 
         ES_PID=$(check_esrun)
         if [[ "${1,,}" == "--shutdown" && $ES_PID -ne 0 ]]; then
@@ -142,21 +191,27 @@ case ${1,,} in
                 :
             fi
             if [[ -z "${NET_VER:-}" ]]; then
-                GITHUB_API="https://api.github.com/repos/${GITHUB_OWNER_REPO}/releases/latest"
-                _gh_json=$(curl -sfL -H "Accept: application/vnd.github+json" "${GITHUB_API}" 2>/dev/null)
-                LATEST_TAG=$(echo "${_gh_json}" | grep '"tag_name"' | head -1 | sed -E 's/.*"tag_name":[[:space:]]*"([^"]+)".*/\1/')
-                if [[ -n "${LATEST_TAG}" ]]; then
-                    NET_VER=$(curl -sfL "https://github.com/${GITHUB_OWNER_REPO}/releases/download/${LATEST_TAG}/batocera.version" 2>/dev/null | head -1 | tr -d '\r')
-                    [[ -z "${NET_VER}" ]] && NET_VER="${LATEST_TAG}"
+                if command -v batocera-pocket-github-release >/dev/null 2>&1; then
+                    LATEST_TAG=$(GITHUB_OWNER_REPO="${GITHUB_OWNER_REPO}" batocera-pocket-github-release tag "$BOARD" "${GITHUB_OWNER_REPO}" 2>/dev/null)
+                    NET_VER=$(GITHUB_OWNER_REPO="${GITHUB_OWNER_REPO}" batocera-pocket-github-release version "$BOARD" "${GITHUB_OWNER_REPO}" 2>/dev/null)
+                    [[ -z "${NET_VER}" ]] && NET_VER="Connection failed!"
                 else
                     NET_VER="Connection failed!"
+                    LATEST_TAG=""
                 fi
                 echo "Installed:   $VER"
                 echo "Webversion:  $NET_VER"
                 echo "Update URL:  https://github.com/${GITHUB_OWNER_REPO}/releases"
-                echo "Channel:     latest GitHub Release (stable == butterfly)"
+                echo "Channel:     GitHub Release for board ${BOARD} (not /latest)"
+                [[ -n "${LATEST_TAG}" ]] && echo "Release tag: ${LATEST_TAG}"
                 echo "Used arch:   $BOARD"
-                if [[ "$NET_VER" != "Connection failed!" && "$VER" != "$NET_VER" ]]; then
+                # Compare NUMERICALLY (YYYYMMDDHHMM via version_update), not a raw
+                # string diff: a plain "!=" would offer an OLDER published release
+                # as an "update" (downgrade) whenever the strings differ. Only flag
+                # an update when the remote build is strictly newer.
+                CUR_N=$(version_update "$VER")
+                NET_N=$(version_update "$NET_VER")
+                if [[ "$NET_VER" != "Connection failed!" && -n "$CUR_N" && -n "$NET_N" && "$CUR_N" -lt "$NET_N" ]]; then
                     echo "Status:      Possible Update found!"
                     ret=0
                 else

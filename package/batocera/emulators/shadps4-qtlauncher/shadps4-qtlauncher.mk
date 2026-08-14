@@ -4,7 +4,8 @@
 #
 ################################################################################
 
-SHADPS4_QTLAUNCHER_VERSION = v224
+# v224 tag is gone; pin to current QtLauncher release matching 2026-08-08 tip.
+SHADPS4_QTLAUNCHER_VERSION = a12b988ef35d98f2222a614c05498b27fef87121
 SHADPS4_QTLAUNCHER_SITE = https://github.com/shadps4-emu/shadps4-qtlauncher
 SHADPS4_QTLAUNCHER_SITE_METHOD = git
 SHADPS4_QTLAUNCHER_GIT_SUBMODULES = YES

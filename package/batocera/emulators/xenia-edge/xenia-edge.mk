@@ -3,7 +3,8 @@
 # xenia-edge
 #
 ################################################################################
-XENIA_EDGE_VERSION = 70ad7c527e502193eb3f2a458987ca312ac4e9e3
+# Tip oleada B (2026-08-14): absorb Edge merges; keep XenDroid mid_frame patch + TOMLs.
+XENIA_EDGE_VERSION = c38a672db37f20a066cdb5b365e243e67971a72d
 XENIA_EDGE_SITE = https://github.com/has207/xenia-edge.git
 XENIA_EDGE_SITE_METHOD = git
 XENIA_EDGE_GIT_SUBMODULES = YES
@@ -104,6 +105,11 @@ define XENIA_EDGE_INSTALL_TARGET_CMDS
 	      $(TARGET_DIR)/usr/share/xenia-edge/patches \
 	)
 	rm -rf $(@D)/temp-patches
+
+	# Per-game configs mined from XenDroid GAME_COMPAT (Linux/Turnip-safe).
+	mkdir -p $(TARGET_DIR)/usr/share/xenia-edge/config
+	$(INSTALL) -D -m 0644 $(XENIA_EDGE_PKGDIR)/files/config/*.toml \
+		$(TARGET_DIR)/usr/share/xenia-edge/config/
 endef
 
 $(eval $(cmake-package))

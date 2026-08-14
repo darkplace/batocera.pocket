@@ -4,6 +4,7 @@
 #
 ################################################################################
 
+# Stay on tip that builds with host LLVM (cd814f8 needs KnownFPClass.h / newer LLVM).
 RPCS3_VERSION = 40e9ee5af0de7ca31691c58eebe64ba205a2900b
 RPCS3_SITE = https://github.com/RPCS3/rpcs3.git
 RPCS3_SITE_METHOD=git
@@ -61,8 +62,20 @@ define RPCS3_INSTALL_CONFIG_DATABASE
 		-o $(TARGET_DIR)/usr/share/rpcs3/GuiConfigs/config_database.dat
 endef
 
+define RPCS3_INSTALL_COMMUNITY_PATCHES
+	mkdir -p $(TARGET_DIR)/usr/share/rpcs3/patches
+	$(HOST_DIR)/bin/curl -fL --retry 3 -A 'RPCS3/1.0' \
+		'https://rpcs3.net/compatibility?patch&api=v1&v=1.2' \
+		-o $(@D)/rpcs3-patches.json
+	PATH="$(HOST_DIR)/bin:$(PATH)" python3 \
+		$(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/emulators/rpcs3/extract-community-patches.py \
+		$(@D)/rpcs3-patches.json \
+		$(TARGET_DIR)/usr/share/rpcs3/patches/patch.yml
+endef
+
 RPCS3_POST_INSTALL_TARGET_HOOKS += RPCS3_INSTALL_RPCS3_EXIT
 RPCS3_POST_INSTALL_TARGET_HOOKS += RPCS3_INSTALL_CONFIG_DATABASE
+RPCS3_POST_INSTALL_TARGET_HOOKS += RPCS3_INSTALL_COMMUNITY_PATCHES
 
 $(eval $(cmake-package))
 $(eval $(emulator-info-package))

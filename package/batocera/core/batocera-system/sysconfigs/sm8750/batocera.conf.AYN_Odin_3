@@ -17,6 +17,12 @@ audio.profile=auto
 display.brightness=60
 system.battery.charge_limit=100
 
+# CPU scaling governor. Mainline schedutil keeps the mid cluster pinned near max
+# at idle on this SoC (Android's WALT/Perf-HAL tuning is not ported), wasting
+# power and heat. ondemand scales down properly at idle and pairs with the quiet
+# auto fan curve. Users can still override to performance/schedutil in the menu.
+system.cpu.governor=ondemand
+
 global.hud_custom=position=bottom-left\nbackground_alpha=0.9\nlegacy_layout=false\ncustom_text=%GAMENAME%\ncustom_text=%SYSTEMNAME%\ncustom_text=%EMULATORCORE%\nfps\ngpu_name\nengine_version\nvulkan_driver\nresolution\nram\ngpu_stats\nncpu_stats\ncpu_temp\ncore_load\nbattery_icon\nbattery_watt\ngpu_core_clock
 
 # default suspend on handled boards

@@ -1,0 +1,80 @@
+From: batocera.pocket <noreply@local>
+Date: Fri, 14 Aug 2026 00:00:00 +0000
+Subject: [PATCH] honor choice selected= for popup initial highlight
+
+Fan Mode (and other choice lists) always highlighted the first option.
+Support selected="${...}" on <choice> and focus that entry on open.
+
+--- a/ui_core.py	2026-08-09 03:00:06.971702876 +0200
++++ b/ui_core.py	2026-08-14 00:29:18.724037956 +0200
+@@ -5096,7 +5096,8 @@
+     scrolled.add(choice_box)
+ 
+     choice_buttons = []
+-    current_choice = [0]  # Always start with first choice
++    current_choice = [0]
++    initial_choice = [0]  # Filled from choice selected="..." while building buttons
+ 
+     def on_choice_selected(action: str, afterclick_attr: str = ""):
+         import threading
+@@ -5166,11 +5167,19 @@
+         display = (choice.attrs.get("display", "") or "Option").strip()
+         action = choice.attrs.get("action", "")
+         afterclick = choice.attrs.get("afterclick", "")
++        selected_attr = (choice.attrs.get("selected") or "").strip()
+         if is_cmd(display):
+             display = run_shell_capture(cmd_of(display)).strip()
+             if is_empty_or_null(display):
+                 continue
+ 
++        is_selected = False
++        if selected_attr:
++            sel_raw = selected_attr
++            if is_cmd(sel_raw):
++                sel_raw = run_shell_capture(cmd_of(sel_raw)).strip()
++            is_selected = sel_raw.lower() in ("1", "true", "yes", "on")
++
+         btn = Gtk.Button.new_with_label(_(display))
+         btn.set_can_focus(True)
+         btn.get_style_context().add_class("choice-option")
+@@ -5181,6 +5190,8 @@
+             on_choice_selected(a, ac)
+ 
+         btn.connect("clicked", on_choice_click)
++        if is_selected:
++            initial_choice[0] = len(choice_buttons)
+         choice_buttons.append(btn)
+ 
+     if not choice_buttons:
+@@ -5222,9 +5233,9 @@
+ 
+     dialog.show_all()
+ 
+-    # Apply initial focus after dialog is shown - always start with first choice
++    # Apply initial focus after dialog is shown — prefer choice marked selected
+     if choice_buttons:
+-        current_choice[0] = 0  # Explicitly reset to first choice
++        current_choice[0] = min(initial_choice[0], len(choice_buttons) - 1)
+         GLib.idle_add(update_choice_focus)
+ 
+     # On Wayland, remove dialog decorations
+--- a/xml_utils.py	2026-03-31 04:17:12.000000000 +0200
++++ b/xml_utils.py	2026-08-14 00:29:18.725294585 +0200
+@@ -49,7 +49,7 @@
+         "button_confirm": {"display", "action"}, # display required (confirmation message), action required
+         "toggle": set(),      # display and value both optional; action_on/off optional
+         "switch": set(),      # display and value both optional; action_on/off optional (same as toggle)
+-        "choice": {"display", "action"},  # runs 'action' when selected
++        "choice": {"display", "action"},  # runs 'action' when selected; optional selected=
+         "img": set(),         # display optional (path, URL, or ${...} command)
+         "qrcode": set(),      # display optional (text, URL, or ${...} command to encode as QR)
+         "doc": {"display", "content"},  # display for button label, content for document path
+@@ -69,7 +69,7 @@
+         "button_confirm": {"display", "action", "refresh", "align", "afterclick"},
+         "toggle": {"display", "value", "action_on", "action_off", "refresh", "align", "afterclick"},
+         "switch": {"display", "value", "action_on", "action_off", "refresh", "align", "afterclick"},
+-        "choice": {"display", "action", "afterclick"},
++        "choice": {"display", "action", "afterclick", "selected"},
+         "img": {"display", "width", "height", "refresh", "align"},
+         "qrcode": {"display", "width", "height", "refresh", "align", "bg", "style", "logo", "font", "text"},
+         "doc": {"display", "content", "refresh"},

@@ -20,7 +20,8 @@ STEAM_ROOTS = (
 ROMS_ROOT = Path("/userdata/roms")
 WINDOWS_SUFFIXES = {".exe", ".pc", ".wine", ".wsquashfs", ".wtgz"}
 PACKED_WINDOWS_SUFFIXES = {".wsquashfs", ".wtgz"}
-BATOCERA_TARGET_EXE = "/usr/bin/emulatorlauncher"
+# Wrapper that clears nested-gamescope inheritance from the Steam session.
+BATOCERA_EMU_LAUNCH_EXE = "/usr/bin/batocera-steam-emu-launch"
 DEFAULT_TAGS = ("Batocera",)
 MODE_LABELS = {
     "auto": "Auto - choose from path",
@@ -428,6 +429,8 @@ def shortcut_entry(
     start_dir: Path,
     launch_options: str,
     tags: tuple[str, ...],
+    *,
+    allow_overlay: bool = True,
 ) -> dict[str, object]:
     return {
         "appid": shortcut_appid(exe, app_name),
@@ -439,7 +442,8 @@ def shortcut_entry(
         "LaunchOptions": launch_options,
         "IsHidden": 0,
         "AllowDesktopConfig": 1,
-        "AllowOverlay": 1,
+        # Batocera ROM children fight GamepadUI less with overlay disabled.
+        "AllowOverlay": 1 if allow_overlay else 0,
         "OpenVR": 0,
         "Devkit": 0,
         "DevkitGameID": "",
@@ -509,7 +513,16 @@ def build_shortcut(path: Path, name: str, mode: str, system: str, tags: tuple[st
         if not system:
             raise ValueError("Batocera shortcut mode needs a system name")
         launch_options = f"-system {system} -rom {launch_arg(str(path))} -systemname {system}"
-        return shortcut_entry(name, BATOCERA_TARGET_EXE, path.parent, launch_options, merge_tags(tags, (system,)))
+        # Use the Steam child wrapper so emulatorlauncher does not nest a second
+        # gamescope under the existing Steam/gamescope session.
+        return shortcut_entry(
+            name,
+            BATOCERA_EMU_LAUNCH_EXE,
+            path.parent,
+            launch_options,
+            merge_tags(tags, (system,)),
+            allow_overlay=False,
+        )
 
     extra_tags = ("Windows", "Proton") if path.suffix.casefold() == ".exe" else ("Direct",)
     return shortcut_entry(name, str(path), path.parent, "", merge_tags(tags, extra_tags))

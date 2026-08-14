@@ -11,6 +11,10 @@ VKD3D_PROTON_SITE = \
 VKD3D_PROTON_LICENSE = lgpl
 
 VKD3D_PROTON_DEPENDENCIES = host-zstd
+# Custom EXTRACT_CMDS use $(HOST_DIR)/bin/zstd. With PARALLEL_BUILD that path
+# only exists after prepare-per-package from EXTRACT deps; system zstd makes
+# BR2_ZSTD_HOST_DEPENDENCY empty, so force host-zstd into extract deps.
+VKD3D_PROTON_EXTRACT_DEPENDENCIES = host-zstd
 
 define VKD3D_PROTON_EXTRACT_CMDS
 	mkdir -p $(@D)/target
