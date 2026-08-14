@@ -53,6 +53,7 @@ When you publish a tag, copy the matching section into the Release body.
 <details>
 <summary><b>Fixes</b></summary>
 
+- Fixed Screenscraper support (scraper source available again in EmulationStation).
 - WiFi “connected but no Internet” zombie state on Odin 3.
 - **AetherSX2 / configgen:** `TypeError: option values must be strings` —
   use `get_str(...)` for PS2 options.

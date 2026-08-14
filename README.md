@@ -156,6 +156,7 @@ Per-board GitHub tags so OTA only matches the device SoC. Full history with coll
 <details>
 <summary><b>Fixes</b></summary>
 
+- Fixed Screenscraper support in EmulationStation.
 - WiFi “connected but no Internet” zombie on Odin 3.
 - **AetherSX2:** configgen crash (`option values must be strings` → `get_str`).
 - **RPCS3:** configgen patch path (`RPCS3_PATCH_YML` / `patch.yml`).
