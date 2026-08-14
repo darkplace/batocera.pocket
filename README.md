@@ -7,8 +7,14 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Batocera-v44-5b2be7" alt="Batocera v44">
   <img src="https://img.shields.io/badge/SoC-SM8750%20%C2%B7%20SM8550%20%C2%B7%20SM8250-0a9fb0" alt="SoCs">
-  <a href="https://github.com/darkplace/batocera.pocket/releases/latest"><img src="https://img.shields.io/github/v/release/darkplace/batocera.pocket?label=latest%20release&color=2ea043" alt="Latest release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPLv2-blue" alt="License GPLv2"></a>
+</p>
+
+<p align="center">
+  <!-- Per-board tags only — never /releases/latest (OTA is SoC-scoped). -->
+  <a href="https://github.com/darkplace/batocera.pocket/releases/tag/v44-sm8750-20260814"><img src="https://img.shields.io/github/v/release/darkplace/batocera.pocket?filter=v44-sm8750-*&amp;label=SM8750&amp;color=2ea043" alt="SM8750 release"></a>
+  <a href="https://github.com/darkplace/batocera.pocket/releases/tag/v44-sm8550-20260813"><img src="https://img.shields.io/github/v/release/darkplace/batocera.pocket?filter=v44-sm8550-*&amp;label=SM8550&amp;color=2ea043" alt="SM8550 release"></a>
+  <a href="https://github.com/darkplace/batocera.pocket/releases/tag/v44-sm8250-20260811"><img src="https://img.shields.io/github/v/release/darkplace/batocera.pocket?filter=v44-sm8250-*&amp;label=SM8250&amp;color=c69026" alt="SM8250 release"></a>
 </p>
 
 <p align="center">
@@ -35,6 +41,8 @@ Images are per SoC. Every build ships the full Batocera stack (RetroArch cores, 
 | Device | Status | Beta tester |
 |--------|--------|-------------|
 | AYN Odin 3 | ✅ Tested | **b_bloodcart99x** |
+
+> Official build: [`v44-sm8750-20260814`](https://github.com/darkplace/batocera.pocket/releases/tag/v44-sm8750-20260814) (**OTA + flash**). Previous flash-only baseline: `v44-sm8750-20260809`.
 
 <details>
 <summary><b>Emulators &amp; extras</b></summary>
@@ -173,26 +181,31 @@ Per-board GitHub tags so OTA only matches the device SoC. Full history with coll
 
 The first start of **Steam** and of the **Arch / Ubuntu Plasma LXC** containers can take a while (downloads, rootfs setup, first boot). That is normal — let them finish.
 
-**Container Initialization:** When first time running containers, switch to keyboard mode and press the `Enter` key repeatedly to progress through initialization.
+**Container initialization:** first time in a container, switch to keyboard mode and press `Enter` repeatedly to progress.
 
-**Home** = physical Guide/Mode button (`hotkey`, SDL id 9). Same mapping on **Odin 2** and **Odin 3** (GUID `03000000202000000130000001000000`).
+**Home** = physical Guide / Mode button on the pad (`hotkey` in Batocera, SDL button id **9**).  
+Same mapping on **Odin 2** and **Odin 3** (GUID `03000000202000000130000001000000`).
+
+Verified against `hotkeys.keys` + Odin `hotkeygen` mappings (see [docs/CONTROLS_AND_FAQ.md](docs/CONTROLS_AND_FAQ.md) for the full FAQ):
 
 | Combo | Action |
 |-------|--------|
+| **Home + Start** | Exit emulator (clean) |
+| **L1 + Select + Start** | Force quit (`emukill`) |
+| **L1 + R1 + Select + Start** | Force quit (same; harder by accident) |
+| **R1 + Select + Start** | Toggle mouse mode (evmapy) |
+| **Home + Start + Select** | Toggle mouse mode (`hotkeygen`) — *not* Home+Select+Start |
 | **Home + A** | Batocera Control Center / Control Deck |
 | **Home + B** | Emulator / options menu |
-| **Home + Start** | Exit emulator (clean) |
+| **Home + Touch** | On-screen keyboard (hold Home, tap the screen) |
 | **Home + Y** | Save state |
 | **Home + X** | Load state |
 | **Home + ↑ / ↓** | Previous / next save slot |
-| **Home + ← / →** | Rewind / fast-forward (if supported) |
+| **Home + ← / →** | Rewind / fast-forward (if the core supports it) |
 | **Home + L1** | Screenshot |
-| **Home + Touch** | On-screen keyboard (hold Home, tap screen) |
-| **Home + Start + Select** | Toggle mouse mode (`hotkeygen`) |
-| **R1 + Select + Start** | Toggle mouse mode (evmapy) |
-| **L1 + Select + Start** | Force quit → Batocera |
-| **L1 + R1 + Select + Start** | Force quit (same; harder by accident) |
-| **Back** (Odin) | Brightness cycle in ES; Steam chord inside Steam |
+| **Back** (next to Home on Odin) | Brightness cycle in ES |
+
+In **Steam** (GamepadUI), **Back** becomes the Steam chord (not brightness). After Steam exit / force-kill, brightness is restored automatically.
 
 ### Mini FAQ (start here)
 
