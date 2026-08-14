@@ -4,7 +4,7 @@
 #
 ################################################################################
 
-WAYDROID_VERSION = 1.6.2
+WAYDROID_VERSION = 1.6.3
 WAYDROID_SITE = $(call github,waydroid,waydroid,$(WAYDROID_VERSION))
 WAYDROID_LICENSE = GPL-3.0-or-later
 WAYDROID_LICENSE_FILES = LICENSE

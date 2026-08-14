@@ -7,6 +7,12 @@ LOG_FILE="${LOG_DIR}/sm8550-wifi-resilience.log"
 WEAK_SIGNAL_THRESHOLD="-78"
 WEAK_SIGNAL_STRIKES="2"
 NO_ROUTE_STRIKES="2"
+# Gateway unreachable while "connected" (zombie radio / ath12k hang)
+DEAD_AIR_STRIKES="2"
+# Escalate to batocera-wifi toggle sooner (was 4; manual toggle always worked)
+TOGGLE_AFTER="2"
+HEALTHY_SLEEP="25"
+UNHEALTHY_SLEEP="12"
 
 wifi_enabled() {
     [ "$(batocera-settings-get wifi.enabled 2>/dev/null)" = "1" ]
@@ -29,13 +35,50 @@ primary_wifi_iface() {
     return 1
 }
 
+wifi_associated() {
+    iface="$1"
+
+    [ -n "${iface}" ] || return 1
+    /usr/sbin/iw dev "${iface}" link 2>/dev/null | grep -q '^Connected'
+}
+
+has_usable_ipv4() {
+    iface="$1"
+
+    [ -n "${iface}" ] || return 1
+    ip -4 -o addr show "${iface}" 2>/dev/null | awk '{
+        split($4, a, "/")
+        if (a[1] != "" && a[1] !~ /^169\.254\./) ok=1
+    } END { exit !ok }'
+}
+
 wifi_connected() {
     state=$(connmanctl state 2>/dev/null | awk -F'= ' '/^[[:space:]]*State[[:space:]]=/{print $2; exit}')
-    [ "${state}" = "ready" ] || [ "${state}" = "online" ]
+    iface="$(primary_wifi_iface 2>/dev/null || true)"
+
+    [ "${state}" = "ready" ] || [ "${state}" = "online" ] || return 1
+    # ConnMan "ready" with only IPv4LL is not a working LAN connection.
+    if [ -n "${iface}" ] && ! has_usable_ipv4 "${iface}"; then
+        return 1
+    fi
+    return 0
 }
 
 default_route_present() {
-    ip route show default 2>/dev/null | grep -q .
+    ip route show default 2>/dev/null | grep -qv '169\.254\.'
+}
+
+default_gateway() {
+    ip route show default 2>/dev/null | awk '/^default/ && $2 == "via" && $3 !~ /^169\.254\./ { print $3; exit }'
+}
+
+# True when L3 to the default GW works. Catches "zombie" Wi-Fi: IP+route
+# still configured but ath12k/AP traffic is dead (SSH No route to host).
+gateway_reachable() {
+    gw="$(default_gateway)"
+    [ -n "${gw}" ] || return 1
+    # One short probe; avoid hammering the AP.
+    ping -c 1 -W 1 "${gw}" >/dev/null 2>&1
 }
 
 wifi_signal() {
@@ -97,6 +140,10 @@ append_wifi_snapshot() {
     append_cmd_output "${phase}: proc net wireless" cat /proc/net/wireless
     append_cmd_output "${phase}: ip addr" ip addr
     append_cmd_output "${phase}: ip route" ip route
+    append_cmd_output "${phase}: ping gateway" sh -c '
+        gw=$(ip route show default 2>/dev/null | awk "/^default/ && \$2 == \"via\" { print \$3; exit }")
+        if [ -n "$gw" ]; then ping -c 2 -W 1 "$gw"; else echo "no default gw"; fi
+    '
 }
 
 begin_retry_log() {
@@ -144,17 +191,29 @@ kick_wifi() {
         weak-signal)
             action="roam"
             ;;
-        no-route)
+        dead-air)
+            # Looks connected but GW ping fails — soft recover once, then toggle.
+            action="route-recover"
+            [ "${disconnected_count}" -ge "${DEAD_AIR_STRIKES}" ] && action="toggle"
+            ;;
+        no-route|no-ipv4)
             action="route-recover"
             [ "${disconnected_count}" -ge "${NO_ROUTE_STRIKES}" ] && action="toggle"
             ;;
         *)
-            if [ "${disconnected_count}" -ge 2 ]; then
-                action="scan"
-            fi
+            # Associated radio + ConnMan idle is a DHCP/IP problem, not a
+            # missing SSID. Do not scan/toggle on the first strike.
+            if wifi_associated "${iface}"; then
+                action="route-recover"
+                [ "${disconnected_count}" -ge "${NO_ROUTE_STRIKES}" ] && action="toggle"
+            else
+                if [ "${disconnected_count}" -ge 2 ]; then
+                    action="scan"
+                fi
 
-            if [ "${disconnected_count}" -ge 4 ]; then
-                action="toggle"
+                if [ "${disconnected_count}" -ge "${TOGGLE_AFTER}" ]; then
+                    action="toggle"
+                fi
             fi
             ;;
     esac
@@ -163,6 +222,11 @@ kick_wifi() {
 
     "${HELPER}" >/dev/null 2>&1
     connmanctl enable wifi >/dev/null 2>&1
+    if [ "${action}" = "route-recover" ]; then
+        fav=$(connmanctl services 2>/dev/null | awk '/wifi_/ && /(\*A|\*R|\*O)/ { print $NF; exit }')
+        [ -z "${fav}" ] && fav=$(connmanctl services 2>/dev/null | awk '/wifi_/ { print $NF; exit }')
+        [ -n "${fav}" ] && connmanctl connect "${fav}" >/dev/null 2>&1
+    fi
 
     if [ "${action}" = "scan" ] || [ "${action}" = "roam" ]; then
         connmanctl scan wifi >/dev/null 2>&1
@@ -176,9 +240,9 @@ kick_wifi() {
     fi
 
     if [ "${action}" = "toggle" ]; then
-        echo "*** SM8550 wifi: reconnecting after repeated disconnected checks ***" > /dev/kmsg
+        echo "*** SM8550 wifi: toggle (${reason}) after ${disconnected_count} strikes ***" > /dev/kmsg
         batocera-wifi disable >/dev/null 2>&1
-        sleep 1
+        sleep 2
         batocera-wifi enable >/dev/null 2>&1
     fi
 
@@ -190,24 +254,54 @@ watchdog_loop() {
     disconnected_count=0
     weak_signal_count=0
     no_route_count=0
+    dead_air_count=0
+    sleep_for="${HEALTHY_SLEEP}"
 
     # ConnMan and firmware settle asynchronously on SM8550.
     sleep 10
 
     while true; do
+        sleep_for="${HEALTHY_SLEEP}"
+
         if wifi_enabled && wifi_present; then
             "${HELPER}" >/dev/null 2>&1
+            iface="$(primary_wifi_iface 2>/dev/null || true)"
+            # Re-assert PS off after assoc; helper is a no-op if already off.
+            [ -n "${iface}" ] && "${HELPER}" "${iface}" >/dev/null 2>&1
 
-            if wifi_connected; then
+            if wifi_associated "${iface}" && ! has_usable_ipv4 "${iface}"; then
+                # Radio up, no DHCP: 169.254 / "Not connected" in the UI.
                 disconnected_count=0
-                iface="$(primary_wifi_iface 2>/dev/null || true)"
+                weak_signal_count=0
+                dead_air_count=0
+                no_route_count=$((no_route_count + 1))
+                sleep_for="${UNHEALTHY_SLEEP}"
+                if [ "${no_route_count}" -ge "${NO_ROUTE_STRIKES}" ]; then
+                    kick_wifi "${no_route_count}" "no-ipv4"
+                    no_route_count=0
+                fi
+            elif wifi_connected; then
+                disconnected_count=0
                 signal=""
                 [ -n "${iface}" ] && signal="$(wifi_signal "${iface}" 2>/dev/null || true)"
 
                 if default_route_present; then
                     no_route_count=0
+                    if gateway_reachable; then
+                        dead_air_count=0
+                    else
+                        # Zombie: ConnMan ready + IP + route, but GW does not answer.
+                        dead_air_count=$((dead_air_count + 1))
+                        sleep_for="${UNHEALTHY_SLEEP}"
+                        if [ "${dead_air_count}" -ge "${DEAD_AIR_STRIKES}" ]; then
+                            kick_wifi "${dead_air_count}" "dead-air"
+                            dead_air_count=0
+                        fi
+                    fi
                 else
+                    dead_air_count=0
                     no_route_count=$((no_route_count + 1))
+                    sleep_for="${UNHEALTHY_SLEEP}"
                     if [ "${no_route_count}" -ge "${NO_ROUTE_STRIKES}" ]; then
                         kick_wifi "${no_route_count}" "no-route"
                         no_route_count=0
@@ -216,6 +310,7 @@ watchdog_loop() {
 
                 if [ -n "${signal}" ] && [ "${signal}" -lt "${WEAK_SIGNAL_THRESHOLD}" ]; then
                     weak_signal_count=$((weak_signal_count + 1))
+                    sleep_for="${UNHEALTHY_SLEEP}"
                     if [ "${weak_signal_count}" -ge "${WEAK_SIGNAL_STRIKES}" ]; then
                         kick_wifi "${weak_signal_count}" "weak-signal"
                         weak_signal_count=0
@@ -226,10 +321,12 @@ watchdog_loop() {
             else
                 weak_signal_count=0
                 no_route_count=0
+                dead_air_count=0
                 disconnected_count=$((disconnected_count + 1))
+                sleep_for="${UNHEALTHY_SLEEP}"
                 kick_wifi "${disconnected_count}" "disconnected"
 
-                if [ "${disconnected_count}" -ge 4 ]; then
+                if [ "${disconnected_count}" -ge "${TOGGLE_AFTER}" ]; then
                     disconnected_count=0
                 fi
             fi
@@ -237,9 +334,10 @@ watchdog_loop() {
             disconnected_count=0
             weak_signal_count=0
             no_route_count=0
+            dead_air_count=0
         fi
 
-        sleep 30
+        sleep "${sleep_for}"
     done
 }
 
@@ -260,6 +358,13 @@ stop_watchdog() {
         old_pid=$(cat "${PIDFILE}" 2>/dev/null)
         if [ -n "${old_pid}" ]; then
             kill "${old_pid}" 2>/dev/null
+            # Ensure the loop is gone before a restart races start_watchdog.
+            i=0
+            while [ "${i}" -lt 10 ] && kill -0 "${old_pid}" 2>/dev/null; do
+                i=$((i + 1))
+                sleep 0.2
+            done
+            kill -9 "${old_pid}" 2>/dev/null
         fi
         rm -f "${PIDFILE}"
     fi
