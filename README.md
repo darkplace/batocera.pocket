@@ -138,7 +138,7 @@ Per-board GitHub tags so OTA only matches the device SoC. Full history with coll
 | `v44-sm8750-20260816` | SM8750 (Odin 3) | ✅ Tested — **OTA + flash** (**Golden Rabbit**) |
 | `v44-sm8750-20260815` | SM8750 (Odin 3) | ✅ Tested — **OTA + flash** (Steam touch / OSK) |
 | `v44-sm8750-20260814` | SM8750 (Odin 3) | OTA RC1 |
-| `v44-sm8550-20260818` | SM8550 (Odin 2 Portal) | 🔨 **Golden Rabbit** (building) |
+| `v44-sm8550-20260818` | SM8550 (Odin 2 Portal) | ✅ Tested — **OTA + flash** (**Golden Rabbit**) |
 | `v44-sm8550-20260817` | SM8550 (Odin 2 Portal) | ✅ Tested — **OTA + flash** (stick LEDs + analog DZ) |
 | `v44-sm8550-20260816` | SM8550 (Odin 2 Portal) | OTA (Steam touch / OSK) |
 | `v44-sm8550-20260815` | SM8550 (Odin 2 Portal) | OTA (Waydroid / WiFi / Screenscraper) |
