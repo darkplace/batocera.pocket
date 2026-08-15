@@ -18,7 +18,8 @@ Thanks for helping with batocera.pocket.
 
 - Do not casually disable packages to “make the build pass”.
 - Odin 3 Steam must use **gamescope Wayland** nested backend (DRM exclusive causes a black screen on this panel).
-- Touch in Steam requires the gamescope Wayland `wl_touch` patch (`package/batocera/utils/gamescope/001-rocknix-wayland-touch.patch`).
+- Touch in Steam requires the gamescope Wayland `wl_touch` patch (`package/batocera/utils/gamescope/001-rocknix-wayland-touch.patch`). Do **not** rename it to `.disabled`: `m_pTouch` alone is not enough — the seat listener must be wired or nested Wayland drops touch (Steam OSK open/dismiss loop).
+- System OSK (`onscreen-keyboard`) must start wvkbd with `-l simple,special` and `--landscape-layers landscape,landscapespecial` so NextLayer/123 can reach `@` (Shift+2 on the special layer).
 - OTA must keep working with GitHub’s 2 GB asset limit (`boot.tar.xz.part*` + multi-volume ZIP for images).
 
 ## Credits

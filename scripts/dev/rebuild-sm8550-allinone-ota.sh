@@ -136,6 +136,15 @@ fi
   exit 1
 }
 
+# sm8550 host tree can carry a contaminated ld.gold (empty / wrong RUNPATH).
+# check-host-rpath runs on every host-package install during finalize — pre-fix.
+GOLD="$PRIMARY/host/bin/aarch64-buildroot-linux-gnu-ld.gold"
+if [ -f "$GOLD" ] && [ -x "$PRIMARY/host/bin/patchelf" ]; then
+  cp -a "$GOLD" "$GOLD.tmp" && mv "$GOLD.tmp" "$GOLD"
+  "$PRIMARY/host/bin/patchelf" --set-rpath '$ORIGIN/../lib' "$GOLD"
+  log "PASS pre-fix host ld.gold RPATH"
+fi
+
 run_cmd target-finalize
 
 log ">>> wipe prior images"

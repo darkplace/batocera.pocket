@@ -89,9 +89,13 @@ start_keyboard() {
 
     log "Starting on-screen keyboard"
 
+    # Portrait: simple + special (NextLayer / "123" → digits & @ via Shift+2).
+    # Landscape (Odin): must set --landscape-layers too — -l alone does not
+    # replace the landscape cycle (defaults are fine, but keep them explicit).
     "$KEYBOARD_BIN" \
         -L 350 \
-        -l simple \
+        -l simple,special \
+        --landscape-layers landscape,landscapespecial \
         >>"$LOGFILE" 2>&1 &
 
     pid=$!

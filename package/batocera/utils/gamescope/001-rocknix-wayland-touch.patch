@@ -1,24 +1,14 @@
-From 42ae47a690fce2e1b136662c8daf94e7ddee6bf8 Mon Sep 17 00:00:00 2001
-From: Matthew Schwartz <matthew.schwartz@linux.dev>
-Date: Wed, 4 Mar 2026 13:49:45 -0800
-Subject: [PATCH] WaylandBackend: wire up wl_touch implementation
-
-The Wayland backend had wl_touch declared but never hooked up, so touch
-input was silently dropped when running nested.
-
-Tested with variations of `gamescope -e -- steam -steamdeck -steamos3
--steampal -gamepadui` on KDE Wayland, Gnome, and Cosmic.
-
-Closes: https://github.com/ValveSoftware/gamescope/issues/1606
----
- src/Backends/WaylandBackend.cpp | 106 ++++++++++++++++++++++++++++++++
- 1 file changed, 106 insertions(+)
-
-diff --git a/src/Backends/WaylandBackend.cpp b/src/Backends/WaylandBackend.cpp
-index 964132b..22425f5 100644
 --- a/src/Backends/WaylandBackend.cpp
 +++ b/src/Backends/WaylandBackend.cpp
-@@ -556,6 +556,7 @@ namespace gamescope
+@@ -14,6 +14,7 @@
+ #include <cstring>
+ #include <unordered_map>
+ #include <unordered_set>
++#include <set>
+ #include <csignal>
+ #include <sys/mman.h>
+ #include <poll.h>
+@@ -560,6 +561,7 @@
          uint32_t m_uAxisSource = WL_POINTER_AXIS_SOURCE_WHEEL;
  
  		wl_surface *m_pCurrentCursorSurface = nullptr;
@@ -26,7 +16,7 @@ index 964132b..22425f5 100644
  
          std::optional<wl_fixed_t> m_ofPendingCursorX;
          std::optional<wl_fixed_t> m_ofPendingCursorY;
-@@ -592,6 +593,15 @@ namespace gamescope
+@@ -596,6 +598,15 @@
  
  	    void Wayland_RelativePointer_RelativeMotion( zwp_relative_pointer_v1 *pRelativePointer, uint32_t uTimeHi, uint32_t uTimeLo, wl_fixed_t fDx, wl_fixed_t fDy, wl_fixed_t fDxUnaccel, wl_fixed_t fDyUnaccel );
          static const zwp_relative_pointer_v1_listener s_RelativePointerListener;
@@ -42,10 +32,11 @@ index 964132b..22425f5 100644
      };
      const wl_registry_listener CWaylandInputThread::s_RegistryListener =
      {
-@@ -629,6 +639,16 @@ namespace gamescope
+@@ -632,6 +643,16 @@
+     const zwp_relative_pointer_v1_listener CWaylandInputThread::s_RelativePointerListener =
      {
          .relative_motion = WAYLAND_USERDATA_TO_THIS( CWaylandInputThread, Wayland_RelativePointer_RelativeMotion ),
-     };
++    };
 +    const wl_touch_listener CWaylandInputThread::s_TouchListener =
 +    {
 +        .down        = WAYLAND_USERDATA_TO_THIS( CWaylandInputThread, Wayland_Touch_Down ),
@@ -55,11 +46,10 @@ index 964132b..22425f5 100644
 +        .cancel      = WAYLAND_USERDATA_TO_THIS( CWaylandInputThread, Wayland_Touch_Cancel ),
 +        .shape       = WAYLAND_USERDATA_TO_THIS( CWaylandInputThread, Wayland_Touch_Shape ),
 +        .orientation = WAYLAND_USERDATA_TO_THIS( CWaylandInputThread, Wayland_Touch_Orientation ),
-+    };
+     };
  
      class CWaylandBackend : public CBaseBackend
-     {
-@@ -3024,6 +3044,20 @@ namespace gamescope
+@@ -3031,6 +3052,20 @@
                  wl_keyboard_add_listener( m_pKeyboard, &s_KeyboardListener, this );
              }
          }
@@ -80,7 +70,7 @@ index 964132b..22425f5 100644
      }
  
      void CWaylandInputThread::Wayland_Seat_Name( wl_seat *pSeat, const char *pName )
-@@ -3250,6 +3284,78 @@ namespace gamescope
+@@ -3257,6 +3292,78 @@
          wlserver_unlock();
      }
  
@@ -159,6 +149,3 @@ index 964132b..22425f5 100644
      /////////////////////////
      // Backend Instantiator
      /////////////////////////
--- 
-2.39.5
-

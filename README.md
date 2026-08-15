@@ -12,7 +12,7 @@
 
 <p align="center">
   <!-- Per-board tags only — never /releases/latest (OTA is SoC-scoped). -->
-  <a href="https://github.com/darkplace/batocera.pocket/releases/tag/v44-sm8750-20260814"><img src="https://img.shields.io/github/v/release/darkplace/batocera.pocket?filter=v44-sm8750-*&amp;label=SM8750&amp;color=2ea043" alt="SM8750 release"></a>
+  <a href="https://github.com/darkplace/batocera.pocket/releases/tag/v44-sm8750-20260815"><img src="https://img.shields.io/github/v/release/darkplace/batocera.pocket?filter=v44-sm8750-*&amp;label=SM8750&amp;color=2ea043" alt="SM8750 release"></a>
   <a href="https://github.com/darkplace/batocera.pocket/releases/tag/v44-sm8550-20260815"><img src="https://img.shields.io/github/v/release/darkplace/batocera.pocket?filter=v44-sm8550-*&amp;label=SM8550&amp;color=2ea043" alt="SM8550 release"></a>
   <a href="https://github.com/darkplace/batocera.pocket/releases/tag/v44-sm8250-20260811"><img src="https://img.shields.io/github/v/release/darkplace/batocera.pocket?filter=v44-sm8250-*&amp;label=SM8250&amp;color=c69026" alt="SM8250 release"></a>
 </p>
@@ -40,9 +40,9 @@ Images are per SoC. Every build ships the full Batocera stack (RetroArch cores, 
 
 | Device | Status | Beta tester |
 |--------|--------|-------------|
-| AYN Odin 3 | ✅ Tested | **b_bloodcart99x** |
+| AYN Odin 3 | ✅ Tested | **b_bloodcart99x**, **The Janitor** |
 
-> Official build: [`v44-sm8750-20260814`](https://github.com/darkplace/batocera.pocket/releases/tag/v44-sm8750-20260814) (**OTA + flash**). Previous flash-only baseline: `v44-sm8750-20260809`.
+> Official build: [`v44-sm8750-20260815`](https://github.com/darkplace/batocera.pocket/releases/tag/v44-sm8750-20260815) (**OTA + flash**). Previous: `v44-sm8750-20260814`.
 
 <details>
 <summary><b>Emulators &amp; extras</b></summary>
@@ -135,11 +135,30 @@ Per-board GitHub tags so OTA only matches the device SoC. Full history with coll
 
 | Tag | Board | Status |
 |-----|--------|--------|
-| `v44-sm8750-20260814` | SM8750 (Odin 3) | ✅ Tested — **OTA + flash** |
+| `v44-sm8750-20260815` | SM8750 (Odin 3) | ✅ Tested — **OTA + flash** |
+| `v44-sm8750-20260814` | SM8750 (Odin 3) | OTA RC1 |
 | `v44-sm8550-20260815` | SM8550 (Odin 2 Portal) | ✅ Tested — **OTA + flash** |
 | `v44-sm8550-20260813` | SM8550 (Odin 2 Portal) | Flash baseline |
 | `v44-sm8250-20260811` | SM8250 | ⚠️ Untested |
 | `v44-sm8750-20260809` | SM8750 (Odin 3) | Flash baseline (superseded for OTA) |
+
+### Since `v44-sm8750-20260814` (Odin 3) — `v44-sm8750-20260815`
+
+<details>
+<summary><b>Updates</b></summary>
+
+- **gamescope** Wayland `wl_touch` for Steam GamepadUI on Odin 3.
+- System **OSK** symbol layers (`123` / `@`).
+
+</details>
+
+<details>
+<summary><b>Fixes</b></summary>
+
+- Steam OSK vanishing while typing (Minecraft / MS login).
+- System OSK missing `@` / specials after base refresh.
+
+</details>
 
 ### Since `v44-sm8550-20260813` (Odin 2 Portal) — `v44-sm8550-20260815`
 
@@ -286,6 +305,7 @@ Bugs and feedback: **@lukemotion** on Discord (device + image version + logs und
   - **Colt45RPM** — SM8550 (AYN Odin 2 Portal)
   - **Jordanius** — SM8550 (AYN Odin 2 Portal)
   - **b_bloodcart99x** — SM8750 (AYN Odin 3)
+  - **The Janitor** — SM8750 (AYN Odin 3)
 
 ## License
 

@@ -29,6 +29,35 @@ When you publish a tag, copy the matching section into the Release body.
 
 ---
 
+## `v44-sm8750-20260815` — Odin 3 (Steam touch + OSK)
+
+> OTA cut after `v44-sm8750-20260814`. Steam GamepadUI on-screen keyboard /
+> touch via gamescope Wayland `wl_touch`, plus system OSK symbol layers (`@`).
+> Smoke-tested on AYN Odin 3 (maintainer + **The Janitor**).
+
+<details>
+<summary><b>Updates</b></summary>
+
+- **gamescope:** wire Wayland `wl_touch` for nested Steam GamepadUI (Odin 3).
+- **On-screen keyboard:** start wvkbd with `simple,special` + landscape special
+  layers so `123` reaches digits / `@`.
+- Credits: beta tester **The Janitor** (Odin 3).
+
+</details>
+
+<details>
+<summary><b>Fixes</b></summary>
+
+- Steam / gamescope: OSK disappearing when typing (e.g. Minecraft Legends /
+  Microsoft login) — touch was dropped on the nested Wayland backend.
+- System OSK: missing special characters (no `@`) after Batocera base refresh.
+- Does **not** enable gamescope `--default-touch-mode` passthrough (that path
+  scrambled the Odin gamepad previously).
+
+</details>
+
+---
+
 ## `v44-sm8750-20260814` — Odin 3 (OTA RC1)
 
 > First sm8750 **OTA-capable** public release after the 20260809 flash-only
