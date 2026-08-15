@@ -27,6 +27,17 @@ def multicolor_led_paths():
 
 ####################
 # Is your handheld supported by this library?
+def stick_group_led_paths():
+    """Portal/Thor/RP6: leds-group-multicolor nodes expose rgb:l1..l4 / rgb:r1..r4."""
+    return sorted({
+        os.path.dirname(path) + '/'
+        for path in (
+            glob.glob('/sys/class/leds/rgb:l?/multi_intensity')
+            + glob.glob('/sys/class/leds/rgb:r?/multi_intensity')
+        )
+    })
+
+
 def batocera_model():
     # Generic check for modern joystick ring LEDs from ayaneo-platform/ayn-platform
     if glob.glob('/sys/class/leds/*:rgb:joystick_rings/multi_intensity'):
@@ -39,13 +50,14 @@ def batocera_model():
     l = '/sys/class/leds/multicolor:chassis/multi_intensity'
     if os.path.exists(l):
         return("rgb")
-    # Thor/Odin2 Portal addressable stick rings: per-channel l:/r: LEDs
-    # (l:r1, l:g1, l:b1, …). Prefer this over multicolor detection: power-led
-    # alone also has multi_intensity, which previously forced "rgb" and left
-    # the stick channels untouched (static white/dim).
+    # Portal/Thor (ROCKNIX path): grouped stick zones before bare power-led.
+    if stick_group_led_paths():
+        return("rgb")
+    # Addressable stick rings: per-channel l:/r: LEDs (when GROUP_MULTICOLOR off
+    # or only HTR channels exist). Prefer over power-led-only multi_intensity.
     if glob.glob('/sys/class/leds/l:b?'):
         return("rgbaddr")
-    # Grouped multicolor class LEDs (rgb:l1/rgb:r1, joystick_rings, chassis…).
+    # Other multicolor class LEDs (may include power-led alone).
     if multicolor_led_paths():
         return("rgb")
     # PWM check
@@ -248,10 +260,16 @@ class rgbled(object):
         self.status_paths = []
         self.accent_paths = []
         
-        # Use glob to find newer joystick ring LEDs dynamically
+        # Prefer stick group LEDs (Portal/Thor) over a bare power-led scan.
         found_paths = glob.glob('/sys/class/leds/*:rgb:joystick_rings/')
+        stick_groups = stick_group_led_paths()
         if found_paths:
             self.paths = sorted(found_paths)
+        elif stick_groups:
+            # Include power-led if present so battery/status stays separate.
+            self.paths = stick_groups + [
+                p for p in multicolor_led_paths() if p.endswith('/power-led/')
+            ]
         else:
             # Odin2/SM8550 and Odin3/SM8750: multiple multicolor class LEDs.
             # Names vary by device: power-led, left-side, rgb:l1, rgb:r1, etc.
@@ -276,7 +294,12 @@ class rgbled(object):
         if not self.accent_paths:
             self.accent_paths = list(self.paths)
 
-        preferred_paths = self.accent_paths or self.status_paths or self.paths
+        # Prefer rgb:l* / rgb:r* when choosing the primary accent path.
+        stick_accents = [
+            p for p in self.accent_paths
+            if '/rgb:l' in p or '/rgb:r' in p or 'joystick' in p
+        ]
+        preferred_paths = stick_accents or self.accent_paths or self.status_paths or self.paths
         self.bpath = preferred_paths[0]
         self.base            = self.bpath + 'multi_intensity'
         self.brightness      = self.bpath + 'brightness'

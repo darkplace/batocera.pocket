@@ -96,6 +96,31 @@ When you publish a tag, copy the matching section into the Release body.
 
 ---
 
+## `v44-sm8550-20260817` — Odin 2 Portal (stick LEDs + analog deadzone)
+
+> OTA cut after `v44-sm8550-20260816`. Align Portal stick RGB with ROCKNIX
+> (`LEDS_GROUP_MULTICOLOR`) and apply rsinput ranges/deadzone like sm8750.
+
+<details>
+<summary><b>Updates</b></summary>
+
+- **Kernel sm8550:** `CONFIG_LEDS_GROUP_MULTICOLOR=y` so Portal/Thor
+  `rgb:l*` / `rgb:r*` stick zones appear (HTR3212 groups).
+- **batocera-led-handheld:** prefer stick group LEDs over bare `power-led`.
+- **rsinput:** port `1300-input-rsinput-ranges.patch` (±1024, deadzone 70).
+
+</details>
+
+<details>
+<summary><b>Fixes</b></summary>
+
+- Stick LED enable only lit the power LED (colors on PMIC, rings dark).
+- Left analog constant left/down with deadzone 0 (also visible in Windows).
+
+</details>
+
+---
+
 ## `v44-sm8550-20260816` — Odin 2 Portal (Steam touch + OSK)
 
 > OTA cut after `v44-sm8550-20260815`. Same gamescope Wayland `wl_touch` +
