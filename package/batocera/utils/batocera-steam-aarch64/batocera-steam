@@ -19,15 +19,25 @@ export PROTON11_ARM64_DIR_NAME="Proton 11.0 (ARM64)"
 export PROTON11_ARM64_INSTALL_URI="steam://install/${PROTON11_ARM64_APPID}"
 export BATOCERA_STEAM_PROTON_CACHYOS_CONFIG="${BATOCERA_STEAM_PROTON_CACHYOS_CONFIG:-/userdata/system/configs/steam/proton-cachyos.conf}"
 export BATOCERA_STEAM_PROTON_GE_CONFIG="${BATOCERA_STEAM_PROTON_GE_CONFIG:-/userdata/system/configs/steam/proton-ge.conf}"
-# Default Steam Proton-CachyOS ARM64 tip (override via proton-cachyos.conf / wine-tools).
+# Default Steam Proton-CachyOS ARM64 tip (override via proton-cachyos.conf / steam-tools).
 # Bump when CachyOS publishes a newer *-arm64.tar.xz on https://github.com/CachyOS/proton-cachyos/releases
 export BATOCERA_STEAM_PROTON_CACHYOS_DEFAULT_VERSION="${BATOCERA_STEAM_PROTON_CACHYOS_DEFAULT_VERSION:-11.0-20260703-slr}"
 # Default GE-Proton ARM64 tip (GloriousEggroll aarch64 asset). Installed alongside CachyOS.
 # Bump when GE publishes a newer GE-Proton*-aarch64.tar.gz.
 export BATOCERA_STEAM_PROTON_GE_DEFAULT_VERSION="${BATOCERA_STEAM_PROTON_GE_DEFAULT_VERSION:-GE-Proton11-5}"
 export BATOCERA_STEAM_PROTON_GE_DEFAULT_URL="${BATOCERA_STEAM_PROTON_GE_DEFAULT_URL:-https://github.com/GloriousEggroll/proton-ge-custom/releases/download/GE-Proton11-5/GE-Proton11-5-aarch64.tar.gz}"
-# GE preflight ON by default on aarch64 (set BATOCERA_STEAM_PROTON_GE=0 to skip).
+# Default ARM Proton trio is ON: CachyOS + GE + Valve Proton 11.0 (ARM64) AppID 4628740
+# (Armada's Valve tip — not Proton Experimental 1493710).
+# Set BATOCERA_STEAM_PROTON_CACHYOS=0 or BATOCERA_STEAM_PROTON_GE=0 to skip a tip.
 export BATOCERA_STEAM_PROTON_GE="${BATOCERA_STEAM_PROTON_GE:-1}"
+# Auto-install Decky PluginLoader + Batocera Control (decky-bcc) on Steam launch (set 0 to skip).
+export BATOCERA_STEAM_AUTO_DECKY="${BATOCERA_STEAM_AUTO_DECKY:-1}"
+export BATOCERA_STEAM_DECKY_BIN="${BATOCERA_STEAM_DECKY_BIN:-/userdata/system/homebrew/services/PluginLoader}"
+export BATOCERA_STEAM_BATOCERA_CONTROL_DIR="${BATOCERA_STEAM_BATOCERA_CONTROL_DIR:-/userdata/system/homebrew/plugins/armada-control}"
+export BATOCERA_CONTROL_RELEASES_URL="${BATOCERA_CONTROL_RELEASES_URL:-https://github.com/darkplace/decky-bcc/releases}"
+export BATOCERA_CONTROL_VERSION="${BATOCERA_CONTROL_VERSION:-}"
+export BATOCERA_CONTROL_URL="${BATOCERA_CONTROL_URL:-}"
+export BATOCERA_CONTROL_SHA256="${BATOCERA_CONTROL_SHA256:-}"
 
 load_proton_cachyos_config() {
     local key
@@ -1761,8 +1771,17 @@ EOF
 write_proton_cachyos_compatibilitytool_vdf() {
     local proton_dir="$1"
     local version="$2"
+    # Stable tool id for the 11.0 line (Armada-compatible); Steam configs keep working across tip bumps.
     local tool_id="proton-cachyos-${version}-arm64"
+    local display_name="Proton-CachyOS ${version} (ARM64)"
     local target="${proton_dir}/compatibilitytool.vdf"
+
+    case "${version}" in
+        11.0-*)
+            tool_id="proton-cachyos-11.0-arm64"
+            display_name="Proton 11.0 CachyOS (ARM64)"
+            ;;
+    esac
 
     cat > "${target}" <<EOF
 "compatibilitytools"
@@ -1772,7 +1791,7 @@ write_proton_cachyos_compatibilitytool_vdf() {
     "${tool_id}"
     {
       "install_path" "."
-      "display_name" "Proton-CachyOS ${version} (ARM64)"
+      "display_name" "${display_name}"
       "from_oslist" "windows"
       "to_oslist" "linux"
     }
@@ -2052,22 +2071,251 @@ steam_setup_state() {
         return 0
     fi
 
-    if proton_cachyos_enabled && [[ ! -x "${STEAM_ROOT}/compatibilitytools.d/${PROTON_CACHYOS_DIR}/proton" ]] && ! proton_cachyos_any_payload_exists; then
+    # Default ARM Proton trio: require the configured tip versions (OTA bumps re-download).
+    if proton_cachyos_enabled && [[ ! -x "${STEAM_ROOT}/compatibilitytools.d/${PROTON_CACHYOS_DIR}/proton" ]]; then
         printf 'support\n'
         return 0
     fi
 
-    if proton_ge_enabled && [[ ! -x "${STEAM_ROOT}/compatibilitytools.d/${PROTON_GE_DIR}/proton" ]] && ! proton_ge_any_payload_exists; then
+    if proton_ge_enabled && [[ ! -x "${STEAM_ROOT}/compatibilitytools.d/${PROTON_GE_DIR}/proton" ]]; then
         printf 'support\n'
         return 0
     fi
 
-    if ! proton11_arm64_payload_exists; then
+    # Valve Proton 11.0 (ARM64) is required alongside CachyOS/GE (not satisfied by custom tips).
+    if ! official_proton11_arm64_payload_exists; then
         printf 'support\n'
         return 0
     fi
 
     printf 'none\n'
+}
+
+log_default_arm_proton_status() {
+    local cachyos_state="disabled"
+    local ge_state="disabled"
+    local valve_state="missing"
+
+    if proton_cachyos_enabled; then
+        if [[ -x "${STEAM_ROOT}/compatibilitytools.d/${PROTON_CACHYOS_DIR}/proton" ]]; then
+            cachyos_state="ok (${PROTON_CACHYOS_VERSION_FULL})"
+        else
+            cachyos_state="pending (${PROTON_CACHYOS_VERSION_FULL})"
+        fi
+    fi
+
+    if proton_ge_enabled; then
+        if [[ -x "${STEAM_ROOT}/compatibilitytools.d/${PROTON_GE_DIR}/proton" ]]; then
+            ge_state="ok (${PROTON_GE_VERSION_FULL})"
+        else
+            ge_state="pending (${PROTON_GE_VERSION_FULL})"
+        fi
+    fi
+
+    if official_proton11_arm64_payload_exists; then
+        valve_state="ok (${PROTON11_ARM64_DIR_NAME})"
+    else
+        valve_state="pending (steam://install/${PROTON11_ARM64_APPID})"
+    fi
+
+    log_msg "Default ARM Proton status: CachyOS=${cachyos_state}; GE=${ge_state}; Valve=${valve_state}"
+}
+
+decky_auto_enabled() {
+    case "${BATOCERA_STEAM_AUTO_DECKY:-1}" in
+        0|false|FALSE|False|no|NO|No|off|OFF|Off)
+            return 1
+            ;;
+        *)
+            return 0
+            ;;
+    esac
+}
+
+decky_loader_present() {
+    [[ -x "${BATOCERA_STEAM_DECKY_BIN}" ]]
+}
+
+batocera_control_present() {
+    [[ -f "${BATOCERA_STEAM_BATOCERA_CONTROL_DIR}/plugin.json" && -f "${BATOCERA_STEAM_BATOCERA_CONTROL_DIR}/main.py" ]]
+}
+
+install_decky_loader_quiet() {
+    if decky_loader_present; then
+        log_msg "Decky PluginLoader already installed."
+        return 0
+    fi
+
+    if ! command -v batocera-steam-decky-install >/dev/null 2>&1; then
+        log_msg "Decky installer missing (batocera-steam-decky-install); skipping."
+        return 1
+    fi
+
+    if ! has_network; then
+        log_msg "Decky PluginLoader missing and no network; skipping auto-install."
+        return 1
+    fi
+
+    log_msg "Auto-installing Decky PluginLoader..."
+    flash_msg 6 "Installing Decky PluginLoader..." 22
+    if batocera-steam-decky-install >> "${log}" 2>&1; then
+        log_msg "Decky PluginLoader installed."
+        return 0
+    fi
+
+    log_msg "Decky PluginLoader auto-install failed."
+    return 1
+}
+
+resolve_batocera_control_release_quiet() {
+    local tmp="$1"
+    local requested_version="${BATOCERA_CONTROL_VERSION:-}"
+    local manifest manifest_url line sha filename version
+
+    if [[ -n "${BATOCERA_CONTROL_URL:-}" || -n "${BATOCERA_CONTROL_SHA256:-}" ]]; then
+        [[ -n "${requested_version}" && -n "${BATOCERA_CONTROL_URL}" && -n "${BATOCERA_CONTROL_SHA256}" ]] || return 1
+        [[ "${BATOCERA_CONTROL_SHA256}" =~ ^[0-9A-Fa-f]{64}$ ]] || return 1
+        BATOCERA_CONTROL_SHA256="${BATOCERA_CONTROL_SHA256,,}"
+        return 0
+    fi
+
+    manifest="${tmp}/SHA256SUMS"
+    if [[ -n "${requested_version}" ]]; then
+        manifest_url="${BATOCERA_CONTROL_RELEASES_URL}/download/v${requested_version}/SHA256SUMS"
+    else
+        manifest_url="${BATOCERA_CONTROL_RELEASES_URL}/latest/download/SHA256SUMS"
+    fi
+
+    curl -fsSL --retry 3 --retry-delay 2 -o "${manifest}" "${manifest_url}" || return 1
+    [[ -s "${manifest}" ]] || return 1
+
+    while read -r sha filename _; do
+        filename="${filename#\*}"
+        [[ "${sha}" =~ ^[0-9A-Fa-f]{64}$ ]] || continue
+        if [[ "${filename}" =~ ^decky-bcc-([0-9]+\.[0-9]+\.[0-9]+([._-][0-9A-Za-z][0-9A-Za-z._-]*)?)\.tar\.gz$ ]]; then
+            version="${BASH_REMATCH[1]}"
+            [[ -z "${requested_version}" || "${version}" == "${requested_version}" ]] || continue
+            BATOCERA_CONTROL_VERSION="${version}"
+            BATOCERA_CONTROL_SHA256="${sha,,}"
+            BATOCERA_CONTROL_URL="${BATOCERA_CONTROL_RELEASES_URL}/download/v${version}/${filename}"
+            return 0
+        fi
+    done < "${manifest}"
+
+    return 1
+}
+
+install_batocera_control_quiet() {
+    local tmp archive extract installer installed_version
+
+    decky_loader_present || {
+        log_msg "Batocera Control skipped: Decky PluginLoader is not installed."
+        return 1
+    }
+
+    if ! has_network; then
+        if batocera_control_present; then
+            log_msg "Batocera Control present; no network to check for updates."
+            return 0
+        fi
+        log_msg "Batocera Control missing and no network; skipping auto-install."
+        return 1
+    fi
+
+    command -v curl >/dev/null 2>&1 || command -v wget >/dev/null 2>&1 || {
+        log_msg "Batocera Control skipped: curl/wget unavailable."
+        return 1
+    }
+    command -v tar >/dev/null 2>&1 || {
+        log_msg "Batocera Control skipped: tar unavailable."
+        return 1
+    }
+
+    tmp="$(mktemp -d)" || return 1
+    if ! resolve_batocera_control_release_quiet "${tmp}"; then
+        rm -rf "${tmp}"
+        if batocera_control_present; then
+            log_msg "Batocera Control present; failed to resolve update metadata."
+            return 0
+        fi
+        log_msg "Failed to resolve Batocera Control release."
+        return 1
+    fi
+
+    installed_version=""
+    if [[ -f "${BATOCERA_STEAM_BATOCERA_CONTROL_DIR}/VERSION" ]]; then
+        installed_version="$(tr -d '[:space:]' < "${BATOCERA_STEAM_BATOCERA_CONTROL_DIR}/VERSION" 2>/dev/null || true)"
+    fi
+    if batocera_control_present && [[ -n "${installed_version}" && "${installed_version}" == "${BATOCERA_CONTROL_VERSION}" ]]; then
+        rm -rf "${tmp}"
+        log_msg "Batocera Control ${installed_version} already installed."
+        return 0
+    fi
+
+    archive="${tmp}/decky-bcc-${BATOCERA_CONTROL_VERSION}.tar.gz"
+    extract="${tmp}/extract"
+    mkdir -p "${extract}"
+
+    if batocera_control_present; then
+        log_msg "Updating Batocera Control ${installed_version:-unknown} -> ${BATOCERA_CONTROL_VERSION}..."
+        flash_msg 7 "Updating Batocera Control ${BATOCERA_CONTROL_VERSION}..." 18
+    else
+        log_msg "Auto-installing Batocera Control ${BATOCERA_CONTROL_VERSION}..."
+        flash_msg 7 "Installing Batocera Control ${BATOCERA_CONTROL_VERSION}..." 18
+    fi
+    if ! curl -fsSL --retry 3 --retry-delay 2 -o "${archive}" "${BATOCERA_CONTROL_URL}"; then
+        rm -rf "${tmp}"
+        log_msg "Failed to download Batocera Control ${BATOCERA_CONTROL_VERSION}."
+        return 1
+    fi
+
+    if ! echo "${BATOCERA_CONTROL_SHA256}  ${archive}" | sha256sum -c - >> "${log}" 2>&1; then
+        rm -rf "${tmp}"
+        log_msg "Batocera Control SHA256 mismatch."
+        return 1
+    fi
+
+    if ! tar -xzf "${archive}" -C "${extract}" >> "${log}" 2>&1; then
+        rm -rf "${tmp}"
+        log_msg "Failed to extract Batocera Control."
+        return 1
+    fi
+
+    installer="${extract}/decky-bcc-${BATOCERA_CONTROL_VERSION}/install.sh"
+    if [[ ! -f "${installer}" ]]; then
+        rm -rf "${tmp}"
+        log_msg "Batocera Control install.sh missing in archive."
+        return 1
+    fi
+
+    if bash "${installer}" --no-restart >> "${log}" 2>&1; then
+        rm -rf "${tmp}"
+        log_msg "Batocera Control ${BATOCERA_CONTROL_VERSION} installed."
+        return 0
+    fi
+
+    rm -rf "${tmp}"
+    log_msg "Batocera Control auto-install failed."
+    return 1
+}
+
+ensure_decky_stack() {
+    decky_auto_enabled || {
+        log_msg "Decky auto-install disabled (BATOCERA_STEAM_AUTO_DECKY=0)."
+        return 0
+    }
+
+    # Best-effort: Steam still launches if GitHub/network fails.
+    install_decky_loader_quiet || true
+    install_batocera_control_quiet || true
+
+    if decky_loader_present && batocera_control_present; then
+        log_msg "Decky stack ready: PluginLoader + Batocera Control."
+    elif decky_loader_present; then
+        log_msg "Decky PluginLoader ready; Batocera Control still missing."
+    else
+        log_msg "Decky stack incomplete after auto-install attempt."
+    fi
 }
 
 steam_setup_incomplete_without_network() {
@@ -2110,13 +2358,8 @@ ensure_network_for_steam_setup() {
     else
         flash_msg 7 "After setup completes, you may need to relaunch Steam." 19
     fi
-    if proton_cachyos_enabled; then
-        flash_msg 9 "Select Proton-CachyOS as the Steam compatibility runner." 16
-    elif proton_ge_enabled; then
-        flash_msg 9 "Select GE-Proton as the Steam compatibility runner." 16
-    else
-        flash_msg 9 "Select Proton 11.0 (ARM64) as the Steam compatibility runner." 16
-    fi
+    flash_msg 8 "Installing default ARM Protons: CachyOS, GE-Proton, and Proton 11.0 (ARM64)." 14
+    flash_msg 9 "Prefer Proton 11.0 CachyOS (ARM64); use GE or Valve Proton 11.0 per-game as needed." 14
 
     log_msg "Network is available for Steam setup."
 }
@@ -2316,11 +2559,15 @@ sync_steam_library_folders
 ensure_network_for_steam_setup
 ensure_native_steam_client
 prepare_arm64_steam_layout
+# Default ARM Proton trio (CachyOS + GE + Valve 11). Idempotent: skips tips already present;
+# OTA bumps of default versions install the new tip on the next Steam launch.
 install_proton_cachyos
 install_proton_ge
 register_proton11_arm64
+log_default_arm_proton_status
 apply_steam_user_selection "${BATOCERA_STEAM_USER:-auto}"
 ensure_fex_rootfs
+ensure_decky_stack
 if [[ "${BATOCERA_STEAM_BOOTSTRAP_ONLY:-0}" == "1" ]]; then
     log_msg "ARM64 Steam bootstrap completed."
     exit 0

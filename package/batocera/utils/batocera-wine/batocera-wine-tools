@@ -14,8 +14,11 @@ CACHYOS_PROTON_RELEASES_URL="https://api.github.com/repos/CachyOS/proton-cachyos
 # Keep in sync with BATOCERA_STEAM_PROTON_CACHYOS_DEFAULT_VERSION in batocera-steam-aarch64.
 CACHYOS_PROTON_DEFAULT_VERSION="${CACHYOS_PROTON_DEFAULT_VERSION:-11.0-20260703-slr}"
 CACHYOS_PROTON_SAMPLE_URL="${CACHYOS_PROTON_SAMPLE_URL:-https://github.com/CachyOS/proton-cachyos/releases/download/cachyos-${CACHYOS_PROTON_DEFAULT_VERSION}/proton-cachyos-${CACHYOS_PROTON_DEFAULT_VERSION}-arm64.tar.xz}"
-GE_PROTON_SAMPLE_URL="https://github.com/GloriousEggroll/proton-ge-custom/releases/download/GE-Proton10-34/GE-Proton10-34.tar.gz"
-GE_PROTON_ARM64_SAMPLE_URL="https://github.com/GloriousEggroll/proton-ge-custom/releases/download/GE-Proton11-5/GE-Proton11-5-aarch64.tar.gz"
+# Keep in sync with BATOCERA_STEAM_PROTON_GE_DEFAULT_* in batocera-steam-aarch64.
+# GE 11+ ships arch-suffixed assets (-x86_64 / -aarch64); tip dir strips the suffix.
+GE_PROTON_DEFAULT_VERSION="${GE_PROTON_DEFAULT_VERSION:-GE-Proton11-5}"
+GE_PROTON_SAMPLE_URL="${GE_PROTON_SAMPLE_URL:-https://github.com/GloriousEggroll/proton-ge-custom/releases/download/${GE_PROTON_DEFAULT_VERSION}/${GE_PROTON_DEFAULT_VERSION}-x86_64.tar.gz}"
+GE_PROTON_ARM64_SAMPLE_URL="${GE_PROTON_ARM64_SAMPLE_URL:-https://github.com/GloriousEggroll/proton-ge-custom/releases/download/${GE_PROTON_DEFAULT_VERSION}/${GE_PROTON_DEFAULT_VERSION}-aarch64.tar.gz}"
 FREE_WINDOWS_GAMES_BASE_URL="https://raw.githubusercontent.com/foclabroc/toolbox/refs/heads/main/windows"
 STEAM_PROTON_CACHYOS_CONFIG="/userdata/system/configs/steam/proton-cachyos.conf"
 STEAM_PROTON_GE_CONFIG="/userdata/system/configs/steam/proton-ge.conf"
@@ -341,6 +344,23 @@ archive_dir_name() {
     esac
 }
 
+# Canonical tip name for Steam/Wine install dirs and proton-ge.conf VERSION.
+# GE-Proton11-5-aarch64.tar.gz | GE-Proton11-5-x86_64 | GE-Proton10-34 -> GE-Proton11-5 / GE-Proton10-34
+ge_proton_tip_name() {
+    local name="${1##*/}"
+    name="${name%.tar.gz}"
+    name="${name%-aarch64}"
+    name="${name%-x86_64}"
+    printf '%s\n' "$name"
+}
+
+ge_proton_sample_url_for_arch() {
+    case "$(uname -m)" in
+        aarch64|arm64) printf '%s\n' "$GE_PROTON_ARM64_SAMPLE_URL" ;;
+        *)             printf '%s\n' "$GE_PROTON_SAMPLE_URL" ;;
+    esac
+}
+
 basename_from_url() {
     local url="$1"
     local path="${url%%\?*}"
@@ -354,20 +374,21 @@ is_ge_proton_url() {
 
 ge_proton_json_from_url() {
     local url="$1"
-    local archive dirname
+    local archive tip
 
     is_ge_proton_url "$url" || return 1
     archive="$(basename_from_url "$url")"
-    dirname="$(archive_dir_name "$archive")" || return 1
-    jq -cn --arg archive "$archive" --arg url "$url" --arg dirname "$dirname" \
-        '[{label: ("GE-Proton runner: " + $dirname), archive: $archive, url: $url}]'
+    tip="$(ge_proton_tip_name "$archive")"
+    [ -n "$tip" ] || return 1
+    jq -cn --arg archive "$archive" --arg url "$url" --arg tip "$tip" \
+        '[{label: ("GE-Proton runner: " + $tip), archive: $archive, url: $url, tip: $tip}]'
 }
 
 download_release_selection() {
     local title="$1"
     local prompt="$2"
     local json="$3"
-    local selections idx archive url outdir tmpfile dirname
+    local selections idx archive url outdir tmpfile dirname tip
 
     mkdir -p "$ROOT_WINE_CUSTOM" || return 1
     selections=$(select_multiple_from_json "$title" "$prompt" "$json") || return 1
@@ -377,10 +398,17 @@ download_release_selection() {
         idx=$((idx - 1))
         archive=$(printf '%s' "$json" | jq -r ".[$idx].archive")
         url=$(printf '%s' "$json" | jq -r ".[$idx].url")
+        tip=$(printf '%s' "$json" | jq -r ".[$idx].tip // empty")
         dirname=$(archive_dir_name "$archive") || {
             msg_box "Unsupported archive format: ${archive}"
             continue
         }
+        case "$archive" in
+            GE-Proton*.tar.gz)
+                [ -n "$tip" ] || tip="$(ge_proton_tip_name "$archive")"
+                dirname="$tip"
+                ;;
+        esac
         outdir="${ROOT_WINE_CUSTOM}/${dirname}"
         tmpfile="${ROOT_WINE_CUSTOM}/${archive}"
 
@@ -489,7 +517,7 @@ ge_proton_menu() {
             arch_label="ARM64"
             ;;
         *)
-            suffix=".tar.gz"
+            suffix="-x86_64.tar.gz"
             arch_label="x86_64"
             ;;
     esac
@@ -501,12 +529,20 @@ ge_proton_menu() {
     filtered=$(printf '%s' "$data" | jq -c --arg suffix "$suffix" --arg arch_label "$arch_label" '
         [.[] as $r
          | $r.assets[]?
-         | select((.name | startswith("GE-Proton")) and (.name | endswith($suffix)))
-         | select(($suffix == "-aarch64.tar.gz") or ((.name | contains("-aarch64")) | not))
+         | select(
+             (.name | startswith("GE-Proton")) and (
+               (.name | endswith($suffix))
+               or (
+                 $suffix == "-x86_64.tar.gz"
+                 and (.name | test("^GE-Proton[0-9]+-[0-9]+\\.tar\\.gz$"))
+               )
+             )
+           )
          | {
-             label: ("GE-Proton " + $arch_label + ": " + (.name | rtrimstr(".tar.gz")) + " [" + $r.tag_name + "]"),
+             label: ("GE-Proton " + $arch_label + ": " + (.name | rtrimstr(".tar.gz") | rtrimstr("-aarch64") | rtrimstr("-x86_64")) + " [" + $r.tag_name + "]"),
              archive: .name,
-             url: .browser_download_url
+             url: .browser_download_url,
+             tip: (.name | rtrimstr(".tar.gz") | rtrimstr("-aarch64") | rtrimstr("-x86_64"))
            }
         ]') || {
         msg_box "Failed to parse GE-Proton releases."
@@ -521,17 +557,13 @@ ge_proton_menu() {
 
 ge_proton_url_menu() {
     require_commands jq wget tar || return 1
-    local url filtered sample_url="$GE_PROTON_SAMPLE_URL"
-    case "$(uname -m)" in
-        aarch64|arm64)
-            sample_url="$GE_PROTON_ARM64_SAMPLE_URL"
-            ;;
-    esac
+    local url filtered sample_url
+    sample_url="$(ge_proton_sample_url_for_arch)"
 
     url="$(input_box "GE-Proton URL" "Enter a GE-Proton .tar.gz release URL.\n\nExample:" "$sample_url")" || return 1
     url="${url//[[:space:]]/}"
     filtered="$(ge_proton_json_from_url "$url")" || {
-        msg_box "Unsupported GE-Proton URL:\n${url}\n\nExpected a GitHub release asset like:\n${GE_PROTON_SAMPLE_URL}"
+        msg_box "Unsupported GE-Proton URL:\n${url}\n\nExpected a GitHub release asset like:\n${sample_url}"
         return 1
     }
 
@@ -636,7 +668,16 @@ EOF
 write_steam_proton_cachyos_compatibilitytool_vdf() {
     local outdir="$1"
     local version="$2"
+    # Stable tool id for the 11.0 line (Armada-compatible); Steam configs keep working across tip bumps.
     local tool_id="proton-cachyos-${version}-arm64"
+    local display_name="Proton-CachyOS ${version} (ARM64)"
+
+    case "$version" in
+        11.0-*)
+            tool_id="proton-cachyos-11.0-arm64"
+            display_name="Proton 11.0 CachyOS (ARM64)"
+            ;;
+    esac
 
     cat > "${outdir}/compatibilitytool.vdf" <<EOF
 "compatibilitytools"
@@ -646,7 +687,7 @@ write_steam_proton_cachyos_compatibilitytool_vdf() {
     "${tool_id}"
     {
       "install_path" "."
-      "display_name" "Proton-CachyOS ${version} (ARM64)"
+      "display_name" "${display_name}"
       "from_oslist" "windows"
       "to_oslist" "linux"
     }
@@ -739,7 +780,7 @@ steam_proton11_arm64_menu() {
             ;;
     esac
 
-    yes_no "Install / register Valve Proton 11.0 (ARM64) (Steam AppID ${STEAM_PROTON11_ARM64_APPID})?\n\nThis is the official ARM tip (what some clients label near Experimental). It coexists with Proton-CachyOS and GE-Proton; the next Steam launch will request the AppID if the payload is still missing." || return 1
+    yes_no "Install / register Valve Proton 11.0 (ARM64) (Steam AppID ${STEAM_PROTON11_ARM64_APPID})?\n\nThis is Valve's official ARM tip (same AppID Armada uses). It coexists with Proton-CachyOS and GE-Proton; the next Steam launch will request the AppID if the payload is still missing." || return 1
 
     write_steam_proton11_arm64_config || {
         msg_box "Failed to prepare Proton 11.0 (ARM64) config."
@@ -827,25 +868,23 @@ download_steam_proton_cachyos_selection() {
 
 download_steam_proton_ge_url() {
     local url="$1"
-    local archive dirname version steam_root compat_dir tmpfile outdir
+    local archive tip version steam_root compat_dir tmpfile outdir sample_url
 
+    sample_url="$(ge_proton_sample_url_for_arch)"
     is_ge_proton_url "$url" || {
-        msg_box "Unsupported GE-Proton URL:\n${url}\n\nExpected a GitHub release asset like:\n${GE_PROTON_SAMPLE_URL}"
+        msg_box "Unsupported GE-Proton URL:\n${url}\n\nExpected a GitHub release asset like:\n${sample_url}"
         return 1
     }
 
     require_commands wget tar || return 1
 
     archive="$(basename_from_url "$url")"
-    dirname="$(archive_dir_name "$archive")" || {
-        msg_box "Unsupported archive format: ${archive}"
-        return 1
-    }
-    version="$dirname"
+    tip="$(ge_proton_tip_name "$archive")"
+    version="$tip"
     steam_root="$(steam_root_dir)"
     compat_dir="${steam_root}/compatibilitytools.d"
     tmpfile="${compat_dir}/${archive}"
-    outdir="${compat_dir}/${dirname}"
+    outdir="${compat_dir}/${version}"
 
     mkdir -p "$compat_dir" || return 1
 
@@ -876,12 +915,14 @@ download_steam_proton_ge_url() {
         return 1
     }
 
-    msg_box "Installed ${version} for Steam.\n\nSteam will list it as a compatibility tool after restart. It is also written as the GE-Proton preflight install target."
+    if [ "${STEAM_PROTON_INSTALL_QUIET:-0}" != "1" ]; then
+        msg_box "Installed ${version} for Steam.\n\nSteam will list it as a compatibility tool after restart. It is also written as the GE-Proton preflight install target."
+    fi
 }
 
 download_steam_proton_ge_selection() {
     local json="$1"
-    local selections idx archive url dirname version steam_root compat_dir tmpfile outdir
+    local selections idx archive url tip version steam_root compat_dir tmpfile outdir
     local default_version="" default_url="" installed=0 failed=0
 
     selections=$(select_multiple_from_json \
@@ -898,14 +939,11 @@ download_steam_proton_ge_selection() {
         idx=$((idx - 1))
         archive=$(printf '%s' "$json" | jq -r ".[$idx].archive")
         url=$(printf '%s' "$json" | jq -r ".[$idx].url")
-        dirname=$(archive_dir_name "$archive") || {
-            msg_box "Unsupported archive format: ${archive}"
-            failed=$((failed + 1))
-            continue
-        }
-        version="$dirname"
+        tip=$(printf '%s' "$json" | jq -r ".[$idx].tip // empty")
+        [ -n "$tip" ] || tip="$(ge_proton_tip_name "$archive")"
+        version="$tip"
         tmpfile="${compat_dir}/${archive}"
-        outdir="${compat_dir}/${dirname}"
+        outdir="${compat_dir}/${version}"
 
         if ! download_with_gauge "$url" "$tmpfile" "Downloading ${version} for Steam..."; then
             msg_box "Download failed: ${archive}"
@@ -951,9 +989,10 @@ download_steam_proton_ge_selection() {
 }
 
 steam_proton_ge_url_menu() {
-    local url
+    local url sample_url
 
-    url="$(input_box "Steam GE-Proton URL" "Enter a GE-Proton .tar.gz release URL to install as a Steam compatibility tool.\n\nExample:" "$GE_PROTON_SAMPLE_URL")" || return 1
+    sample_url="$(ge_proton_sample_url_for_arch)"
+    url="$(input_box "Steam GE-Proton URL" "Enter a GE-Proton .tar.gz release URL to install as a Steam compatibility tool.\n\nExample:" "$sample_url")" || return 1
     url="${url//[[:space:]]/}"
     download_steam_proton_ge_url "$url"
 }
@@ -967,7 +1006,7 @@ steam_proton_ge_menu() {
             arch_label="ARM64"
             ;;
         *)
-            suffix=".tar.gz"
+            suffix="-x86_64.tar.gz"
             arch_label="x86_64"
             ;;
     esac
@@ -979,12 +1018,20 @@ steam_proton_ge_menu() {
     filtered=$(printf '%s' "$data" | jq -c --arg suffix "$suffix" --arg arch_label "$arch_label" '
         [.[] as $r
          | $r.assets[]?
-         | select((.name | startswith("GE-Proton")) and (.name | endswith($suffix)))
-         | select(($suffix == "-aarch64.tar.gz") or ((.name | contains("-aarch64")) | not))
+         | select(
+             (.name | startswith("GE-Proton")) and (
+               (.name | endswith($suffix))
+               or (
+                 $suffix == "-x86_64.tar.gz"
+                 and (.name | test("^GE-Proton[0-9]+-[0-9]+\\.tar\\.gz$"))
+               )
+             )
+           )
          | {
-             label: ("GE-Proton for Steam " + $arch_label + ": " + (.name | rtrimstr(".tar.gz")) + " [" + $r.tag_name + "]"),
+             label: ("GE-Proton for Steam " + $arch_label + ": " + (.name | rtrimstr(".tar.gz") | rtrimstr("-aarch64") | rtrimstr("-x86_64")) + " [" + $r.tag_name + "]"),
              archive: .name,
-             url: .browser_download_url
+             url: .browser_download_url,
+             tip: (.name | rtrimstr(".tar.gz") | rtrimstr("-aarch64") | rtrimstr("-x86_64"))
            }
         ]') || {
         msg_box "Failed to parse Steam GE-Proton releases."
@@ -1012,10 +1059,11 @@ steam_proton_cachyos_menu() {
         msg_box "Failed to fetch Steam Proton-CachyOS releases."
         return 1
     }
+    # All CachyOS ARM64 Steam tips (11.x and older arm64 assets).
     filtered=$(printf '%s' "$data" | jq -c '
         [.[] as $r
          | $r.assets[]?
-         | select((.name | startswith("proton-cachyos-11.0-")) and (.name | endswith("-arm64.tar.xz")))
+         | select((.name | startswith("proton-cachyos-")) and (.name | endswith("-arm64.tar.xz")))
          | {
              label: ("Proton build for Steam: CachyOS ARM64 " + (.name | ltrimstr("proton-cachyos-") | rtrimstr("-arm64.tar.xz")) + " [" + $r.tag_name + "]"),
              archive: .name,
@@ -1030,10 +1078,194 @@ steam_proton_cachyos_menu() {
         return 1
     }
     if [ "$(printf '%s' "$filtered" | jq 'length')" -eq 0 ]; then
-        msg_box "No Steam Proton-CachyOS 11 ARM64 builds were found."
+        msg_box "No Steam Proton-CachyOS ARM64 builds were found."
         return 1
     fi
     download_steam_proton_cachyos_selection "$filtered"
+}
+
+download_steam_proton_cachyos_url() {
+    local url="$1"
+    local archive dirname version steam_root compat_dir tmpfile outdir
+
+    case "$(uname -m)" in
+        aarch64|arm64) ;;
+        *)
+            msg_box "Steam Proton-CachyOS ARM64 downloads are only enabled on ARM64 builds."
+            return 1
+            ;;
+    esac
+
+    [[ "$url" =~ ^https://github\.com/CachyOS/proton-cachyos/releases/download/[A-Za-z0-9._-]+/proton-cachyos-[A-Za-z0-9._-]+-arm64\.tar\.xz$ ]] || {
+        msg_box "Unsupported Proton-CachyOS URL:\n${url}\n\nExpected a GitHub release asset like:\n${CACHYOS_PROTON_SAMPLE_URL}"
+        return 1
+    }
+
+    require_commands wget tar xz || return 1
+
+    archive="$(basename_from_url "$url")"
+    dirname="$(archive_dir_name "$archive")" || {
+        msg_box "Unsupported archive format: ${archive}"
+        return 1
+    }
+    version="${dirname#proton-cachyos-}"
+    version="${version%-arm64}"
+    steam_root="$(steam_root_dir)"
+    compat_dir="${steam_root}/compatibilitytools.d"
+    tmpfile="${compat_dir}/${archive}"
+    outdir="${compat_dir}/${dirname}"
+
+    mkdir -p "$compat_dir" || return 1
+
+    if [ -x "$outdir/proton" ]; then
+        prepare_steam_proton_cachyos_dir "$outdir" "$version"
+        write_steam_proton_cachyos_config "$version" "$url" || true
+        return 0
+    fi
+
+    if ! download_with_gauge "$url" "$tmpfile" "Downloading Proton-CachyOS ${version} for Steam..."; then
+        msg_box "Download failed: ${archive}"
+        rm -f "$tmpfile"
+        return 1
+    fi
+
+    rm -rf "$outdir"
+    mkdir -p "$outdir" || return 1
+    if ! extract_archive_with_gauge "$tmpfile" "$outdir" "Extracting Proton-CachyOS ${version} for Steam..."; then
+        msg_box "Extraction failed: ${archive}"
+        rm -f "$tmpfile"
+        rm -rf "$outdir"
+        return 1
+    fi
+    rm -f "$tmpfile"
+
+    prepare_steam_proton_cachyos_dir "$outdir" "$version"
+    if [ ! -x "$outdir/proton" ]; then
+        msg_box "Proton-CachyOS ${version} did not install a runnable proton script at:\n${outdir}/proton"
+        return 1
+    fi
+
+    write_steam_proton_cachyos_config "$version" "$url" || {
+        msg_box "Installed ${version}, but failed to write ${STEAM_PROTON_CACHYOS_CONFIG}."
+        return 1
+    }
+    return 0
+}
+
+steam_arm_proton_status_menu() {
+    case "$(uname -m)" in
+        aarch64|arm64) ;;
+        *)
+            msg_box "ARM Proton status is only available on ARM64 builds."
+            return 1
+            ;;
+    esac
+
+    local steam_root compat_dir line status="" proton_dir name
+    steam_root="$(steam_root_dir)"
+    compat_dir="${steam_root}/compatibilitytools.d"
+
+    status+="Steam root: ${steam_root}\n\n"
+    status+="Default tips (Batocera preflight / Armada-aligned):\n"
+    status+="  CachyOS: ${CACHYOS_PROTON_DEFAULT_VERSION} (tool id proton-cachyos-11.0-arm64)\n"
+    status+="  GE-Proton: ${GE_PROTON_DEFAULT_VERSION}\n"
+    status+="  Valve: ${STEAM_PROTON11_ARM64_DIR_NAME} (AppID ${STEAM_PROTON11_ARM64_APPID})\n\n"
+
+    if [ -x "${steam_root}/steamapps/common/${STEAM_PROTON11_ARM64_DIR_NAME}/proton" ]; then
+        status+="Valve Proton 11.0 (ARM64): INSTALLED\n"
+    else
+        status+="Valve Proton 11.0 (ARM64): missing (next Steam launch requests install)\n"
+    fi
+
+    if [ -x "${DECKY_PLUGINLOADER}" ]; then
+        status+="Decky PluginLoader: INSTALLED\n"
+    else
+        status+="Decky PluginLoader: missing (auto-install on next Steam launch)\n"
+    fi
+    if [ -f "/userdata/system/homebrew/plugins/armada-control/plugin.json" ]; then
+        local bcc_ver=""
+        if [ -f "/userdata/system/homebrew/plugins/armada-control/VERSION" ]; then
+            bcc_ver="$(tr -d '[:space:]' < /userdata/system/homebrew/plugins/armada-control/VERSION 2>/dev/null || true)"
+        fi
+        if [ -n "$bcc_ver" ]; then
+            status+="Batocera Control (decky-bcc): INSTALLED (${bcc_ver})\n"
+        else
+            status+="Batocera Control (decky-bcc): INSTALLED\n"
+        fi
+    else
+        status+="Batocera Control (decky-bcc): missing (auto-install on next Steam launch)\n"
+    fi
+
+    status+="\nInstalled Steam compatibility tips:\n"
+    if [ -d "$compat_dir" ]; then
+        for proton_dir in "${compat_dir}"/proton-cachyos-*-arm64 "${compat_dir}"/GE-Proton* "${compat_dir}"/Proton11ARM; do
+            [ -e "$proton_dir" ] || continue
+            name="$(basename "$proton_dir")"
+            if [ -x "$proton_dir/proton" ] || [ -x "$(readlink -f "$proton_dir" 2>/dev/null)/proton" ]; then
+                status+="  OK  ${name}\n"
+            else
+                status+="  --  ${name} (incomplete)\n"
+            fi
+        done
+    else
+        status+="  (no compatibilitytools.d yet)\n"
+    fi
+
+    msg_box "$status"
+}
+
+steam_install_default_arm_protons_menu() {
+    case "$(uname -m)" in
+        aarch64|arm64) ;;
+        *)
+            msg_box "Default ARM Proton set is only available on ARM64 builds."
+            return 1
+            ;;
+    esac
+
+    yes_no "Install the default ARM Proton set for Steam?\n\n1) Proton-CachyOS ${CACHYOS_PROTON_DEFAULT_VERSION}\n2) ${GE_PROTON_DEFAULT_VERSION} (aarch64)\n3) Register Valve Proton 11.0 (ARM64) / AppID ${STEAM_PROTON11_ARM64_APPID}\n\nTips already present are skipped. Valve payload is fetched on the next online Steam launch if still missing." || return 1
+
+    require_commands wget tar xz || return 1
+
+    info_box "Installing Proton-CachyOS ${CACHYOS_PROTON_DEFAULT_VERSION}..."
+    download_steam_proton_cachyos_url "$CACHYOS_PROTON_SAMPLE_URL" || {
+        msg_box "Failed to install Proton-CachyOS ${CACHYOS_PROTON_DEFAULT_VERSION}."
+        return 1
+    }
+
+    info_box "Installing ${GE_PROTON_DEFAULT_VERSION}..."
+    STEAM_PROTON_INSTALL_QUIET=1 download_steam_proton_ge_url "$GE_PROTON_ARM64_SAMPLE_URL" || {
+        msg_box "Failed to install ${GE_PROTON_DEFAULT_VERSION}."
+        return 1
+    }
+
+    write_steam_proton11_arm64_config || true
+    prepare_steam_proton11_arm64_dir || {
+        msg_box "CachyOS and GE-Proton are installed, but Valve Proton 11.0 (ARM64) registration failed."
+        return 1
+    }
+
+    msg_box "Default ARM Proton set is ready.\n\nCachyOS ${CACHYOS_PROTON_DEFAULT_VERSION}: installed\n${GE_PROTON_DEFAULT_VERSION}: installed\nValve Proton 11.0 (ARM64): registered\n\nLaunch Steam online to finish downloading the Valve tip if the payload is still missing.\nSteam Tools can also install any other ARM CachyOS / GE-Proton release."
+}
+
+wine_install_default_ge_proton_arm_menu() {
+    case "$(uname -m)" in
+        aarch64|arm64) ;;
+        *)
+            msg_box "Default GE-Proton ARM runner install is only available on ARM64 builds."
+            return 1
+            ;;
+    esac
+
+    require_commands jq wget tar || return 1
+    local filtered
+    yes_no "Install ${GE_PROTON_DEFAULT_VERSION} as a Wine runner under:\n${ROOT_WINE_CUSTOM}/${GE_PROTON_DEFAULT_VERSION}\n\nSource:\n${GE_PROTON_ARM64_SAMPLE_URL}" || return 1
+
+    filtered="$(ge_proton_json_from_url "$GE_PROTON_ARM64_SAMPLE_URL")" || {
+        msg_box "Unsupported GE-Proton URL:\n${GE_PROTON_ARM64_SAMPLE_URL}"
+        return 1
+    }
+    download_release_selection "GE-Proton ARM" "Install default GE-Proton ARM runner:" "$filtered"
 }
 
 translate_free_game_installer() {
@@ -2184,20 +2416,31 @@ main_menu() {
             2 "Download Wine-TKG-Staging builds"
             3 "Download Wine-GE Custom builds"
             4 "Download GE-Proton runner builds"
-            5 "Prepare VC++ / DX9 installers for next run"
-            6 "Easy Batocera Winetricks"
-            7 "Easy autorun.cmd creator"
-            8 "Convert .pc folder to .wine folder"
-            9 "Compress .wine folder to .wsquashfs or .wtgz"
-            10 "Decompress .wsquashfs / .wtgz back to .wine"
-            11 "Install free Windows games"
+        )
+
+        case "$(uname -m)" in
+            aarch64|arm64)
+                menu_options+=(
+                    5 "Install default GE-Proton ARM runner (${GE_PROTON_DEFAULT_VERSION})"
+                )
+                ;;
+        esac
+
+        menu_options+=(
+            6 "Prepare VC++ / DX9 installers for next run"
+            7 "Easy Batocera Winetricks"
+            8 "Easy autorun.cmd creator"
+            9 "Convert .pc folder to .wine folder"
+            10 "Compress .wine folder to .wsquashfs or .wtgz"
+            11 "Decompress .wsquashfs / .wtgz back to .wine"
+            12 "Install free Windows games"
             99 "Exit"
         )
 
         choice=$(dialog --clear --backtitle "Batocera Wine Tools" \
             --title "batocera-wine-tools" \
             --menu "Choose a Wine management action:" \
-            22 92 12 \
+            22 96 14 \
             "${menu_options[@]}" \
             2>&1 >/dev/tty) || {
                 clear_screen
@@ -2210,13 +2453,14 @@ main_menu() {
             2) wine_tkg_menu ;;
             3) wine_ge_menu ;;
             4) ge_proton_menu ;;
-            5) prepare_dependency_installers ;;
-            6) run_easy_winetricks ;;
-            7) create_autorun_cmd_menu ;;
-            8) convert_pc_to_wine ;;
-            9) compress_wine_folder ;;
-            10) decompress_wine_archive ;;
-            11) install_free_windows_games_menu ;;
+            5) wine_install_default_ge_proton_arm_menu ;;
+            6) prepare_dependency_installers ;;
+            7) run_easy_winetricks ;;
+            8) create_autorun_cmd_menu ;;
+            9) convert_pc_to_wine ;;
+            10) compress_wine_folder ;;
+            11) decompress_wine_archive ;;
+            12) install_free_windows_games_menu ;;
             99) break ;;
         esac
     done
@@ -2232,25 +2476,33 @@ steam_tools_menu() {
         case "$(uname -m)" in
             aarch64|arm64)
                 menu_options+=(
-                    2 "Install Valve Proton 11.0 (ARM64)"
-                    3 "Install Proton-CachyOS ARM64 builds"
+                    2 "Show installed ARM Proton tips"
+                    3 "Install default ARM Proton set (CachyOS + GE + Valve 11)"
+                    4 "Install Valve Proton 11.0 (ARM64)"
+                    5 "Install Proton-CachyOS ARM64 builds (all)"
+                    6 "Install GE-Proton Steam ARM builds (all)"
+                    7 "Install GE-Proton Steam build from URL"
+                )
+                ;;
+            *)
+                menu_options+=(
+                    6 "Install GE-Proton Steam builds"
+                    7 "Install GE-Proton Steam build from URL"
                 )
                 ;;
         esac
 
         menu_options+=(
-            4 "Install GE-Proton Steam builds"
-            5 "Install GE-Proton Steam build from URL"
-            6 "Easy Protontricks (VC++ / DX9)"
-            7 "Install Decky PluginLoader for Steam"
-            8 "Install Batocera Control + LSFG-VK"
+            8 "Easy Protontricks (VC++ / DX9)"
+                    9 "Update Decky PluginLoader for Steam"
+                    10 "Update Batocera Control (decky-bcc) + LSFG-VK"
             99 "Exit"
         )
 
         choice=$(dialog --clear --backtitle "Batocera Steam Tools" \
             --title "batocera-steam-tools" \
             --menu "Choose a Steam management action:" \
-            22 96 12 \
+            22 100 14 \
             "${menu_options[@]}" \
             2>&1 >/dev/tty) || {
                 clear_screen
@@ -2260,13 +2512,15 @@ steam_tools_menu() {
 
         case "$choice" in
             1) add_windows_game_to_steam_menu ;;
-            2) steam_proton11_arm64_menu ;;
-            3) steam_proton_cachyos_menu ;;
-            4) steam_proton_ge_menu ;;
-            5) steam_proton_ge_url_menu ;;
-            6) run_easy_protontricks ;;
-            7) install_decky_loader_menu ;;
-            8) install_decky_batocera_control_menu ;;
+            2) steam_arm_proton_status_menu ;;
+            3) steam_install_default_arm_protons_menu ;;
+            4) steam_proton11_arm64_menu ;;
+            5) steam_proton_cachyos_menu ;;
+            6) steam_proton_ge_menu ;;
+            7) steam_proton_ge_url_menu ;;
+            8) run_easy_protontricks ;;
+            9) install_decky_loader_menu ;;
+            10) install_decky_batocera_control_menu ;;
             99) break ;;
         esac
     done
