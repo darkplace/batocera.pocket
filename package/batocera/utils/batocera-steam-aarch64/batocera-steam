@@ -22,6 +22,12 @@ export BATOCERA_STEAM_PROTON_GE_CONFIG="${BATOCERA_STEAM_PROTON_GE_CONFIG:-/user
 # Default Steam Proton-CachyOS ARM64 tip (override via proton-cachyos.conf / wine-tools).
 # Bump when CachyOS publishes a newer *-arm64.tar.xz on https://github.com/CachyOS/proton-cachyos/releases
 export BATOCERA_STEAM_PROTON_CACHYOS_DEFAULT_VERSION="${BATOCERA_STEAM_PROTON_CACHYOS_DEFAULT_VERSION:-11.0-20260703-slr}"
+# Default GE-Proton ARM64 tip (GloriousEggroll aarch64 asset). Installed alongside CachyOS.
+# Bump when GE publishes a newer GE-Proton*-aarch64.tar.gz.
+export BATOCERA_STEAM_PROTON_GE_DEFAULT_VERSION="${BATOCERA_STEAM_PROTON_GE_DEFAULT_VERSION:-GE-Proton11-5}"
+export BATOCERA_STEAM_PROTON_GE_DEFAULT_URL="${BATOCERA_STEAM_PROTON_GE_DEFAULT_URL:-https://github.com/GloriousEggroll/proton-ge-custom/releases/download/GE-Proton11-5/GE-Proton11-5-aarch64.tar.gz}"
+# GE preflight ON by default on aarch64 (set BATOCERA_STEAM_PROTON_GE=0 to skip).
+export BATOCERA_STEAM_PROTON_GE="${BATOCERA_STEAM_PROTON_GE:-1}"
 
 load_proton_cachyos_config() {
     local key
@@ -108,10 +114,13 @@ export PROTON_CACHYOS_VERSION_FULL="${BATOCERA_STEAM_PROTON_CACHYOS_VERSION:-${B
 export PROTON_CACHYOS_TAR="proton-cachyos-${PROTON_CACHYOS_VERSION_FULL}-arm64.tar.xz"
 export PROTON_CACHYOS_DIR="proton-cachyos-${PROTON_CACHYOS_VERSION_FULL}-arm64"
 export PROTON_CACHYOS_URL="${BATOCERA_STEAM_PROTON_CACHYOS_URL:-https://github.com/CachyOS/proton-cachyos/releases/download/cachyos-${PROTON_CACHYOS_VERSION_FULL}/${PROTON_CACHYOS_TAR}}"
-export PROTON_GE_VERSION_FULL="${BATOCERA_STEAM_PROTON_GE_VERSION:-}"
-export PROTON_GE_TAR="${PROTON_GE_VERSION_FULL:+${PROTON_GE_VERSION_FULL}.tar.gz}"
+export PROTON_GE_VERSION_FULL="${BATOCERA_STEAM_PROTON_GE_VERSION:-${BATOCERA_STEAM_PROTON_GE_DEFAULT_VERSION}}"
+export PROTON_GE_URL="${BATOCERA_STEAM_PROTON_GE_URL:-${BATOCERA_STEAM_PROTON_GE_DEFAULT_URL}}"
+# Archive basename from URL (supports GE-Proton11-5-aarch64.tar.gz); install dir is the version tip.
+export PROTON_GE_TAR="$(basename "${PROTON_GE_URL%%\?*}")"
 export PROTON_GE_DIR="${PROTON_GE_VERSION_FULL}"
-export PROTON_GE_URL="${BATOCERA_STEAM_PROTON_GE_URL:-}"
+export PROTON_GE_DIR="${PROTON_GE_DIR%-aarch64}"
+export PROTON_GE_DIR="${PROTON_GE_DIR%-x86_64}"
 export BATOCERA_STEAM_FEX_ROOTFS_NAME="${BATOCERA_STEAM_FEX_ROOTFS_NAME:-Fedora_43.sqsh}"
 export BATOCERA_STEAM_FEX_ROOTFS_URL="${BATOCERA_STEAM_FEX_ROOTFS_URL:-https://rootfs.fex-emu.gg/Fedora_43/2026-01-20/Fedora_43.sqsh}"
 export PROTON_USE_ARM64="${PROTON_USE_ARM64:-1}"
@@ -145,34 +154,36 @@ apply_steam_launch_environment() {
 }
 
 proton_cachyos_enabled() {
-    case "${BATOCERA_STEAM_PROTON_CACHYOS:-}" in
+    # Independent of GE: both tips install by default on aarch64.
+    case "${BATOCERA_STEAM_PROTON_CACHYOS:-1}" in
         0|false|FALSE|False|no|NO|No|off|OFF|Off)
             return 1
             ;;
-        1|true|TRUE|True|yes|YES|Yes|on|ON|On)
+        *)
             return 0
             ;;
     esac
-
-    proton_ge_enabled && return 1
-    return 0
 }
 
 proton_ge_enabled() {
     local archive
 
-    case "${BATOCERA_STEAM_PROTON_GE:-0}" in
+    case "${BATOCERA_STEAM_PROTON_GE:-1}" in
         0|false|FALSE|False|no|NO|No|off|OFF|Off)
             return 1
             ;;
     esac
 
-    [[ -n "${PROTON_GE_VERSION_FULL}" && -n "${PROTON_GE_URL}" ]] || return 1
+    [[ -n "${PROTON_GE_VERSION_FULL}" && -n "${PROTON_GE_URL}" && -n "${PROTON_GE_TAR}" ]] || return 1
 
     archive="${PROTON_GE_URL%%\?*}"
     archive="${archive%%\#*}"
     archive="${archive##*/}"
     [[ "${archive}" == "${PROTON_GE_TAR}" ]]
+}
+
+official_proton11_arm64_payload_exists() {
+    [[ -x "${STEAM_ROOT}/steamapps/common/${PROTON11_ARM64_DIR_NAME}/proton" ]]
 }
 
 proton_cachyos_any_payload_exists() {
@@ -927,17 +938,10 @@ build_steam_args() {
         out_args+=("${extra_args[@]}")
     fi
 
-    if ! proton11_arm64_payload_exists; then
-        if proton_cachyos_enabled; then
-            log_msg "Proton-CachyOS ${PROTON_CACHYOS_VERSION_FULL} payload is missing; setup should install it before launch."
-        else
-            log_msg "Proton 11.0 (ARM64) payload missing; requesting Steam install for AppID ${PROTON11_ARM64_APPID}."
-            out_args+=("${PROTON11_ARM64_INSTALL_URI}")
-            if [[ -n "${game_target}" ]]; then
-                log_msg "Deferring requested game '${game_target}' until Proton 11.0 (ARM64) is installed."
-                return 0
-            fi
-        fi
+    # Always ask Steam for Valve's ARM Proton tip when missing (coexists with CachyOS/GE).
+    if ! official_proton11_arm64_payload_exists; then
+        log_msg "Proton 11.0 (ARM64) payload missing; requesting Steam install for AppID ${PROTON11_ARM64_APPID}."
+        out_args+=("${PROTON11_ARM64_INSTALL_URI}")
     fi
 
     if [[ -n "${game_target}" ]]; then
@@ -1583,6 +1587,7 @@ install_proton_ge() {
     local dest_dir="${STEAM_ROOT}/compatibilitytools.d"
     local tar_path="${dest_dir}/${PROTON_GE_TAR}"
     local extracted_dir="${dest_dir}/${PROTON_GE_DIR}"
+    local candidate
 
     proton_ge_enabled || return 0
 
@@ -1604,6 +1609,28 @@ install_proton_ge() {
     download_file "${PROTON_GE_URL}" "${tar_path}" "GE-Proton ${PROTON_GE_VERSION_FULL}" || die "Failed to download GE-Proton ${PROTON_GE_VERSION_FULL}."
     tar -xzf "${tar_path}" -C "${dest_dir}" >> "${log}" 2>&1 || die "Failed to extract GE-Proton ${PROTON_GE_VERSION_FULL}."
     rm -f "${tar_path}"
+
+    # Tarball top-level may be GE-Proton11-5 or GE-Proton11-5-aarch64; normalize to PROTON_GE_DIR.
+    if [[ ! -x "${extracted_dir}/proton" ]]; then
+        for candidate in "${dest_dir}/${PROTON_GE_DIR}" "${dest_dir}/${PROTON_GE_DIR}-aarch64" "${dest_dir}/${PROTON_GE_TAR%.tar.gz}"; do
+            [[ -x "${candidate}/proton" ]] || continue
+            if [[ "${candidate}" != "${extracted_dir}" ]]; then
+                rm -rf "${extracted_dir}"
+                mv "${candidate}" "${extracted_dir}"
+            fi
+            break
+        done
+    fi
+    if [[ ! -x "${extracted_dir}/proton" ]]; then
+        for candidate in "${dest_dir}"/GE-Proton*; do
+            [[ -x "${candidate}/proton" ]] || continue
+            if [[ "${candidate}" != "${extracted_dir}" ]]; then
+                rm -rf "${extracted_dir}"
+                mv "${candidate}" "${extracted_dir}"
+            fi
+            break
+        done
+    fi
 
     [[ -x "${extracted_dir}/proton" ]] || die "GE-Proton did not install to ${extracted_dir}/proton."
     repair_proton_ge_dir "${extracted_dir}"

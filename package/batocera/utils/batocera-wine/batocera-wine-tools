@@ -15,6 +15,7 @@ CACHYOS_PROTON_RELEASES_URL="https://api.github.com/repos/CachyOS/proton-cachyos
 CACHYOS_PROTON_DEFAULT_VERSION="${CACHYOS_PROTON_DEFAULT_VERSION:-11.0-20260703-slr}"
 CACHYOS_PROTON_SAMPLE_URL="${CACHYOS_PROTON_SAMPLE_URL:-https://github.com/CachyOS/proton-cachyos/releases/download/cachyos-${CACHYOS_PROTON_DEFAULT_VERSION}/proton-cachyos-${CACHYOS_PROTON_DEFAULT_VERSION}-arm64.tar.xz}"
 GE_PROTON_SAMPLE_URL="https://github.com/GloriousEggroll/proton-ge-custom/releases/download/GE-Proton10-34/GE-Proton10-34.tar.gz"
+GE_PROTON_ARM64_SAMPLE_URL="https://github.com/GloriousEggroll/proton-ge-custom/releases/download/GE-Proton11-5/GE-Proton11-5-aarch64.tar.gz"
 FREE_WINDOWS_GAMES_BASE_URL="https://raw.githubusercontent.com/foclabroc/toolbox/refs/heads/main/windows"
 STEAM_PROTON_CACHYOS_CONFIG="/userdata/system/configs/steam/proton-cachyos.conf"
 STEAM_PROTON_GE_CONFIG="/userdata/system/configs/steam/proton-ge.conf"
@@ -523,7 +524,7 @@ ge_proton_url_menu() {
     local url filtered sample_url="$GE_PROTON_SAMPLE_URL"
     case "$(uname -m)" in
         aarch64|arm64)
-            sample_url="https://github.com/GloriousEggroll/proton-ge-custom/releases/download/GE-Proton11-1/GE-Proton11-1-aarch64.tar.gz"
+            sample_url="$GE_PROTON_ARM64_SAMPLE_URL"
             ;;
     esac
 
@@ -592,16 +593,9 @@ write_steam_proton_ge_config() {
 }
 
 write_steam_proton11_arm64_config() {
+    # Keep CachyOS/GE tips enabled; official Proton 11.0 (ARM64) coexists with them.
     mkdir -p "$(dirname "$STEAM_PROTON_CACHYOS_CONFIG")" || return 1
-    {
-        printf '%s\n' "# Batocera Steam Proton-CachyOS ARM64 selection"
-        printf '%s\n' "BATOCERA_STEAM_PROTON_CACHYOS=0"
-    } > "$STEAM_PROTON_CACHYOS_CONFIG"
-    {
-        printf '%s\n' "# Batocera Steam GE-Proton selection"
-        printf '%s\n' "BATOCERA_STEAM_PROTON_GE=0"
-    } > "$STEAM_PROTON_GE_CONFIG"
-    chmod 0644 "$STEAM_PROTON_CACHYOS_CONFIG" "$STEAM_PROTON_GE_CONFIG" 2>/dev/null || true
+    return 0
 }
 
 write_steam_proton_toolmanifest_vdf() {
@@ -745,10 +739,10 @@ steam_proton11_arm64_menu() {
             ;;
     esac
 
-    yes_no "Select official Proton 11.0 (ARM64) as the Steam compatibility runner?\n\nThis disables the CachyOS/GE preflight runner selections, registers Proton 11.0 (ARM64) as a Steam compatibility tool, and lets the Steam launcher request AppID ${STEAM_PROTON11_ARM64_APPID} on the next Steam launch if the payload is missing." || return 1
+    yes_no "Install / register Valve Proton 11.0 (ARM64) (Steam AppID ${STEAM_PROTON11_ARM64_APPID})?\n\nThis is the official ARM tip (what some clients label near Experimental). It coexists with Proton-CachyOS and GE-Proton; the next Steam launch will request the AppID if the payload is still missing." || return 1
 
     write_steam_proton11_arm64_config || {
-        msg_box "Failed to write Steam Proton 11.0 (ARM64) runner selection."
+        msg_box "Failed to prepare Proton 11.0 (ARM64) config."
         return 1
     }
     prepare_steam_proton11_arm64_dir || {
@@ -756,7 +750,7 @@ steam_proton11_arm64_menu() {
         return 1
     }
 
-    msg_box "Steam is set to use official Proton 11.0 (ARM64).\n\nIf the payload is not installed yet, launch Steam while online. Batocera will ask Steam to install AppID ${STEAM_PROTON11_ARM64_APPID} and then repair the toolmanifest for ARM use."
+    msg_box "Steam will list Proton 11.0 (ARM64) as a compatibility tool.\n\nIf the payload is not installed yet, launch Steam while online. Batocera will ask Steam to install AppID ${STEAM_PROTON11_ARM64_APPID} and repair the toolmanifest for ARM use.\n\nCachyOS and GE-Proton tips stay enabled."
 }
 
 download_steam_proton_cachyos_selection() {
@@ -2238,7 +2232,7 @@ steam_tools_menu() {
         case "$(uname -m)" in
             aarch64|arm64)
                 menu_options+=(
-                    2 "Select official Proton 11.0 (ARM64)"
+                    2 "Install Valve Proton 11.0 (ARM64)"
                     3 "Install Proton-CachyOS ARM64 builds"
                 )
                 ;;

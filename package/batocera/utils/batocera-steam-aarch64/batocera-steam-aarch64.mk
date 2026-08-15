@@ -4,7 +4,7 @@
 #
 ################################################################################
 
-BATOCERA_STEAM_AARCH64_VERSION = 1.1
+BATOCERA_STEAM_AARCH64_VERSION = 1.2
 BATOCERA_STEAM_AARCH64_SITE = $(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/utils/batocera-steam-aarch64
 BATOCERA_STEAM_AARCH64_SITE_METHOD = local
 
