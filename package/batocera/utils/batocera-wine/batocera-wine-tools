@@ -646,7 +646,9 @@ EOF
 
 write_steam_proton11_arm64_compatibilitytool_vdf() {
     local target="$1"
+    local install_path="${2:-.}"
 
+    # No appid: avoid Steam merging with depot 4628740 / SLR 4185400.
     cat > "$target" <<EOF
 "compatibilitytools"
 {
@@ -654,9 +656,8 @@ write_steam_proton11_arm64_compatibilitytool_vdf() {
   {
     "proton11_arm64"
     {
-      "appid" "${STEAM_PROTON11_ARM64_APPID}"
-      "install_path" "Proton11ARM"
-      "display_name" "Proton 11.0 (ARM64)"
+      "install_path" "${install_path}"
+      "display_name" "Proton 11.0 (ARM64) ★ recommended"
       "from_oslist" "windows"
       "to_oslist" "linux"
     }
@@ -758,16 +759,25 @@ prepare_steam_proton11_arm64_dir() {
     local steam_root
     local compat_dir
     local proton_dir
+    local tool_dir
 
     steam_root="$(steam_root_dir)"
     compat_dir="${steam_root}/compatibilitytools.d"
     proton_dir="${steam_root}/steamapps/common/${STEAM_PROTON11_ARM64_DIR_NAME}"
+    tool_dir="${compat_dir}/proton11_arm64"
 
     mkdir -p "$compat_dir" "$proton_dir" || return 1
-    ln -sfn "$proton_dir" "${compat_dir}/Proton11ARM"
-    write_steam_proton11_arm64_compatibilitytool_vdf "${compat_dir}/compatibilitytool.vdf"
+    # Legacy appid=4628740 registration forced missing SLR 4185400.
+    # Do not symlink tool_dir into steamapps/common — Steam merges AppID 4628740.
+    rm -f "${compat_dir}/compatibilitytool.vdf" "${compat_dir}/Proton11ARM"
+    if [[ -L "$tool_dir" ]]; then
+        rm -f "$tool_dir"
+    fi
+    mkdir -p "$tool_dir" || return 1
+    rm -f "${proton_dir}/compatibilitytool.vdf"
+    write_steam_proton11_arm64_compatibilitytool_vdf "${tool_dir}/compatibilitytool.vdf" "$proton_dir"
     write_steam_proton_toolmanifest_vdf "${proton_dir}/toolmanifest.vdf"
-    chmod 0644 "${compat_dir}/compatibilitytool.vdf" "${proton_dir}/toolmanifest.vdf" 2>/dev/null || true
+    chmod 0644 "${tool_dir}/compatibilitytool.vdf" "${proton_dir}/toolmanifest.vdf" 2>/dev/null || true
     chmod +x "${proton_dir}/proton" 2>/dev/null || true
 }
 
@@ -1198,7 +1208,7 @@ steam_arm_proton_status_menu() {
 
     status+="\nInstalled Steam compatibility tips:\n"
     if [ -d "$compat_dir" ]; then
-        for proton_dir in "${compat_dir}"/proton-cachyos-*-arm64 "${compat_dir}"/GE-Proton* "${compat_dir}"/Proton11ARM; do
+        for proton_dir in "${compat_dir}"/proton-cachyos-*-arm64 "${compat_dir}"/GE-Proton* "${compat_dir}"/proton11_arm64; do
             [ -e "$proton_dir" ] || continue
             name="$(basename "$proton_dir")"
             if [ -x "$proton_dir/proton" ] || [ -x "$(readlink -f "$proton_dir" 2>/dev/null)/proton" ]; then

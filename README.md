@@ -135,7 +135,8 @@ Per-board GitHub tags so OTA only matches the device SoC. Full history with coll
 
 | Tag | Board | Status |
 |-----|--------|--------|
-| `v44-sm8750-20260815` | SM8750 (Odin 3) | ✅ Tested — **OTA + flash** |
+| `v44-sm8750-20260816` | SM8750 (Odin 3) | 🔨 **Golden Rabbit** (building) |
+| `v44-sm8750-20260815` | SM8750 (Odin 3) | ✅ Tested — **OTA + flash** (Steam touch / OSK) |
 | `v44-sm8750-20260814` | SM8750 (Odin 3) | OTA RC1 |
 | `v44-sm8550-20260817` | SM8550 (Odin 2 Portal) | ✅ Tested — **OTA + flash** (stick LEDs + analog DZ) |
 | `v44-sm8550-20260816` | SM8550 (Odin 2 Portal) | OTA (Steam touch / OSK) |
@@ -143,6 +144,25 @@ Per-board GitHub tags so OTA only matches the device SoC. Full history with coll
 | `v44-sm8550-20260813` | SM8550 (Odin 2 Portal) | Flash baseline |
 | `v44-sm8250-20260811` | SM8250 | ⚠️ Untested |
 | `v44-sm8750-20260809` | SM8750 (Odin 3) | Flash baseline (superseded for OTA) |
+
+### Since `v44-sm8750-20260815` (Odin 3) — `v44-sm8750-20260816` **Golden Rabbit**
+
+<details>
+<summary><b>Updates</b></summary>
+
+- Public codename **Golden Rabbit** (`44-dev-pocket-golden-rabbit`).
+- Proton 11 ★ as custom tool (no SLR 4185400 merge); MangoApp on by default on ARM Steam.
+- Batocera Control / decky-bcc 0.2.18 shortcuts documented (QAM overlay, M1+M2, Power, LSFG).
+
+</details>
+
+<details>
+<summary><b>Fixes</b></summary>
+
+- Proton 11 AppError_51 from AppID/symlink registration.
+- MangoHud never appearing in steam-direct (MangoApp defaulted off).
+
+</details>
 
 ### Since `v44-sm8750-20260814` (Odin 3) — `v44-sm8750-20260815`
 
@@ -285,6 +305,8 @@ Verified against `hotkeys.keys` + Odin `hotkeygen` mappings (see [docs/CONTROLS_
 | **Back** (next to Home on Odin) | Brightness cycle in ES |
 
 In **Steam** (GamepadUI), **Back** becomes the Steam chord (not brightness). After Steam exit / force-kill, brightness is restored automatically.
+
+Steam + **Batocera Control** (decky-bcc) shortcuts: **⋯ → Performance Overlay** (MangoHud), **M1+M2** toggle HUD, plugin tabs for Power / Compatibility / LSFG — see [docs/CONTROLS_AND_FAQ.md](docs/CONTROLS_AND_FAQ.md#steam-gamepadui--batocera-control-decky-bcc).
 
 ### Mini FAQ (start here)
 

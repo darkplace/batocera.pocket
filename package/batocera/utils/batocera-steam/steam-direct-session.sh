@@ -1218,7 +1218,14 @@ export BATOCERA_STEAM_GS_NESTED_REFRESH="${BATOCERA_STEAM_GS_NESTED_REFRESH:-${d
 if [[ "${BATOCERA_STEAM_FORCE_DISABLE_MANGOAPP:-0}" == "1" ]]; then
     export BATOCERA_STEAM_GS_MANGOAPP="0"
 else
-    export BATOCERA_STEAM_GS_MANGOAPP="${BATOCERA_STEAM_GS_MANGOAPP:-0}"
+    # aarch64 SteamOS needs MangoApp alive so Steam's performance-overlay
+    # slider (and mangohudctl / Decky paddle toggle) can show/hide the HUD.
+    _mango_default="0"
+    case "$(uname -m)" in
+        aarch64|arm64) _mango_default="1" ;;
+    esac
+    export BATOCERA_STEAM_GS_MANGOAPP="${BATOCERA_STEAM_GS_MANGOAPP:-${_mango_default}}"
+    unset _mango_default
 fi
 if [[ "${BATOCERA_STEAM_GS_BACKEND}" == "drm" ]]; then
     export BATOCERA_STEAM_GS_FORCE_ORIENTATION="${BATOCERA_STEAM_GS_FORCE_ORIENTATION:-${detected_orientation}}"

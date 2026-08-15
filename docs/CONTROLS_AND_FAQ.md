@@ -43,6 +43,27 @@ mapping so brightness works again.
 
 ---
 
+## Steam GamepadUI + Batocera Control (decky-bcc)
+
+Open the plugin from Steam **Quick Access (⋯) → Batocera Control**.
+
+| Shortcut / UI | Action |
+|---------------|--------|
+| **⋯ → Performance → Performance Overlay** | Steam-native MangoHud / FPS overlay level |
+| **M1 + M2** | Toggle MangoHud show/hide (`mangohudctl`), when bound in Batocera Control → Back Paddles (recommended default) |
+| **⋯ → Batocera Control → Compatibility** | Proton default, per-game tweaks, env vars, **Re-apply** nice/affinity to a running game |
+| **⋯ → Batocera Control → Power** | eco / balanced / performance (governor + fan on Qualcomm) |
+| **⋯ → Batocera Control → LSFG** | Lossless Scaling VK (DLL at `/userdata/system/wine/lossless-scaling/Lossless.dll`) |
+| **⋯ → Batocera Control → Settings → Sleep Mode** | `s2idle` / `deep` (persisted across reboot) |
+
+MangoApp must be running inside gamescope for the overlay and paddle toggle to
+work. Current ARM SteamOS / steam-direct sessions enable it by default; after
+changing that, restart Steam once.
+
+Full plugin docs: [darkplace/decky-bcc](https://github.com/darkplace/decky-bcc).
+
+---
+
 ## Batocera logical name ↔ physical button
 
 | Batocera name | Typical Odin button |

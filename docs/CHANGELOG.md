@@ -29,6 +29,38 @@ When you publish a tag, copy the matching section into the Release body.
 
 ---
 
+## `v44-sm8750-20260816` — **Golden Rabbit** (Odin 3)
+
+> Public codename: **Golden Rabbit**. Steam ARM Proton / Batocera Control / MangoApp
+> wave after Silksong smoke (Proton 11 ★, decky-bcc 0.2.18, LSFG per-game).
+
+<details>
+<summary><b>Updates</b></summary>
+
+- **Codename:** `44-dev-pocket-golden-rabbit-<commit>` (public name **Golden Rabbit**).
+- **Proton 11.0 (ARM64) ★ recommended:** register as a pure custom compatibility
+  tool (no Steam AppID merge with depot 4628740 / missing SLR 4185400).
+- **MangoApp:** enable by default on ARM SteamOS / steam-direct so QAM Performance
+  Overlay and `mangohudctl` / Decky paddle toggles work.
+- **Docs:** Steam + Batocera Control shortcuts in
+  [CONTROLS_AND_FAQ.md](CONTROLS_AND_FAQ.md) (QAM overlay, M1+M2 MangoHud, Power,
+  LSFG, Sleep).
+- Expects **decky-bcc ≥ 0.2.18** (Non-Steam signed/unsigned AppIDs, LSFG, env,
+  Performance Re-apply).
+
+</details>
+
+<details>
+<summary><b>Fixes</b></summary>
+
+- Official Proton 11 custom registration no longer symlink-merges into
+  `steamapps/common` (that forced AppError_51 / SLR 4185400).
+- Steam direct session defaulted MangoApp off on ARM, so the HUD never appeared.
+
+</details>
+
+---
+
 ## `v44-sm8750-20260815` — Odin 3 (Steam touch + OSK)
 
 > OTA cut after `v44-sm8750-20260814`. Steam GamepadUI on-screen keyboard /

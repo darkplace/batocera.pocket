@@ -1681,22 +1681,24 @@ prepare_arm64_steam_layout() {
 
 write_compatibilitytool_vdf() {
     local target="$1"
+    local install_path="${2:-.}"
 
     if [[ -f /usr/share/steam/compatibilitytool.vdf ]]; then
-        cp -f /usr/share/steam/compatibilitytool.vdf "${target}"
-        return
+        # Image may still ship the legacy appid=4628740 form; rewrite to a pure
+        # custom tool so Steam does not require missing SLR dep 4185400.
+        :
     fi
 
-    cat > "${target}" <<'EOF'
+    # No "appid": Steam must not merge this with depot 4628740's SLR dependency.
+    cat > "${target}" <<EOF
 "compatibilitytools"
 {
   "compat_tools"
   {
     "proton11_arm64"
     {
-      "appid" "4628740"
-      "install_path" "Proton11ARM"
-      "display_name" "Proton 11.0 (ARM64)"
+      "install_path" "${install_path}"
+      "display_name" "Proton 11.0 (ARM64) ★ recommended"
       "from_oslist" "windows"
       "to_oslist" "linux"
     }
@@ -1924,10 +1926,20 @@ register_proton_ge_versions() {
 register_proton11_arm64() {
     local proton_dir="${STEAM_ROOT}/steamapps/common/${PROTON11_ARM64_DIR_NAME}"
     local compat_dir="${STEAM_ROOT}/compatibilitytools.d"
+    local tool_dir="${compat_dir}/proton11_arm64"
 
     mkdir -p "${proton_dir}" "${compat_dir}"
-    ln -sfn "${proton_dir}" "${compat_dir}/Proton11ARM"
-    write_compatibilitytool_vdf "${compat_dir}/compatibilitytool.vdf"
+    # Legacy layout (appid 4628740 + Proton11ARM) made Steam require SLR 4185400.
+    # Do NOT symlink tool_dir → steamapps/common: Steam then merges the custom
+    # tool with AppID 4628740 and still demands missing dep 4185400.
+    rm -f "${compat_dir}/compatibilitytool.vdf" "${compat_dir}/Proton11ARM"
+    if [[ -L "${tool_dir}" ]]; then
+        rm -f "${tool_dir}"
+    fi
+    mkdir -p "${tool_dir}"
+    # Keep the Steam-owned payload free of a nested custom VDF (avoids dual reg).
+    rm -f "${proton_dir}/compatibilitytool.vdf"
+    write_compatibilitytool_vdf "${tool_dir}/compatibilitytool.vdf" "${proton_dir}"
     write_toolmanifest_vdf "${proton_dir}/toolmanifest.vdf"
     register_proton_cachyos_versions
     register_proton_ge_versions
@@ -2359,7 +2371,7 @@ ensure_network_for_steam_setup() {
         flash_msg 7 "After setup completes, you may need to relaunch Steam." 19
     fi
     flash_msg 8 "Installing default ARM Protons: CachyOS, GE-Proton, and Proton 11.0 (ARM64)." 14
-    flash_msg 9 "Prefer Proton 11.0 CachyOS (ARM64); use GE or Valve Proton 11.0 per-game as needed." 14
+    flash_msg 9 "Prefer Proton 11.0 (ARM64) ★ recommended; use CachyOS or GE per-game as needed." 14
 
     log_msg "Network is available for Steam setup."
 }
@@ -2510,7 +2522,8 @@ launch_steam_deck_session() {
     export STEAM_COMPAT_CLIENT_INSTALL_PATH="${STEAM_ROOT}"
     export BATOCERA_STEAM_USE_GAMESCOPE="1"
     export BATOCERA_STEAM_GAMEPADUI="${BATOCERA_STEAM_GAMEPADUI:-1}"
-    export BATOCERA_STEAM_GS_MANGOAPP="${BATOCERA_STEAM_GS_MANGOAPP:-0}"
+    # Keep MangoApp running on ARM so Steam QAM / mangohudctl can toggle HUD.
+    export BATOCERA_STEAM_GS_MANGOAPP="${BATOCERA_STEAM_GS_MANGOAPP:-1}"
     export BATOCERA_STEAM_GS_MANGOAPP_LEVEL="${BATOCERA_STEAM_GS_MANGOAPP_LEVEL:-0}"
 
     for attempt in $(seq 1 "${max_attempts}"); do
