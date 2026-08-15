@@ -13,7 +13,7 @@
 <p align="center">
   <!-- Per-board tags only — never /releases/latest (OTA is SoC-scoped). -->
   <a href="https://github.com/darkplace/batocera.pocket/releases/tag/v44-sm8750-20260815"><img src="https://img.shields.io/github/v/release/darkplace/batocera.pocket?filter=v44-sm8750-*&amp;label=SM8750&amp;color=2ea043" alt="SM8750 release"></a>
-  <a href="https://github.com/darkplace/batocera.pocket/releases/tag/v44-sm8550-20260815"><img src="https://img.shields.io/github/v/release/darkplace/batocera.pocket?filter=v44-sm8550-*&amp;label=SM8550&amp;color=2ea043" alt="SM8550 release"></a>
+  <a href="https://github.com/darkplace/batocera.pocket/releases/tag/v44-sm8550-20260816"><img src="https://img.shields.io/github/v/release/darkplace/batocera.pocket?filter=v44-sm8550-*&amp;label=SM8550&amp;color=2ea043" alt="SM8550 release"></a>
   <a href="https://github.com/darkplace/batocera.pocket/releases/tag/v44-sm8250-20260811"><img src="https://img.shields.io/github/v/release/darkplace/batocera.pocket?filter=v44-sm8250-*&amp;label=SM8250&amp;color=c69026" alt="SM8250 release"></a>
 </p>
 
@@ -72,7 +72,7 @@ Images are per SoC. Every build ships the full Batocera stack (RetroArch cores, 
 | AYANEO Pocket ACE / DS / DMG / EVO / S2K | Community | — |
 | Retroid Pocket 6 (+ TOP-DPAD DTB) | Community | — |
 
-> Deep sleep (S2RAM) is intentionally left off; the board uses the working s2idle path. Official build: [`v44-sm8550-20260815`](https://github.com/darkplace/batocera.pocket/releases/tag/v44-sm8550-20260815) (**OTA + flash**). Previous flash baseline: `v44-sm8550-20260813`.
+> Deep sleep (S2RAM) is intentionally left off; the board uses the working s2idle path. Official build: [`v44-sm8550-20260816`](https://github.com/darkplace/batocera.pocket/releases/tag/v44-sm8550-20260816) (**OTA + flash**, Steam touch / OSK). Previous: `v44-sm8550-20260815`.
 
 <details>
 <summary><b>Emulators &amp; extras</b></summary>
@@ -137,7 +137,8 @@ Per-board GitHub tags so OTA only matches the device SoC. Full history with coll
 |-----|--------|--------|
 | `v44-sm8750-20260815` | SM8750 (Odin 3) | ✅ Tested — **OTA + flash** |
 | `v44-sm8750-20260814` | SM8750 (Odin 3) | OTA RC1 |
-| `v44-sm8550-20260815` | SM8550 (Odin 2 Portal) | ✅ Tested — **OTA + flash** |
+| `v44-sm8550-20260816` | SM8550 (Odin 2 Portal) | ✅ Tested — **OTA + flash** (Steam touch / OSK) |
+| `v44-sm8550-20260815` | SM8550 (Odin 2 Portal) | OTA (Waydroid / WiFi / Screenscraper) |
 | `v44-sm8550-20260813` | SM8550 (Odin 2 Portal) | Flash baseline |
 | `v44-sm8250-20260811` | SM8250 | ⚠️ Untested |
 | `v44-sm8750-20260809` | SM8750 (Odin 3) | Flash baseline (superseded for OTA) |
@@ -156,6 +157,24 @@ Per-board GitHub tags so OTA only matches the device SoC. Full history with coll
 <summary><b>Fixes</b></summary>
 
 - Steam OSK vanishing while typing (Minecraft / MS login).
+- System OSK missing `@` / specials after base refresh.
+
+</details>
+
+### Since `v44-sm8550-20260815` (Odin 2 Portal) — `v44-sm8550-20260816`
+
+<details>
+<summary><b>Updates</b></summary>
+
+- **gamescope** Wayland `wl_touch` for Steam GamepadUI.
+- System **OSK** symbol layers (`123` / `@`).
+
+</details>
+
+<details>
+<summary><b>Fixes</b></summary>
+
+- Steam OSK vanishing while typing.
 - System OSK missing `@` / specials after base refresh.
 
 </details>

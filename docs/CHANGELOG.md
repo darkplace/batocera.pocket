@@ -96,6 +96,32 @@ When you publish a tag, copy the matching section into the Release body.
 
 ---
 
+## `v44-sm8550-20260816` — Odin 2 Portal (Steam touch + OSK)
+
+> OTA cut after `v44-sm8550-20260815`. Same gamescope Wayland `wl_touch` +
+> system OSK symbol layers as the sm8750 `20260815` cut (shared packages).
+
+<details>
+<summary><b>Updates</b></summary>
+
+- **gamescope:** wire Wayland `wl_touch` for nested Steam GamepadUI.
+- **On-screen keyboard:** start wvkbd with `simple,special` + landscape special
+  layers so `123` reaches digits / `@`.
+
+</details>
+
+<details>
+<summary><b>Fixes</b></summary>
+
+- Steam / gamescope: OSK disappearing when typing (touch dropped on nested
+  Wayland backend).
+- System OSK: missing special characters (no `@`) after Batocera base refresh.
+- Does **not** enable gamescope `--default-touch-mode` passthrough.
+
+</details>
+
+---
+
 ## `v44-sm8550-20260815` — Odin 2 Portal (OTA)
 
 > First sm8550 **OTA-capable** public cut after the 20260813 flash-only

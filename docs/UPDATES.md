@@ -14,6 +14,7 @@ Controls / user FAQ: **[CONTROLS_AND_FAQ.md](CONTROLS_AND_FAQ.md)**.
 |-----|--------|--------|
 | `v44-sm8750-20260815` | SM8750 | Odin 3 — **OTA + flash** (Steam touch / OSK) |
 | `v44-sm8750-20260814` | SM8750 | Odin 3 — OTA RC1 |
+| `v44-sm8550-20260816` | SM8550 | Odin 2 Portal — **OTA + flash** (Steam touch / OSK) |
 | `v44-sm8550-20260815` | SM8550 | Odin 2 Portal — **OTA + flash** |
 | `v44-sm8550-20260813` | SM8550 | Odin 2 Portal — flash baseline |
 | `v44-sm8250-20260811` | SM8250 | Community / untested |
