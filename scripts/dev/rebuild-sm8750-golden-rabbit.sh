@@ -73,10 +73,11 @@ else
   log "FAIL version ($(cat "$TARGET/usr/share/batocera/batocera.version" 2>/dev/null || echo missing))"
   fail=1
 fi
-grep -q 'BATOCERA_STEAM_GS_MANGOAPP:-1\|_mango_default="1"' \
-  "$TARGET/usr/bin/batocera-steam" "$TARGET/usr/bin/steam-direct-session.sh" 2>/dev/null \
-  && log "PASS mangoapp_defaults" || { log "FAIL mangoapp_defaults"; fail=1; }
-grep -q 'Do NOT symlink tool_dir\|Do not symlink tool_dir' \
+grep -q 'BATOCERA_STEAM_GS_MANGOAPP:-1' "$TARGET/usr/bin/batocera-steam" 2>/dev/null \
+  && log "PASS mangoapp_batocera_steam" || { log "FAIL mangoapp_batocera_steam"; fail=1; }
+grep -q '_mango_default="1"' "$TARGET/usr/bin/steam-direct-session.sh" 2>/dev/null \
+  && log "PASS mangoapp_steam_direct" || { log "FAIL mangoapp_steam_direct"; fail=1; }
+grep -q 'Do NOT symlink tool_dir' \
   "$TARGET/usr/bin/batocera-steam" 2>/dev/null \
   && log "PASS proton11_no_symlink" || { log "FAIL proton11_no_symlink"; fail=1; }
 [ "$fail" -eq 0 ] || exit 1
