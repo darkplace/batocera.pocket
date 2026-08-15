@@ -1052,20 +1052,6 @@ apply_steam_launch_environment
 
 export BATOCERA_STEAM_GS_BACKEND="${BATOCERA_STEAM_GS_BACKEND:-$(default_gamescope_backend)}"
 
-# Nested Wayland (Odin3/Thor default) can starve keyboard chords once a game
-# steals focus. Keep a low unfocused refresh so Steam QAM/Ctrl+1 stay responsive.
-if [[ -z "${BATOCERA_STEAM_GS_NESTED_UNFOCUSED_REFRESH:-}" ]]; then
-    case "${BATOCERA_STEAM_GS_BACKEND}" in
-        wayland|sdl)
-            case "$(batocera-info 2>/dev/null | awk -F': ' '/^Model:/ {print $2; exit}')" in
-                AYN_Odin_3|AYN_Thor)
-                    export BATOCERA_STEAM_GS_NESTED_UNFOCUSED_REFRESH="30"
-                    ;;
-            esac
-            ;;
-    esac
-fi
-
 # After exclusive DRM sessions on DSI panels (Odin3), force a connector reset so ES recovers.
 if [[ -z "${BATOCERA_STEAM_RESET_DSI_AFTER_GAMESCOPE:-}" ]]; then
     _reset_dsi="$(settings_get_effective steam.gamescope.reset_dsi_after || true)"
@@ -1112,6 +1098,9 @@ else
 fi
 
 start_session_supervisor "steam-direct-session"
+if [ -x /usr/bin/batocera-steam-back-qam ]; then
+    /usr/bin/batocera-steam-back-qam start >/dev/null 2>&1 || true
+fi
 
 if [[ "${BATOCERA_STEAM_VISIBLE_UPDATE_PREFLIGHT:-0}" != "0" && -x /usr/bin/batocera-steam-update-preflight ]]; then
     if [[ "${BATOCERA_STEAM_PREFLIGHT_STEAM_UPDATER:-auto}" == "auto" &&
@@ -1215,6 +1204,21 @@ if [[ "${BATOCERA_STEAM_GS_BACKEND}" == "drm" && -n "${detected_drm_connector}" 
 fi
 export BATOCERA_STEAM_GS_NESTED_RES="${BATOCERA_STEAM_GS_NESTED_RES:-${BATOCERA_STEAM_GS_DEFAULT_RES}}"
 export BATOCERA_STEAM_GS_NESTED_REFRESH="${BATOCERA_STEAM_GS_NESTED_REFRESH:-${detected_refresh}}"
+# Nested Wayland (Odin3/Thor) drops game frames when Steam QAM steals focus.
+# Match unfocused refresh to nested refresh (was hard-coded 30 → tiny-square /
+# frozen clients on some Proton/DX12 titles). Do not enable
+# --force-windows-fullscreen here; it makes QAM/chords flakier.
+if [[ -z "${BATOCERA_STEAM_GS_NESTED_UNFOCUSED_REFRESH:-}" ]]; then
+    case "${BATOCERA_STEAM_GS_BACKEND}" in
+        wayland|sdl)
+            case "$(batocera-info 2>/dev/null | awk -F': ' '/^Model:/ {print $2; exit}')" in
+                AYN_Odin_3|AYN_Thor)
+                    export BATOCERA_STEAM_GS_NESTED_UNFOCUSED_REFRESH="${BATOCERA_STEAM_GS_NESTED_REFRESH}"
+                    ;;
+            esac
+            ;;
+    esac
+fi
 if [[ "${BATOCERA_STEAM_FORCE_DISABLE_MANGOAPP:-0}" == "1" ]]; then
     export BATOCERA_STEAM_GS_MANGOAPP="0"
 else

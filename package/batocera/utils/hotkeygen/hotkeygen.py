@@ -722,14 +722,16 @@ class Daemon:
                 print(f"code:{event.code}, value:{event.value}, action:{action}")
             if begin:
                 if isinstance(keys, str):
-                    pass # nothing on keydown
+                    # Commands (e.g. batocera-steam-qam): fire on keydown.
+                    # Keyup is often dropped under nested gamescope / exclusive grabs.
+                    os.system(keys)
                 else:
                     if action != "exit":
                         focus_top_panel_workspace_for_lower_widget()
                     send_keys(self.target, keys, True)
             else:
                 if isinstance(keys, str):
-                    os.system(keys)
+                    pass  # already handled on keydown
                 else:
                     send_keys(self.target, keys, False)
 

@@ -1,0 +1,51 @@
+From: lukemotion <lukemotion@local>
+Subject: [PATCH] fix dim/black screensaver not covering full screen on rotated Wayland
+
+Odin 3 (sm8750): dim overlay only painted the top ~50%. Clear leftover
+UI scissors, use a proper RGBA color, and fill in horizontal strips.
+
+--- a/es-app/src/SystemScreenSaver.cpp
++++ b/es-app/src/SystemScreenSaver.cpp
+@@ -25,6 +25,7 @@
+ #include "utils/Randomizer.h"
+ #include "Paths.h"
+ #include "ApiSystem.h"
++#include <algorithm>
+ 
+ #define FADE_TIME					(500)
+ #define DATE_TIME_UPDATE_INTERVAL	(100)
+@@ -287,9 +288,19 @@
+ 	{
+ 		std::string screensaver_behavior = Settings::getInstance()->getString("ScreenSaverBehavior");
+ 
++		// Drop any leftover UI scissor before painting the overlay. On some
++		// Wayland/rotated panels (Odin 3) a single full-screen quad was also
++		// only covering ~half the framebuffer — fill in horizontal strips.
++		while (Renderer::isClippingEnabled())
++			Renderer::popClipRect();
++
+ 		Renderer::setMatrix(Transform4x4f::Identity());
+-		unsigned char color = screensaver_behavior == "dim" ? 0x000000A0 : 0x000000FF;
+-		Renderer::drawRect(0.0f, 0.0f, Renderer::getScreenWidth(), Renderer::getScreenHeight(), color, color);
++		const unsigned int color = (screensaver_behavior == "dim") ? 0x000000A0u : 0x000000FFu;
++		const float w = (float)std::max(Renderer::getScreenWidth(), Renderer::getWindowWidth());
++		const float h = (float)std::max(Renderer::getScreenHeight(), Renderer::getWindowHeight());
++		const float strip = 256.0f;
++		for (float y = 0.0f; y < h; y += strip)
++			Renderer::drawRect(0.0f, y, w, std::min(strip, h - y), color);
+ 	}
+ }
+ 
+--- a/es-core/src/Window.cpp
++++ b/es-core/src/Window.cpp
+@@ -1122,6 +1122,10 @@
+ 
+ void Window::renderScreenSaver()
+ {
++	// Ensure dim/black screensaver is not clipped by a leftover UI scissor.
++	while (Renderer::isClippingEnabled())
++		Renderer::popClipRect();
++
+ 	if (mScreenSaver)
+ 		mScreenSaver->renderScreenSaver();
+ }

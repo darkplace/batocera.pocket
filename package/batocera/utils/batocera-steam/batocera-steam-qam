@@ -1,0 +1,223 @@
+#!/usr/bin/env python3
+# Open Steam GamepadUI Quick Access Menu (QAM) via Steam's CEF debugger.
+#
+# Keyboard chords are unreliable in nested gamescope:
+# - uinput Ctrl+2 works in Steam UI only
+# - Ctrl+Shift+Tab also matches Shift+Tab (Steam menu) → both panels fight
+# - xdotool into :1 often does nothing while a game holds focus
+#
+# Steam exposes SharedJSContext on 127.0.0.1:8080; calling
+# OnQuickAccessButtonPressed() is the same path as the Deck QAM button.
+from __future__ import annotations
+
+import base64
+import json
+import os
+import socket
+import struct
+import sys
+import urllib.request
+from typing import Any
+
+
+CEF_HOST = os.environ.get("BATOCERA_STEAM_CEF_HOST", "127.0.0.1")
+CEF_PORT = int(os.environ.get("BATOCERA_STEAM_CEF_PORT", "8080"))
+LOG = os.environ.get("BATOCERA_STEAM_QAM_LOG", "/tmp/batocera-steam-qam.log")
+
+
+def log(msg: str) -> None:
+    try:
+        with open(LOG, "a", encoding="utf-8") as fh:
+            fh.write(msg + "\n")
+    except OSError:
+        pass
+
+
+def list_pages() -> list[dict[str, Any]]:
+    url = f"http://{CEF_HOST}:{CEF_PORT}/json"
+    with urllib.request.urlopen(url, timeout=1.5) as resp:
+        return json.load(resp)
+
+
+def ws_connect(ws_url: str, timeout: float = 2.0) -> tuple[socket.socket, bytearray]:
+    # ws://host:port/path
+    assert ws_url.startswith("ws://"), ws_url
+    rest = ws_url[5:]
+    hostport, _, path = rest.partition("/")
+    path = "/" + path
+    if ":" in hostport:
+        host, port_s = hostport.rsplit(":", 1)
+        port = int(port_s)
+    else:
+        host, port = hostport, 80
+
+    sock = socket.create_connection((host, port), timeout=timeout)
+    key = base64.b64encode(os.urandom(16)).decode("ascii")
+    req = (
+        f"GET {path} HTTP/1.1\r\n"
+        f"Host: {hostport}\r\n"
+        "Upgrade: websocket\r\n"
+        "Connection: Upgrade\r\n"
+        f"Sec-WebSocket-Key: {key}\r\n"
+        "Sec-WebSocket-Version: 13\r\n"
+        "\r\n"
+    )
+    sock.sendall(req.encode("ascii"))
+    data = b""
+    while b"\r\n\r\n" not in data:
+        chunk = sock.recv(4096)
+        if not chunk:
+            raise RuntimeError("websocket handshake closed")
+        data += chunk
+    header, _, leftover = data.partition(b"\r\n\r\n")
+    if b"101" not in header.split(b"\r\n", 1)[0]:
+        raise RuntimeError(f"websocket handshake failed: {header[:120]!r}")
+    sock.settimeout(timeout)
+    return sock, bytearray(leftover)
+
+
+def ws_send_text(sock: socket.socket, text: str) -> None:
+    payload = text.encode("utf-8")
+    plen = len(payload)
+    mask_bit = 0x80  # client must mask
+    header = bytearray([0x81])  # FIN + text
+    if plen < 126:
+        header.append(mask_bit | plen)
+    elif plen < 65536:
+        header.append(mask_bit | 126)
+        header.extend(struct.pack("!H", plen))
+    else:
+        header.append(mask_bit | 127)
+        header.extend(struct.pack("!Q", plen))
+    mask = os.urandom(4)
+    header.extend(mask)
+    masked = bytes(b ^ mask[i % 4] for i, b in enumerate(payload))
+    sock.sendall(header + masked)
+
+
+def ws_recv_text(sock: socket.socket, buf: bytearray) -> str:
+    def read_exact(n: int) -> bytes:
+        while len(buf) < n:
+            chunk = sock.recv(4096)
+            if not chunk:
+                raise RuntimeError("websocket closed")
+            buf.extend(chunk)
+        out = bytes(buf[:n])
+        del buf[:n]
+        return out
+
+    while True:
+        b0, b1 = read_exact(2)
+        opcode = b0 & 0x0F
+        masked = (b1 & 0x80) != 0
+        plen = b1 & 0x7F
+        if plen == 126:
+            plen = struct.unpack("!H", read_exact(2))[0]
+        elif plen == 127:
+            plen = struct.unpack("!Q", read_exact(8))[0]
+        mask = read_exact(4) if masked else b""
+        payload = read_exact(plen)
+        if masked:
+            payload = bytes(b ^ mask[i % 4] for i, b in enumerate(payload))
+        if opcode == 0x1:  # text
+            return payload.decode("utf-8", "replace")
+        if opcode == 0x8:  # close
+            raise RuntimeError("websocket close frame")
+        # ignore ping/pong/other
+
+
+def cef_evaluate(expression: str) -> Any:
+    pages = list_pages()
+    shared = next((p for p in pages if p.get("title") == "SharedJSContext"), None)
+    if shared is None:
+        raise RuntimeError("SharedJSContext not found")
+    ws_url = shared["webSocketDebuggerUrl"]
+    sock, buf = ws_connect(ws_url)
+    try:
+        msg = {
+            "id": 1,
+            "method": "Runtime.evaluate",
+            "params": {
+                "expression": expression,
+                "returnByValue": True,
+                "awaitPromise": True,
+            },
+        }
+        ws_send_text(sock, json.dumps(msg))
+        while True:
+            data = json.loads(ws_recv_text(sock, buf))
+            if data.get("id") == 1:
+                return data
+    finally:
+        try:
+            sock.close()
+        except OSError:
+            pass
+
+
+TOGGLE_JS = r"""
+(function () {
+  const store = (typeof SteamUIStore !== "undefined") ? SteamUIStore : null;
+  if (!store || !store.m_WindowStore) return "no-SteamUIStore";
+  const ws = store.m_WindowStore;
+  const w =
+    (ws.GetSteamUIWindowByType && ws.GetSteamUIWindowByType(0)) ||
+    ws.MainWindowInstance ||
+    ws.GamepadUIMainWindowInstance ||
+    (ws.SteamUIWindows && ws.SteamUIWindows[0]) ||
+    null;
+  if (!w) return "no-window";
+  if (typeof w.OnQuickAccessButtonPressed === "function") {
+    w.OnQuickAccessButtonPressed();
+    return "OnQuickAccessButtonPressed";
+  }
+  const menu = w.m_MenuStore || w.MenuStore;
+  if (menu && typeof menu.ToggleSideMenu === "function") {
+    // Ez.QuickAccess === 2
+    menu.ToggleSideMenu(2);
+    return "ToggleSideMenu(2)";
+  }
+  if (menu && typeof menu.OpenQuickAccessMenu === "function") {
+    menu.OpenQuickAccessMenu(menu.GetQuickAccessTab ? menu.GetQuickAccessTab() : 0, true);
+    return "OpenQuickAccessMenu";
+  }
+  return "no-qam-api";
+})()
+"""
+
+
+def xdotool_fallback() -> bool:
+    disp = os.environ.get("STEAM_GAME_DISPLAY_0")
+    if not disp and os.path.exists("/tmp/.X11-unix/X1"):
+        disp = ":1"
+    if not disp:
+        return False
+    os.environ["DISPLAY"] = disp
+    os.environ.setdefault("XDG_RUNTIME_DIR", "/run/user/0")
+    rc = os.system("xdotool keydown ctrl key 2 keyup ctrl >/dev/null 2>&1")
+    return rc == 0
+
+
+def main() -> int:
+    try:
+        result = cef_evaluate(TOGGLE_JS)
+        value = (
+            result.get("result", {})
+            .get("result", {})
+            .get("value")
+        )
+        log(f"cef ok value={value!r}")
+        if value in (None, "no-SteamUIStore", "no-window", "no-qam-api"):
+            raise RuntimeError(f"unexpected cef result: {value!r}")
+        return 0
+    except Exception as exc:
+        log(f"cef failed: {exc}")
+        if xdotool_fallback():
+            log("xdotool fallback ok")
+            return 0
+        log("xdotool fallback failed")
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

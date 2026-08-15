@@ -480,6 +480,9 @@ cleanup_hotkeys_on_exit() {
     cleanup_steam_portal_session
     cleanup_fex_session_leftovers
     run_ally_hotkey_hook gameStop || true
+    if [ -x /usr/bin/batocera-steam-back-qam ]; then
+        /usr/bin/batocera-steam-back-qam stop >/dev/null 2>&1 || true
+    fi
     if command -v hotkeygen >/dev/null 2>&1; then
         if ! hotkeygen_permanent_running && [ -x /etc/init.d/S90hotkeygen ]; then
             /etc/init.d/S90hotkeygen start >/dev/null 2>&1 || true
@@ -879,6 +882,9 @@ fi
 
 run_ally_hotkey_hook gameStart || true
 recover_hotkeys
+if [ -x /usr/bin/batocera-steam-back-qam ]; then
+    /usr/bin/batocera-steam-back-qam start >/dev/null 2>&1 || true
+fi
 
 ensure_system_bus_address() {
     # Steam queries org.freedesktop.DisplayManager on the system bus.

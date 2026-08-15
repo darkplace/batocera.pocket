@@ -28,7 +28,9 @@ seed_map_variants() {
         src="${SYSTEM_DIR}/${base}${suffix}"
         dst="${HOTKEY_DIR}/${base}${suffix}"
         [ -f "$src" ] || continue
-        [ -f "$dst" ] || cp -f "$src" "$dst" 2>/dev/null || true
+        # Always refresh from image so OTA/hotfixes (e.g. steam_qam on Home)
+        # are not stuck behind a stale userdata copy seeded once forever.
+        cp -f "$src" "$dst" 2>/dev/null || true
     done
 }
 

@@ -17,8 +17,7 @@ BATOCERA_ONSCREEN_KEYBOARD_DEPENDENCIES = wayland pango libxkbcommon cairo host-
 BATOCERA_ONSCREEN_KEYBOARD_PATH = \
     $(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/utils/batocera-onscreen-keyboard
 
-# Build using make
-# Patch 003 makes wvkbd respect PKG_CONFIG variable for cross-compilation
+# Build using make (upstream Makefile already honors PKG_CONFIG)
 define BATOCERA_ONSCREEN_KEYBOARD_BUILD_CMDS
 	$(TARGET_MAKE_ENV) $(MAKE) -C $(@D) \
 		CC="$(TARGET_CC)" \

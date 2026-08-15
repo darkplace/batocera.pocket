@@ -7,6 +7,33 @@ When you publish a tag, copy the matching section into the Release body.
 
 ---
 
+## `v44-sm8750-20260817` — Odin 3 (OSK `@` + QAM Back + screensaver)
+
+> On top of Golden Rabbit `v44-sm8750-20260816`.
+
+<details>
+<summary><b>Updates</b></summary>
+
+- **Steam QAM:** physical **Back** opens Quick Access via CEF (`batocera-steam-qam` +
+  `batocera-steam-back-qam`); Home stays the native Steam left menu.
+- **On-screen keyboard:** special / `@` keys emit Shift+digit (no more typing `2`
+  instead of `@`).
+- **EmulationStation:** dim/black screensaver covers the full rotated Wayland panel
+  (Odin 3).
+
+</details>
+
+<details>
+<summary><b>Fixes</b></summary>
+
+- QAM keyboard chords unreliable under nested gamescope (Ctrl+2 / Ctrl+Shift+Tab fight).
+- hotkeygen: string actions fire on keydown; init avoids duplicate `--permanent` daemons.
+- OSK patches applied from package root (Buildroot does not recurse `patches/`).
+
+</details>
+
+---
+
 ## Template (copy for the next release)
 
 ```markdown

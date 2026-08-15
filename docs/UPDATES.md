@@ -12,6 +12,7 @@ Controls / user FAQ: **[CONTROLS_AND_FAQ.md](CONTROLS_AND_FAQ.md)**.
 
 | Tag | Board | Notes |
 |-----|--------|--------|
+| `v44-sm8750-20260817` | SM8750 | Odin 3 — **OTA + flash** (OSK `@` + QAM Back + screensaver) |
 | `v44-sm8750-20260816` | SM8750 | Odin 3 — **OTA + flash** (**Golden Rabbit**) |
 | `v44-sm8750-20260815` | SM8750 | Odin 3 — **OTA + flash** (Steam touch / OSK) |
 | `v44-sm8750-20260814` | SM8750 | Odin 3 — OTA RC1 |

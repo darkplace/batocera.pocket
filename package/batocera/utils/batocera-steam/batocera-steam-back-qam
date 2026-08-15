@@ -1,0 +1,157 @@
+#!/bin/bash
+# Watch physical gamepad BTN_BACK and open Steam QAM via CEF.
+# Backup path when hotkeygen is dead or misses keyup under nested gamescope.
+set -euo pipefail
+
+PIDFILE="/var/run/batocera-steam-back-qam.pid"
+LOG="/tmp/batocera-steam-back-qam.log"
+QAM_BIN="/usr/bin/batocera-steam-qam"
+DEBOUNCE_MS="${BATOCERA_STEAM_BACK_QAM_DEBOUNCE_MS:-400}"
+
+log() {
+  echo "$(date '+%F %T') $*" >>"$LOG"
+}
+
+running() {
+  [ -f "$PIDFILE" ] || return 1
+  local pid
+  pid="$(cat "$PIDFILE" 2>/dev/null || true)"
+  [ -n "${pid:-}" ] || return 1
+  kill -0 "$pid" 2>/dev/null
+}
+
+stop() {
+  if [ -f "$PIDFILE" ]; then
+    local pid
+    pid="$(cat "$PIDFILE" 2>/dev/null || true)"
+    if [ -n "${pid:-}" ]; then
+      kill "$pid" 2>/dev/null || true
+      wait "$pid" 2>/dev/null || true
+    fi
+    rm -f "$PIDFILE"
+  fi
+  pkill -f 'python3 -c.*batocera-steam-back-qam' 2>/dev/null || true
+  log "stopped"
+}
+
+start() {
+  if running; then
+    log "already running pid=$(cat "$PIDFILE")"
+    return 0
+  fi
+  [ -x "$QAM_BIN" ] || { log "missing $QAM_BIN"; return 1; }
+
+  stop >/dev/null 2>&1 || true
+  (
+    python3 - "$@" <<'PY'
+import glob, os, select, struct, time, subprocess
+
+EV_KEY = 0x01
+BTN_BACK = 0x116  # 278
+EVENT_FMT = "llHHi"
+EVENT_SIZE = struct.calcsize(EVENT_FMT)
+DEBOUNCE = max(0.05, int(os.environ.get("BATOCERA_STEAM_BACK_QAM_DEBOUNCE_MS", "400")) / 1000.0)
+QAM = "/usr/bin/batocera-steam-qam"
+LOG = "/tmp/batocera-steam-back-qam.log"
+
+def log(msg):
+    with open(LOG, "a") as f:
+        f.write(time.strftime("%F %T ") + msg + "\n")
+
+def is_odin_or_gamepad(path):
+    base = os.path.basename(path)
+    name_path = f"/sys/class/input/{base}/device/name"
+    try:
+        with open(name_path) as f:
+            name = f.read().strip()
+    except OSError:
+        return False
+    # Prefer physical Odin pad; ignore Steam virtual x360 clones.
+    if "Odin3" in name or "Odin 3" in name or "AYN Odin" in name:
+        return True
+    return False
+
+def open_devices():
+    fds = {}
+    for path in sorted(glob.glob("/dev/input/event*")):
+        if not is_odin_or_gamepad(path):
+            continue
+        try:
+            fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
+        except OSError:
+            continue
+        fds[fd] = path
+        log(f"watching {path}")
+    return fds
+
+last = 0.0
+fds = open_devices()
+if not fds:
+    log("no Odin gamepad found; waiting")
+while True:
+    if not fds:
+        time.sleep(1.0)
+        fds = open_devices()
+        continue
+    try:
+        ready, _, _ = select.select(list(fds.keys()), [], [], 2.0)
+    except (InterruptedError, ValueError):
+        continue
+    if not ready:
+        # refresh device list occasionally
+        if int(time.time()) % 10 == 0:
+            for fd in list(fds):
+                try:
+                    os.close(fd)
+                except OSError:
+                    pass
+            fds = open_devices()
+        continue
+    for fd in ready:
+        try:
+            data = os.read(fd, EVENT_SIZE * 8)
+        except OSError:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+            fds.pop(fd, None)
+            continue
+        for off in range(0, len(data), EVENT_SIZE):
+            if off + EVENT_SIZE > len(data):
+                break
+            _sec, _usec, etype, code, value = struct.unpack_from(EVENT_FMT, data, off)
+            if etype != EV_KEY or code != BTN_BACK or value != 1:
+                continue
+            now = time.monotonic()
+            if now - last < DEBOUNCE:
+                continue
+            last = now
+            log("BTN_BACK -> batocera-steam-qam")
+            try:
+                subprocess.Popen([QAM], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            except OSError as e:
+                log(f"qam failed: {e}")
+PY
+  ) >/dev/null 2>&1 &
+  echo $! >"$PIDFILE"
+  log "started pid=$(cat "$PIDFILE") debounce_ms=${DEBOUNCE_MS}"
+}
+
+case "${1:-start}" in
+  start) start ;;
+  stop) stop ;;
+  restart) stop; start ;;
+  status)
+    if running; then
+      echo "running pid=$(cat "$PIDFILE")"
+      exit 0
+    fi
+    echo "stopped"
+    exit 1
+    ;;
+  *)
+    echo "Usage: $0 {start|stop|restart|status}"
+    exit 1
+    ;;
+esac

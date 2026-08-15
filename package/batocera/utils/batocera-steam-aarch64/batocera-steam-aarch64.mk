@@ -54,6 +54,12 @@ define BATOCERA_STEAM_AARCH64_INSTALL_TARGET_CMDS
 		$(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/utils/batocera-steam/steam-direct-session.sh \
 		$(TARGET_DIR)/usr/bin/steam-direct-session.sh
 	install -D -m 0755 \
+		$(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/utils/batocera-steam/batocera-steam-qam \
+		$(TARGET_DIR)/usr/bin/batocera-steam-qam
+	install -D -m 0755 \
+		$(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/utils/batocera-steam/batocera-steam-back-qam \
+		$(TARGET_DIR)/usr/bin/batocera-steam-back-qam
+	install -D -m 0755 \
 		$(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/utils/batocera-steam/steamos-session-select \
 		$(TARGET_DIR)/usr/bin/steamos-session-select
 	install -D -m 0755 \
