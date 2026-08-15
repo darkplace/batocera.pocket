@@ -29,6 +29,35 @@ When you publish a tag, copy the matching section into the Release body.
 
 ---
 
+## `v44-sm8550-20260818` — **Golden Rabbit** (Odin 2 Portal)
+
+> Same **Golden Rabbit** Steam ARM cut as sm8750 `v44-sm8750-20260816`, on top of
+> the Portal stick LED + rsinput baseline (`v44-sm8550-20260817`).
+
+<details>
+<summary><b>Updates</b></summary>
+
+- **Codename:** `44-dev-pocket-golden-rabbit-<commit>` (public name **Golden Rabbit**).
+- **Proton 11.0 (ARM64) ★ recommended:** pure custom compatibility tool (no
+  Steam AppID merge with depot 4628740 / missing SLR 4185400).
+- **MangoApp:** on by default on ARM SteamOS / steam-direct.
+- **Docs:** Steam + Batocera Control shortcuts in
+  [CONTROLS_AND_FAQ.md](CONTROLS_AND_FAQ.md).
+- Expects **decky-bcc ≥ 0.2.18**.
+
+</details>
+
+<details>
+<summary><b>Fixes</b></summary>
+
+- Proton 11 custom registration no longer symlink-merges into
+  `steamapps/common` (AppError_51 / SLR 4185400).
+- Steam direct session no longer defaults MangoApp off on ARM.
+
+</details>
+
+---
+
 ## `v44-sm8750-20260816` — **Golden Rabbit** (Odin 3)
 
 > Public codename: **Golden Rabbit**. Steam ARM Proton / Batocera Control / MangoApp
