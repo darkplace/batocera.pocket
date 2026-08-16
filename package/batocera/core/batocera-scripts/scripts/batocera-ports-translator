@@ -1,0 +1,124 @@
+#!/bin/bash
+#
+# Mutual exclusion for aarch64 ports: Box64 vs FEX binfmt_misc.
+# Mirrors the Windows translator idea — only one handler may own x86/x86_64 ELFs.
+#
+# Usage:
+#   batocera-ports-translator box64|fex|status
+#   batocera-ports-translator prepare <box64|fex>
+#
+set -euo pipefail
+
+BOX64_INIT="/etc/init.d/S31box64-binfmt"
+FEX_INIT="/etc/init.d/S30fex-emu"
+BINFMT_DIR="/proc/sys/fs/binfmt_misc"
+
+ensure_binfmt_misc() {
+    if [[ ! -d "${BINFMT_DIR}" || ! -f "${BINFMT_DIR}/register" ]]; then
+        mount binfmt_misc -t binfmt_misc "${BINFMT_DIR}" 2>/dev/null || true
+    fi
+    [[ -f "${BINFMT_DIR}/register" ]] || return 1
+    if [[ "$(cat "${BINFMT_DIR}/status" 2>/dev/null || true)" = "disabled" ]]; then
+        echo 1 > "${BINFMT_DIR}/status" 2>/dev/null || true
+    fi
+}
+
+disable_entry() {
+    local entry="${BINFMT_DIR}/$1"
+    [[ -f "${entry}" && -w "${entry}" ]] || return 0
+    if grep -q '^enabled' "${entry}" 2>/dev/null; then
+        echo 0 > "${entry}" 2>/dev/null || true
+    fi
+}
+
+enable_entry() {
+    local entry="${BINFMT_DIR}/$1"
+    [[ -f "${entry}" && -w "${entry}" ]] || return 0
+    if grep -q '^disabled' "${entry}" 2>/dev/null; then
+        echo 1 > "${entry}" 2>/dev/null || true
+    fi
+}
+
+run_init() {
+    local script="$1" action="$2"
+    [[ -x "${script}" ]] || return 0
+    "${script}" "${action}" >/dev/null 2>&1 || true
+}
+
+prepare_box64() {
+    ensure_binfmt_misc || {
+        echo "batocera-ports-translator: binfmt_misc unavailable" >&2
+        return 1
+    }
+
+    # Stop FEX service / unregister, then disable any leftover FEX/qemu handlers.
+    run_init "${FEX_INIT}" stop
+    for name in FEX-x86 FEX-x86_64 x86_64 x86; do
+        disable_entry "${name}"
+    done
+
+    run_init "${BOX64_INIT}" start
+    enable_entry box64
+    enable_entry box32
+
+    echo "ports translator: box64 (FEX binfmt stopped)"
+}
+
+prepare_fex() {
+    ensure_binfmt_misc || {
+        echo "batocera-ports-translator: binfmt_misc unavailable" >&2
+        return 1
+    }
+
+    # Stop Box64 service / unregister so FEX owns x86 ELFs.
+    run_init "${BOX64_INIT}" stop
+    for name in box64 box32; do
+        disable_entry "${name}"
+    done
+
+    run_init "${FEX_INIT}" start
+    enable_entry FEX-x86_64
+    enable_entry FEX-x86
+
+    echo "ports translator: fex (Box64 binfmt stopped)"
+}
+
+show_status() {
+    local name entry
+    echo "=== ports translator binfmt status ==="
+    for name in box64 box32 FEX-x86_64 FEX-x86; do
+        entry="${BINFMT_DIR}/${name}"
+        if [[ -f "${entry}" ]]; then
+            if grep -q '^enabled' "${entry}" 2>/dev/null; then
+                echo "${name}: enabled"
+            else
+                echo "${name}: disabled"
+            fi
+        else
+            echo "${name}: not registered"
+        fi
+    done
+}
+
+mode="${1:-}"
+case "${mode}" in
+    box64|fex)
+        "prepare_${mode}"
+        ;;
+    prepare)
+        case "${2:-}" in
+            box64|fex) "prepare_${2}" ;;
+            *)
+                echo "Usage: $0 prepare {box64|fex}" >&2
+                exit 1
+                ;;
+        esac
+        ;;
+    status)
+        show_status
+        ;;
+    *)
+        echo "Usage: $0 {box64|fex|status|prepare <box64|fex>}" >&2
+        exit 1
+        ;;
+esac

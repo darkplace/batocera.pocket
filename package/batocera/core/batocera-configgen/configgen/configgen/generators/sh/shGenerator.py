@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import json
+import logging
+import os
 from pathlib import Path
 import re
+import subprocess
 from typing import TYPE_CHECKING
 
 from ... import Command
@@ -14,12 +17,35 @@ from ..Generator import Generator
 if TYPE_CHECKING:
     from ...types import HotkeysContext
 
+_logger = logging.getLogger(__name__)
+
 
 def _is_sm8550() -> bool:
     try:
         return (BATOCERA_SHARE_DIR / "batocera.arch").read_text().strip() in ("sm8550", "sm8750")
     except OSError:
         return False
+
+
+def _is_aarch64() -> bool:
+    return os.uname().machine in {"aarch64", "arm64"}
+
+
+def _apply_ports_translator(config) -> None:
+    """Ensure Box64 and FEX binfmt handlers are mutually exclusive for ports."""
+    if not _is_aarch64():
+        return
+    mode = config.get_str("ports_translator", "box64").strip().lower()
+    if mode not in {"box64", "fex"}:
+        mode = "box64"
+    helper = Path("/usr/bin/batocera-ports-translator")
+    if not helper.is_file():
+        _logger.warning("batocera-ports-translator missing; skipping binfmt switch")
+        return
+    try:
+        subprocess.run([str(helper), mode], check=False, timeout=20)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        _logger.warning("ports translator switch failed (%s): %s", mode, exc)
 
 
 def _is_portmaster_launcher(path) -> bool:
@@ -82,6 +108,9 @@ class ShGenerator(Generator):
         # PortMaster uses this. Its installer also greps for gamecontrollerdb.txt
         # before deciding whether to replace Batocera's shGenerator.py.
         write_sdl_controller_db(playersControllers)
+
+        if system.name == "ports":
+            _apply_ports_translator(system.config)
 
         commandArray = ["/bin/bash", shrom]
         sdl_controller_config = generate_sdl_game_controller_config(playersControllers)

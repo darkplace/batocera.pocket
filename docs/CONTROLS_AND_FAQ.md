@@ -64,6 +64,27 @@ Full plugin docs: [darkplace/decky-bcc](https://github.com/darkplace/decky-bcc).
 
 ---
 
+## Ports X86 Translator (Box64 ↔ FEX)
+
+On **aarch64** (Odin 2 / Odin 3), x86/x86_64 **Ports** binaries need a binfmt
+translator. Only one should own ELF launch at a time (same idea as **Windows
+Translator** for Wine).
+
+| Where | What it does |
+|-------|----------------|
+| **Tools → Ports X86 Translator** | Cycles **Box64 ↔ FEX**, saves `ports.ports_translator`, and applies binfmt now (icon + description like other Tools scrapes). |
+| **Ports game → Advanced Options → PORTS TRANSLATOR** | Per-game / system choice (`box64` or `fex`). Applied again when the port launches (`shGenerator` → `batocera-ports-translator`). |
+
+- **Box64 (default):** stops FEX binfmt; Box64 handles x86/x86_64.
+- **FEX-Emu:** stops Box64 binfmt; FEX handles them (needs `fex-emu` + rootfs).
+
+After an OTA on a device that already had a Tools folder: if the launcher is
+missing, copy `Ports_X86_Translator.sh` (+ `.keys`, `images/windows-translator.png`)
+and the gamelist entry from `/usr/share/batocera/datainit/roms/emulator/` into
+`/userdata/roms/emulator/`, then refresh Tools.
+
+---
+
 ## Batocera logical name ↔ physical button
 
 | Batocera name | Typical Odin button |

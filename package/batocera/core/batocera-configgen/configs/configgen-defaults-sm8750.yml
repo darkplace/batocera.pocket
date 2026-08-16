@@ -205,8 +205,8 @@ switch:
     ryujinx_api: Vulkan
     yuzu_backend: 1
 xbox360:
-  emulator: xenia-canary
-  core:     xenia-canary
+  emulator: xenia-edge
+  core:     xenia-edge
   options:
     hud_support: true
     xenia_api: Vulkan

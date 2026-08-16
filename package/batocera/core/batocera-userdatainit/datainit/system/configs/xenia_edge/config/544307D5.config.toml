@@ -1,4 +1,6 @@
 # Ninja Gaiden 2 — XenDroid GAME_COMPAT (portable to Linux/Turnip)
+# Models + Adreno depth hang. Intro/job-system freeze needs code fix:
+# 0014-posix-semaphore-fifo-acquisition-xendroid.patch
 [GPU]
 clear_memory_page_state = true
 depth_float24_convert_in_pixel_shader = true

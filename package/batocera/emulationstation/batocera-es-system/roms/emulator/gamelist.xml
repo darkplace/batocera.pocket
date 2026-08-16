@@ -123,4 +123,11 @@
     <image>./images/lutris.png</image>
     <thumbnail>./images/lutris.png</thumbnail>
   </game>
+  <game>
+    <path>./Ports_X86_Translator.sh</path>
+    <name>Ports X86 Translator</name>
+    <desc>Switch Ports between Box64 and FEX-Emu binfmt (only one active). Same idea as Windows Translator for Wine.</desc>
+    <image>./images/windows-translator.png</image>
+    <thumbnail>./images/windows-translator.png</thumbnail>
+  </game>
 </gameList>

@@ -17,6 +17,14 @@ export BATOCERA_STEAM_CLIENT_BRANCH="${BATOCERA_STEAM_CLIENT_BRANCH:-auto}"
 export PROTON11_ARM64_APPID="${BATOCERA_STEAM_PROTON11_ARM64_APPID:-4628740}"
 export PROTON11_ARM64_DIR_NAME="Proton 11.0 (ARM64)"
 export PROTON11_ARM64_INSTALL_URI="steam://install/${PROTON11_ARM64_APPID}"
+# Valve Proton Experimental (x86) — Rockstar Launcher fixes; runs via SLR/FEX on aarch64.
+export PROTON_EXPERIMENTAL_APPID="${BATOCERA_STEAM_PROTON_EXPERIMENTAL_APPID:-1493710}"
+export PROTON_EXPERIMENTAL_DIR_NAME="Proton - Experimental"
+export PROTON_EXPERIMENTAL_INSTALL_URI="steam://install/${PROTON_EXPERIMENTAL_APPID}"
+export PROTON_EXPERIMENTAL_SLR_APPID="${BATOCERA_STEAM_PROTON_EXPERIMENTAL_SLR_APPID:-4183110}"
+export PROTON_EXPERIMENTAL_SLR_INSTALL_URI="steam://install/${PROTON_EXPERIMENTAL_SLR_APPID}"
+# Register Experimental as selectable tip (set 0 to skip). Payload still via Steam if missing.
+export BATOCERA_STEAM_PROTON_EXPERIMENTAL="${BATOCERA_STEAM_PROTON_EXPERIMENTAL:-1}"
 export BATOCERA_STEAM_PROTON_CACHYOS_CONFIG="${BATOCERA_STEAM_PROTON_CACHYOS_CONFIG:-/userdata/system/configs/steam/proton-cachyos.conf}"
 export BATOCERA_STEAM_PROTON_GE_CONFIG="${BATOCERA_STEAM_PROTON_GE_CONFIG:-/userdata/system/configs/steam/proton-ge.conf}"
 # Default Steam Proton-CachyOS ARM64 tip (override via proton-cachyos.conf / steam-tools).
@@ -26,8 +34,8 @@ export BATOCERA_STEAM_PROTON_CACHYOS_DEFAULT_VERSION="${BATOCERA_STEAM_PROTON_CA
 # Bump when GE publishes a newer GE-Proton*-aarch64.tar.gz.
 export BATOCERA_STEAM_PROTON_GE_DEFAULT_VERSION="${BATOCERA_STEAM_PROTON_GE_DEFAULT_VERSION:-GE-Proton11-5}"
 export BATOCERA_STEAM_PROTON_GE_DEFAULT_URL="${BATOCERA_STEAM_PROTON_GE_DEFAULT_URL:-https://github.com/GloriousEggroll/proton-ge-custom/releases/download/GE-Proton11-5/GE-Proton11-5-aarch64.tar.gz}"
-# Default ARM Proton trio is ON: CachyOS + GE + Valve Proton 11.0 (ARM64) AppID 4628740
-# (Armada's Valve tip — not Proton Experimental 1493710).
+# Default ARM Proton trio is ON: CachyOS + GE + Valve Proton 11.0 (ARM64) AppID 4628740.
+# Proton Experimental (1493710) is optional x86 tip for Rockstar Launcher (slower via FEX/SLR).
 # Set BATOCERA_STEAM_PROTON_CACHYOS=0 or BATOCERA_STEAM_PROTON_GE=0 to skip a tip.
 export BATOCERA_STEAM_PROTON_GE="${BATOCERA_STEAM_PROTON_GE:-1}"
 # Auto-install Decky PluginLoader + Batocera Control (decky-bcc) on Steam launch (set 0 to skip).
@@ -124,6 +132,9 @@ export PROTON_CACHYOS_VERSION_FULL="${BATOCERA_STEAM_PROTON_CACHYOS_VERSION:-${B
 export PROTON_CACHYOS_TAR="proton-cachyos-${PROTON_CACHYOS_VERSION_FULL}-arm64.tar.xz"
 export PROTON_CACHYOS_DIR="proton-cachyos-${PROTON_CACHYOS_VERSION_FULL}-arm64"
 export PROTON_CACHYOS_URL="${BATOCERA_STEAM_PROTON_CACHYOS_URL:-https://github.com/CachyOS/proton-cachyos/releases/download/cachyos-${PROTON_CACHYOS_VERSION_FULL}/${PROTON_CACHYOS_TAR}}"
+# Stable Steam-facing dir names (underscore) so the picker groups them with proton11 / experimental
+# (Steam sorts compatibilitytools.d by folder name, typically Z→A).
+export PROTON_CACHYOS_STEAM_DIR="${BATOCERA_STEAM_PROTON_CACHYOS_STEAM_DIR:-proton_cachyos_arm64}"
 export PROTON_GE_VERSION_FULL="${BATOCERA_STEAM_PROTON_GE_VERSION:-${BATOCERA_STEAM_PROTON_GE_DEFAULT_VERSION}}"
 export PROTON_GE_URL="${BATOCERA_STEAM_PROTON_GE_URL:-${BATOCERA_STEAM_PROTON_GE_DEFAULT_URL}}"
 # Archive basename from URL (supports GE-Proton11-5-aarch64.tar.gz); install dir is the version tip.
@@ -131,6 +142,7 @@ export PROTON_GE_TAR="$(basename "${PROTON_GE_URL%%\?*}")"
 export PROTON_GE_DIR="${PROTON_GE_VERSION_FULL}"
 export PROTON_GE_DIR="${PROTON_GE_DIR%-aarch64}"
 export PROTON_GE_DIR="${PROTON_GE_DIR%-x86_64}"
+export PROTON_GE_STEAM_DIR="${BATOCERA_STEAM_PROTON_GE_STEAM_DIR:-proton_ge_arm64}"
 export BATOCERA_STEAM_FEX_ROOTFS_NAME="${BATOCERA_STEAM_FEX_ROOTFS_NAME:-Fedora_43.sqsh}"
 export BATOCERA_STEAM_FEX_ROOTFS_URL="${BATOCERA_STEAM_FEX_ROOTFS_URL:-https://rootfs.fex-emu.gg/Fedora_43/2026-01-20/Fedora_43.sqsh}"
 export PROTON_USE_ARM64="${PROTON_USE_ARM64:-1}"
@@ -199,7 +211,10 @@ official_proton11_arm64_payload_exists() {
 proton_cachyos_any_payload_exists() {
     local proton_dir
 
-    for proton_dir in "${STEAM_ROOT}/compatibilitytools.d"/proton-cachyos-*-arm64; do
+    for proton_dir in \
+        "${STEAM_ROOT}/compatibilitytools.d/${PROTON_CACHYOS_STEAM_DIR}" \
+        "${STEAM_ROOT}/compatibilitytools.d"/proton-cachyos-*-arm64
+    do
         [[ -x "${proton_dir}/proton" ]] && return 0
     done
 
@@ -209,7 +224,10 @@ proton_cachyos_any_payload_exists() {
 proton_ge_any_payload_exists() {
     local proton_dir
 
-    for proton_dir in "${STEAM_ROOT}/compatibilitytools.d"/GE-Proton*; do
+    for proton_dir in \
+        "${STEAM_ROOT}/compatibilitytools.d/${PROTON_GE_STEAM_DIR}" \
+        "${STEAM_ROOT}/compatibilitytools.d"/GE-Proton*
+    do
         [[ -x "${proton_dir}/proton" ]] && return 0
     done
 
@@ -217,7 +235,7 @@ proton_ge_any_payload_exists() {
 }
 
 proton11_arm64_payload_exists() {
-    if proton_cachyos_enabled && [[ -x "${STEAM_ROOT}/compatibilitytools.d/${PROTON_CACHYOS_DIR}/proton" ]]; then
+    if proton_cachyos_enabled && [[ -x "${STEAM_ROOT}/compatibilitytools.d/${PROTON_CACHYOS_STEAM_DIR}/proton" || -x "${STEAM_ROOT}/compatibilitytools.d/${PROTON_CACHYOS_DIR}/proton" ]]; then
         return 0
     fi
 
@@ -225,7 +243,7 @@ proton11_arm64_payload_exists() {
         return 0
     fi
 
-    if proton_ge_enabled && [[ -x "${STEAM_ROOT}/compatibilitytools.d/${PROTON_GE_DIR}/proton" ]]; then
+    if proton_ge_enabled && [[ -x "${STEAM_ROOT}/compatibilitytools.d/${PROTON_GE_STEAM_DIR}/proton" || -x "${STEAM_ROOT}/compatibilitytools.d/${PROTON_GE_DIR}/proton" ]]; then
         return 0
     fi
 
@@ -952,6 +970,18 @@ build_steam_args() {
     if ! official_proton11_arm64_payload_exists; then
         log_msg "Proton 11.0 (ARM64) payload missing; requesting Steam install for AppID ${PROTON11_ARM64_APPID}."
         out_args+=("${PROTON11_ARM64_INSTALL_URI}")
+    fi
+
+    # Optional x86 Proton Experimental (Rockstar Launcher); needs SLR 4.0 on ARM (FEX path).
+    if proton_experimental_enabled; then
+        if ! official_proton_experimental_slr_exists; then
+            log_msg "Steam Linux Runtime for Proton Experimental missing; requesting AppID ${PROTON_EXPERIMENTAL_SLR_APPID}."
+            out_args+=("${PROTON_EXPERIMENTAL_SLR_INSTALL_URI}")
+        fi
+        if ! official_proton_experimental_payload_exists; then
+            log_msg "Proton Experimental (x86) missing; requesting Steam install for AppID ${PROTON_EXPERIMENTAL_APPID}."
+            out_args+=("${PROTON_EXPERIMENTAL_INSTALL_URI}")
+        fi
     fi
 
     if [[ -n "${game_target}" ]]; then
@@ -1682,6 +1712,8 @@ prepare_arm64_steam_layout() {
 write_compatibilitytool_vdf() {
     local target="$1"
     local install_path="${2:-.}"
+    local tool_id="${3:-proton11_arm64}"
+    local display_name="${4:-Proton 11.0 (ARM64) ★ Recommended}"
 
     if [[ -f /usr/share/steam/compatibilitytool.vdf ]]; then
         # Image may still ship the legacy appid=4628740 form; rewrite to a pure
@@ -1695,10 +1727,10 @@ write_compatibilitytool_vdf() {
 {
   "compat_tools"
   {
-    "proton11_arm64"
+    "${tool_id}"
     {
       "install_path" "${install_path}"
-      "display_name" "Proton 11.0 (ARM64) ★ recommended"
+      "display_name" "${display_name}"
       "from_oslist" "windows"
       "to_oslist" "linux"
     }
@@ -1728,8 +1760,19 @@ EOF
 
 proton_cachyos_version_from_dir() {
     local proton_dir="${1%/}"
-    local version="${proton_dir##*/}"
+    local base="${proton_dir##*/}"
+    local version
 
+    if [[ "${base}" == "${PROTON_CACHYOS_STEAM_DIR}" ]]; then
+        if [[ -f "${proton_dir}/.batocera-proton-version" ]]; then
+            tr -d '\n' < "${proton_dir}/.batocera-proton-version"
+            return 0
+        fi
+        printf '%s\n' "${PROTON_CACHYOS_VERSION_FULL}"
+        return 0
+    fi
+
+    version="${base}"
     version="${version#proton-cachyos-}"
     version="${version%-arm64}"
     printf '%s\n' "${version}"
@@ -1737,7 +1780,53 @@ proton_cachyos_version_from_dir() {
 
 proton_ge_version_from_dir() {
     local proton_dir="${1%/}"
-    printf '%s\n' "${proton_dir##*/}"
+    local base="${proton_dir##*/}"
+
+    if [[ "${base}" == "${PROTON_GE_STEAM_DIR}" ]]; then
+        if [[ -f "${proton_dir}/.batocera-proton-version" ]]; then
+            tr -d '\n' < "${proton_dir}/.batocera-proton-version"
+            return 0
+        fi
+        printf '%s\n' "${PROTON_GE_VERSION_FULL}"
+        return 0
+    fi
+
+    printf '%s\n' "${base}"
+}
+
+# Move current tip installs into underscore Steam dirs so they sort with proton11 / experimental.
+promote_recommended_proton_steam_dirs() {
+    local compat_dir="${STEAM_ROOT}/compatibilitytools.d"
+    local tip_dir
+    local steam_dir
+
+    mkdir -p "${compat_dir}"
+
+    tip_dir="${compat_dir}/${PROTON_CACHYOS_DIR}"
+    steam_dir="${compat_dir}/${PROTON_CACHYOS_STEAM_DIR}"
+    if [[ -x "${tip_dir}/proton" ]]; then
+        if [[ "${tip_dir}" != "${steam_dir}" ]]; then
+            rm -rf "${steam_dir}"
+            mv "${tip_dir}" "${steam_dir}"
+            log_msg "Promoted Proton-CachyOS tip to Steam dir ${PROTON_CACHYOS_STEAM_DIR}."
+        fi
+        printf '%s\n' "${PROTON_CACHYOS_VERSION_FULL}" > "${steam_dir}/.batocera-proton-version"
+    elif [[ -x "${steam_dir}/proton" && ! -f "${steam_dir}/.batocera-proton-version" ]]; then
+        printf '%s\n' "${PROTON_CACHYOS_VERSION_FULL}" > "${steam_dir}/.batocera-proton-version"
+    fi
+
+    tip_dir="${compat_dir}/${PROTON_GE_DIR}"
+    steam_dir="${compat_dir}/${PROTON_GE_STEAM_DIR}"
+    if [[ -x "${tip_dir}/proton" ]]; then
+        if [[ "${tip_dir}" != "${steam_dir}" ]]; then
+            rm -rf "${steam_dir}"
+            mv "${tip_dir}" "${steam_dir}"
+            log_msg "Promoted ${PROTON_GE_VERSION_FULL} tip to Steam dir ${PROTON_GE_STEAM_DIR}."
+        fi
+        printf '%s\n' "${PROTON_GE_VERSION_FULL}" > "${steam_dir}/.batocera-proton-version"
+    elif [[ -x "${steam_dir}/proton" && ! -f "${steam_dir}/.batocera-proton-version" ]]; then
+        printf '%s\n' "${PROTON_GE_VERSION_FULL}" > "${steam_dir}/.batocera-proton-version"
+    fi
 }
 
 write_proton_cachyos_toolmanifest_vdf() {
@@ -1781,7 +1870,11 @@ write_proton_cachyos_compatibilitytool_vdf() {
     case "${version}" in
         11.0-*)
             tool_id="proton-cachyos-11.0-arm64"
-            display_name="Proton 11.0 CachyOS (ARM64)"
+            if [[ "${version}" == "${PROTON_CACHYOS_VERSION_FULL}" ]]; then
+                display_name="Proton 11.0 CachyOS (ARM64) ★ Recommended"
+            else
+                display_name="Proton-CachyOS ${version} (ARM64)"
+            fi
             ;;
     esac
 
@@ -1808,6 +1901,12 @@ write_proton_ge_compatibilitytool_vdf() {
     local version="$2"
     local tool_id="ge-proton-${version#GE-Proton}"
     local target="${proton_dir}/compatibilitytool.vdf"
+    local display_name="${version}"
+
+    if [[ "${version}" == "${PROTON_GE_VERSION_FULL}" ]]; then
+        # "Proton …" prefix keeps GE next to the other recommended tips in Steam's A–Z picker.
+        display_name="Proton ${version} ★ Recommended"
+    fi
 
     cat > "${target}" <<EOF
 "compatibilitytools"
@@ -1817,7 +1916,7 @@ write_proton_ge_compatibilitytool_vdf() {
     "${tool_id}"
     {
       "install_path" "."
-      "display_name" "${version}"
+      "display_name" "${display_name}"
       "from_oslist" "windows"
       "to_oslist" "linux"
     }
@@ -1881,15 +1980,22 @@ register_proton_cachyos_versions() {
     local proton_dir
     local version
     local registered=0
+    local compat_dir="${STEAM_ROOT}/compatibilitytools.d"
 
-    for proton_dir in "${STEAM_ROOT}/compatibilitytools.d"/proton-cachyos-*-arm64; do
+    promote_recommended_proton_steam_dirs
+
+    # Stable Steam dir first, then any leftover versioned installs.
+    for proton_dir in \
+        "${compat_dir}/${PROTON_CACHYOS_STEAM_DIR}" \
+        "${compat_dir}"/proton-cachyos-*-arm64
+    do
         [[ -d "${proton_dir}" ]] || continue
 
         version="$(proton_cachyos_version_from_dir "${proton_dir}")"
         if [[ -x "${proton_dir}/proton" ]]; then
             repair_proton_cachyos_dir "${proton_dir}" || true
             registered=$((registered + 1))
-            log_msg "Registered Proton-CachyOS ${version} as a Steam compatibility tool."
+            log_msg "Registered Proton-CachyOS ${version} as a Steam compatibility tool ($(basename "${proton_dir}"))."
         else
             log_msg "Ignoring incomplete Proton-CachyOS ${version}: missing executable proton script."
         fi
@@ -1904,15 +2010,21 @@ register_proton_ge_versions() {
     local proton_dir
     local version
     local registered=0
+    local compat_dir="${STEAM_ROOT}/compatibilitytools.d"
 
-    for proton_dir in "${STEAM_ROOT}/compatibilitytools.d"/GE-Proton*; do
+    promote_recommended_proton_steam_dirs
+
+    for proton_dir in \
+        "${compat_dir}/${PROTON_GE_STEAM_DIR}" \
+        "${compat_dir}"/GE-Proton*
+    do
         [[ -d "${proton_dir}" ]] || continue
 
         version="$(proton_ge_version_from_dir "${proton_dir}")"
         if [[ -x "${proton_dir}/proton" ]]; then
             repair_proton_ge_dir "${proton_dir}" || true
             registered=$((registered + 1))
-            log_msg "Registered ${version} as a Steam compatibility tool."
+            log_msg "Registered ${version} as a Steam compatibility tool ($(basename "${proton_dir}"))."
         else
             log_msg "Ignoring incomplete ${version}: missing executable proton script."
         fi
@@ -1939,20 +2051,69 @@ register_proton11_arm64() {
     mkdir -p "${tool_dir}"
     # Keep the Steam-owned payload free of a nested custom VDF (avoids dual reg).
     rm -f "${proton_dir}/compatibilitytool.vdf"
-    write_compatibilitytool_vdf "${tool_dir}/compatibilitytool.vdf" "${proton_dir}"
+    write_compatibilitytool_vdf "${tool_dir}/compatibilitytool.vdf" "${proton_dir}" \
+        "proton11_arm64" "Proton 11.0 (ARM64) ★ Recommended"
     write_toolmanifest_vdf "${proton_dir}/toolmanifest.vdf"
     register_proton_cachyos_versions
     register_proton_ge_versions
+    register_proton_experimental_x86
 
-    if proton_cachyos_enabled && [[ -x "${STEAM_ROOT}/compatibilitytools.d/${PROTON_CACHYOS_DIR}/proton" ]]; then
+    if proton_cachyos_enabled && [[ -x "${STEAM_ROOT}/compatibilitytools.d/${PROTON_CACHYOS_STEAM_DIR}/proton" || -x "${STEAM_ROOT}/compatibilitytools.d/${PROTON_CACHYOS_DIR}/proton" ]]; then
         log_msg "Selected Proton-CachyOS ${PROTON_CACHYOS_VERSION_FULL} is available."
-    elif proton_ge_enabled && [[ -x "${STEAM_ROOT}/compatibilitytools.d/${PROTON_GE_DIR}/proton" ]]; then
+    elif proton_ge_enabled && [[ -x "${STEAM_ROOT}/compatibilitytools.d/${PROTON_GE_STEAM_DIR}/proton" || -x "${STEAM_ROOT}/compatibilitytools.d/${PROTON_GE_DIR}/proton" ]]; then
         log_msg "Selected GE-Proton ${PROTON_GE_VERSION_FULL} is available."
     elif [[ -e "${proton_dir}/proton" ]]; then
         chmod +x "${proton_dir}/proton" 2>/dev/null || true
         log_msg "Registered installed Proton 11.0 (ARM64) as compatibility tool proton11_arm64."
     else
         log_msg "Prepared Proton 11.0 (ARM64) compatibility-tool registration; Proton payload is not installed yet."
+    fi
+}
+
+proton_experimental_enabled() {
+    case "${BATOCERA_STEAM_PROTON_EXPERIMENTAL:-1}" in
+        0|false|FALSE|False|no|NO|No|off|OFF|Off)
+            return 1
+            ;;
+        *)
+            return 0
+            ;;
+    esac
+}
+
+official_proton_experimental_payload_exists() {
+    [[ -e "${STEAM_ROOT}/steamapps/common/${PROTON_EXPERIMENTAL_DIR_NAME}/proton" ]]
+}
+
+official_proton_experimental_slr_exists() {
+    [[ -d "${STEAM_ROOT}/steamapps/common/SteamLinuxRuntime_4" ]] || \
+        [[ -d "${STEAM_ROOT}/steamapps/common/SteamLinuxRuntime" ]]
+}
+
+register_proton_experimental_x86() {
+    local proton_dir="${STEAM_ROOT}/steamapps/common/${PROTON_EXPERIMENTAL_DIR_NAME}"
+    local compat_dir="${STEAM_ROOT}/compatibilitytools.d"
+    local tool_dir="${compat_dir}/proton_experimental_x86"
+
+    proton_experimental_enabled || return 0
+
+    mkdir -p "${compat_dir}"
+    # Do not rewrite toolmanifest: Experimental must keep require_tool_appid SLR (4183110).
+    # Do not put appid in compatibilitytool.vdf (avoids Steam merging / broken deps).
+    if [[ -L "${tool_dir}" ]]; then
+        rm -f "${tool_dir}"
+    fi
+    mkdir -p "${tool_dir}"
+    rm -f "${proton_dir}/compatibilitytool.vdf" 2>/dev/null || true
+
+    write_compatibilitytool_vdf "${tool_dir}/compatibilitytool.vdf" "${proton_dir}" \
+        "proton_experimental_x86" "Proton Experimental (x86 · FEX/SLR) ★ Rockstar"
+
+    if official_proton_experimental_payload_exists; then
+        chmod +x "${proton_dir}/proton" 2>/dev/null || true
+        log_msg "Registered Proton Experimental (x86) as compatibility tool proton_experimental_x86 (Rockstar / FEX path)."
+    else
+        log_msg "Prepared Proton Experimental (x86) registration; payload missing (steam://install/${PROTON_EXPERIMENTAL_APPID})."
     fi
 }
 
@@ -2084,12 +2245,12 @@ steam_setup_state() {
     fi
 
     # Default ARM Proton trio: require the configured tip versions (OTA bumps re-download).
-    if proton_cachyos_enabled && [[ ! -x "${STEAM_ROOT}/compatibilitytools.d/${PROTON_CACHYOS_DIR}/proton" ]]; then
+    if proton_cachyos_enabled && [[ ! -x "${STEAM_ROOT}/compatibilitytools.d/${PROTON_CACHYOS_STEAM_DIR}/proton" && ! -x "${STEAM_ROOT}/compatibilitytools.d/${PROTON_CACHYOS_DIR}/proton" ]]; then
         printf 'support\n'
         return 0
     fi
 
-    if proton_ge_enabled && [[ ! -x "${STEAM_ROOT}/compatibilitytools.d/${PROTON_GE_DIR}/proton" ]]; then
+    if proton_ge_enabled && [[ ! -x "${STEAM_ROOT}/compatibilitytools.d/${PROTON_GE_STEAM_DIR}/proton" && ! -x "${STEAM_ROOT}/compatibilitytools.d/${PROTON_GE_DIR}/proton" ]]; then
         printf 'support\n'
         return 0
     fi
@@ -2109,7 +2270,7 @@ log_default_arm_proton_status() {
     local valve_state="missing"
 
     if proton_cachyos_enabled; then
-        if [[ -x "${STEAM_ROOT}/compatibilitytools.d/${PROTON_CACHYOS_DIR}/proton" ]]; then
+        if [[ -x "${STEAM_ROOT}/compatibilitytools.d/${PROTON_CACHYOS_STEAM_DIR}/proton" || -x "${STEAM_ROOT}/compatibilitytools.d/${PROTON_CACHYOS_DIR}/proton" ]]; then
             cachyos_state="ok (${PROTON_CACHYOS_VERSION_FULL})"
         else
             cachyos_state="pending (${PROTON_CACHYOS_VERSION_FULL})"
@@ -2117,7 +2278,7 @@ log_default_arm_proton_status() {
     fi
 
     if proton_ge_enabled; then
-        if [[ -x "${STEAM_ROOT}/compatibilitytools.d/${PROTON_GE_DIR}/proton" ]]; then
+        if [[ -x "${STEAM_ROOT}/compatibilitytools.d/${PROTON_GE_STEAM_DIR}/proton" || -x "${STEAM_ROOT}/compatibilitytools.d/${PROTON_GE_DIR}/proton" ]]; then
             ge_state="ok (${PROTON_GE_VERSION_FULL})"
         else
             ge_state="pending (${PROTON_GE_VERSION_FULL})"
@@ -2130,7 +2291,22 @@ log_default_arm_proton_status() {
         valve_state="pending (steam://install/${PROTON11_ARM64_APPID})"
     fi
 
-    log_msg "Default ARM Proton status: CachyOS=${cachyos_state}; GE=${ge_state}; Valve=${valve_state}"
+    local experimental_state="disabled"
+    if proton_experimental_enabled; then
+        if official_proton_experimental_payload_exists; then
+            experimental_state="ok (${PROTON_EXPERIMENTAL_DIR_NAME}"
+            if official_proton_experimental_slr_exists; then
+                experimental_state+="; SLR ok"
+            else
+                experimental_state+="; SLR missing"
+            fi
+            experimental_state+=")"
+        else
+            experimental_state="pending (steam://install/${PROTON_EXPERIMENTAL_APPID})"
+        fi
+    fi
+
+    log_msg "Default ARM Proton status: CachyOS=${cachyos_state}; GE=${ge_state}; Valve=${valve_state}; Experimental-x86=${experimental_state}"
 }
 
 decky_auto_enabled() {
@@ -2371,7 +2547,7 @@ ensure_network_for_steam_setup() {
         flash_msg 7 "After setup completes, you may need to relaunch Steam." 19
     fi
     flash_msg 8 "Installing default ARM Protons: CachyOS, GE-Proton, and Proton 11.0 (ARM64)." 14
-    flash_msg 9 "Prefer Proton 11.0 (ARM64) ★ recommended; use CachyOS or GE per-game as needed." 14
+    flash_msg 9 "Prefer Proton 11.0 (ARM64) ★ Recommended; use CachyOS or GE per-game as needed." 14
 
     log_msg "Network is available for Steam setup."
 }

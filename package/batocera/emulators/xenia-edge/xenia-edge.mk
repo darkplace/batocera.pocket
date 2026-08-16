@@ -3,7 +3,9 @@
 # xenia-edge
 #
 ################################################################################
-# Tip oleada B (2026-08-14): absorb Edge merges; keep XenDroid mid_frame patch + TOMLs.
+# Tip oleada B (2026-08-14): absorb Edge merges; keep XenDroid mid_frame +
+# FIFO semaphore (NG2 intro) + SPIR-V multiply-on-bits (Adreno ir3) + TOMLs.
+# Lost-wake guest_scheduler work from XenDroid needs a larger rebase — not yet.
 XENIA_EDGE_VERSION = c38a672db37f20a066cdb5b365e243e67971a72d
 XENIA_EDGE_SITE = https://github.com/has207/xenia-edge.git
 XENIA_EDGE_SITE_METHOD = git

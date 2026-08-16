@@ -7,6 +7,39 @@ When you publish a tag, copy the matching section into the Release body.
 
 ---
 
+## `v44-sm8750-20260819` / `v44-sm8550-20260819` — Ports translator + Proton tips
+
+> Builds on OSK/QAM/screensaver (sm8750) and Golden Rabbit Steam ARM (both boards).
+
+<details>
+<summary><b>Updates</b></summary>
+
+- **Ports X86 Translator:** Tools → `Ports_X86_Translator` toggles **Box64 ↔ FEX**
+  binfmt (mutual exclusion, same idea as Windows Translator). Also set per-game /
+  system under EmulationStation **Advanced Options → PORTS TRANSLATOR**.
+  See [CONTROLS_AND_FAQ.md](CONTROLS_AND_FAQ.md).
+- **Steam Proton tips:** Valve ARM64, CachyOS tip, GE-Proton tip, and Proton
+  Experimental (x86 · FEX/SLR · Rockstar) use `★ Recommended` / `★ Rockstar`
+  display names; tip folders `proton_cachyos_arm64` / `proton_ge_arm64` so Steam’s
+  picker lists them with `proton11_arm64` / `proton_experimental_x86`.
+- **xenia-edge:** XenDroid FIFO + SPIR-V bits; sm8750 (and sm8550) default
+  Xbox 360 core → `xenia-edge`.
+
+</details>
+
+<details>
+<summary><b>Fixes</b></summary>
+
+- GE / CachyOS no longer hide at the bottom of Steam’s compatibility list solely
+  because of long `GE-Proton*` / `proton-cachyos-*` folder names.
+- After OTA, if Tools does not show Ports Translator yet, copy from
+  `/usr/share/batocera/datainit/roms/emulator/` into `/userdata/roms/emulator/`
+  (userdata Tools is not overwritten on upgrade).
+
+</details>
+
+---
+
 ## `v44-sm8750-20260817` — Odin 3 (OSK `@` + QAM Back + screensaver)
 
 > On top of Golden Rabbit `v44-sm8750-20260816`.

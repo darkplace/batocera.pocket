@@ -17766,6 +17766,20 @@ sh:
   systems:
     ports:
       cfeatures:
+        ports_translator:
+          archs_exclude:
+          - x86_64
+          - x86-64-v3
+          group: PORTS TRANSLATOR
+          prompt: PORTS TRANSLATOR
+          description: On aarch64, choose which binfmt handler runs x86/x86_64 port binaries.
+            Box64 stops the FEX binfmt service so Box64 owns ELF launch; FEX-Emu stops
+            Box64 binfmt so FEX owns it. Only one translator should be active at a time
+            (same idea as Windows Translator for Wine). Also available as Tools → Ports
+            X86 Translator with icon.
+          choices:
+            Box64 (Default): box64
+            FEX-Emu: fex
         ports_no_sandbox:
           group: PORTS COMMON FLAGS
           prompt: NO SANDBOX MODE

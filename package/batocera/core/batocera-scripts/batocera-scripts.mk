@@ -4,7 +4,7 @@
 #
 ################################################################################
 
-BATOCERA_SCRIPTS_VERSION = 4.3
+BATOCERA_SCRIPTS_VERSION = 4.5
 BATOCERA_SCRIPTS_LICENSE = GPL
 BATOCERA_SCRIPTS_DEPENDENCIES = pciutils python-evdev python-pyudev
 BATOCERA_SCRIPTS_SOURCE=
@@ -95,6 +95,7 @@ define BATOCERA_SCRIPTS_INSTALL_TARGET_CMDS
     install -m 0755 $(BATOCERA_SCRIPTS_PATH)/scripts/batocera-n64recomp-update          $(TARGET_DIR)/usr/bin/
     install -m 0755 $(BATOCERA_SCRIPTS_PATH)/scripts/batocera-pcgamingwiki-update       $(TARGET_DIR)/usr/bin/
     install -m 0755 $(BATOCERA_SCRIPTS_PATH)/scripts/batocera-ports-appimage-update     $(TARGET_DIR)/usr/bin/
+    install -m 0755 $(BATOCERA_SCRIPTS_PATH)/scripts/batocera-ports-translator          $(TARGET_DIR)/usr/bin/
     install -m 0755 $(BATOCERA_SCRIPTS_PATH)/scripts/batocera-m3u-builder               $(TARGET_DIR)/usr/bin/
     install -m 0755 $(BATOCERA_SCRIPTS_PATH)/scripts/batocera-media-swap                $(TARGET_DIR)/usr/bin/
     install -m 0755 $(BATOCERA_SCRIPTS_PATH)/scripts/batocera-win9x-tool                $(TARGET_DIR)/usr/bin/
