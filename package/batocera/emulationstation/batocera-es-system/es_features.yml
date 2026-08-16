@@ -21059,7 +21059,8 @@ shadps4:
   - cpu_limit_target_fps
   - gpu_performance_profile
   - tdp
-  - videomode
+  # videomode omitted: Odin listModes has no 720p entry, so VIDEO MODE looked broken.
+  # Use cfeature shadps4_resolution (INTERNAL RESOLUTION) instead.
   - dual_screen_output
   - opengl_driver
   - gamescope
@@ -21128,9 +21129,10 @@ shadps4:
     shadps4_resolution:
       submenu: GRAPHICS
       prompt: INTERNAL RESOLUTION
-      description: Render resolution used by ShadPS4. 1280x720 is the default on ARM
-        handhelds because 1080p is much heavier under FEX. Native follows the current
-        display mode.
+      description: 'Render resolution for ShadPS4 (this is the setting that actually
+        changes PS4 internal resolution — not "VIDEO MODE"). 1280x720 is the default
+        on ARM handhelds because 1080p is much heavier under FEX. Native follows the
+        current display mode.'
       choices:
         1280x720 (Default on ARM): 1280x720
         960x540: 960x540

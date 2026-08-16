@@ -101,6 +101,21 @@ def apply_lsfg_vk(
         return
 
     if not system.config.get_bool("lsfg_vk", False):
+        # Keep LSFG off for emulators unless the user explicitly enables it.
+        env["DISABLE_LSFG"] = "1"
+        for key in (
+            "ENABLE_LSFG",
+            "LSFG_LEGACY",
+            "LSFG_DLL_PATH",
+            "LSFG_MULTIPLIER",
+            "LSFG_FLOW_SCALE",
+            "LSFG_PERFORMANCE_MODE",
+            "LSFG_HDR_MODE",
+            "LSFG_PROCESS",
+            "LSFG_EXPERIMENTAL_PRESENT_MODE",
+            "BATOCERA_LSFG_WINE_LAYER",
+        ):
+            env.pop(key, None)
         return
 
     if backend_key and system.config.get_str(backend_key, "1") != "1":

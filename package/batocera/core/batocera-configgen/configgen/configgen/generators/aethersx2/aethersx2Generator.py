@@ -386,21 +386,12 @@ class AetherSX2Generator(Generator):
             array=[str(_AETHERSX2_BIN), "-batch", "-fullscreen", str(rom)],
             env={
                 "XDG_CONFIG_HOME": "/userdata/system/.config",
+                "DISABLE_LSFG": "1",
             },
         )
 
 
 def _get_aethersx2_bios_name() -> str | None:
-    bios_dir = BIOS / "ps2"
-    if not bios_dir.exists():
-        return None
+    from ...utils.ps2Bios import select_ps2_bios_filename
 
-    preferred = bios_dir / "ps2-0230a-20080220.bin"
-    if preferred.is_file():
-        return preferred.name
-
-    for candidate in sorted(bios_dir.iterdir()):
-        if candidate.is_file() and candidate.suffix.lower() in {".bin", ".rom"}:
-            return candidate.name
-
-    return None
+    return select_ps2_bios_filename(BIOS / "ps2")

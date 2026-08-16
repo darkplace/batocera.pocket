@@ -4,7 +4,7 @@
 #
 ################################################################################
 
-BATOCERA_CONFIGGEN_VERSION = 1.41a
+BATOCERA_CONFIGGEN_VERSION = 1.41b
 BATOCERA_CONFIGGEN_LICENSE = GPL
 BATOCERA_CONFIGGEN_SOURCE=
 BATOCERA_CONFIGGEN_SETUP_TYPE = pep517
