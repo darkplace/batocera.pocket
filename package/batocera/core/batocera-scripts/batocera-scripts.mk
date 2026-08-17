@@ -113,6 +113,9 @@ define BATOCERA_SCRIPTS_INSTALL_TARGET_CMDS
     install -m 0755 $(BATOCERA_SCRIPTS_PATH)/scripts/batocera-gpu-profile               $(TARGET_DIR)/usr/bin/
     install -m 0755 $(BATOCERA_SCRIPTS_PATH)/scripts/batocera-ui-scale                  $(TARGET_DIR)/usr/bin/
     install -m 0755 $(BATOCERA_SCRIPTS_PATH)/scripts/batocera-nightmode                 $(TARGET_DIR)/usr/bin/
+    install -m 0755 $(BATOCERA_SCRIPTS_PATH)/scripts/batocera-oled-care                 $(TARGET_DIR)/usr/bin/
+    install -m 0755 $(BATOCERA_SCRIPTS_PATH)/scripts/batocera-oled-refresher            $(TARGET_DIR)/usr/bin/
+    install -m 0755 $(BATOCERA_SCRIPTS_PATH)/scripts/batocera-oled-idle-helper          $(TARGET_DIR)/usr/bin/
     install -m 0755 $(BATOCERA_SCRIPTS_PATH)/scripts/batocera-es-web-notifier           $(TARGET_DIR)/usr/bin/
     install -m 0755 $(BATOCERA_SCRIPTS_PATH)/scripts/batocera-docker-containers         $(TARGET_DIR)/usr/bin/
     install -m 0755 $(BATOCERA_SCRIPTS_PATH)/scripts/batocera-xtract                    $(TARGET_DIR)/usr/bin/
@@ -124,6 +127,7 @@ define BATOCERA_SCRIPTS_INSTALL_TARGET_CMDS
     install -m 0755 $(BATOCERA_SCRIPTS_PATH)/scripts/systemctl                          $(TARGET_DIR)/usr/bin/
     mkdir -p $(TARGET_DIR)/usr/share/batocera/services
     install -m 0755 $(BATOCERA_SCRIPTS_PATH)/scripts/darkmode                           $(TARGET_DIR)/usr/share/batocera/services/
+    install -m 0755 $(BATOCERA_SCRIPTS_PATH)/scripts/oledcare                           $(TARGET_DIR)/usr/share/batocera/services/
     mkdir -p $(TARGET_DIR)/usr/share/batocera/f1-theme
     install -m 0644 $(BATOCERA_SCRIPTS_PATH)/Adwaita-dark.zip                           $(TARGET_DIR)/usr/share/batocera/f1-theme/
 endef
@@ -188,6 +192,7 @@ define BATOCERA_SCRIPTS_INSTALL_NIGHTMODE
     install -D -m 0755 $(@D)/batocera-nightmode-gamma $(TARGET_DIR)/usr/bin/batocera-nightmode-gamma
     install -D -m 0755 $(@D)/batocera-nightmode-overlay $(TARGET_DIR)/usr/bin/batocera-nightmode-overlay
     install -D -m 0755 $(BATOCERA_SCRIPTS_PATH)/S32nightmode $(TARGET_DIR)/etc/init.d/S32nightmode
+    install -D -m 0755 $(BATOCERA_SCRIPTS_PATH)/S33oledcare $(TARGET_DIR)/etc/init.d/S33oledcare
 endef
 
 define BATOCERA_SCRIPTS_INSTALL_ROCKCHIP

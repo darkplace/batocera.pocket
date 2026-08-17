@@ -1,0 +1,54 @@
+#!/bin/sh
+# OLED Care watch service (idle → AYN-style refresher)
+
+PIDFILE="/var/run/batocera-oled-care/init.pid"
+BIN="/usr/bin/batocera-oled-care"
+
+is_running() {
+    [ -f "${PIDFILE}" ] || return 1
+    kill -0 "$(cat "${PIDFILE}" 2>/dev/null)" 2>/dev/null
+}
+
+case "$1" in
+    start)
+        [ -x "${BIN}" ] || exit 0
+        # Only auto-start when master switch is on
+        enabled="$(batocera-settings-get display.oledcare 2>/dev/null || true)"
+        case "${enabled}" in
+            1|true|TRUE|on|ON) ;;
+            *) exit 0 ;;
+        esac
+        if is_running; then
+            exit 0
+        fi
+        mkdir -p /var/run/batocera-oled-care
+        "${BIN}" apply >/dev/null 2>&1 || true
+        "${BIN}" watch >/dev/null 2>&1 &
+        echo "$!" > "${PIDFILE}"
+        ;;
+    stop)
+        if is_running; then
+            kill "$(cat "${PIDFILE}")" 2>/dev/null || true
+        fi
+        rm -f "${PIDFILE}"
+        [ -x "${BIN}" ] && "${BIN}" stop >/dev/null 2>&1
+        ;;
+    restart)
+        "$0" stop
+        "$0" start
+        ;;
+    status)
+        if is_running; then
+            echo "running"
+            exit 0
+        fi
+        echo "stopped"
+        exit 1
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|restart|status}"
+        exit 1
+        ;;
+esac
+
+exit 0

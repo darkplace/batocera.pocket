@@ -1,0 +1,119 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: batocera.pocket <dev@batocera.pocket>
+Date: Tue, 18 Aug 2026 00:00:00 +0000
+Subject: [PATCH] Add OLED screen protection settings (batocera-oled-care)
+
+Only expose options that work on sm8750 Odin today: pixel refresher +
+idle timeout. Pixel shifter and mura sysfs are AYN Android leftovers with
+no compositor hook / sysfs on this panel — keep them out of ES UI.
+
+---
+ es-app/src/guis/GuiMenu.cpp | 130 ++++++++++++++++++++++++++++++++++++
+ 1 file changed, 130 insertions(+)
+
+diff --git a/es-app/src/guis/GuiMenu.cpp b/es-app/src/guis/GuiMenu.cpp
+--- a/es-app/src/guis/GuiMenu.cpp
++++ b/es-app/src/guis/GuiMenu.cpp
+@@ -1697,6 +1697,136 @@ void GuiMenu::openSystemSettings()
+ 		mWindow->pushGui(nightGui);
+ 	});
+ #endif
+ 
++#ifdef BATOCERA_OLEDCARE
++	const std::string oledCareScript = "/usr/bin/batocera-oled-care";
++	if (Utils::FileSystem::exists(oledCareScript) &&
++		system((oledCareScript + " available >/dev/null 2>&1").c_str()) == 0)
++	{
++		auto oledConfInt = [](const std::string& key, int fallback, int minValue, int maxValue) -> int
++		{
++			std::string raw = SystemConf::getInstance()->get(key);
++			if (raw.empty())
++				return fallback;
++
++			try
++			{
++				int value = std::stoi(raw);
++				if (value < minValue)
++					return minValue;
++				if (value > maxValue)
++					return maxValue;
++				return value;
++			}
++			catch (...)
++			{
++				return fallback;
++			}
++		};
++
++		auto oledConfBool = [](const std::string& key, bool fallback) -> bool
++		{
++			std::string raw = SystemConf::getInstance()->get(key);
++			if (raw == "1")
++				return true;
++			if (raw == "0")
++				return false;
++			return fallback;
++		};
++
++		s->addEntry(_("OLED SCREEN PROTECTION"), true, [this, oledCareScript, oledConfInt, oledConfBool]
++		{
++			auto oledGui = new GuiSettings(mWindow, _("OLED SCREEN PROTECTION"));
++
++			auto enabled = std::make_shared<SwitchComponent>(mWindow);
++			enabled->setState(oledConfBool("display.oledcare", false));
++			oledGui->addWithDescription(
++				_("OLED SCREEN PROTECTION"),
++				_("Runs the pixel refresher after the idle timeout to reduce OLED image retention."),
++				enabled);
++
++			auto refresher = std::make_shared<SwitchComponent>(mWindow);
++			refresher->setState(oledConfBool("display.oledcare.refresher", true));
++			oledGui->addWithDescription(
++				_("PIXEL REFRESHER"),
++				_("Fullscreen noise stripe after the static screen timeout. Tap or press any button to exit."),
++				refresher);
++
++			auto staticTimeout = std::make_shared<SliderComponent>(mWindow, 5.f, 300.f, 5.f, "s");
++			staticTimeout->setValue((float)oledConfInt("display.oledcare.static_timeout", 30, 5, 300));
++			oledGui->addWithDescription(
++				_("STATIC SCREEN TIMEOUT"),
++				_("Idle time before the pixel refresher starts."),
++				staticTimeout);
++
++			auto passDuration = std::make_shared<SliderComponent>(mWindow, 1.f, 10.f, 1.f, "s");
++			passDuration->setValue((float)oledConfInt("display.oledcare.refresher_duration", 3, 1, 10));
++			oledGui->addWithDescription(
++				_("REFRESHER PASS DURATION"),
++				_("Seconds for each vertical noise sweep."),
++				passDuration);
++
++			auto passes = std::make_shared<SliderComponent>(mWindow, 1.f, 6.f, 1.f, "");
++			passes->setValue((float)oledConfInt("display.oledcare.refresher_passes", 3, 1, 6));
++			oledGui->addWithDescription(
++				_("REFRESHER PASSES"),
++				_("Number of vertical sweeps per refresh cycle."),
++				passes);
++
++			oledGui->addSaveFunc([oledCareScript, enabled, refresher, staticTimeout, passDuration, passes]
++			{
++				const bool master = enabled->getState();
++				SystemConf::getInstance()->set("display.oledcare", master ? "1" : "0");
++				SystemConf::getInstance()->set("display.oledcare.detect", master ? "1" : "0");
++				SystemConf::getInstance()->set("display.oledcare.refresher", refresher->getState() ? "1" : "0");
++				SystemConf::getInstance()->set("display.oledcare.static_timeout", std::to_string((int)Math::round(staticTimeout->getValue())));
++				SystemConf::getInstance()->set("display.oledcare.refresher_duration", std::to_string((int)Math::round(passDuration->getValue())));
++				SystemConf::getInstance()->set("display.oledcare.refresher_passes", std::to_string((int)Math::round(passes->getValue())));
++
++				SystemConf::getInstance()->saveSystemConf();
++				if (Utils::FileSystem::exists(oledCareScript))
++					Utils::Platform::ProcessStartInfo(oledCareScript + " reload").run();
++			});
++
++			mWindow->pushGui(oledGui);
++		});
++	}
++#endif
++
+ #if !WIN32
+ 	const std::string qcomChargeLimitScript = "/usr/bin/qcom-charge-limit";
+ 	if (Utils::FileSystem::exists(qcomChargeLimitScript) &&

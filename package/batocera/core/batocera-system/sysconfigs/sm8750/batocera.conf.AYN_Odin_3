@@ -15,6 +15,15 @@ audio.profile=auto
 
 # Default settings
 display.brightness=60
+
+# OLED Screen Protection — pixel refresher only on Odin 3 (no mura sysfs / shifter hook)
+#display.oledcare=0
+#display.oledcare.detect=1
+#display.oledcare.static_timeout=30
+#display.oledcare.refresher=1
+#display.oledcare.refresher_duration=3
+#display.oledcare.refresher_passes=3
+
 system.battery.charge_limit=100
 
 # CPU scaling governor. Mainline schedutil keeps the mid cluster pinned near max

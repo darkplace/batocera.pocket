@@ -1,0 +1,20 @@
+#!/bin/bash
+# Optional user-facing service wrapper (batocera-services enable oledcare)
+# Starts/stops the same watch loop as S33oledcare.
+
+BIN=/usr/bin/batocera-oled-care
+
+case "$1" in
+    start)
+        [ -x "${BIN}" ] || exit 0
+        "${BIN}" apply >/dev/null 2>&1 || true
+        "${BIN}" watch
+        ;;
+    stop)
+        [ -x "${BIN}" ] && "${BIN}" stop
+        ;;
+    *)
+        echo "Usage: $0 {start|stop}"
+        exit 1
+        ;;
+esac

@@ -1,0 +1,385 @@
+#!/bin/bash
+# OLED Care — burn-in protection (AYN OdinSettings clone)
+#
+# Canonical batocera.conf keys (synced with ES + decky-bcc).
+# Mirrors AYN OdinSettings (StaticImageDetectionPreference + OLEDMuraFilterPreference):
+#
+#   AYN title                         key                              default
+#   OLED Screen Protection            display.oledcare                 0
+#   (idle detect; no AYN toggle)      display.oledcare.detect          1
+#   Static screen timeout             display.oledcare.static_timeout  30   (packed [4]=30000 ms)
+#   Pixel refresher                   display.oledcare.refresher       1
+#   (hardcoded in AYN q1/m.java)      display.oledcare.refresher_duration  3
+#   (AYN repeatCount=2 → 3 sweeps)    display.oledcare.refresher_passes    3
+#   Pixel shifter                     display.oledcare.shifter         1
+#   Radius                            display.oledcare.shifter_radius  1   px (AYN 1–10)
+#   shifter duration (AYN reuses the  display.oledcare.shifter_duration 3  (packed [2]=3000 ms)
+#     "Static screen timeout" label)
+#   OLED Ultra Black Mode             display.oledcare.mura            0
+#
+# AYN packed string bip.detect.wm.frame.stats.setting.arg default:
+#   "1,1,3000,1,30000"
+set -u
+
+STATE_DIR="/var/run/batocera-oled-care"
+STATE_FILE="${STATE_DIR}/state"
+PID_FILE="${STATE_DIR}/watch.pid"
+INPUT_STAMP="${STATE_DIR}/last-input"
+LOG="/userdata/system/logs/batocera-oled-care.log"
+REFRESHER_BIN="/usr/bin/batocera-oled-refresher"
+IDLE_HELPER_BIN="/usr/bin/batocera-oled-idle-helper"
+IDLE_HELPER_PID="${STATE_DIR}/idle-helper.pid"
+MURA_SYSFS="/sys/class/enhance_color_class/enhance_color_device/enhance_color"
+BACKLIGHT_GLOB="/sys/class/backlight/*/brightness"
+
+DEFAULT_ENABLED=0
+DEFAULT_DETECT=1
+DEFAULT_STATIC_TIMEOUT=30
+DEFAULT_REFRESHER=1
+DEFAULT_REFRESHER_DURATION=3
+DEFAULT_REFRESHER_PASSES=3
+DEFAULT_SHIFTER=1
+DEFAULT_SHIFTER_RADIUS=1
+DEFAULT_SHIFTER_DURATION=3
+DEFAULT_MURA=0
+
+mkdir -p "${STATE_DIR}" "$(dirname "${LOG}")" 2>/dev/null || true
+
+log() {
+    printf '%s oled-care: %s\n' "$(date -Is 2>/dev/null || date)" "$*" >> "${LOG}"
+}
+
+settings_get() {
+    batocera-settings-get "$1" 2>/dev/null || true
+}
+
+settings_set() {
+    batocera-settings-set "$1" "$2" 2>/dev/null || true
+}
+
+bool01() {
+    case "${1:-}" in
+        1|true|TRUE|on|ON|yes|YES) printf '1\n' ;;
+        *) printf '0\n' ;;
+    esac
+}
+
+int_or() {
+    local value="${1:-}"
+    local fallback="${2}"
+    if [[ "${value}" =~ ^[0-9]+$ ]]; then
+        printf '%s\n' "${value}"
+    else
+        printf '%s\n' "${fallback}"
+    fi
+}
+
+clamp() {
+    local v="$1" lo="$2" hi="$3"
+    (( v < lo )) && v="${lo}"
+    (( v > hi )) && v="${hi}"
+    printf '%s\n' "${v}"
+}
+
+cfg_enabled()           { bool01 "$(settings_get display.oledcare)"; }
+cfg_detect()            { bool01 "$(settings_get display.oledcare.detect)"; }
+cfg_static_timeout()    { clamp "$(int_or "$(settings_get display.oledcare.static_timeout)" "${DEFAULT_STATIC_TIMEOUT}")" 1 300; }
+cfg_refresher()         { bool01 "$(settings_get display.oledcare.refresher)"; }
+cfg_refresher_duration(){ clamp "$(int_or "$(settings_get display.oledcare.refresher_duration)" "${DEFAULT_REFRESHER_DURATION}")" 1 30; }
+cfg_refresher_passes()  { clamp "$(int_or "$(settings_get display.oledcare.refresher_passes)" "${DEFAULT_REFRESHER_PASSES}")" 1 10; }
+cfg_shifter()           { bool01 "$(settings_get display.oledcare.shifter)"; }
+cfg_shifter_radius()    { clamp "$(int_or "$(settings_get display.oledcare.shifter_radius)" "${DEFAULT_SHIFTER_RADIUS}")" 1 10; }
+cfg_shifter_duration()  { clamp "$(int_or "$(settings_get display.oledcare.shifter_duration)" "${DEFAULT_SHIFTER_DURATION}")" 1 300; }
+cfg_mura()              { bool01 "$(settings_get display.oledcare.mura)"; }
+
+panel_detected() {
+    ls ${BACKLIGHT_GLOB} >/dev/null 2>&1
+}
+
+steam_session_active() {
+    pgrep -f 'batocera-steam-session|PluginLoader|/userdata/system/homebrew/services/PluginLoader' >/dev/null 2>&1
+}
+
+mura_available() {
+    [ -e "${MURA_SYSFS}" ]
+}
+
+mura_get() {
+    if ! mura_available; then
+        echo "unavailable"
+        return 1
+    fi
+    local raw
+    raw="$(tr -d '\n' < "${MURA_SYSFS}" 2>/dev/null || true)"
+    case "${raw}" in
+        *1*|0x1|0X1) echo "1" ;;
+        *) echo "0" ;;
+    esac
+}
+
+mura_set() {
+    local want
+    want="$(bool01 "${1:-0}")"
+    if ! mura_available; then
+        echo "mura sysfs missing (${MURA_SYSFS})" >&2
+        return 1
+    fi
+    printf '0x%s\n' "${want}" > "${MURA_SYSFS}"
+}
+
+touch_input() {
+    printf '%s\n' "$(date +%s.%N)" > "${INPUT_STAMP}"
+}
+
+start_idle_helper() {
+    if [ -f "${IDLE_HELPER_PID}" ] && kill -0 "$(cat "${IDLE_HELPER_PID}" 2>/dev/null)" 2>/dev/null; then
+        return 0
+    fi
+    if [ ! -x "${IDLE_HELPER_BIN}" ]; then
+        log "idle helper missing: ${IDLE_HELPER_BIN}"
+        return 1
+    fi
+    touch_input
+    "${IDLE_HELPER_BIN}" >/dev/null 2>&1 &
+    echo $! > "${IDLE_HELPER_PID}"
+    log "idle helper started pid=$(cat "${IDLE_HELPER_PID}")"
+}
+
+stop_idle_helper() {
+    if [ -f "${IDLE_HELPER_PID}" ]; then
+        kill "$(cat "${IDLE_HELPER_PID}" 2>/dev/null)" 2>/dev/null || true
+        rm -f "${IDLE_HELPER_PID}"
+    fi
+    pkill -f "${IDLE_HELPER_BIN}" 2>/dev/null || true
+}
+
+idle_seconds() {
+    if [ ! -f "${INPUT_STAMP}" ]; then
+        echo 0
+        return
+    fi
+    local last now
+    last="$(tr -d '\n' < "${INPUT_STAMP}" | cut -d. -f1)"
+    now="$(date +%s)"
+    if [[ "${last}" =~ ^[0-9]+$ ]]; then
+        echo $(( now - last ))
+    else
+        echo 0
+    fi
+}
+
+write_state() {
+    local phase="${1:-idle}"
+    cat > "${STATE_FILE}" <<EOF
+phase=${phase}
+enabled=$(cfg_enabled)
+detect=$(cfg_detect)
+static_timeout=$(cfg_static_timeout)
+refresher=$(cfg_refresher)
+refresher_duration=$(cfg_refresher_duration)
+refresher_passes=$(cfg_refresher_passes)
+shifter=$(cfg_shifter)
+shifter_radius=$(cfg_shifter_radius)
+shifter_duration=$(cfg_shifter_duration)
+mura=$(cfg_mura)
+mura_available=$(mura_available && echo 1 || echo 0)
+mura_hw=$(mura_get 2>/dev/null || echo unavailable)
+panel=$(panel_detected && echo 1 || echo 0)
+idle_seconds=$(idle_seconds)
+updated=$(date -Is 2>/dev/null || date)
+EOF
+}
+
+do_status() {
+    write_state "$( [ -f "${PID_FILE}" ] && kill -0 "$(cat "${PID_FILE}" 2>/dev/null)" 2>/dev/null && echo watch || echo idle )"
+    cat "${STATE_FILE}"
+}
+
+do_get() {
+    cat <<EOF
+display.oledcare=$(cfg_enabled)
+display.oledcare.detect=$(cfg_detect)
+display.oledcare.static_timeout=$(cfg_static_timeout)
+display.oledcare.refresher=$(cfg_refresher)
+display.oledcare.refresher_duration=$(cfg_refresher_duration)
+display.oledcare.refresher_passes=$(cfg_refresher_passes)
+display.oledcare.shifter=$(cfg_shifter)
+display.oledcare.shifter_radius=$(cfg_shifter_radius)
+display.oledcare.shifter_duration=$(cfg_shifter_duration)
+display.oledcare.mura=$(cfg_mura)
+mura_available=$(mura_available && echo 1 || echo 0)
+mura_hw=$(mura_get 2>/dev/null || echo unavailable)
+panel=$(panel_detected && echo 1 || echo 0)
+EOF
+}
+
+do_set_defaults() {
+    # Seed missing keys only (does not overwrite user values).
+    [ -n "$(settings_get display.oledcare)" ] || settings_set display.oledcare "${DEFAULT_ENABLED}"
+    [ -n "$(settings_get display.oledcare.detect)" ] || settings_set display.oledcare.detect "${DEFAULT_DETECT}"
+    [ -n "$(settings_get display.oledcare.static_timeout)" ] || settings_set display.oledcare.static_timeout "${DEFAULT_STATIC_TIMEOUT}"
+    [ -n "$(settings_get display.oledcare.refresher)" ] || settings_set display.oledcare.refresher "${DEFAULT_REFRESHER}"
+    [ -n "$(settings_get display.oledcare.refresher_duration)" ] || settings_set display.oledcare.refresher_duration "${DEFAULT_REFRESHER_DURATION}"
+    [ -n "$(settings_get display.oledcare.refresher_passes)" ] || settings_set display.oledcare.refresher_passes "${DEFAULT_REFRESHER_PASSES}"
+    [ -n "$(settings_get display.oledcare.shifter)" ] || settings_set display.oledcare.shifter "${DEFAULT_SHIFTER}"
+    [ -n "$(settings_get display.oledcare.shifter_radius)" ] || settings_set display.oledcare.shifter_radius "${DEFAULT_SHIFTER_RADIUS}"
+    [ -n "$(settings_get display.oledcare.shifter_duration)" ] || settings_set display.oledcare.shifter_duration "${DEFAULT_SHIFTER_DURATION}"
+    [ -n "$(settings_get display.oledcare.mura)" ] || settings_set display.oledcare.mura "${DEFAULT_MURA}"
+}
+
+do_apply() {
+    do_set_defaults
+    local mura
+    mura="$(cfg_mura)"
+    if mura_available; then
+        mura_set "${mura}" || true
+        log "mura applied=${mura}"
+    else
+        log "mura skipped (no sysfs)"
+    fi
+    # Pixel shifter: compositor hook TBD (Sway/layer-shell). Config is persisted.
+    write_state applied
+    log "apply enabled=$(cfg_enabled) detect=$(cfg_detect) refresher=$(cfg_refresher) shifter=$(cfg_shifter) mura=${mura}"
+}
+
+do_refresh_now() {
+    if steam_session_active; then
+        log "refresh-now skipped (Steam session active)"
+        return 0
+    fi
+    local duration passes
+    duration="$(cfg_refresher_duration)"
+    passes="$(cfg_refresher_passes)"
+    write_state refreshing
+    if [ -x "${REFRESHER_BIN}" ]; then
+        log "refresh-now duration=${duration}s passes=${passes}"
+        "${REFRESHER_BIN}" --duration "${duration}" --passes "${passes}" || {
+            log "refresher exit $?"
+            write_state idle
+            return 1
+        }
+    else
+        log "refresher binary missing: ${REFRESHER_BIN}"
+        write_state idle
+        return 1
+    fi
+    touch_input
+    write_state idle
+}
+
+watch_loop() {
+    start_idle_helper || true
+    touch_input
+    write_state watch
+    log "watch started"
+    local idle timeout
+    while true; do
+        if [ "$(cfg_enabled)" != "1" ]; then
+            sleep 5
+            continue
+        fi
+        if [ "$(cfg_detect)" != "1" ] || [ "$(cfg_refresher)" != "1" ]; then
+            sleep 2
+            continue
+        fi
+        if steam_session_active; then
+            touch_input
+            sleep 2
+            continue
+        fi
+        idle="$(idle_seconds)"
+        timeout="$(cfg_static_timeout)"
+        if (( idle >= timeout )); then
+            log "static/idle ${idle}s >= ${timeout}s → refresh"
+            do_refresh_now || true
+            touch_input
+        fi
+        sleep 1
+    done
+}
+
+do_watch() {
+    if [ -f "${PID_FILE}" ] && kill -0 "$(cat "${PID_FILE}" 2>/dev/null)" 2>/dev/null; then
+        echo "already running"
+        return 0
+    fi
+    do_apply
+    # Foreground: init/service backgrounds us and owns the pid.
+    echo $$ > "${PID_FILE}"
+    echo "started pid=$$"
+    watch_loop
+}
+
+do_stop() {
+    if [ -f "${PID_FILE}" ]; then
+        kill "$(cat "${PID_FILE}" 2>/dev/null)" 2>/dev/null || true
+        rm -f "${PID_FILE}"
+    fi
+    stop_idle_helper
+    pkill -f "${REFRESHER_BIN}" 2>/dev/null || true
+    write_state stopped
+    echo "stopped"
+}
+
+do_reload() {
+    # Persist keys + mura, then bounce the idle watcher (ES / decky save path).
+    do_apply
+    if [ -x /etc/init.d/S33oledcare ]; then
+        /etc/init.d/S33oledcare restart
+        echo "reloaded"
+        return 0
+    fi
+    do_stop >/dev/null
+    if [ "$(cfg_enabled)" = "1" ]; then
+        "${0}" watch >/dev/null 2>&1 &
+        echo "reloaded (watch spawned)"
+    else
+        echo "reloaded (disabled)"
+    fi
+}
+
+do_available() {
+    panel_detected
+}
+
+usage() {
+    cat <<EOF
+Usage: $(basename "$0") <command>
+
+  get              Print current display.oledcare* settings
+  status           Runtime state (+ config snapshot)
+  apply            Apply mura + persist defaults for missing keys
+  reload           apply + restart idle watcher (ES / decky)
+  available        Exit 0 when an OLED panel is detected
+  set-defaults     Seed missing batocera.conf keys only
+  refresh-now      Run AYN-style pixel refresher immediately
+  touch-input      Reset idle stamp (call from input hooks)
+  watch            Background idle detector → refresher
+  stop             Stop watch / refresher
+  mura-get|mura-set <0|1>
+
+Keys mirror AYN OdinSettings (detect / shifter / refresher / mura).
+EOF
+}
+
+cmd="${1:-}"
+case "${cmd}" in
+    get) do_get ;;
+    status) do_status ;;
+    apply) do_apply ;;
+    reload) do_reload ;;
+    available) do_available ;;
+    set-defaults) do_set_defaults ;;
+    refresh-now) do_refresh_now ;;
+    touch-input) touch_input ;;
+    watch) do_watch ;;
+    stop) do_stop ;;
+    mura-get) mura_get ;;
+    mura-set) mura_set "${2:-0}" ;;
+    help|-h|--help|"") usage ;;
+    *)
+        echo "Unknown command: ${cmd}" >&2
+        usage >&2
+        exit 1
+        ;;
+esac

@@ -1,0 +1,203 @@
+#!/usr/bin/env python3
+"""AYN-style OLED pixel refresher (known-good host recipe).
+
+Cloned from OdinSettings q1/m.java, rendered the way this OLED actually
+accepts without chromatic halo:
+
+  - pygame Wayland fullscreen (landscape)
+  - RGB noise in BLOCK×BLOCK tiles (3×3 is the sweet spot)
+  - black overlay + stripe ~⅓ screen height
+  - linear vertical sweep, --duration seconds × --passes
+    (AYN ValueAnimator duration=3000, repeatCount=2 → 3 sweeps)
+  - official countdown: "Anti-image-retention pixel refresh in progress, tap to exit (%ds)"
+  - any key / pointer / gamepad cancels
+
+Do not use GTK/cairo (breaks orientation) or mpv (halo / desync).
+"""
+
+from __future__ import annotations
+
+import argparse
+import os
+import random
+import signal
+import sys
+import time
+from pathlib import Path
+
+AYN_TEXT = "Anti-image-retention pixel refresh in progress, tap to exit (%ds)"
+INSET = 16
+BLOCK = 3  # 1×1–2×2 bloom on this panel; 3×3 is the hard-edge minimum
+
+STATE_DIR = Path("/var/run/batocera-oled-care")
+CANCEL_FILE = STATE_DIR / "cancel-refresh"
+ACTIVE_FILE = STATE_DIR / "refresh-active"
+
+
+def parse_args() -> argparse.Namespace:
+    p = argparse.ArgumentParser(description="OLED Care pixel refresher (AYN clone)")
+    p.add_argument("--duration", type=float, default=3.0, help="Seconds per vertical pass (AYN: 3)")
+    p.add_argument("--passes", type=int, default=3, help="Vertical sweeps (AYN repeatCount=2 → 3)")
+    p.add_argument("--band-ratio", type=float, default=1.0 / 3.0, help="Stripe height / screen height (AYN: 1/3)")
+    p.add_argument("--fps", type=int, default=120)
+    p.add_argument("--block", type=int, default=BLOCK)
+    p.add_argument("--force-headless", action="store_true", help="Skip pygame; marker + sleep only")
+    return p.parse_args()
+
+
+def mark_active(active: bool, meta: str = "") -> None:
+    try:
+        STATE_DIR.mkdir(parents=True, exist_ok=True)
+        if active:
+            ACTIVE_FILE.write_text(meta or "1", encoding="utf-8")
+            if CANCEL_FILE.exists():
+                CANCEL_FILE.unlink()
+        elif ACTIVE_FILE.exists():
+            ACTIVE_FILE.unlink()
+    except OSError:
+        pass
+
+
+def cancelled() -> bool:
+    return CANCEL_FILE.exists()
+
+
+def run_headless(duration: float, passes: int) -> int:
+    total = max(0.1, duration) * max(1, passes)
+    mark_active(True, f"headless duration={duration} passes={passes}")
+    end = time.monotonic() + total
+    try:
+        while time.monotonic() < end:
+            if cancelled():
+                return 0
+            time.sleep(0.05)
+    finally:
+        mark_active(False)
+    return 0
+
+
+def make_band(pygame, width: int, band_h: int, block: int):
+    surf = pygame.Surface((width, band_h))
+    surf.fill((0, 0, 0))
+    inner_w = width - 2 * INSET
+    inner_h = band_h - 2 * INSET
+    if inner_w < block or inner_h < block:
+        return surf
+    cols = inner_w // block
+    rows = inner_h // block
+    for by in range(rows):
+        y = INSET + by * block
+        for bx in range(cols):
+            x = INSET + bx * block
+            color = (random.getrandbits(8), random.getrandbits(8), random.getrandbits(8))
+            surf.fill(color, pygame.Rect(x, y, block, block))
+    return surf
+
+
+def run_pygame(duration: float, passes: int, band_ratio: float, fps: int, block: int) -> int:
+    os.environ.setdefault("XDG_RUNTIME_DIR", "/var/run")
+    os.environ.setdefault("WAYLAND_DISPLAY", "wayland-1")
+    os.environ.setdefault("DISPLAY", ":0")
+    os.environ["SDL_VIDEODRIVER"] = "wayland"
+
+    import pygame
+
+    pygame.display.init()
+    pygame.font.init()
+    pygame.mouse.set_visible(False)
+
+    width, height = 1920, 1080
+    info = pygame.display.Info()
+    if info.current_w >= info.current_h >= 720:
+        width, height = info.current_w, info.current_h
+    try:
+        screen = pygame.display.set_mode((width, height), pygame.FULLSCREEN, vsync=1)
+    except TypeError:
+        screen = pygame.display.set_mode((width, height), pygame.FULLSCREEN)
+    pygame.display.set_caption("OLED Care Refresher")
+
+    block = max(1, int(block))
+    band_h = max(48 + 2 * INSET, int(height * max(0.12, min(0.5, band_ratio))))
+    band_h = (band_h // block) * block
+    duration = max(0.5, float(duration))
+    passes = max(1, int(passes))
+    fps = max(30, min(120, int(fps)))
+    clock = pygame.time.Clock()
+    font = pygame.font.SysFont("dejavusans", 32) or pygame.font.Font(None, 36)
+    total = duration * passes
+
+    mark_active(
+        True,
+        f"pygame {screen.get_width()}x{screen.get_height()} "
+        f"band={band_h}px block={block} vsync @{fps}Hz",
+    )
+    running = True
+    t0 = pygame.time.get_ticks() / 1000.0
+    try:
+        for _p in range(passes):
+            band = make_band(pygame, width, band_h, block)
+            pass_t0 = pygame.time.get_ticks() / 1000.0
+            while True:
+                now = pygame.time.get_ticks() / 1000.0
+                for event in pygame.event.get():
+                    if event.type in (
+                        pygame.QUIT,
+                        pygame.KEYDOWN,
+                        pygame.MOUSEBUTTONDOWN,
+                        pygame.JOYBUTTONDOWN,
+                    ):
+                        running = False
+                if cancelled():
+                    running = False
+                if not running:
+                    break
+                elapsed_pass = now - pass_t0
+                if elapsed_pass >= duration:
+                    break
+                frac = min(1.0, elapsed_pass / duration)
+                top = int(frac * height) - band_h // 2
+                top = (top // block) * block
+
+                screen.fill((0, 0, 0))
+                screen.blit(band, (0, top))
+
+                elapsed_total = now - t0
+                remaining = max(0, int(round(total - elapsed_total)))
+                if int(elapsed_total * 2) % 2 == 0:
+                    text = font.render(AYN_TEXT % remaining, True, (255, 255, 255), (0, 0, 0))
+                    tx = max(8, (width - text.get_width()) // 2)
+                    ty = max(20, int(height * 0.05))
+                    screen.blit(text, (tx, ty))
+
+                pygame.display.flip()
+                clock.tick(fps)
+            if not running:
+                break
+    finally:
+        mark_active(False)
+        pygame.quit()
+    return 0
+
+
+def main() -> int:
+    args = parse_args()
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
+    signal.signal(signal.SIGINT, lambda *_: sys.exit(0))
+
+    if args.force_headless:
+        return run_headless(args.duration, args.passes)
+
+    try:
+        import pygame  # noqa: F401
+    except ImportError:
+        return run_headless(args.duration, args.passes)
+
+    try:
+        return run_pygame(args.duration, args.passes, args.band_ratio, args.fps, args.block)
+    except Exception as exc:  # noqa: BLE001 — fall back cleanly on display failures
+        sys.stderr.write(f"oled-refresher: pygame failed ({exc}); headless fallback\n")
+        return run_headless(args.duration, args.passes)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
