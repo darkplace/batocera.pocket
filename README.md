@@ -381,12 +381,14 @@ Bugs and feedback: **@lukemotion** on Discord (device + image version + logs und
 - Batocera groundwork: [suckbluefrog](https://github.com/suckbluefrog)
 - Upstream: [Batocera.linux](https://batocera.org/)
 - ABL (Bootloader): [ROCKNIX](https://rocknix.org/)
+- Fan Control curve editor (Decky): **Xtreme976** ([armada-os/armada#260](https://github.com/armada-os/armada/pull/260))
 - **Beta testers**
   - **Colt45RPM** — SM8550 (AYN Odin 2 Portal)
   - **Jordanius** — SM8550 (AYN Odin 2 Portal)
   - **bethanngirl** — SM8550 (AYN Odin 2)
   - **b_bloodcart99x** — SM8750 (AYN Odin 3)
   - **The Janitor** — SM8750 (AYN Odin 3)
+  - **Xtreme976** — SM8750 (AYN Odin 3 Ultra)
 
 ## License
 
