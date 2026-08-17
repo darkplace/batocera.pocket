@@ -197,9 +197,11 @@ ifeq ($(BR2_PACKAGE_BATOCERA_APPS_AARCH64),y)
   BATOCERA_DESKTOPAPPS_APPS    += brave.desktop
   BATOCERA_DESKTOPAPPS_APPS    += firefox.desktop
   BATOCERA_DESKTOPAPPS_APPS    += peazip.desktop
+  BATOCERA_DESKTOPAPPS_APPS    += discord.desktop
   BATOCERA_DESKTOPAPPS_ICONS   += vacuumtube.png
   BATOCERA_DESKTOPAPPS_ICONS   += firefox.png
   BATOCERA_DESKTOPAPPS_ICONS   += peazip.png
+  BATOCERA_DESKTOPAPPS_ICONS   += discord.png
   BATOCERA_DESKTOPAPPS_STALE_APPS  += geforcenow.desktop
   BATOCERA_DESKTOPAPPS_STALE_ICONS += geforcenow.png
 endif

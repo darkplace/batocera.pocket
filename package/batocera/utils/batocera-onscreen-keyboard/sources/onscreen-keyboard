@@ -14,6 +14,8 @@ set -eu
 PIDFILE="/var/run/onscreen-keyboard.pid"
 LOGFILE="/var/log/onscreen-keyboard.log"
 KEYBOARD_BIN="/usr/libexec/onscreen-keyboard/wvkbd-mobintl"
+OSK_SHIFT="/usr/bin/batocera-osk-sway-shift"
+OSK_HEIGHT="350"
 
 log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" >> "$LOGFILE"
@@ -102,7 +104,14 @@ start_keyboard() {
     echo "$pid" > "$PIDFILE"
 
     sleep 0.2
-    [ -d "/proc/$pid" ] && echo "started" || echo "stopped"
+    if [ -d "/proc/$pid" ]; then
+        if [ -x "$OSK_SHIFT" ]; then
+            BATOCERA_OSK_HEIGHT="$OSK_HEIGHT" "$OSK_SHIFT" up >/dev/null 2>&1 || true
+        fi
+        echo "started"
+    else
+        echo "stopped"
+    fi
 }
 
 # --- Stop keyboard ---
@@ -110,6 +119,9 @@ stop_keyboard() {
     pid="$(get_pid || true)"
 
     if [ -n "${pid:-}" ]; then
+        if [ -x "$OSK_SHIFT" ]; then
+            "$OSK_SHIFT" down >/dev/null 2>&1 || true
+        fi
         log "Stopping keyboard (PID $pid)"
         kill "$pid" 2>/dev/null || true
         rm -f "$PIDFILE"

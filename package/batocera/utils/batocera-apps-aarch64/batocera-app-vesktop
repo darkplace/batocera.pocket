@@ -1,0 +1,246 @@
+#!/bin/bash
+set -euo pipefail
+
+APP_ID="dev.vencord.Vesktop"
+
+if ! command -v flatpak >/dev/null 2>&1; then
+    echo "Flatpak is not installed." >&2
+    exit 1
+fi
+
+if ! flatpak info "$APP_ID" >/dev/null 2>&1; then
+    if [ -x /usr/bin/batocera-app-vesktop-update ]; then
+        BATOCERA_VESKTOP_FORCE=1 /usr/bin/batocera-app-vesktop-update || true
+    fi
+fi
+
+if ! flatpak info "$APP_ID" >/dev/null 2>&1; then
+    echo "Vesktop (${APP_ID}) is not installed. Check /userdata/system/logs/vesktop-update.log" >&2
+    exit 1
+fi
+
+if [ -z "${BATOCERA_UI_SCALE:-}" ] && [ -f /userdata/system/configs/apps-hotfix/vesktop-ui-scale ]; then
+    BATOCERA_UI_SCALE="$(tr -d '[:space:]' </userdata/system/configs/apps-hotfix/vesktop-ui-scale)"
+fi
+export BATOCERA_UI_SCALE="${BATOCERA_UI_SCALE:-1.75}"
+
+export HOME="/userdata/saves/apps/vesktop"
+export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
+export XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
+export XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
+if [ -z "${XDG_RUNTIME_DIR:-}" ] || [ "$XDG_RUNTIME_DIR" = "/var/run" ]; then
+    export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+fi
+
+mkdir -p "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_CACHE_HOME" "$XDG_RUNTIME_DIR"
+chmod 700 "$XDG_RUNTIME_DIR" 2>/dev/null || true
+
+export GDK_SCALE=1
+export GDK_DPI_SCALE=1
+export QT_SCALE_FACTOR=1
+export QT_AUTO_SCREEN_SCALE_FACTOR=0
+unset QT_FONT_DPI 2>/dev/null || true
+
+VESKTOP_SWAY_SCALE_APPLIED=0
+VESKTOP_SWAY_SCALE_PREV=""
+mouse_mode_on=0
+fit_pid=""
+
+vesktop_apply_sway_scale() {
+    command -v swaymsg >/dev/null 2>&1 || return 0
+    [ -n "${SWAYSOCK:-}" ] && [ -S "${SWAYSOCK}" ] || return 0
+    VESKTOP_SWAY_SCALE_PREV="$(swaymsg -t get_outputs 2>/dev/null | python3 -c 'import json,sys
+outs=json.load(sys.stdin)
+o=next((x for x in outs if x.get("focused")), None) or next((x for x in outs if x.get("active")), None)
+print(o.get("scale",1) if o else 1)' 2>/dev/null || echo 1)"
+    swaymsg -q "output * scale ${BATOCERA_UI_SCALE}" >/dev/null 2>&1 && VESKTOP_SWAY_SCALE_APPLIED=1 || true
+}
+
+vesktop_restore_sway_scale() {
+    [ "${VESKTOP_SWAY_SCALE_APPLIED}" = "1" ] || return 0
+    command -v swaymsg >/dev/null 2>&1 || return 0
+    prev="${VESKTOP_SWAY_SCALE_PREV:-1}"
+    swaymsg -q "output * scale ${prev}" >/dev/null 2>&1 || swaymsg -q "output * scale 1" >/dev/null 2>&1 || true
+    VESKTOP_SWAY_SCALE_APPLIED=0
+}
+
+vesktop_set_for_window() {
+    local w="$1" h="$2"
+    [ -n "$w" ] && [ -n "$h" ] || return 0
+    swaymsg -q "for_window [app_id=\"dev.vencord.Vesktop\"] floating enable, border none, move absolute position 0 0, resize set ${w} px ${h} px" >/dev/null 2>&1 || true
+    swaymsg -q "for_window [app_id=\"vesktop\"] floating enable, border none, move absolute position 0 0, resize set ${w} px ${h} px" >/dev/null 2>&1 || true
+    swaymsg -q "for_window [class=\"vesktop\"] floating enable, border none, move absolute position 0 0, resize set ${w} px ${h} px" >/dev/null 2>&1 || true
+}
+
+vesktop_output_size() {
+    python3 - <<'PY'
+import json, subprocess, sys
+try:
+    outs = json.loads(subprocess.check_output(["swaymsg", "-t", "get_outputs"], text=True))
+except Exception:
+    sys.exit(0)
+out = next((o for o in outs if o.get("focused")), None) or next((o for o in outs if o.get("active")), None)
+if not out:
+    sys.exit(0)
+print(int(out["rect"]["width"]), int(out["rect"]["height"]))
+PY
+}
+
+vesktop_fit_window() {
+    command -v swaymsg >/dev/null 2>&1 || return 0
+    command -v python3 >/dev/null 2>&1 || return 0
+    [ -n "${SWAYSOCK:-}" ] && [ -S "${SWAYSOCK}" ] || return 0
+
+    python3 - <<'PY'
+import json, subprocess, sys, time
+
+def load_tree():
+    return json.loads(subprocess.check_output(["swaymsg", "-t", "get_tree"], text=True))
+
+def find_vesktop(n):
+    app = (n.get("app_id") or "").lower()
+    name = (n.get("name") or "").lower()
+    props = n.get("window_properties") or {}
+    cls = (props.get("class") or props.get("instance") or "").lower()
+    if "vencord" in app or "vesktop" in app or "vesktop" in cls or "discord" in name:
+        return n
+    for c in n.get("nodes", []) + n.get("floating_nodes", []):
+        found = find_vesktop(c)
+        if found is not None:
+            return found
+    return None
+
+def output_size():
+    outs = json.loads(subprocess.check_output(["swaymsg", "-t", "get_outputs"], text=True))
+    out = next((o for o in outs if o.get("focused")), None) or next((o for o in outs if o.get("active")), None)
+    if not out:
+        return None
+    return int(out["rect"]["width"]), int(out["rect"]["height"])
+
+def sway(cmd: str) -> None:
+    subprocess.run(["swaymsg", cmd], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+
+def fit(node, w, h):
+    cid = node.get("id")
+    if cid is None:
+        return
+    sway(f"[con_id={cid}] fullscreen disable")
+    sway(f"[con_id={cid}] floating enable")
+    sway(f"[con_id={cid}] border none")
+    sway(f"[con_id={cid}] resize set {w} px {h} px")
+    sway(f"[con_id={cid}] move absolute position 0 0")
+
+size = output_size()
+if not size:
+    sys.exit(0)
+w, h = size
+deadline = time.time() + 12.0
+seen = False
+while time.time() < deadline:
+    size = output_size() or (w, h)
+    w, h = size
+    node = find_vesktop(load_tree())
+    if node is None:
+        time.sleep(0.1)
+        continue
+    seen = True
+    rect = node.get("rect") or {}
+    rw, rh = int(rect.get("width") or 0), int(rect.get("height") or 0)
+    rx, ry = int(rect.get("x") or 0), int(rect.get("y") or 0)
+    if rw != w or rh != h or rx != 0 or ry != 0:
+        fit(node, w, h)
+    time.sleep(0.25)
+if seen:
+    node = find_vesktop(load_tree())
+    size = output_size()
+    if node is not None and size is not None:
+        fit(node, size[0], size[1])
+PY
+}
+
+restore_all() {
+    [ -n "${fit_pid}" ] && kill "${fit_pid}" 2>/dev/null || true
+    fit_pid=""
+    if [ "${mouse_mode_on}" = "1" ] && command -v batocera-mouse-mode >/dev/null 2>&1; then
+        batocera-mouse-mode disable >/dev/null 2>&1 || true
+        mouse_mode_on=0
+    fi
+    command -v batocera-mouse >/dev/null 2>&1 && batocera-mouse hide
+    vesktop_restore_sway_scale
+}
+trap restore_all EXIT HUP INT TERM
+
+if [ -z "${SWAYSOCK:-}" ] || [ ! -S "${SWAYSOCK}" ]; then
+    for cand in /run/sway-ipc.0.sock /var/run/sway-ipc.0.sock /run/sway-ipc.sock; do
+        if [ -S "${cand}" ]; then
+            export SWAYSOCK="${cand}"
+            break
+        fi
+    done
+fi
+
+chown -R root:audio /var/run/pulse 2>/dev/null || true
+chmod -R g+rwX /var/run/pulse 2>/dev/null || true
+
+if command -v swaymsg >/dev/null 2>&1 && [ -n "${SWAYSOCK:-}" ] && [ -S "${SWAYSOCK}" ]; then
+    read -r OUT_W OUT_H < <(vesktop_output_size)
+    if [ -n "${OUT_W:-}" ] && [ -n "${OUT_H:-}" ]; then
+        vesktop_set_for_window "${OUT_W}" "${OUT_H}"
+    fi
+fi
+
+vesktop_apply_sway_scale
+
+if command -v swaymsg >/dev/null 2>&1 && [ -n "${SWAYSOCK:-}" ] && [ -S "${SWAYSOCK}" ]; then
+    read -r OUT_W OUT_H < <(vesktop_output_size)
+    if [ -n "${OUT_W:-}" ] && [ -n "${OUT_H:-}" ]; then
+        vesktop_set_for_window "${OUT_W}" "${OUT_H}"
+    fi
+    vesktop_fit_window &
+    fit_pid=$!
+fi
+
+flatpakArgs=(/usr/bin/flatpak run -v)
+flatpakArgs+=(--filesystem=/userdata --filesystem=/media)
+flatpakArgs+=(--socket=wayland --socket=fallback-x11 --socket=pulseaudio --socket=session-bus)
+flatpakArgs+=(--env=DESKTOP_SESSION=flatpak --env=SDL_AUDIODRIVER=pulseaudio)
+
+if [ -n "${WAYLAND_DISPLAY:-}" ]; then
+    flatpakArgs+=(--env=XDG_SESSION_TYPE=wayland)
+fi
+
+if [ -f /userdata/system/gamecontrollerdb.txt ]; then
+    flatpakArgs+=(--env=SDL_GAMECONTROLLERCONFIG=/userdata/system/gamecontrollerdb.txt)
+fi
+
+appArgs=()
+if [ -n "${WAYLAND_DISPLAY:-}" ]; then
+    appArgs+=(--ozone-platform=wayland --enable-features=UseOzonePlatform)
+fi
+
+if command -v batocera-ui-scale >/dev/null 2>&1; then
+    chromium_arg="$(batocera-ui-scale chromium-arg || true)"
+    if [ -n "${chromium_arg}" ]; then
+        # shellcheck disable=SC2206
+        appArgs+=(${chromium_arg})
+    fi
+fi
+
+if [ -n "${BATOCERA_APPS_EXTRA_ARGS:-}" ]; then
+    # shellcheck disable=SC2206
+    appArgs+=(${BATOCERA_APPS_EXTRA_ARGS})
+fi
+
+need_no_sandbox=0
+if [ "${BATOCERA_APPS_NO_SANDBOX:-0}" = "1" ] || [ "${BATOCERA_APPS_NO_SANDBOX:-false}" = "true" ]; then
+    need_no_sandbox=1
+elif [ "$(id -u)" = "0" ]; then
+    need_no_sandbox=1
+fi
+if [ "$need_no_sandbox" = "1" ]; then
+    appArgs+=(--no-sandbox)
+fi
+
+dbus-run-session -- "${flatpakArgs[@]}" "$APP_ID" "${appArgs[@]}" "$@"
+exit_code=$?
+exit "${exit_code}"

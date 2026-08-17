@@ -12,7 +12,7 @@ BATOCERA_ONSCREEN_KEYBOARD_SITE = $(call github,jjsullivan5196,wvkbd,$(BATOCERA_
 BATOCERA_ONSCREEN_KEYBOARD_LICENSE = GPL-3.0+
 BATOCERA_ONSCREEN_KEYBOARD_LICENSE_FILES = LICENSE
 
-BATOCERA_ONSCREEN_KEYBOARD_DEPENDENCIES = wayland pango libxkbcommon cairo host-pkgconf
+BATOCERA_ONSCREEN_KEYBOARD_DEPENDENCIES = python3 sway wayland pango libxkbcommon cairo host-pkgconf
 
 BATOCERA_ONSCREEN_KEYBOARD_PATH = \
     $(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/utils/batocera-onscreen-keyboard
@@ -33,6 +33,8 @@ define BATOCERA_ONSCREEN_KEYBOARD_INSTALL_TARGET_CMDS
 	# Install the main toggle script (user-facing)
 	$(INSTALL) -D -m 0755 $(BATOCERA_ONSCREEN_KEYBOARD_PATH)/sources/onscreen-keyboard \
 		$(TARGET_DIR)/usr/bin/onscreen-keyboard
+	$(INSTALL) -D -m 0755 $(BATOCERA_ONSCREEN_KEYBOARD_PATH)/sources/batocera-osk-sway-shift \
+		$(TARGET_DIR)/usr/bin/batocera-osk-sway-shift
 
 	# Install the toggle alias for Control Center compatibility
 	ln -sf onscreen-keyboard $(TARGET_DIR)/usr/bin/onscreen-keyboard-toggle

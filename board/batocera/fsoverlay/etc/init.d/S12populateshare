@@ -153,6 +153,11 @@ if [ -x /usr/bin/batocera-steam-update ] && [ -f "$IN/roms/steam/Steam GamepadUI
     fi
 fi
 
+# Keep Vesktop (Discord) installed and up to date from Flathub.
+if [ -x /usr/bin/batocera-app-vesktop-update ] && [ -f "$IN/roms/apps/Discord.sh" ]; then
+    /usr/bin/batocera-app-vesktop-update >/dev/null 2>&1 || true
+fi
+
 # directories / files to copy when initializing the user data
 #
 # NO UPDATE IS POSSIBLE ON THESE DIRECTORIES WHEN batocera.linux IS UPDATED

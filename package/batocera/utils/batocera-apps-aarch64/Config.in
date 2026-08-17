@@ -36,9 +36,11 @@ config BR2_PACKAGE_BATOCERA_APPS_AARCH64
 	select BR2_PACKAGE_XLIB_LIBXFIXES
 	select BR2_PACKAGE_XLIB_LIBXRANDR
 	select BR2_PACKAGE_ZSTD
+	select BR2_PACKAGE_FLATPAK
 	help
 	  Bundled aarch64 desktop applications exposed through the
-	  EmulationStation "apps" system, including native Google Chrome.
+	  EmulationStation "apps" system, including native Google Chrome
+	  and Discord (Vesktop via Flatpak).
 
 comment "batocera-apps-aarch64 needs a glibc aarch64 target with GBM"
 	depends on !BR2_aarch64 || !BR2_TOOLCHAIN_USES_GLIBC || !BR2_PACKAGE_HAS_LIBGBM || \

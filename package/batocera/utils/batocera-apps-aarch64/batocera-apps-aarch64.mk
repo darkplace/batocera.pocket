@@ -28,6 +28,7 @@ BATOCERA_APPS_AARCH64_DEPENDENCIES = \
 	ca-certificates \
 	cups \
 	dbus \
+	flatpak \
 	fontconfig \
 	libcurl \
 	liberation \
@@ -99,6 +100,12 @@ define BATOCERA_APPS_AARCH64_INSTALL_TARGET_CMDS
 	install -D -m 0755 \
 		$(BATOCERA_APPS_AARCH64_PKGDIR)/batocera-app-peazip \
 		$(TARGET_DIR)/usr/bin/batocera-app-peazip
+	install -D -m 0755 \
+		$(BATOCERA_APPS_AARCH64_PKGDIR)/batocera-app-vesktop \
+		$(TARGET_DIR)/usr/bin/batocera-app-vesktop
+	install -D -m 0755 \
+		$(BATOCERA_APPS_AARCH64_PKGDIR)/batocera-app-vesktop-update \
+		$(TARGET_DIR)/usr/bin/batocera-app-vesktop-update
 
 	mkdir -p $(TARGET_DIR)/usr/share/batocera/datainit/roms/apps/images
 	install -D -m 0644 $(BATOCERA_APPS_AARCH64_PKGDIR)/gamelist.xml \
@@ -115,6 +122,10 @@ define BATOCERA_APPS_AARCH64_INSTALL_TARGET_CMDS
 		$(TARGET_DIR)/usr/share/batocera/datainit/roms/apps/Firefox.sh
 	install -D -m 0755 $(BATOCERA_APPS_AARCH64_PKGDIR)/roms/PeaZip.sh \
 		$(TARGET_DIR)/usr/share/batocera/datainit/roms/apps/PeaZip.sh
+	install -D -m 0755 $(BATOCERA_APPS_AARCH64_PKGDIR)/roms/Discord.sh \
+		$(TARGET_DIR)/usr/share/batocera/datainit/roms/apps/Discord.sh
+	install -D -m 0644 $(BATOCERA_APPS_AARCH64_PKGDIR)/roms/Discord.sh.keys \
+		$(TARGET_DIR)/usr/share/batocera/datainit/roms/apps/Discord.sh.keys
 	install -D -m 0644 $(BATOCERA_APPS_AARCH64_PKGDIR)/images/vacuumtube.png \
 		$(TARGET_DIR)/usr/share/batocera/datainit/roms/apps/images/vacuumtube.png
 	install -D -m 0644 $(BATOCERA_APPS_AARCH64_PKGDIR)/images/brave.png \
@@ -127,6 +138,10 @@ define BATOCERA_APPS_AARCH64_INSTALL_TARGET_CMDS
 	install -D -m 0644 \
 		$(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/core/batocera-desktopapps/icons/peazip.png \
 		$(TARGET_DIR)/usr/share/batocera/datainit/roms/apps/images/peazip.png
+	install -D -m 0644 $(BATOCERA_APPS_AARCH64_PKGDIR)/images/discord.png \
+		$(TARGET_DIR)/usr/share/batocera/datainit/roms/apps/images/discord.png
+	install -D -m 0644 $(BATOCERA_APPS_AARCH64_PKGDIR)/images/discord.png \
+		$(TARGET_DIR)/usr/share/icons/batocera/discord.png
 	if [ "$(BR2_PACKAGE_WAYDROID)" = "y" ]; then \
 		install -D -m 0755 $(BATOCERA_APPS_AARCH64_PKGDIR)/roms/Waydroid.sh \
 			$(TARGET_DIR)/usr/share/batocera/datainit/roms/apps/Waydroid.sh; \

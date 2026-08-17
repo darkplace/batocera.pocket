@@ -30,7 +30,7 @@ define FLATPAK_INSTALL_SCRIPTS
 	ln -sf /usr/bin/batocera-flatpak-update \
 	    $(TARGET_DIR)/usr/share/emulationstation/hooks/preupdate-gamelists-flatpak
 	mkdir -p $(TARGET_DIR)/usr/share/icons/batocera
-	for icon in heroic lutris steam chrome firefox greenlight moonlight chiaki peazip vacuumtube; do \
+	for icon in heroic lutris steam chrome firefox greenlight moonlight chiaki peazip vacuumtube discord; do \
 		if test -f "$(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/core/batocera-desktopapps/icons/$${icon}.png"; then \
 			install -m 0644 \
 				"$(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/core/batocera-desktopapps/icons/$${icon}.png" \

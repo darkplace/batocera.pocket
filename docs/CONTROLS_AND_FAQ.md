@@ -148,8 +148,16 @@ Official folder is `/userdata/roms/gamecube/` (not `gc`).
 | Steam | `/userdata/roms/steam/` |
 | Heroic | `/userdata/roms/heroic/` |
 | Lutris | `/userdata/roms/lutris/` |
+| Discord (Vesktop) | **Apps** — `/userdata/roms/apps/Discord.sh` |
 
 Details and extensions: [ADDING_ROMS.md](ADDING_ROMS.md).
+
+### Discord (Apps)
+
+Vesktop installs/updates from Flathub in the background. While Discord is open,
+hold **Hotkey + Start** or **Hotkey + B** to quit (same as other desktop apps).
+UI scale defaults to ~1.75× on Odin 3; override with
+`/userdata/system/configs/apps-hotfix/vesktop-ui-scale`.
 
 ### BIOS
 
@@ -170,8 +178,11 @@ If it persists after a recent OTA: toggle WiFi in Settings or reboot.
 
 ### Fan does not start / stuck on manual PWM
 
-On August 2026+ builds, auto-fan starts at boot. Mode (Silent / Auto /
-Aggressive / Off) is set via **Home + A → Fan Mode** and persists across reboots.
+On August 2026+ builds, auto-fan starts at boot. **Mode** (Silent / Auto /
+Aggressive / Off) is set via **Home + A → Control Center → Fan Mode** and
+persists in `fan.state`. Fan +/- in that same panel is a manual override.
+Curve *points* for Silent / Auto / Aggressive can be edited in Batocera
+Control → **Fans**; that does not change the current mode.
 
 ### First Steam or Plasma LXC launch takes a long time
 

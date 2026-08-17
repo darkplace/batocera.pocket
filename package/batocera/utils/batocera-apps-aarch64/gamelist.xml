@@ -25,4 +25,13 @@
     <name>PeaZip</name>
     <image>./images/peazip.png</image>
   </game>
+  <game>
+    <path>./Discord.sh</path>
+    <name>Discord</name>
+    <desc>Lightweight Discord client powered by Vesktop (Flatpak from Flathub). Updates automatically in the background. Hold Hotkey and press Start (or B) to quit.</desc>
+    <developer>Vencord</developer>
+    <publisher>Flathub</publisher>
+    <genre>Chat</genre>
+    <image>./images/discord.png</image>
+  </game>
 </gameList>

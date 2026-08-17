@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Icon=/usr/share/icons/batocera/discord.png
+Exec=batocera-app-vesktop
+Terminal=false
+Type=Application
+Categories=Network;Chat;batocera.linux;
+Name=Discord
+GenericName=Discord Client
+Comment=Launch Discord (Vesktop via Flatpak)

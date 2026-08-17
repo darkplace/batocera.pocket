@@ -3108,8 +3108,10 @@ apps:
       apps: { requireAnyOf: [BR2_PACKAGE_BATOCERA_APPS, BR2_PACKAGE_BATOCERA_APPS_AARCH64] }
   comment_en: |
           Launch bundled desktop applications.
+          Discord uses Vesktop (Flatpak from Flathub) and updates automatically in the background.
   comment_br: |
           Execute aplicativos de desktop incluídos.
+          O Discord usa Vesktop (Flatpak do Flathub) e é atualizado automaticamente em segundo plano.
 
 internet:
   name: Internet

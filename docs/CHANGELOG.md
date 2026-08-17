@@ -7,6 +7,33 @@ When you publish a tag, copy the matching section into the Release body.
 
 ---
 
+## `v44-sm8750-20260818` — Odin 3 (Discord / Vesktop + OSK sway shift)
+
+> On top of `v44-sm8750-20260817` (OSK `@` + QAM Back + screensaver).
+
+<details>
+<summary><b>Updates</b></summary>
+
+- **Apps → Discord:** Vesktop Flatpak from Flathub, auto-installed/updated at boot.
+  UI scale matches Lutris (~1.75× Sway output scale + fullscreen fit on Odin 3).
+- **Quit Discord:** hold **Hotkey + Start** (or **Hotkey + B**) while the app is
+  focused — same pattern as Lutris/Steam helpers.
+- **On-screen keyboard:** Sway window shift when the OSK opens so typed text stays
+  visible (persists across reboots).
+
+</details>
+
+<details>
+<summary><b>Fixes</b></summary>
+
+- Vesktop launch on Sway: valid Flatpak sockets, Chromium flags after the app ID,
+  `XDG_RUNTIME_DIR=/run/user/0`, and `--no-sandbox` when running as root.
+- Flatpak gamelist hook maps Vesktop/Vencord icons to the bundled Discord artwork.
+
+</details>
+
+---
+
 ## `v44-sm8750-20260819` / `v44-sm8550-20260819` — Ports translator + Proton tips
 
 > Builds on OSK/QAM/screensaver (sm8750) and Golden Rabbit Steam ARM (both boards).

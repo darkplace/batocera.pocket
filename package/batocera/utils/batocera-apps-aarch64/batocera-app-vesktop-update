@@ -1,0 +1,84 @@
+#!/bin/bash
+# SPDX-FileCopyrightText: Added/modified by suckbluefrog
+set -euo pipefail
+
+APP_ID="dev.vencord.Vesktop"
+FLATHUB="https://dl.flathub.org/repo/flathub.flatpakrepo"
+LOG="/userdata/system/logs/vesktop-update.log"
+STAMP="/userdata/saves/apps/vesktop/.last-update-check"
+UPDATE_INTERVAL="${BATOCERA_VESKTOP_UPDATE_INTERVAL:-86400}"
+
+mkdir -p "$(dirname "$LOG")" "/userdata/saves/apps/vesktop" \
+    "/userdata/saves/flatpak/data/.cache/.flatpak-helper/monitor" \
+    "/userdata/saves/flatpak/binaries"
+
+log() {
+    printf '%s %s\n' "$(date -Iseconds 2>/dev/null || date)" "$*" >>"$LOG"
+}
+
+if ! command -v flatpak >/dev/null 2>&1; then
+    log "flatpak not installed"
+    exit 1
+fi
+
+if ! flatpak remote-list --columns=name 2>/dev/null | grep -qx flathub; then
+    log "adding flathub remote"
+    flatpak remote-add --if-not-exists flathub "$FLATHUB" >>"$LOG" 2>&1 || true
+fi
+
+apply_overrides() {
+    flatpak override --system --filesystem=/userdata --filesystem=/media "$APP_ID" >/dev/null 2>&1 || \
+        flatpak override --user --filesystem=/userdata --filesystem=/media "$APP_ID" >/dev/null 2>&1 || true
+    flatpak override --system --socket=wayland --socket=fallback-x11 --socket=pulseaudio --socket=session-bus "$APP_ID" >/dev/null 2>&1 || \
+        flatpak override --user --socket=wayland --socket=fallback-x11 --socket=pulseaudio --socket=session-bus "$APP_ID" >/dev/null 2>&1 || true
+}
+
+should_update() {
+    if [ "${BATOCERA_VESKTOP_FORCE:-0}" = "1" ]; then
+        return 0
+    fi
+    if ! flatpak info "$APP_ID" >/dev/null 2>&1; then
+        return 0
+    fi
+    if [ ! -f "$STAMP" ]; then
+        return 0
+    fi
+    now=$(date +%s)
+    last=$(stat -c '%Y' "$STAMP" 2>/dev/null || echo 0)
+    [ $((now - last)) -ge "$UPDATE_INTERVAL" ]
+}
+
+if should_update; then
+    if flatpak info "$APP_ID" >/dev/null 2>&1; then
+        log "updating ${APP_ID}"
+        if flatpak update -y "$APP_ID" >>"$LOG" 2>&1; then
+            log "update ok"
+        else
+            log "update failed"
+        fi
+    else
+        log "installing ${APP_ID}"
+        if flatpak install -y flathub "$APP_ID" >>"$LOG" 2>&1; then
+            log "install ok"
+        else
+            log "install failed"
+            exit 1
+        fi
+    fi
+    touch "$STAMP"
+fi
+
+apply_overrides
+
+target_dir="/userdata/saves/flatpak/data"
+if [ -d "$target_dir" ]; then
+    current_owner=$(stat -c '%U' "$target_dir")
+    current_group=$(stat -c '%G' "$target_dir")
+    if [ "${current_owner}:${current_group}" != "root:root" ]; then
+        chown -R root:root "$target_dir" || true
+    fi
+fi
+chmod -R a+rX /userdata/saves/flatpak/binaries 2>/dev/null || true
+chmod a+rx /userdata /userdata/saves /userdata/saves/flatpak 2>/dev/null || true
+
+exit 0

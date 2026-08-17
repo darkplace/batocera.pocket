@@ -32,6 +32,7 @@ find_icon() {
             *chiaki*) printf 'chiaki\n' ;;
             *peazip*) printf 'peazip\n' ;;
             *vacuumtube*) printf 'vacuumtube\n' ;;
+            *discord*|*vesktop*|*vencord*) printf 'discord\n' ;;
             *) return 1 ;;
         esac
     }
