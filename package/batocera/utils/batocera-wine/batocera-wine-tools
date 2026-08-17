@@ -19,6 +19,12 @@ CACHYOS_PROTON_SAMPLE_URL="${CACHYOS_PROTON_SAMPLE_URL:-https://github.com/Cachy
 GE_PROTON_DEFAULT_VERSION="${GE_PROTON_DEFAULT_VERSION:-GE-Proton11-5}"
 GE_PROTON_SAMPLE_URL="${GE_PROTON_SAMPLE_URL:-https://github.com/GloriousEggroll/proton-ge-custom/releases/download/${GE_PROTON_DEFAULT_VERSION}/${GE_PROTON_DEFAULT_VERSION}-x86_64.tar.gz}"
 GE_PROTON_ARM64_SAMPLE_URL="${GE_PROTON_ARM64_SAMPLE_URL:-https://github.com/GloriousEggroll/proton-ge-custom/releases/download/${GE_PROTON_DEFAULT_VERSION}/${GE_PROTON_DEFAULT_VERSION}-aarch64.tar.gz}"
+JANITOR_PROTON_RELEASES_URL="${JANITOR_PROTON_RELEASES_URL:-https://api.github.com/repos/darkplace/proton-janitor-arm64/releases?per_page=20}"
+JANITOR_PROTON_DEFAULT_VERSION="${JANITOR_PROTON_DEFAULT_VERSION:-1.0}"
+JANITOR_PROTON_SAMPLE_URL="${JANITOR_PROTON_SAMPLE_URL:-https://github.com/darkplace/proton-janitor-arm64/releases/download/v${JANITOR_PROTON_DEFAULT_VERSION}/proton11_janitor-${JANITOR_PROTON_DEFAULT_VERSION}-arm64.tar.gz}"
+JANITOR_PROTON_STEAM_DIR="proton11_janitor"
+JANITOR_PROTON_LEGACY_DIR="Proton 11 ★ Janitor"
+STEAM_PROTON_JANITOR_CONFIG="/userdata/system/configs/steam/proton-janitor.conf"
 FREE_WINDOWS_GAMES_BASE_URL="https://raw.githubusercontent.com/foclabroc/toolbox/refs/heads/main/windows"
 STEAM_PROTON_CACHYOS_CONFIG="/userdata/system/configs/steam/proton-cachyos.conf"
 STEAM_PROTON_GE_CONFIG="/userdata/system/configs/steam/proton-ge.conf"
@@ -375,6 +381,10 @@ is_ge_proton_url() {
     [[ "$1" =~ ^https://github\.com/GloriousEggroll/proton-ge-custom/releases/download/[A-Za-z0-9._-]+/GE-Proton[A-Za-z0-9._-]+\.tar\.gz$ ]]
 }
 
+is_janitor_proton_url() {
+    [[ "$1" =~ ^https://github\.com/darkplace/proton-janitor-arm64/releases/download/[A-Za-z0-9._-]+/proton11_janitor-[A-Za-z0-9._-]+-arm64\.tar\.gz$ ]]
+}
+
 ge_proton_json_from_url() {
     local url="$1"
     local archive tip
@@ -627,6 +637,20 @@ write_steam_proton_ge_config() {
     chmod 0644 "$STEAM_PROTON_GE_CONFIG" 2>/dev/null || true
 }
 
+write_steam_proton_janitor_config() {
+    local version="$1"
+    local url="$2"
+
+    mkdir -p "$(dirname "$STEAM_PROTON_JANITOR_CONFIG")" || return 1
+    {
+        printf '%s\n' "# Batocera Steam Proton 11 Janitor selection"
+        printf '%s\n' "BATOCERA_STEAM_PROTON_JANITOR=1"
+        printf '%s\n' "BATOCERA_STEAM_PROTON_JANITOR_VERSION=${version}"
+        printf '%s\n' "BATOCERA_STEAM_PROTON_JANITOR_URL=${url}"
+    } > "$STEAM_PROTON_JANITOR_CONFIG"
+    chmod 0644 "$STEAM_PROTON_JANITOR_CONFIG" 2>/dev/null || true
+}
+
 write_steam_proton11_arm64_config() {
     # Keep CachyOS/GE tips enabled; official Proton 11.0 (ARM64) coexists with them.
     mkdir -p "$(dirname "$STEAM_PROTON_CACHYOS_CONFIG")" || return 1
@@ -731,6 +755,27 @@ write_steam_proton_ge_compatibilitytool_vdf() {
 EOF
 }
 
+write_steam_proton_janitor_compatibilitytool_vdf() {
+    local outdir="$1"
+    local install_path="${2:-.}"
+
+    cat > "${outdir}/compatibilitytool.vdf" <<EOF
+"compatibilitytools"
+{
+  "compat_tools"
+  {
+    "proton11_janitor"
+    {
+      "install_path" "${install_path}"
+      "display_name" "Proton 11 ★ Janitor"
+      "from_oslist" "windows"
+      "to_oslist" "linux"
+    }
+  }
+}
+EOF
+}
+
 prepare_steam_proton_cachyos_dir() {
     local outdir="$1"
     local version="$2"
@@ -764,6 +809,22 @@ prepare_steam_proton_ge_dir() {
     fi
 
     write_steam_proton_ge_compatibilitytool_vdf "$outdir" "$version"
+    chmod +x "$outdir/proton" 2>/dev/null || true
+}
+
+prepare_steam_proton_janitor_dir() {
+    local outdir="$1"
+    local install_path="${2:-.}"
+    local manifest="${outdir}/toolmanifest.vdf"
+
+    if [ -f "$manifest" ]; then
+        sed -i '/require_tool_appid/d' "$manifest" 2>/dev/null || true
+    fi
+    if [ ! -f "$manifest" ] || ! grep -q '"commandline"[[:space:]]*"/proton %verb%"' "$manifest" 2>/dev/null; then
+        write_steam_proton_toolmanifest_vdf "$manifest"
+    fi
+
+    write_steam_proton_janitor_compatibilitytool_vdf "$outdir" "$install_path"
     chmod +x "$outdir/proton" 2>/dev/null || true
 }
 
@@ -1001,6 +1062,103 @@ download_steam_proton_ge_url() {
     if [ "${STEAM_PROTON_INSTALL_QUIET:-0}" != "1" ]; then
         msg_box "Installed ${version} for Steam.\n\nSteam will list it as a compatibility tool after restart. It is also written as the GE-Proton preflight install target."
     fi
+}
+
+janitor_proton_already_installed() {
+    local steam_root compat_dir legacy
+    steam_root="$(steam_root_dir)"
+    compat_dir="${steam_root}/compatibilitytools.d"
+    legacy="${steam_root}/steamapps/common/${JANITOR_PROTON_LEGACY_DIR}"
+    [ -x "${compat_dir}/${JANITOR_PROTON_STEAM_DIR}/proton" ] && return 0
+    [ -x "${legacy}/proton" ] && return 0
+    return 1
+}
+
+download_steam_proton_janitor_url() {
+    local url="${1:-$JANITOR_PROTON_SAMPLE_URL}"
+    local archive version steam_root compat_dir tmpfile outdir legacy
+
+    is_janitor_proton_url "$url" || {
+        msg_box "Unsupported Janitor URL:\n${url}\n\nExpected a GitHub release asset like:\n${JANITOR_PROTON_SAMPLE_URL}"
+        return 1
+    }
+
+    require_commands wget tar || return 1
+
+    steam_root="$(steam_root_dir)"
+    compat_dir="${steam_root}/compatibilitytools.d"
+    legacy="${steam_root}/steamapps/common/${JANITOR_PROTON_LEGACY_DIR}"
+    outdir="${compat_dir}/${JANITOR_PROTON_STEAM_DIR}"
+    version="${JANITOR_PROTON_DEFAULT_VERSION}"
+    archive="$(basename_from_url "$url")"
+    tmpfile="${compat_dir}/${archive}"
+
+    mkdir -p "$compat_dir" || return 1
+
+    if [ -x "${outdir}/proton" ]; then
+        prepare_steam_proton_janitor_dir "$outdir" "."
+        write_steam_proton_janitor_config "$version" "$url" || true
+        if [ "${STEAM_PROTON_INSTALL_QUIET:-0}" != "1" ]; then
+            msg_box "Proton 11 ★ Janitor is already installed."
+        fi
+        return 0
+    fi
+
+    if [ -x "${legacy}/proton" ]; then
+        mkdir -p "$outdir"
+        write_steam_proton_janitor_compatibilitytool_vdf "$outdir" "$legacy"
+        write_steam_proton_toolmanifest_vdf "${legacy}/toolmanifest.vdf"
+        chmod +x "${legacy}/proton" 2>/dev/null || true
+        write_steam_proton_janitor_config "$version" "$url" || true
+        if [ "${STEAM_PROTON_INSTALL_QUIET:-0}" != "1" ]; then
+            msg_box "Proton 11 ★ Janitor is already present (legacy payload).\n\nSteam will list it as a compatibility tool after restart."
+        fi
+        return 0
+    fi
+
+    if ! download_with_gauge "$url" "$tmpfile" "Downloading Proton 11 ★ Janitor..."; then
+        msg_box "Download failed: ${archive}"
+        rm -f "$tmpfile"
+        return 1
+    fi
+
+    rm -rf "$outdir"
+    mkdir -p "$outdir" || return 1
+    if ! extract_archive_with_gauge "$tmpfile" "$outdir" "Extracting Proton 11 ★ Janitor..."; then
+        msg_box "Extraction failed: ${archive}"
+        rm -f "$tmpfile"
+        rm -rf "$outdir"
+        return 1
+    fi
+    rm -f "$tmpfile"
+
+    prepare_steam_proton_janitor_dir "$outdir" "."
+    if [ ! -x "$outdir/proton" ]; then
+        msg_box "Proton 11 ★ Janitor did not install a runnable proton script at:\n${outdir}/proton"
+        return 1
+    fi
+
+    write_steam_proton_janitor_config "$version" "$url" || {
+        msg_box "Installed Proton 11 ★ Janitor, but failed to write ${STEAM_PROTON_JANITOR_CONFIG}."
+        return 1
+    }
+
+    if [ "${STEAM_PROTON_INSTALL_QUIET:-0}" != "1" ]; then
+        msg_box "Installed Proton 11 ★ Janitor for Steam.\n\nSteam will list it as a compatibility tool after restart."
+    fi
+}
+
+steam_proton_janitor_menu() {
+    case "$(uname -m)" in
+        aarch64|arm64) ;;
+        *)
+            msg_box "Proton 11 ★ Janitor is only available on ARM64 builds."
+            return 1
+            ;;
+    esac
+
+    yes_no "Install Proton 11 ★ Janitor (${JANITOR_PROTON_DEFAULT_VERSION}) for Steam?\n\nSource:\n${JANITOR_PROTON_SAMPLE_URL}" || return 1
+    download_steam_proton_janitor_url "$JANITOR_PROTON_SAMPLE_URL"
 }
 
 download_steam_proton_ge_selection() {
@@ -1253,6 +1411,7 @@ steam_arm_proton_status_menu() {
     status+="  CachyOS: ${CACHYOS_PROTON_DEFAULT_VERSION} (tool id proton-cachyos-11.0-arm64)\n"
     status+="  GE-Proton: ${GE_PROTON_DEFAULT_VERSION}\n"
     status+="  Valve: ${STEAM_PROTON11_ARM64_DIR_NAME} (AppID ${STEAM_PROTON11_ARM64_APPID})\n"
+    status+="  Janitor: Proton 11 ★ Janitor (${JANITOR_PROTON_DEFAULT_VERSION})\n"
     status+="  Experimental x86: ${STEAM_PROTON_EXPERIMENTAL_DIR_NAME} (AppID ${STEAM_PROTON_EXPERIMENTAL_APPID}, SLR ${STEAM_PROTON_EXPERIMENTAL_SLR_APPID}) — Rockstar / FEX\n\n"
 
     if [ -x "${steam_root}/steamapps/common/${STEAM_PROTON11_ARM64_DIR_NAME}/proton" ]; then
@@ -1297,7 +1456,7 @@ steam_arm_proton_status_menu() {
 
     status+="\nInstalled Steam compatibility tips:\n"
     if [ -d "$compat_dir" ]; then
-        for proton_dir in "${compat_dir}"/proton-cachyos-*-arm64 "${compat_dir}"/GE-Proton* "${compat_dir}"/proton11_arm64; do
+        for proton_dir in "${compat_dir}"/proton-cachyos-*-arm64 "${compat_dir}"/GE-Proton* "${compat_dir}"/proton11_arm64 "${compat_dir}"/proton11_janitor "${compat_dir}"/proton_ge_arm64 "${compat_dir}"/proton_cachyos_arm64; do
             [ -e "$proton_dir" ] || continue
             name="$(basename "$proton_dir")"
             if [ -x "$proton_dir/proton" ] || [ -x "$(readlink -f "$proton_dir" 2>/dev/null)/proton" ]; then
@@ -1322,7 +1481,7 @@ steam_install_default_arm_protons_menu() {
             ;;
     esac
 
-    yes_no "Install the default ARM Proton set for Steam?\n\n1) Proton-CachyOS ${CACHYOS_PROTON_DEFAULT_VERSION}\n2) ${GE_PROTON_DEFAULT_VERSION} (aarch64)\n3) Register Valve Proton 11.0 (ARM64) / AppID ${STEAM_PROTON11_ARM64_APPID}\n\nTips already present are skipped. Valve payload is fetched on the next online Steam launch if still missing." || return 1
+    yes_no "Install the default ARM Proton set for Steam?\n\n1) Proton-CachyOS ${CACHYOS_PROTON_DEFAULT_VERSION}\n2) ${GE_PROTON_DEFAULT_VERSION} (aarch64)\n3) Register Valve Proton 11.0 (ARM64) / AppID ${STEAM_PROTON11_ARM64_APPID}\n4) Proton 11 ★ Janitor (${JANITOR_PROTON_DEFAULT_VERSION})\n\nTips already present are skipped. Valve payload is fetched on the next online Steam launch if still missing." || return 1
 
     require_commands wget tar xz || return 1
 
@@ -1338,13 +1497,19 @@ steam_install_default_arm_protons_menu() {
         return 1
     }
 
+    info_box "Installing Proton 11 ★ Janitor ${JANITOR_PROTON_DEFAULT_VERSION}..."
+    STEAM_PROTON_INSTALL_QUIET=1 download_steam_proton_janitor_url "$JANITOR_PROTON_SAMPLE_URL" || {
+        msg_box "Failed to install Proton 11 ★ Janitor."
+        return 1
+    }
+
     write_steam_proton11_arm64_config || true
     prepare_steam_proton11_arm64_dir || {
         msg_box "CachyOS and GE-Proton are installed, but Valve Proton 11.0 (ARM64) registration failed."
         return 1
     }
 
-    msg_box "Default ARM Proton set is ready.\n\nCachyOS ${CACHYOS_PROTON_DEFAULT_VERSION}: installed\n${GE_PROTON_DEFAULT_VERSION}: installed\nValve Proton 11.0 (ARM64): registered\n\nLaunch Steam online to finish downloading the Valve tip if the payload is still missing.\nSteam Tools can also install any other ARM CachyOS / GE-Proton release."
+    msg_box "Default ARM Proton set is ready.\n\nCachyOS ${CACHYOS_PROTON_DEFAULT_VERSION}: installed\n${GE_PROTON_DEFAULT_VERSION}: installed\nValve Proton 11.0 (ARM64): registered\nProton 11 ★ Janitor: installed\n\nLaunch Steam online to finish downloading the Valve tip if the payload is still missing."
 }
 
 wine_install_default_ge_proton_arm_menu() {
@@ -2576,11 +2741,12 @@ steam_tools_menu() {
             aarch64|arm64)
                 menu_options+=(
                     2 "Show installed ARM Proton tips"
-                    3 "Install default ARM Proton set (CachyOS + GE + Valve 11)"
+                    3 "Install default ARM Proton set (CachyOS + GE + Valve 11 + Janitor)"
                     4 "Install Valve Proton 11.0 (ARM64)"
                     5 "Install Proton-CachyOS ARM64 builds (all)"
                     6 "Install GE-Proton Steam ARM builds (all)"
                     7 "Install GE-Proton Steam build from URL"
+                    12 "Install Proton 11 ★ Janitor"
                     11 "Register Proton Experimental x86 (Rockstar / FEX)"
                 )
                 ;;
@@ -2622,6 +2788,7 @@ steam_tools_menu() {
             9) install_decky_loader_menu ;;
             10) install_decky_batocera_control_menu ;;
             11) steam_proton_experimental_x86_menu ;;
+            12) steam_proton_janitor_menu ;;
             99) break ;;
         esac
     done

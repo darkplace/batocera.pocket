@@ -1,0 +1,18 @@
+From: batocera <batocera@localhost>
+Subject: 0007-batocera-steam-proton-paths.patch
+
+Discover Batocera's system Steam install (Proton Experimental, etc.)
+even when Lutris HOME is /userdata/saves/lutris.
+
+--- a/lutris/util/steam/config.py
++++ b/lutris/util/steam/config.py
+@@ -22,6 +22,9 @@
+     "~/.var/app/com.valvesoftware.Steam/data/Steam",
+     "/usr/share/steam",
+     "/usr/local/share/steam",
++    # Batocera system Steam (Proton Experimental / Proton ARM64 live here)
++    "/userdata/system/.local/share/Steam",
++    "/userdata/system/steam",
+ )
+ STEAM_ACCOUNT_SETTING = "active_steam_account"
+ 

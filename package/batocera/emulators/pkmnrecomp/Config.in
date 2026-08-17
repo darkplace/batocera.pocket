@@ -1,0 +1,19 @@
+config BR2_PACKAGE_PKMNRECOMP
+	bool "pkmnrecomp"
+	depends on BR2_aarch64
+	depends on BR2_TOOLCHAIN_USES_GLIBC
+	depends on !BR2_STATIC_LIBS
+	select BR2_PACKAGE_SDL2
+	help
+	  Pokemon Recomp launcher for EmulationStation.
+
+	  Ships the official ARM64 AppImages for gen1recomp (Red/Blue/Yellow)
+	  and Gen2Recomped (Gold/Silver/Crystal). The player supplies a
+	  canonical US ROM; nothing is bundled. First launch imports by SHA-1
+	  without a file picker.
+
+	  https://github.com/bryanthaboi/gen1recomp
+	  https://github.com/UNDERdecoded/Gen2Recomped
+
+comment "pkmnrecomp needs an aarch64 glibc toolchain"
+	depends on !BR2_aarch64 || !BR2_TOOLCHAIN_USES_GLIBC || BR2_STATIC_LIBS

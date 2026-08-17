@@ -11,6 +11,14 @@ BOX32_RULE=':box32:M::\x7fELF\x01\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x0
 start() {
     printf "Setting up box64 binfmt_misc: "
 
+    # If the Ports translator last chose FEX, do not steal x86 ELFs at boot.
+    # batocera-ports-translator sets BOX64_BINFMT_FORCE=1 for an explicit switch.
+    pref="$(/usr/bin/batocera-settings-get ports.ports_translator 2>/dev/null || true)"
+    if [ "${BOX64_BINFMT_FORCE:-0}" != "1" ] && [ "$pref" = "fex" ]; then
+        echo "SKIP (ports.ports_translator=fex)"
+        return 0
+    fi
+
     if [ ! -x "$BOX64_INTERPRETER" ]; then
         echo "SKIP (box64 not found)"
         return 0

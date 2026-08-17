@@ -1,0 +1,68 @@
+From: batocera <batocera@localhost>
+Subject: 0004-batocera-wine-defaults.patch
+
+Prefer Steam Proton Experimental (via umu) for Epic/Rockstar launchers,
+keep Batocera wine-proton/wine-tkg selectable, fall back to ge-proton.
+
+--- a/lutris/util/wine/wine.py
++++ b/lutris/util/wine/wine.py
+@@ -14,7 +14,11 @@
+ 
+ WINE_DEFAULT_ARCH: str = "win64" if linux.LINUX_SYSTEM.is_64_bit else "win32"
+ GE_PROTON_LATEST: str = "ge-proton"
++BATOCERA_WINE_DEFAULT: str = "wine-proton"
++BATOCERA_PROTON_DEFAULT: str = "Proton - Experimental"
+ WINE_PATHS: Dict[str, str] = {
++    "wine-proton": "/usr/wine/wine-proton/bin/wine",
++    "wine-tkg": "/usr/wine/wine-tkg/bin/wine",
+     "winehq-devel": "/opt/wine-devel/bin/wine",
+     "winehq-staging": "/opt/wine-staging/bin/wine",
+     "wine-development": "/usr/lib/wine-development/wine",
+@@ -29,6 +33,11 @@
+                 _wine_path = os.path.join("/usr/lib/", _candidate, "bin/wine")
+                 if os.path.isfile(_wine_path):
+                     WINE_PATHS["System " + _candidate] = _wine_path
++    if system.path_exists("/usr/wine"):
++        for _candidate in os.listdir("/usr/wine/"):
++            _wine_path = os.path.join("/usr/wine/", _candidate, "bin/wine")
++            if os.path.isfile(_wine_path) and _candidate not in WINE_PATHS:
++                WINE_PATHS[_candidate] = _wine_path
+     _candidate = None
+     _wine_path = None
+ except Exception as ex:
+@@ -239,8 +248,32 @@
+ 
+ 
+ def get_default_wine_version() -> str:
+-    """Return the default version of wine."""
+-    return GE_PROTON_LATEST
++    """Return the default version of wine.
++
++    Prefer Steam Proton Experimental (Epic/Rockstar launchers on Batocera),
++    then umu GE-Proton, then image-packaged wine-proton/wine-tkg.
++    """
++    try:
++        proton_versions = proton.get_proton_versions()
++    except Exception:
++        proton_versions = {}
++
++    for name in (BATOCERA_PROTON_DEFAULT, "Proton Experimental"):
++        if name in proton_versions:
++            return name
++    for name in proton_versions:
++        if "experimental" in name.casefold():
++            return name
++
++    try:
++        proton.get_umu_path()
++        return GE_PROTON_LATEST
++    except Exception:
++        pass
++
++    for candidate in (BATOCERA_WINE_DEFAULT, "wine-tkg"):
++        if candidate in WINE_PATHS and get_system_wine_version(WINE_PATHS[candidate]):
++            return candidate
++    return BATOCERA_WINE_DEFAULT
+ 
+ 
+ def get_system_wine_version(wine_path: str = "wine") -> str:

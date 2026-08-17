@@ -85,6 +85,7 @@ _GENERATOR_MAP: Final[dict[str, tuple[str, str]]] = {
     'heroic': ('sh.shGenerator', 'ShGenerator'),
     'lutris': ('sh.shGenerator', 'ShGenerator'),
     'n64recomp': ('sh.shGenerator', 'ShGenerator'),
+    'pkmnrecomp': ('pkmnrecomp.pkmnrecompGenerator', 'PkmnrecompGenerator'),
     'firefox': ('internet.internetGenerator', 'InternetGenerator'),
     'gmu': ('gmu.gmuGenerator', 'GmuGenerator'),
 }

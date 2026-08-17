@@ -1,6 +1,12 @@
 {
   "actions_player1": [
     {
+      "trigger": ["hotkey", "start"],
+      "type": "exec",
+      "target": "batocera-es-swissknife --emukill 0.5",
+      "description": "Exit Vita3K / config UI (Home+Start)"
+    },
+    {
       "trigger": "joystick1",
       "type": "mouse",
       "description": "Move Pointer"

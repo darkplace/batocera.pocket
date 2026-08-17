@@ -92,8 +92,11 @@ ODIN_MAPS="AYN_Odin2_Gamepad-2020-3001.mapping AYN_Odin3_Gamepad-2020-3001.mappi
 
 case "$EVENT" in
     gameStart)
-        disable_mouse_mode
+        # Only Steam needs mouse-mode forced off (pad exclusive-grab conflicts).
+        # Emulator config UIs rely on mouse-mode when nested -rom config launches
+        # without controller args (evmapy cannot rebuild stick→mouse).
         if [ "$SYSTEM" = "steam" ]; then
+            disable_mouse_mode
             for base in $ODIN_MAPS; do
                 seed_map_variants "$base"
                 apply_map "$base" ".steam"

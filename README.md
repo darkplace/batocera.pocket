@@ -34,7 +34,7 @@ This Batocera build **requires** the [ROCKNIX ABL](https://github.com/ROCKNIX/ab
 
 Images are per SoC. Every build ships the full Batocera stack (RetroArch cores, Wine/Proton tooling, etc.); the lists below highlight the headline ports and extras.
 
-> **Testing status** — **AYN Odin 3 (SM8750)** and **AYN Odin 2 Portal (SM8550)** are smoke-tested via community beta testers. Other SM8550 devices and **SM8250** remain community / limited testing: flash at your own risk and please report back.
+> **Testing status** — **AYN Odin 3 (SM8750)** and **AYN Odin 2 / Odin 2 Portal (SM8550)** are smoke-tested via community beta testers. Other SM8550 devices and **SM8250** remain community / limited testing: flash at your own risk and please report back.
 
 ### SM8750 — `batocera-sm8750` &nbsp;·&nbsp; ✅ Smoke-tested
 
@@ -62,12 +62,13 @@ Images are per SoC. Every build ships the full Batocera stack (RetroArch cores, 
 **Not included:** Waydroid (disabled on Odin 3 / SM8750)
 </details>
 
-### SM8550 — `batocera-sm8550` &nbsp;·&nbsp; ✅ Tested (Odin 2 Portal)
+### SM8550 — `batocera-sm8550` &nbsp;·&nbsp; ✅ Tested (Odin 2 / Portal)
 
 | Device | Status | Beta tester |
 |--------|--------|-------------|
 | AYN Odin 2 Portal | ✅ Tested | **Colt45RPM**, **Jordanius** |
-| AYN Odin 2 / Mini | Community | — |
+| AYN Odin 2 | ✅ Tested | **bethanngirl** |
+| AYN Odin 2 Mini | Community | — |
 | AYN Thor | Community | — |
 | AYANEO Pocket ACE / DS / DMG / EVO / S2K | Community | — |
 | Retroid Pocket 6 (+ TOP-DPAD DTB) | Community | — |
@@ -383,6 +384,7 @@ Bugs and feedback: **@lukemotion** on Discord (device + image version + logs und
 - **Beta testers**
   - **Colt45RPM** — SM8550 (AYN Odin 2 Portal)
   - **Jordanius** — SM8550 (AYN Odin 2 Portal)
+  - **bethanngirl** — SM8550 (AYN Odin 2)
   - **b_bloodcart99x** — SM8750 (AYN Odin 3)
   - **The Janitor** — SM8750 (AYN Odin 3)
 

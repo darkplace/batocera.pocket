@@ -1,8 +1,10 @@
 From: lukemotion <lukemotion@local>
 Subject: [PATCH] fix dim/black screensaver not covering full screen on rotated Wayland
 
-Odin 3 (sm8750): dim overlay only painted the top ~50%. Clear leftover
-UI scissors, use a proper RGBA color, and fill in horizontal strips.
+Odin 3 (sm8750): dim overlay looked like it only covered ~half the UI.
+Clear leftover UI scissors, use a proper RGBA color, and paint an
+oversized tiled overlay. Slightly raise dim opacity so the full-screen
+cover is obvious on bright themes.
 
 --- a/es-app/src/SystemScreenSaver.cpp
 +++ b/es-app/src/SystemScreenSaver.cpp
@@ -14,25 +16,32 @@ UI scissors, use a proper RGBA color, and fill in horizontal strips.
  
  #define FADE_TIME					(500)
  #define DATE_TIME_UPDATE_INTERVAL	(100)
-@@ -287,9 +288,19 @@
+@@ -287,9 +288,30 @@
  	{
  		std::string screensaver_behavior = Settings::getInstance()->getString("ScreenSaverBehavior");
  
-+		// Drop any leftover UI scissor before painting the overlay. On some
-+		// Wayland/rotated panels (Odin 3) a single full-screen quad was also
-+		// only covering ~half the framebuffer — fill in horizontal strips.
++		// Drop any leftover UI scissor before painting. On rotated Wayland
++		// panels a stale clip made the overlay look like half coverage.
 +		while (Renderer::isClippingEnabled())
 +			Renderer::popClipRect();
++		Renderer::setScissor(Renderer::Rect(0, 0, 0, 0));
 +
  		Renderer::setMatrix(Transform4x4f::Identity());
 -		unsigned char color = screensaver_behavior == "dim" ? 0x000000A0 : 0x000000FF;
 -		Renderer::drawRect(0.0f, 0.0f, Renderer::getScreenWidth(), Renderer::getScreenHeight(), color, color);
-+		const unsigned int color = (screensaver_behavior == "dim") ? 0x000000A0u : 0x000000FFu;
-+		const float w = (float)std::max(Renderer::getScreenWidth(), Renderer::getWindowWidth());
-+		const float h = (float)std::max(Renderer::getScreenHeight(), Renderer::getWindowHeight());
++		// Dim was 0xA0 (~63% black). Bump so the full-screen overlay reads
++		// clearly on bright carousel artwork without going fully black.
++		const unsigned int color = (screensaver_behavior == "dim") ? 0x000000D8u : 0x000000FFu;
++		const float extent = (float)std::max(
++			std::max(Renderer::getScreenWidth(), Renderer::getScreenHeight()),
++			std::max(Renderer::getWindowWidth(), Renderer::getWindowHeight()));
 +		const float strip = 256.0f;
-+		for (float y = 0.0f; y < h; y += strip)
-+			Renderer::drawRect(0.0f, y, w, std::min(strip, h - y), color);
++		for (float y = 0.0f; y < extent; y += strip)
++		{
++			const float sh = std::min(strip, extent - y);
++			for (float x = 0.0f; x < extent; x += strip)
++				Renderer::drawRect(x, y, std::min(strip, extent - x), sh, color);
++		}
  	}
  }
  

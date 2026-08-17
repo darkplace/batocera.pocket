@@ -1,0 +1,19 @@
+{
+  "id": "batocera-handheld",
+  "name": "Batocera handheld hotkeys",
+  "version": "1.0.0",
+  "api": 2,
+  "entry": "main.lua",
+  "profile": "content",
+  "category": "INTERFACE",
+  "game_version": ">=0.1.0 <2.0.0",
+  "priority": 10,
+  "permissions": ["engine_internals"],
+  "dependencies": [],
+  "optional_dependencies": [],
+  "conflicts": [],
+  "description": "L2 toggles pixel-perfect GB aspect (10:9 letterbox). R2 toggles 2X game speed. L1/R1 still cycle speed.",
+  "games": ["gen1", "gen2"],
+  "gen2compat": true,
+  "force_enable_env": "BATOCERA_PKMNRECOMP_HOTKEYS"
+}

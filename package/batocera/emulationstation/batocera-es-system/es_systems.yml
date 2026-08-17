@@ -332,6 +332,30 @@ gb:
   comment_br: |
     Para mais informações: https://wiki.batocera.org/systems:gb
 
+pkmnrecomp:
+  name: Pokemon Recomp
+  manufacturer: Nintendo
+  release: 1996
+  hardware: portable
+  extensions: [gb, gbc]
+  platform: gb
+  theme: gb
+  path: pkmnrecomp
+  emulators:
+    pkmnrecomp:
+      gen1recomp: { requireAnyOf: [BR2_PACKAGE_PKMNRECOMP] }
+      gen2recomp: { requireAnyOf: [BR2_PACKAGE_PKMNRECOMP] }
+  comment_en: |
+    Native LÖVE2D recreations. Put your own canonical US ROM here; nothing is bundled.
+    SHA-1 picks the core: Red/Blue/Yellow → gen1recomp, Gold/Silver/Crystal → gen2recomp.
+    First launch imports the ROM without a file picker (Gen 2 can take a couple of minutes).
+  comment_fr: |
+    Recreations natives LÖVE2D. Placez votre ROM US canonique; rien n'est inclus.
+    Le SHA-1 choisit le coeur: Rouge/Bleu/Jaune → gen1recomp, Or/Argent/Cristal → gen2recomp.
+  comment_br: |
+    Recriacoes nativas LÖVE2D. Coloque sua ROM US canonica; nada e incluido na imagem.
+    O SHA-1 escolhe o core: Red/Blue/Yellow → gen1recomp, Gold/Silver/Crystal → gen2recomp.
+
 sgb:
   name:       Super Game Boy
   manufacturer: Nintendo

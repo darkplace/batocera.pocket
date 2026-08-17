@@ -1,0 +1,15 @@
+From: batocera <batocera@localhost>
+Subject: Skip EGS Pillow logo compositing on Batocera
+
+--- a/lutris/services/egs.py
++++ b/lutris/services/egs.py
+@@ -40,6 +40,9 @@
+     min_logo_y = 150
+ 
+     def _render_filename(self, filename):
++        # Batocera: Pillow/libjpeg ABI mismatch truncates covers on save.
++        # Downloaded JPEGs display correctly via GdkPixbuf without compositing.
++        return
+         game_box_path = os.path.join(self.dest_path, filename)
+         logo_path = os.path.join(EGS_LOGO_PATH, filename.replace(".jpg", ".png"))
+         has_logo = os.path.exists(logo_path)

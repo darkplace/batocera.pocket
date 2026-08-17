@@ -18,24 +18,12 @@ config BR2_PACKAGE_FEX_EMU
 	  FEX-Emu is a fast x86 and x86-64 Linux emulator that allows
 	  running x86/x86_64 applications on AArch64 Linux systems.
 
-	  This package restores the host-side FEX runtime for explicit
-	  invocation on Batocera aarch64 systems.
+	  This package restores the host-side FEX runtime and ships
+	  /etc/init.d/S30fex-emu so the Ports translator / Tools app can
+	  switch binfmt_misc at runtime.
 
-	  It does not enable FEX binfmt_misc registration by default,
-	  allowing existing box64/box32 handlers to remain the default
+	  S30fex-emu does not register FEX at boot unless
+	  ports.ports_translator=fex. Box64/box32 remain the default
 	  transparent x86/x86_64 executors.
 
 	  https://github.com/FEX-Emu/FEXS
-
-if BR2_PACKAGE_FEX_EMU
-
-config BR2_PACKAGE_FEX_EMU_BINFMT
-	bool "install optional FEX binfmt init script"
-	help
-	  Install the legacy FEX binfmt_misc init script.
-
-	  This is disabled by default so FEX is only used when called
-	  explicitly, and existing box64/box32 binfmt registrations are
-	  left untouched.
-
-endif

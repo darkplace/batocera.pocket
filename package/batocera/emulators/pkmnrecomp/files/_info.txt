@@ -1,0 +1,4 @@
+Pokemon Recomp
+Copy a canonical US Red/Blue/Yellow (.gb/.gbc) or Gold/Silver/Crystal (.gbc) into this folder.
+The system stays hidden in EmulationStation until a ROM is present.
+Mods go in mods/gen1 and mods/gen2 (ZIP). Optional mods stay in mods/optional.

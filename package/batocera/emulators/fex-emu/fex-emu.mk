@@ -236,7 +236,9 @@ define FEX_EMU_INSTALL_TARGET_CMDS
 		$(HOST_DIR)/bin/cmake --install $(FEX_EMU_BUILDDIR)
 endef
 
-ifeq ($(BR2_PACKAGE_FEX_EMU_BINFMT),y)
+# Always ship S30fex-emu when FEX is built. The script is a no-op at boot
+# unless ports.ports_translator=fex, so Box64 stays the default binfmt.
+# Without this file, batocera-ports-translator silently fails to switch to FEX.
 define FEX_EMU_INSTALL_TARGET_BINFMT
 	$(INSTALL) -D -m 0755 \
 		$(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/emulators/fex-emu/S30fex-emu \
@@ -244,7 +246,6 @@ define FEX_EMU_INSTALL_TARGET_BINFMT
 endef
 
 FEX_EMU_POST_INSTALL_TARGET_HOOKS += FEX_EMU_INSTALL_TARGET_BINFMT
-endif
 
 $(eval $(cmake-package))
 $(eval $(host-cmake-package))

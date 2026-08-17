@@ -4,8 +4,8 @@
 #
 ################################################################################
 
-# Release: Apr 20, 2026
-BOX64_VERSION = v0.4.2
+# Release: Aug 2, 2026
+BOX64_VERSION = v0.4.4
 BOX64_SITE = https://github.com/ptitseb/box64
 BOX64_SITE_METHOD = git
 BOX64_LICENSE = GPLv3

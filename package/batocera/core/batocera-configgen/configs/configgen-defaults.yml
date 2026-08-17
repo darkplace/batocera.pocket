@@ -572,6 +572,9 @@ plugnplay:
 pokemini:
   emulator: libretro
   core:     pokemini
+pkmnrecomp:
+  emulator: pkmnrecomp
+  core:     gen1recomp
 ports:
   emulator: sh
   core:     sh

@@ -95,9 +95,14 @@ def _patch_portmaster_batocera_device_profile() -> None:
 class ShGenerator(Generator):
 
     def getHotkeysContext(self) -> HotkeysContext:
+        # Wayland apps (Vita3K, many Qt UIs) often ignore Alt+F4 from the
+        # shell context. Soft-exit (hotkey+start → KEY_EXIT) must tear down
+        # the emulatorlauncher session instead.
         return {
             "name": "shell",
-            "keys": { "exit": ["KEY_LEFTALT", "KEY_F4"] }
+            "keys": {
+                "exit": "batocera-es-swissknife --emukill 0.5",
+            },
         }
 
     def generate(self, system, rom, playersControllers, metadata, guns, wheels, gameResolution):

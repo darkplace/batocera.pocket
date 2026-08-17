@@ -4,13 +4,21 @@ lutris_home="${BATOCERA_LUTRIS_HOME:-/userdata/saves/lutris}"
 lutris_bin="${BATOCERA_LUTRIS_BIN:-/usr/libexec/lutris-bin}"
 
 export HOME="$lutris_home"
-export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
-export XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
-export XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
+# Always pin XDG under Lutris HOME. Inheriting a parent session's
+# XDG_* (e.g. /userdata/system) breaks theme, icons and coverart.
+export XDG_CONFIG_HOME="$HOME/.config"
+export XDG_DATA_HOME="$HOME/.local/share"
+export XDG_CACHE_HOME="$HOME/.cache"
 export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
 export FONTCONFIG_PATH="${FONTCONFIG_PATH:-/etc/fonts}"
 export FONTCONFIG_FILE="${FONTCONFIG_FILE:-/etc/fonts/fonts.conf}"
 export LUTRIS_SKIP_INIT="${LUTRIS_SKIP_INIT:-1}"
+# Prefer Firefox for OAuth (Google, etc.); WebKitGTK often hangs.
+export BATOCERA_LUTRIS_BROWSER_LOGIN="${BATOCERA_LUTRIS_BROWSER_LOGIN:-1}"
+# Chrome handles touch taps for Google OAuth; Firefox often only scrolls/zooms.
+export BATOCERA_LUTRIS_BROWSER="${BATOCERA_LUTRIS_BROWSER:-/usr/bin/batocera-app-chrome}"
+export BATOCERA_FIREFOX_HOME="${BATOCERA_FIREFOX_HOME:-/userdata/saves/apps/firefox}"
+export BATOCERA_CHROME_HOME="${BATOCERA_CHROME_HOME:-/userdata/saves/apps/chrome}"
 
 # Ensure GTK can always find system icon themes and symbolic glyph assets.
 case ":${XDG_DATA_DIRS:-}:" in
@@ -22,8 +30,69 @@ case ":${XDG_DATA_DIRS:-}:" in
 	*) XDG_DATA_DIRS="${XDG_DATA_DIRS:+$XDG_DATA_DIRS:}/usr/share" ;;
 esac
 export XDG_DATA_DIRS
-export GTK_THEME="${GTK_THEME:-Adwaita}"
+# Do NOT export GTK_THEME=Adwaita:dark — that freezes dark mode and ignores
+# Lutris Preferences → Theme (light/dark/default). StyleManager toggles
+# gtk-application-prefer-dark-theme on theme "Adwaita" (needs gtk.css +
+# gtk-dark.css). Batocera images often ship only Adwaita-dark; provide a
+# userdata Adwaita that points at GTK's built-in resources.
+unset GTK_THEME
 export GTK_ICON_THEME="${GTK_ICON_THEME:-Adwaita}"
+mkdir -p "${XDG_DATA_HOME}/themes/Adwaita/gtk-3.0" "${XDG_DATA_HOME}/themes/Adwaita/gtk-4.0"
+if [ ! -f "${XDG_DATA_HOME}/themes/Adwaita/gtk-3.0/gtk.css" ]; then
+	printf '%s\n' '@import url("resource:///org/gtk/libgtk/theme/Adwaita/gtk-contained.css");' \
+		> "${XDG_DATA_HOME}/themes/Adwaita/gtk-3.0/gtk.css"
+fi
+if [ ! -f "${XDG_DATA_HOME}/themes/Adwaita/gtk-3.0/gtk-dark.css" ]; then
+	printf '%s\n' '@import url("resource:///org/gtk/libgtk/theme/Adwaita/gtk-contained-dark.css");' \
+		> "${XDG_DATA_HOME}/themes/Adwaita/gtk-3.0/gtk-dark.css"
+fi
+# Prefer dark when lutris.conf says so (or default on handhelds with no portal).
+lutris_pref_theme="dark"
+lutris_conf="${XDG_DATA_HOME}/lutris/lutris.conf"
+if [ -f "$lutris_conf" ]; then
+	_pt="$(sed -n 's/^preferred_theme[[:space:]]*=[[:space:]]*//p' "$lutris_conf" | head -1 | tr -d '[:space:]')"
+	[ -n "$_pt" ] && lutris_pref_theme="$_pt"
+fi
+case "$lutris_pref_theme" in
+	light) lutris_prefer_dark=0 ;;
+	*)     lutris_prefer_dark=1 ;;
+esac
+# Handheld: only the close button (min/max useless under Sway floating).
+# Keep decoration-layout; do not lock Adwaita-dark so light/default can work.
+mkdir -p "${XDG_CONFIG_HOME}/gtk-3.0" "${XDG_CONFIG_HOME}/gtk-4.0"
+for gtk_ini in \
+	"${XDG_CONFIG_HOME}/gtk-3.0/settings.ini" \
+	"${XDG_CONFIG_HOME}/gtk-4.0/settings.ini"
+do
+	cat > "$gtk_ini" <<EOF
+[Settings]
+gtk-application-prefer-dark-theme=${lutris_prefer_dark}
+gtk-theme-name=Adwaita
+gtk-icon-theme-name=Adwaita
+gtk-decoration-layout=:close
+EOF
+done
+cat > "${XDG_CONFIG_HOME}/gtk-3.0/gtk.css" <<'EOF'
+headerbar button.titlebutton.minimize,
+headerbar button.titlebutton.maximize {
+	opacity: 0; min-width: 0; min-height: 0; padding: 0; margin: 0;
+	border: none; background: none;
+}
+headerbar button.titlebutton.close {
+	opacity: 1; min-width: 40px; min-height: 40px; padding: 6px;
+	border-radius: 6px;
+}
+headerbar button.titlebutton.close:hover { background-color: #c42b1c; color: #ffffff; }
+EOF
+# Expose Lutris runtime icons via the normal XDG icon search path (PNG
+# fallbacks; Batocera often lacks gdk-pixbuf SVG loaders).
+if [ -d "${XDG_DATA_HOME}/lutris/runtime/icons" ]; then
+	case ":${XDG_DATA_DIRS:-}:" in
+		*":${XDG_DATA_HOME}/lutris/runtime:"*) ;;
+		*) XDG_DATA_DIRS="${XDG_DATA_HOME}/lutris/runtime${XDG_DATA_DIRS:+:$XDG_DATA_DIRS}" ;;
+	esac
+	export XDG_DATA_DIRS
+fi
 if [ -f /usr/lib/gdk-pixbuf-2.0/2.10.0/loaders.cache ]; then
 	export GDK_PIXBUF_MODULE_FILE="${GDK_PIXBUF_MODULE_FILE:-/usr/lib/gdk-pixbuf-2.0/2.10.0/loaders.cache}"
 fi
@@ -38,12 +107,247 @@ fi
 mkdir -p "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_CACHE_HOME" "$XDG_RUNTIME_DIR"
 # Ensure desktop shortcut targets exist for Lutris "Create Shortcut" actions.
 mkdir -p "${XDG_DATA_HOME}/applications" "${HOME}/Desktop"
+
+# Wire Batocera Wine runners into Lutris' runner tree (names match wine picker).
+lutris_wine_dir="${XDG_DATA_HOME}/lutris/runners/wine"
+mkdir -p "$lutris_wine_dir"
+for wine_name in wine-proton wine-tkg; do
+	wine_src="/usr/wine/${wine_name}"
+	wine_dst="${lutris_wine_dir}/${wine_name}"
+	if [ -x "${wine_src}/bin/wine" ]; then
+		if [ -L "$wine_dst" ] || [ ! -e "$wine_dst" ]; then
+			ln -snf "$wine_src" "$wine_dst"
+		fi
+	fi
+done
+
+# Runtime service icons are SVG; without gdk-pixbuf SVG loader GTK shows blanks.
+# Pre-rasterize to PNG next to each SVG when rsvg-convert is available.
+lutris_icon_root="${XDG_DATA_HOME}/lutris/runtime/icons/hicolor"
+if command -v rsvg-convert >/dev/null 2>&1 && [ -d "${lutris_icon_root}/scalable/apps" ]; then
+	mkdir -p "${lutris_icon_root}/64x64/apps" "${lutris_icon_root}/24x24/apps"
+	for svg in "${lutris_icon_root}/scalable/apps"/*.svg; do
+		[ -f "$svg" ] || continue
+		base="$(basename "$svg" .svg)"
+		for size_dir in 64x64 24x24; do
+			size="${size_dir%x*}"
+			png="${lutris_icon_root}/${size_dir}/apps/${base}.png"
+			if [ ! -f "$png" ] || [ "$svg" -nt "$png" ]; then
+				rsvg-convert -w "$size" -h "$size" "$svg" -o "$png" 2>/dev/null || true
+			fi
+		done
+	done
+	# Header / CSD glyphs from Adwaita (also SVG-only on this image).
+	# Prefer userdata icons so a read-only /usr squashfs still works.
+	header_icon_root="${XDG_DATA_HOME}/icons/hicolor"
+	for size in 16 24 32; do
+		mkdir -p "${header_icon_root}/${size}x${size}/actions"
+		for pair in \
+			"ui/window-close-symbolic:window-close-symbolic" \
+			"ui/window-close-symbolic:window-close" \
+			"actions/view-grid-symbolic:view-grid-symbolic" \
+			"actions/view-list-symbolic:view-list-symbolic" \
+			"actions/view-more-symbolic:view-more-symbolic" \
+			"actions/open-menu-symbolic:open-menu-symbolic" \
+			"actions/system-search-symbolic:system-search-symbolic" \
+			"actions/view-refresh-symbolic:view-refresh-symbolic" \
+			"actions/applications-games-symbolic:applications-games-symbolic" \
+			"categories/applications-games-symbolic:applications-games-symbolic" \
+			"actions/applications-system-symbolic:applications-system-symbolic" \
+			"categories/applications-system-symbolic:applications-system-symbolic" \
+			"places/folder-symbolic:folder-symbolic" \
+			"places/folder-saved-search-symbolic:folder-saved-search-symbolic" \
+			"mimetypes/package-x-generic-symbolic:package-x-generic-symbolic" \
+			"actions/document-open-recent-symbolic:document-open-recent-symbolic" \
+			"actions/media-playback-start-symbolic:media-playback-start-symbolic" \
+			"actions/system-log-out-symbolic:system-log-out-symbolic" \
+			"actions/system-software-install-symbolic:system-software-install-symbolic" \
+			"actions/pan-down-symbolic:pan-down-symbolic" \
+			"actions/pan-end-symbolic:pan-end-symbolic" \
+			"actions/action-unavailable-symbolic:action-unavailable-symbolic" \
+			"actions/preferences-system-symbolic:preferences-system-symbolic" \
+			"emblems/emblem-system-symbolic:emblem-system-symbolic" \
+			"emblems/emblem-favorite-symbolic:favorite-symbolic" \
+			"emblems/emblem-favorite-symbolic:tag-symbolic" \
+			"status/avatar-default-symbolic:avatar-default-symbolic" \
+			"status/dialog-warning-symbolic:dialog-warning-symbolic" \
+			"actions/zoom-fit-best-symbolic:zoom-fit-best-symbolic" \
+			"actions/zoom-fit-best-symbolic:zoom-fit-best"
+		do
+			src="${pair%%:*}"
+			dst="${pair##*:}"
+			svg="/usr/share/icons/Adwaita/scalable/${src}.svg"
+			[ -f "$svg" ] || continue
+			png="${header_icon_root}/${size}x${size}/actions/${dst}.png"
+			if [ ! -f "$png" ] || [ "$svg" -nt "$png" ]; then
+				rsvg-convert -w "$size" -h "$size" -o "$png" "$svg" 2>/dev/null || true
+			fi
+		done
+	done
+	if [ ! -f "${header_icon_root}/index.theme" ]; then
+		cat > "${header_icon_root}/index.theme" <<'EOF'
+[Icon Theme]
+Name=Lutris Header Fallbacks
+Comment=PNG fallbacks when gdk-pixbuf SVG is missing
+Inherits=hicolor,Adwaita
+Directories=16x16/actions,24x24/actions,32x32/actions
+
+[16x16/actions]
+Size=16
+Context=Actions
+Type=Fixed
+
+[24x24/actions]
+Size=24
+Context=Actions
+Type=Fixed
+
+[32x32/actions]
+Size=32
+Context=Actions
+Type=Fixed
+EOF
+	fi
+	case ":${XDG_DATA_DIRS:-}:" in
+		*":${XDG_DATA_HOME}:"*) ;;
+		*) XDG_DATA_DIRS="${XDG_DATA_HOME}${XDG_DATA_DIRS:+:$XDG_DATA_DIRS}" ; export XDG_DATA_DIRS ;;
+	esac
+	# Ensure the runtime icon tree is a valid theme root for Gtk.IconTheme.
+	if [ ! -f "${lutris_icon_root}/index.theme" ]; then
+		cat > "${lutris_icon_root}/index.theme" <<'EOF'
+[Icon Theme]
+Name=Lutris Runtime
+Comment=Lutris bundled service/runner icons
+Directories=64x64/apps,24x24/apps,scalable/apps,symbolic/apps
+
+[64x64/apps]
+Size=64
+Context=Applications
+Type=Fixed
+
+[24x24/apps]
+Size=24
+Context=Applications
+Type=Fixed
+
+[scalable/apps]
+Size=128
+Context=Applications
+Type=Scalable
+MinSize=1
+MaxSize=256
+
+[symbolic/apps]
+Size=16
+Context=Applications
+Type=Scalable
+MinSize=1
+MaxSize=256
+EOF
+	fi
+	# Service icon ids that differ from the PNG basename in the runtime pack.
+	for size_dir in 64x64 24x24; do
+		apps_dir="${lutris_icon_root}/${size_dir}/apps"
+		[ -d "$apps_dir" ] || continue
+		if [ -f "${apps_dir}/ea.png" ] && [ ! -e "${apps_dir}/ea_app.png" ]; then
+			ln -sfn ea.png "${apps_dir}/ea_app.png"
+		fi
+		# Steam service uses icon id "steam-client", not "steam".
+		if [ -f "${apps_dir}/steam.png" ] && [ ! -e "${apps_dir}/steam-client.png" ]; then
+			ln -sfn steam.png "${apps_dir}/steam-client.png"
+		fi
+		if [ -f "${apps_dir}/egs.png" ] && [ ! -e "${apps_dir}/epic-games-store.png" ]; then
+			ln -sfn egs.png "${apps_dir}/epic-games-store.png"
+		fi
+	done
+	# Adwaita on Batocera only indexes */legacy (not */apps), so GTK never
+	# finds service PNGs dropped into Adwaita/*/apps. Prefer a userdata theme
+	# that inherits Adwaita and carries the runtime PNGs (incl. *-symbolic
+	# used by Runners/Platforms in the sidebar).
+	svc_theme_root="${XDG_DATA_HOME}/icons/LutrisServices"
+	if [ -d "${lutris_icon_root}/24x24/apps" ]; then
+		for size_dir in 16x16 24x24 64x64 symbolic; do
+			mkdir -p "${svc_theme_root}/${size_dir}/apps"
+			if [ -d "${lutris_icon_root}/${size_dir}/apps" ]; then
+				for src in "${lutris_icon_root}/${size_dir}/apps"/*; do
+					[ -e "$src" ] || continue
+					ln -sfn "$src" "${svc_theme_root}/${size_dir}/apps/$(basename "$src")"
+				done
+			fi
+		done
+		cat > "${svc_theme_root}/index.theme" <<'EOF'
+[Icon Theme]
+Name=LutrisServices
+Comment=Lutris service icons over Adwaita
+Inherits=Adwaita,hicolor
+Directories=16x16/apps,24x24/apps,64x64/apps,symbolic/apps
+
+[16x16/apps]
+Size=16
+Context=Applications
+Type=Fixed
+
+[24x24/apps]
+Size=24
+Context=Applications
+Type=Fixed
+
+[64x64/apps]
+Size=64
+Context=Applications
+Type=Fixed
+
+[symbolic/apps]
+Size=16
+Context=Applications
+Type=Scalable
+MinSize=1
+MaxSize=256
+EOF
+		gtk-update-icon-cache -f "${svc_theme_root}" 2>/dev/null || true
+		export GTK_ICON_THEME=LutrisServices
+		if [ -f "${XDG_CONFIG_HOME}/gtk-3.0/settings.ini" ]; then
+			sed -i 's/^gtk-icon-theme-name=.*/gtk-icon-theme-name=LutrisServices/' \
+				"${XDG_CONFIG_HOME}/gtk-3.0/settings.ini" 2>/dev/null || true
+			grep -q '^gtk-icon-theme-name=' "${XDG_CONFIG_HOME}/gtk-3.0/settings.ini" 2>/dev/null \
+				|| printf '\ngtk-icon-theme-name=LutrisServices\n' >> "${XDG_CONFIG_HOME}/gtk-3.0/settings.ini"
+		fi
+	fi
+fi
 # Compatibility path for tools/scripts using singular "/userdata/save".
 legacy_home="/userdata/save/lutris"
 if [ "$HOME" = "/userdata/saves/lutris" ] && [ ! -e "$legacy_home" ]; then
 	mkdir -p "/userdata/save"
 	ln -s "$HOME" "$legacy_home" 2>/dev/null || true
 fi
+# Expose Batocera system Steam (Proton Experimental, etc.) to Lutris/umu.
+# Lutris HOME is isolated under /userdata/saves/lutris; without these links
+# Proton discovery only sees local compatibilitytools.d downloads.
+steam_root=""
+for candidate in \
+	"/userdata/system/.local/share/Steam" \
+	"/userdata/system/steam"
+do
+	if [ -d "${candidate}/steamapps/common" ] || [ -d "${candidate}/steamapps" ]; then
+		steam_root="$candidate"
+		break
+	fi
+done
+lutris_steam="${XDG_DATA_HOME}/Steam"
+mkdir -p "$lutris_steam" "${lutris_steam}/compatibilitytools.d"
+if [ -n "$steam_root" ] && [ -d "${steam_root}/steamapps" ]; then
+	if [ -L "${lutris_steam}/steamapps" ] || [ ! -e "${lutris_steam}/steamapps" ]; then
+		ln -snf "${steam_root}/steamapps" "${lutris_steam}/steamapps" 2>/dev/null || true
+	fi
+	case ":${STEAM_EXTRA_COMPAT_TOOLS_PATHS:-}:" in
+		*":${steam_root}/steamapps:"*) ;;
+		*)
+			STEAM_EXTRA_COMPAT_TOOLS_PATHS="${STEAM_EXTRA_COMPAT_TOOLS_PATHS:+$STEAM_EXTRA_COMPAT_TOOLS_PATHS:}${steam_root}/steamapps"
+			export STEAM_EXTRA_COMPAT_TOOLS_PATHS
+			;;
+	esac
+fi
+
 # Ensure Steam userdata path exists in Lutris HOME for Steam shortcut integrations.
 steam_userdata_link="${HOME}/.steam/steam/userdata"
 steam_userdata_src=""
@@ -69,6 +373,20 @@ else
 	mkdir -p "$steam_userdata_link"
 fi
 
+# Ensure mangohud stays resolvable for Lutris Settings → FPS counter.
+case ":${PATH:-}:" in
+	*:/usr/bin:*) ;;
+	*) PATH="/usr/bin:${PATH:-/bin}" ; export PATH ;;
+esac
+
+# Esync needs a high NOFILE hard/soft limit (Lutris checks hard >= 524288).
+if [ "$(ulimit -Hn 2>/dev/null || echo 0)" -lt 524288 ] 2>/dev/null; then
+	ulimit -Hn 1048576 2>/dev/null || true
+fi
+if [ "$(ulimit -Sn 2>/dev/null || echo 0)" -lt 524288 ] 2>/dev/null; then
+	ulimit -Sn 524288 2>/dev/null || ulimit -n 524288 2>/dev/null || true
+fi
+
 if [ ! -x "$lutris_bin" ]; then
 	lutris_bin="/usr/bin/lutris-bin"
 fi
@@ -81,5 +399,8 @@ fi
 if [ "${BATOCERA_LUTRIS_MODE:-regular}" = "console" ] && [ "$#" -eq 0 ] && command -v lutrisview >/dev/null 2>&1; then
 	exec lutrisview
 fi
+
+# PyGObject needs _gi_cairo for IconView cover painting.
+python3 -c 'import gi; gi.require_foreign("cairo")' 2>/dev/null || true
 
 exec "$lutris_bin" "$@"

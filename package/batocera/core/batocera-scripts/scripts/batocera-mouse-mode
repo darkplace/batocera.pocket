@@ -29,6 +29,12 @@ CONFIG_FILE = Path("/userdata/system/configs/batocera-mouse-mode.json")
 DEVICE_NAME = "batocera mouse mode"
 IGNORE_NAMES = {DEVICE_NAME, "batocera hotkeys", "evmapy"}
 TOGGLE_CODES = {ecodes.BTN_MODE, ecodes.BTN_START, ecodes.BTN_SELECT}
+# AYN rear paddles live on the same evdev node as the gamepad. Exclusive grab
+# blocks the paddle daemon, so M2 must disable mouse-mode from inside this process.
+PADDLE_DISABLE_CODES = {
+    getattr(ecodes, "BTN_TRIGGER_HAPPY5", 708),  # M2 / right paddle
+    getattr(ecodes, "BTN_TRIGGER_HAPPY7", 710),  # M1 / left paddle
+}
 
 DEFAULT_CONFIG = {
     "deadzone": 0.10,
@@ -335,6 +341,15 @@ class MouseModeDaemon:
             elif event.code == source.axis_y:
                 source.y = normalize_abs(event.value, source.abs_y, deadzone)
         elif event.type == ecodes.EV_KEY:
+            # M1/M2 press or release exits mouse mode. Release-only failed when
+            # Armada's M2 binding both enables (paddle_daemon toggle) and is
+            # expected to disable: exclusive grab hides events from the daemon,
+            # so this in-process path is the only reliable exit.
+            if event.code in PADDLE_DISABLE_CODES and event.value in (0, 1):
+                if time.monotonic() - self.enabled_at > 0.20:
+                    self.disable()
+                return
+
             if event.code in TOGGLE_CODES:
                 if event.value:
                     self.pressed_codes.add(event.code)
@@ -426,6 +441,28 @@ class MouseModeDaemon:
             pass
 
 
+def force_kill_daemon() -> None:
+    """Last-resort exit when exclusive grab leaves the pad unusable."""
+    try:
+        if PID_FILE.exists():
+            pid = int(PID_FILE.read_text().strip())
+            os.kill(pid, signal.SIGKILL)
+    except (OSError, ValueError):
+        pass
+    subprocess.run(
+        ["pkill", "-9", "-f", r"(^|[[:space:]/])batocera-mouse-mode([[:space:]]|$)"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    for path in (STATE_FILE, PID_FILE, SOCKET_FILE):
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            pass
+    run_quiet(["batocera-mouse", "hide"])
+
+
 def send_command(command: str) -> int:
     if not SOCKET_FILE.exists():
         return 1
@@ -467,7 +504,21 @@ def main() -> int:
         return 0
 
     if args.command == "stop":
-        return 0 if send_command("stop") == 0 else 1
+        send_command("stop")
+        time.sleep(0.15)
+        if daemon_running():
+            force_kill_daemon()
+        return 0
+
+    if args.command == "disable":
+        if daemon_running():
+            send_command("disable")
+            time.sleep(0.15)
+        if STATE_FILE.exists() or daemon_running():
+            force_kill_daemon()
+        else:
+            run_quiet(["batocera-mouse", "hide"])
+        return 0
 
     if not daemon_running():
         subprocess.Popen([sys.argv[0], "start"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)

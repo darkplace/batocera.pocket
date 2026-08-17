@@ -1,0 +1,85 @@
+From: batocera <batocera@localhost>
+Subject: 0009-batocera-egs-legendary-install.patch
+
+On Batocera, install EGS catalog games via Legendary (Heroic binary) using
+the user's existing Lutris Epic login, instead of launching Wine EGS client.
+
+--- a/lutris/services/egs.py
++++ b/lutris/services/egs.py
+@@ -20,6 +20,7 @@
+ from lutris.services.service_media import ServiceMedia
+ from lutris.util import system
+ from lutris.util.egs.egs_launcher import EGSLauncher
++from lutris.util.egs import legendary as egs_legendary
+ from lutris.util.log import logger
+ from lutris.util.strings import slugify
+ 
+@@ -405,6 +406,55 @@ class EpicGamesStoreService(OnlineService):
+         sync_media(installed_slugs)
+         logger.debug("All EGS games imported")
+ 
++    def generate_legendary_installer(self, db_game):
++        """Installer that downloads via Legendary and launches with umu/Proton."""
++        appid = db_game["appid"]
++        slug = self.get_installed_slug(db_game)
++        install_bin = egs_legendary.get_install_helper_path()
++        return {
++            "name": db_game["name"],
++            "version": _("Epic Games (Legendary)"),
++            "slug": slugify(db_game["name"]) + "-" + self.id + "-legendary",
++            "game_slug": slug,
++            "runner": "linux",
++            "appid": appid,
++            "script": {
++                "game": {
++                    "exe": "egs-launch",
++                },
++                "require-binaries": install_bin,
++                "system": {
++                    "disable_runtime": True,
++                },
++                "installer": [
++                    {
++                        "execute": {
++                            "file": install_bin,
++                            "args": '"%s" "$GAMEDIR" "%s"'
++                            % (
++                                appid.replace('"', ""),
++                                db_game["name"].replace('"', ""),
++                            ),
++                            "description": _(
++                                "Downloading %s from Epic Games via Legendary. "
++                                "This can take a long time for large titles."
++                            )
++                            % db_game["name"],
++                            "disable_runtime": True,
++                        }
++                    }
++                ],
++            },
++        }
++
+     def generate_installer(self, db_game, egs_db_game):
++        if egs_legendary.is_available():
++            return self.generate_legendary_installer(db_game)
+         egs_game = Game(egs_db_game["id"])
+         egs_exe = egs_game.config.game_config["exe"]
+         if not os.path.isabs(egs_exe):
+@@ -444,6 +494,16 @@ class EpicGamesStoreService(OnlineService):
+ 
+     def install(self, db_game):
+         egs_game = get_game_by_field(self.client_installer, "slug")
+         application = Gio.Application.get_default()
++        # Prefer Legendary on Batocera: no Wine EGS client required.
++        if egs_legendary.is_available():
++            if not egs_legendary.has_lutris_egs_auth():
++                logger.warning("Legendary available but Lutris EGS login missing")
++            application.show_installer_window(
++                [self.generate_legendary_installer(db_game)],
++                service=self,
++                appid=db_game["appid"],
++            )
++            return
+         if not egs_game or not egs_game["installed"]:
+             logger.warning("EGS (%s) not installed", self.client_installer)
+             application.show_lutris_installer_window(game_slug=self.client_installer)

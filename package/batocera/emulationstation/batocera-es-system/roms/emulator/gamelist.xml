@@ -56,6 +56,18 @@
     <image>./images/flycast.png</image>
   </game>
   <game>
+    <path>./Configure_Gen1Recomp.sh</path>
+    <name>Configure Gen1Recomp</name>
+    <desc>Open the gen1recomp launcher (options, controls, mods) without starting a ROM.</desc>
+    <image>./images/gen1recomp.png</image>
+  </game>
+  <game>
+    <path>./Configure_Gen2Recomp.sh</path>
+    <name>Configure Gen2Recomp</name>
+    <desc>Open the Gen2Recomped launcher (options, controls, mods) without starting a ROM.</desc>
+    <image>./images/gen2recomp.png</image>
+  </game>
+  <game>
     <path>./Configure_PPSSPP.sh</path>
     <name>Configure PPSSPP</name>
     <image>./images/ppsspp.png</image>

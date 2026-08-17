@@ -1,0 +1,19 @@
+--- a/share/lutris/ui/lutris-window.ui
++++ b/share/lutris/ui/lutris-window.ui
+@@ -396,9 +396,15 @@
+                     <property name="visible">True</property>
+                     <property name="can-focus">True</property>
+                     <property name="receives-default">True</property>
++                    <property name="tooltip-text" translatable="yes">View Options</property>
+                     <property name="popover">view_adjust_menu</property>
+                     <child>
+-                      <placeholder/>
++                      <object class="GtkImage">
++                        <property name="visible">True</property>
++                        <property name="can-focus">False</property>
++                        <property name="icon-name">zoom-fit-best-symbolic</property>
++                        <property name="icon_size">2</property>
++                      </object>
+                     </child>
+                   </object>
+                   <packing>

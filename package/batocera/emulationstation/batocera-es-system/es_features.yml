@@ -16283,6 +16283,47 @@ n64recomp:
       prompt: EXTRA N64 RECOMP ARGUMENTS
       description: Extra arguments appended to generated N64 Recomp launch commands.
       preset: input
+pkmnrecomp:
+  features:
+  - padtokeyboard
+  shared:
+  - powermode
+  - cpu_max_freq
+  - cpu_limit_target_fps
+  - gpu_performance_profile
+  - tdp
+  - videomode
+  - dual_screen_output
+  - opengl_driver
+  - gamescope
+  - gamescope_output_resolution
+  - gamescope_nested_resolution
+  - gamescope_nested_refresh
+  - gamescope_framerate_limit
+  - gamescope_scaler
+  - gamescope_filter
+  - gamescope_sharpness
+  - gamescope_hdr
+  - gamescope_output_resolution_custom
+  - gamescope_nested_resolution_custom
+  - gamescope_framerate_limit_custom
+  - gamescope_sharpness_custom
+  - gamescope_adaptive_sync
+  - gamescope_disable_damage_tracking
+  - gamescope_disable_hw_composition
+  - gamescope_force_composition_pipeline
+  - gamescope_backend
+  - gamescope_xwayland_count
+  - gamescope_xwayland_count_custom
+  - gamescope_prefer_vk_device
+  - gamescope_mangoapp
+  - gamescope_force_windows_fullscreen
+  - gamescope_nested_unfocused_refresh
+  - gamescope_nested_unfocused_refresh_custom
+  - gamescope_immediate_flips
+  - gamescope_stats_path
+  - gamescope_disable_color_management
+  - gamescope_disable_xres
 eden:
   features:
   - padtokeyboard

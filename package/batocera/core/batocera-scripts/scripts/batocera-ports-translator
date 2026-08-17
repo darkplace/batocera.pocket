@@ -41,8 +41,23 @@ enable_entry() {
 
 run_init() {
     local script="$1" action="$2"
-    [[ -x "${script}" ]] || return 0
-    "${script}" "${action}" >/dev/null 2>&1 || true
+    [[ -x "${script}" ]] || return 1
+    FEX_BINFMT_FORCE=1 BOX64_BINFMT_FORCE=1 "${script}" "${action}" >/dev/null 2>&1 || true
+}
+
+register_fex_inline() {
+    local fex="/usr/bin/FEXInterpreter"
+    if [[ ! -x "${fex}" ]]; then
+        echo "batocera-ports-translator: FEXInterpreter missing" >&2
+        return 1
+    fi
+    if [[ ! -f "${BINFMT_DIR}/FEX-x86" ]]; then
+        echo ":FEX-x86:M:0:\\x7fELF\\x01\\x01\\x01\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x02\\x00\\x03\\x00:\\xff\\xff\\xff\\xff\\xff\\xfe\\xfe\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\xfe\\xff\\xff\\xff:${fex}:POCF" > "${BINFMT_DIR}/register" 2>/dev/null || true
+    fi
+    if [[ ! -f "${BINFMT_DIR}/FEX-x86_64" ]]; then
+        echo ":FEX-x86_64:M:0:\\x7fELF\\x02\\x01\\x01\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x02\\x00\\x3e\\x00:\\xff\\xff\\xff\\xff\\xff\\xfe\\xfe\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\xfe\\xff\\xff\\xff:${fex}:POCF" > "${BINFMT_DIR}/register" 2>/dev/null || true
+    fi
+    [[ -f "${BINFMT_DIR}/FEX-x86" && -f "${BINFMT_DIR}/FEX-x86_64" ]]
 }
 
 prepare_box64() {
@@ -52,12 +67,15 @@ prepare_box64() {
     }
 
     # Stop FEX service / unregister, then disable any leftover FEX/qemu handlers.
-    run_init "${FEX_INIT}" stop
+    run_init "${FEX_INIT}" stop || true
     for name in FEX-x86 FEX-x86_64 x86_64 x86; do
         disable_entry "${name}"
     done
 
-    run_init "${BOX64_INIT}" start
+    if ! run_init "${BOX64_INIT}" start; then
+        echo "batocera-ports-translator: ${BOX64_INIT} missing" >&2
+        return 1
+    fi
     enable_entry box64
     enable_entry box32
 
@@ -71,12 +89,15 @@ prepare_fex() {
     }
 
     # Stop Box64 service / unregister so FEX owns x86 ELFs.
-    run_init "${BOX64_INIT}" stop
+    run_init "${BOX64_INIT}" stop || true
     for name in box64 box32; do
         disable_entry "${name}"
     done
 
-    run_init "${FEX_INIT}" start
+    if ! run_init "${FEX_INIT}" start; then
+        echo "batocera-ports-translator: ${FEX_INIT} missing; registering FEX binfmt inline" >&2
+        register_fex_inline || return 1
+    fi
     enable_entry FEX-x86_64
     enable_entry FEX-x86
 

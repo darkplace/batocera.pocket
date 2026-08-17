@@ -8,8 +8,20 @@
 FEXINTERPRETER="/usr/bin/FEXInterpreter"
 BINFMT_DIR="/proc/sys/fs/binfmt_misc"
 
+translator_pref() {
+    /usr/bin/batocera-settings-get ports.ports_translator 2>/dev/null || true
+}
+
 start() {
     printf "Setting up FEX-Emu binfmt_misc: "
+
+    # Boot stays on Box64 unless the Ports translator preference is FEX.
+    # batocera-ports-translator sets FEX_BINFMT_FORCE=1 for an explicit switch.
+    pref="$(translator_pref)"
+    if [ "${FEX_BINFMT_FORCE:-0}" != "1" ] && [ "$pref" != "fex" ]; then
+        echo "SKIP (ports.ports_translator=${pref:-box64})"
+        return 0
+    fi
 
     # Ensure FEXInterpreter exists
     if [ ! -x "$FEXINTERPRETER" ]; then

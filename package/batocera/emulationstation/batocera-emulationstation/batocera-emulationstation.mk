@@ -225,6 +225,8 @@ define BATOCERA_EMULATIONSTATION_WAYLAND_SWAY
 	    $(TARGET_DIR)/etc/profile.d/04-sway.sh
     $(INSTALL) -D -m 0755 $(BATOCERA_EMULATIONSTATION_SOURCE_PATH)/wayland/sway/config \
 	    $(TARGET_DIR)/etc/sway/config
+    $(INSTALL) -D -m 0644 $(BATOCERA_EMULATIONSTATION_SOURCE_PATH)/wayland/sway/batocera.pocket-logo.png \
+	    $(TARGET_DIR)/usr/share/batocera/splash/batocera.pocket-logo.png
     $(INSTALL) -D -m 0755 $(BATOCERA_EMULATIONSTATION_SOURCE_PATH)/wayland/sway/sway-launch \
 	    $(TARGET_DIR)/usr/bin/sway-launch
     $(INSTALL) -D -m 0755 $(BATOCERA_EMULATIONSTATION_SOURCE_PATH)/wayland/sway/sway-touch-map \

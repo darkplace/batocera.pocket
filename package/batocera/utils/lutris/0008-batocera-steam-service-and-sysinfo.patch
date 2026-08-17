@@ -1,0 +1,97 @@
+From: batocera <batocera@localhost>
+Subject: 0008-batocera-steam-service-and-sysinfo.patch
+
+- Detect Batocera Steam so the native "Steam" source appears
+- Prefer batocera-steam / steam.sh as the Steam runner
+- Hide Wine "Steam for Windows" when Batocera Steam is present
+- On aarch64, report host Vulkan instead of missing x86_64 Wine libs
+
+--- a/lutris/util/linux.py
++++ b/lutris/util/linux.py
+@@ -243,12 +243,24 @@ class LinuxSystem:
+ 
+     def has_steam(self) -> bool:
+         """Return whether Steam is installed locally"""
++        batocera_steam_markers = (
++            "/usr/bin/batocera-steam",
++            "/userdata/system/.local/share/Steam/steam.sh",
++            "/userdata/system/steam/steam.sh",
++        )
++        if any(os.path.exists(path) for path in batocera_steam_markers):
++            return True
++        if system.can_find_executable("batocera-steam"):
++            return True
+         return (
+             system.can_find_executable("steam")
+             or flatpak.is_app_installed("com.valvesoftware.Steam")
+             or os.path.exists(os.path.expanduser("~/.steam/steam/ubuntu12_32/steam"))
++            or os.path.exists(os.path.expanduser("~/.local/share/Steam/steam.sh"))
++            or os.path.exists("/userdata/system/.local/share/Steam/ubuntu12_32/steam")
+         )
+ 
+@@ -423,6 +435,12 @@ class LinuxSystem:
+         return not self.get_missing_requirement_libs(feature)[0]
+ 
+     def is_vulkan_supported(self) -> bool:
++        # aarch64 is reported as x86_64-compatible for Wine/Box64, so the lib
++        # scanner looks for x86_64 ELF libs that are not on the host. Games still
++        # use the host (AArch64) Vulkan ICD via box64/FEX.
++        if platform.machine() == "aarch64":
++            return vkquery.is_vulkan_supported()
+         return not LINUX_SYSTEM.get_missing_lib_arch("VULKAN") and vkquery.is_vulkan_supported()
+ 
+ 
+--- a/lutris/runners/steam.py
++++ b/lutris/runners/steam.py
+@@ -127,11 +127,26 @@ class steam(Runner):
+     def get_executable(self) -> str:
+         if linux.LINUX_SYSTEM.is_flatpak():
+             # Fallback to xgd-open for Steam URIs in Flatpak
+             return system.find_required_executable("xdg-open")
+         runner_executable = self.runner_config.get("runner_executable")
+         if runner_executable and os.path.isfile(runner_executable):
+             return runner_executable
++        for candidate in (
++            "/usr/bin/batocera-steam",
++            "batocera-steam",
++            "/userdata/system/.local/share/Steam/steam.sh",
++            os.path.expanduser("~/.local/share/Steam/steam.sh"),
++            "steam",
++        ):
++            if os.path.sep in candidate:
++                if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
++                    return candidate
++            elif system.can_find_executable(candidate):
++                return system.find_required_executable(candidate)
+         return system.find_required_executable(self.runner_executable)
+ 
+     @property
+--- a/lutris/services/steamwindows.py
++++ b/lutris/services/steamwindows.py
+@@ -22,9 +22,13 @@ class SteamWindowsGame(SteamGame):
+ class SteamWindowsService(SteamService):
+     id = "steamwindows"
+-    name = _("Steam for Windows")
+-    description = _("Use only for the rare games or mods requiring the Windows version of Steam")
++    # Batocera hides this source when native Steam is present; keep a clear
++    # label if someone re-enables it manually.
++    name = _("Steam (Wine)")
++    description = _("Windows Steam under Wine — prefer native Steam on Batocera")
+     runner = "wine"
+     game_class = SteamWindowsGame
+     client_installer = "steam-wine"
+ 
+--- a/lutris/services/__init__.py
++++ b/lutris/services/__init__.py
+@@ -47,7 +47,10 @@ def get_services():
+         _services["xdg"] = XDGService
+     if LINUX_SYSTEM.has_steam():
+         _services["steam"] = SteamService
+-    _services["steamwindows"] = SteamWindowsService
++    # Batocera ships a full Steam + Proton stack; Wine "Steam for Windows"
++    # duplicates the library and breaks launcher path assumptions.
++    if not LINUX_SYSTEM.has_steam():
++        _services["steamwindows"] = SteamWindowsService
+     _services["steamfamily"] = SteamFamilyService
+     if system.path_exists(DOLPHIN_GAME_CACHE_FILE):
+         _services["dolphin"] = DolphinService

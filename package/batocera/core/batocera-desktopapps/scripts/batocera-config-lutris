@@ -1,19 +1,312 @@
 #!/bin/bash
 
-# Enlarge toolkit UI on handhelds; keep native 1080p framebuffer.
-command -v batocera-ui-scale >/dev/null 2>&1 && eval "$(batocera-ui-scale env)"
+# Lutris-only: raise Sway output scale for this session, stretch the floating
+# window, keep stock look without SSD titlebar / without compositor fullscreen
+# (fullscreen clips Lutris header/search). Do not touch other apps' launchers.
+
+# One scale only. Stacking Sway + GDK_SCALE=2 made ~2.1× (unusable);
+# Sway 1.25–1.5 alone still feels small on 1080p handheld DPI.
+# Mid: compositor 1.75 (Batocera handheld ballpark), GDK=1. Override with
+# BATOCERA_UI_SCALE=1.6|1.7|1.8|1.9 or userdata lutris-hotfix/ui-scale.
+if [ -z "${BATOCERA_UI_SCALE:-}" ] && [ -f /userdata/system/configs/lutris-hotfix/ui-scale ]; then
+    BATOCERA_UI_SCALE="$(tr -d '[:space:]' </userdata/system/configs/lutris-hotfix/ui-scale)"
+fi
+export BATOCERA_UI_SCALE="${BATOCERA_UI_SCALE:-1.75}"
+LUTRIS_SWAY_SCALE_APPLIED=0
+LUTRIS_SWAY_SCALE_PREV=""
+
+lutris_apply_sway_scale() {
+    command -v swaymsg >/dev/null 2>&1 || return 0
+    [ -n "${SWAYSOCK:-}" ] && [ -S "${SWAYSOCK}" ] || return 0
+    LUTRIS_SWAY_SCALE_PREV="$(swaymsg -t get_outputs 2>/dev/null | python3 -c 'import json,sys
+outs=json.load(sys.stdin)
+o=next((x for x in outs if x.get("focused")), None) or next((x for x in outs if x.get("active")), None)
+print(o.get("scale",1) if o else 1)' 2>/dev/null || echo 1)"
+    swaymsg -q "output * scale ${BATOCERA_UI_SCALE}" >/dev/null 2>&1 && LUTRIS_SWAY_SCALE_APPLIED=1 || true
+}
+
+lutris_restore_sway_scale() {
+    [ "${LUTRIS_SWAY_SCALE_APPLIED}" = "1" ] || return 0
+    command -v swaymsg >/dev/null 2>&1 || return 0
+    prev="${LUTRIS_SWAY_SCALE_PREV:-1}"
+    swaymsg -q "output * scale ${prev}" >/dev/null 2>&1 || swaymsg -q "output * scale 1" >/dev/null 2>&1 || true
+    LUTRIS_SWAY_SCALE_APPLIED=0
+}
+
+# Never pair this with batocera-ui-scale toolkit env (that sets GDK_SCALE=2).
+export GDK_SCALE=1
+export GDK_DPI_SCALE=1
+export QT_SCALE_FACTOR=1
+export QT_AUTO_SCREEN_SCALE_FACTOR=0
+unset QT_FONT_DPI 2>/dev/null || true
+
+
+es_suspended=0
+mouse_mode_on=0
+ES_RESUME_FIFO="${ES_RESUME_FIFO:-/tmp/es-resume.fifo}"
+
+# S31 resume blocks forever if nobody reads the fifo. Also: if Lutris started
+# while ES was already gone, es_suspended stays 0 and quit leaves swaybg.
+lutris_resume_es() {
+    local need_wake=0
+    if [ "${es_suspended}" = "1" ]; then
+        need_wake=1
+    elif ! pidof emulationstation >/dev/null 2>&1 \
+        && pgrep -f '/usr/bin/emulationstation-standalone' >/dev/null 2>&1; then
+        need_wake=1
+    fi
+    es_suspended=0
+    rm -f /tmp/suspend.please
+    [ "${need_wake}" = "1" ] || return 0
+    if [ -p "${ES_RESUME_FIFO}" ]; then
+        if command -v timeout >/dev/null 2>&1; then
+            timeout 2 sh -c "echo resume > '${ES_RESUME_FIFO}'" >/dev/null 2>&1 || true
+        else
+            ( echo resume > "${ES_RESUME_FIFO}" ) >/dev/null 2>&1 &
+            _fifo_wr=$!
+            sleep 1
+            kill "${_fifo_wr}" 2>/dev/null || true
+            wait "${_fifo_wr}" 2>/dev/null || true
+        fi
+    fi
+    for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+        pidof emulationstation >/dev/null 2>&1 && break
+        sleep 0.25
+    done
+    if [ -p "${ES_RESUME_FIFO}" ] && ! pidof emulationstation >/dev/null 2>&1 \
+        && command -v timeout >/dev/null 2>&1; then
+        timeout 1 sh -c "echo resume > '${ES_RESUME_FIFO}'" >/dev/null 2>&1 || true
+        sleep 1
+    fi
+    if pidof emulationstation >/dev/null 2>&1 \
+        && command -v swaymsg >/dev/null 2>&1 \
+        && [ -n "${SWAYSOCK:-}" ] && [ -S "${SWAYSOCK}" ]; then
+        swaymsg -q '[app_id="emulationstation"] focus, fullscreen enable' >/dev/null 2>&1 || true
+    fi
+}
+
+restore_all() {
+    lutris_restore_sway_scale
+    if [ "${mouse_mode_on}" = "1" ] && command -v batocera-mouse-mode >/dev/null 2>&1; then
+        batocera-mouse-mode disable >/dev/null 2>&1 || true
+        mouse_mode_on=0
+    fi
+    command -v batocera-mouse >/dev/null 2>&1 && batocera-mouse hide
+    # Drop one-shot geometry criteria so other apps are unaffected.
+    if command -v swaymsg >/dev/null 2>&1 && [ -n "${SWAYSOCK:-}" ] && [ -S "${SWAYSOCK}" ]; then
+        swaymsg -q "[app_id=\"net.lutris.Lutris\" title=\"Lutris\"] floating enable" >/dev/null 2>&1 || true
+    fi
+    lutris_resume_es
+}
+trap restore_all EXIT HUP INT TERM
+
+# When Lutris is (re)started while ES is still on screen, park ES like other
+# fullscreen apps so the user does not get the launcher behind Lutris.
+if [ "${BATOCERA_LUTRIS_SUSPEND_ES:-1}" = "1" ] \
+    && [ -x /etc/init.d/S31emulationstation ] \
+    && pidof emulationstation >/dev/null 2>&1; then
+    if /etc/init.d/S31emulationstation suspend >/dev/null 2>&1; then
+        # Only mark suspended if ES actually exited (standalone is waiting on fifo).
+        for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+            if ! pidof emulationstation >/dev/null 2>&1; then
+                es_suspended=1
+                break
+            fi
+            sleep 0.2
+        done
+    fi
+fi
 
 if test -z "${DISPLAY}"
 then
     export DISPLAY=$(getLocalXDisplay)
 fi
 
-batocera-mouse show
-trap 'batocera-mouse hide' EXIT
+if [ -z "${SWAYSOCK:-}" ] || [ ! -S "${SWAYSOCK}" ]; then
+    for cand in /run/sway-ipc.0.sock /var/run/sway-ipc.0.sock /run/sway-ipc.sock; do
+        if [ -S "${cand}" ]; then
+            export SWAYSOCK="${cand}"
+            break
+        fi
+    done
+fi
 
-if [[ -x /usr/bin/lutris ]]; then
-    exec /usr/bin/lutris "$@"
-else
+batocera-mouse show
+# Odin / handhelds: stick → pointer (required for Lutris UI clicks)
+if command -v batocera-mouse-mode >/dev/null 2>&1; then
+    if batocera-mouse-mode enable >/dev/null 2>&1; then
+        mouse_mode_on=1
+    fi
+fi
+command -v unclutter-remote >/dev/null 2>&1 && unclutter-remote -s >/dev/null 2>&1 || true
+if command -v swaymsg >/dev/null 2>&1 && [ -n "${SWAYSOCK:-}" ] && [ -S "${SWAYSOCK}" ]; then
+    swaymsg -q "seat * hide_cursor 0" >/dev/null 2>&1 || true
+fi
+
+# Do NOT force GDK_BACKEND=wayland here. The Lutris wrapper enables
+# SAFE_UI with GDK_BACKEND=x11 (XWayland) so touch/mouse clicks work in
+# GTK dialogs; exporting wayland first would permanently override that.
+if [ -z "${GDK_BACKEND:-}" ] && [ -n "${WAYLAND_DISPLAY:-}" ]; then
+    : # leave unset for /usr/bin/lutris to pick x11 in regular mode
+fi
+
+lutris_output_size() {
+    python3 - <<'PY'
+import json, subprocess, sys
+try:
+    outs = json.loads(subprocess.check_output(["swaymsg", "-t", "get_outputs"], text=True))
+except Exception:
+    sys.exit(0)
+out = next((o for o in outs if o.get("focused")), None) or next((o for o in outs if o.get("active")), None)
+if not out:
+    sys.exit(0)
+print(int(out["rect"]["width"]), int(out["rect"]["height"]))
+PY
+}
+
+lutris_set_for_window() {
+    local w="$1" h="$2"
+    [ -n "$w" ] && [ -n "$h" ] || return 0
+    # Match the main Lutris window only. Service login dialogs (GOG, Epic, …)
+    # share app_id net.lutris.Lutris; resizing them breaks WebKit input.
+    swaymsg -q "for_window [app_id=\"net.lutris.Lutris\" title=\"Lutris\"] floating enable, border none, move absolute position 0 0, resize set ${w} px ${h} px" >/dev/null 2>&1 || true
+    swaymsg -q "for_window [app_id=\"lutris\" title=\"Lutris\"] floating enable, border none, move absolute position 0 0, resize set ${w} px ${h} px" >/dev/null 2>&1 || true
+    # XWayland (SAFE_UI / GDK_BACKEND=x11) exposes WM_CLASS instead of app_id
+    swaymsg -q "for_window [class=\"net.lutris.Lutris\" title=\"Lutris\"] floating enable, border none, move absolute position 0 0, resize set ${w} px ${h} px" >/dev/null 2>&1 || true
+}
+
+# Align Lutris saved geometry with the (possibly scaled) output so GTK does not
+# restore a smaller window and leave swaybg visible around the edges.
+lutris_sync_saved_geometry() {
+    local w="$1" h="$2"
+    [ -n "$w" ] && [ -n "$h" ] || return 0
+    local conf="${BATOCERA_LUTRIS_HOME:-/userdata/saves/lutris}/.local/share/lutris/lutris.conf"
+    [ -f "$conf" ] || return 0
+    python3 - "$conf" "$w" "$h" <<'PY'
+import configparser, sys
+path, w, h = sys.argv[1], sys.argv[2], sys.argv[3]
+cp = configparser.ConfigParser()
+cp.read(path)
+if not cp.has_section("lutris"):
+    cp.add_section("lutris")
+cp.set("lutris", "width", w)
+cp.set("lutris", "height", h)
+cp.set("lutris", "window_x", "0")
+cp.set("lutris", "window_y", "0")
+cp.set("lutris", "maximized", "False")
+with open(path, "w", encoding="utf-8") as fh:
+    cp.write(fh)
+PY
+}
+
+# Pre-size Lutris on first map so we do not flash swaybg through a tiny window
+# while a resize loop catches up. Scale the output once, then start Lutris.
+if command -v swaymsg >/dev/null 2>&1 && [ -n "${SWAYSOCK:-}" ] && [ -S "${SWAYSOCK}" ]; then
+    read -r OUT_W OUT_H < <(lutris_output_size)
+    if [ -n "${OUT_W:-}" ] && [ -n "${OUT_H:-}" ]; then
+        lutris_set_for_window "${OUT_W}" "${OUT_H}"
+        lutris_sync_saved_geometry "${OUT_W}" "${OUT_H}"
+    fi
+fi
+
+lutris_apply_sway_scale
+
+# After scale change, output logical size may differ — refresh for_window once.
+if command -v swaymsg >/dev/null 2>&1 && [ -n "${SWAYSOCK:-}" ] && [ -S "${SWAYSOCK}" ]; then
+    read -r OUT_W OUT_H < <(lutris_output_size)
+    if [ -n "${OUT_W:-}" ] && [ -n "${OUT_H:-}" ]; then
+        lutris_set_for_window "${OUT_W}" "${OUT_H}"
+        lutris_sync_saved_geometry "${OUT_W}" "${OUT_H}"
+    fi
+fi
+
+lutris_fit_window() {
+    command -v swaymsg >/dev/null 2>&1 || return 0
+    command -v python3 >/dev/null 2>&1 || return 0
+    [ -n "${SWAYSOCK:-}" ] && [ -S "${SWAYSOCK}" ] || return 0
+
+    python3 - <<'PY'
+import json, subprocess, sys, time
+
+def load_tree():
+    return json.loads(subprocess.check_output(["swaymsg", "-t", "get_tree"], text=True))
+
+def find_lutris(n):
+    app = (n.get("app_id") or "").lower()
+    name = (n.get("name") or "").lower()
+    props = n.get("window_properties") or {}
+    cls = (props.get("class") or props.get("instance") or "").lower()
+    # Main window only — login dialogs reuse the Lutris app id/class.
+    # XWayland windows often have app_id unset and expose WM_CLASS instead.
+    if name == "lutris" and ("lutris" in app or "lutris" in cls or not app):
+        return n
+    for c in n.get("nodes", []) + n.get("floating_nodes", []):
+        found = find_lutris(c)
+        if found is not None:
+            return found
+    return None
+
+def output_size():
+    outs = json.loads(subprocess.check_output(["swaymsg", "-t", "get_outputs"], text=True))
+    out = next((o for o in outs if o.get("focused")), None) or next((o for o in outs if o.get("active")), None)
+    if not out:
+        return None
+    return int(out["rect"]["width"]), int(out["rect"]["height"])
+
+def sway(cmd: str) -> None:
+    subprocess.run(["swaymsg", cmd], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+
+def fit(node, w, h):
+    cid = node.get("id")
+    if cid is None:
+        return
+    sway(f"[con_id={cid}] fullscreen disable")
+    sway(f"[con_id={cid}] floating enable")
+    sway(f"[con_id={cid}] border none")
+    sway(f"[con_id={cid}] resize set {w} px {h} px")
+    sway(f"[con_id={cid}] move absolute position 0 0")
+
+size = output_size()
+if not size:
+    sys.exit(0)
+w, h = size
+
+# Wait for first map, then keep correcting while Lutris restores its saved size.
+deadline = time.time() + 12.0
+seen = False
+while time.time() < deadline:
+    size = output_size() or (w, h)
+    w, h = size
+    node = find_lutris(load_tree())
+    if node is None:
+        time.sleep(0.1)
+        continue
+    seen = True
+    rect = node.get("rect") or {}
+    rw, rh = int(rect.get("width") or 0), int(rect.get("height") or 0)
+    rx, ry = int(rect.get("x") or 0), int(rect.get("y") or 0)
+    if rw != w or rh != h or rx != 0 or ry != 0:
+        fit(node, w, h)
+    time.sleep(0.25)
+
+if not seen:
+    sys.exit(0)
+# Final pass after UI settle
+node = find_lutris(load_tree())
+size = output_size()
+if node is not None and size is not None:
+    fit(node, size[0], size[1])
+PY
+}
+
+if [[ ! -x /usr/bin/lutris ]]; then
     echo "Lutris not found."
     exit 1
 fi
+
+lutris_fit_window &
+/usr/bin/lutris "$@"
+rc=$?
+restore_all
+trap - EXIT HUP INT TERM
+exit "${rc}"

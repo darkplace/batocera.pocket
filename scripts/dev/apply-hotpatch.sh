@@ -73,8 +73,10 @@ copy_bin "$ROOT/package/batocera/utils/batocera-arch-plasma-lxc/batocera-arch-pl
 copy_bin "$ROOT/package/batocera/utils/batocera-wine/batocera-wine-tools"             batocera-wine-tools
 # Steam Tools UI uses a copy of wine-tools
 copy_bin "$ROOT/package/batocera/utils/batocera-wine/batocera-wine-tools"             batocera-steam-tools
+copy_bin "$ROOT/package/batocera/utils/batocera-steam-aarch64/batocera-steam"         batocera-steam
 copy_bin "$ROOT/package/batocera/utils/batocera-steam/batocera-steam-session"         batocera-steam-session
 copy_bin "$ROOT/package/batocera/utils/batocera-steam/steam-direct-session.sh"        steam-direct-session.sh
+copy_bin "$ROOT/package/batocera/emulators/pkmnrecomp/pkmnrecomp"                     pkmnrecomp
 
 # Splash branding (boot logos)
 copy_file "$ROOT/package/batocera/core/batocera-splash-odin3/images/logo.png" \

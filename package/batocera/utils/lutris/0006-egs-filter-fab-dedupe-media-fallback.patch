@@ -1,0 +1,74 @@
+From: batocera <batocera@localhost>
+Subject: Filter Fab marketplace spam and widen EGS media fallbacks
+
+--- a/lutris/services/egs.py
++++ b/lutris/services/egs.py
+@@ -69,8 +69,16 @@
+         thumb_image.save(thumb_path)
+ 
+     def get_media_url(self, details: Dict[str, Any]) -> Optional[str]:
+-        for image in details.get("keyImages", []):
+-            if image["type"] == self.api_field:
++        images = details.get("keyImages", []) or []
++        preferred = [self.api_field, "DieselGameBox", "DieselGameBoxTall", "OfferImageWide", "OfferImageTall", "Thumbnail", "DieselGameBoxLogo"]
++        by_type = {image.get("type"): image for image in images if image.get("url")}
++        for image_type in preferred:
++            image = by_type.get(image_type)
++            if image:
++                return image["url"] + "?w=%s&resize=1&h=%s" % (self.remote_size[0], self.remote_size[1])
++        # Last resort: first available image URL
++        for image in images:
++            if image.get("url"):
+                 return image["url"] + "?w=%s&resize=1&h=%s" % (self.remote_size[0], self.remote_size[1])
+         return None
+ 
+@@ -287,10 +295,30 @@
+             cursor = resData["responseMetadata"].get("nextCursor", None)
+ 
+         games = []
++        seen_catalog_ids = set()
++        # Fab / Unreal marketplace assets are not playable games and spam the library
++        # with versioned duplicates that share one title/slug and usually have no art.
++        skip_namespaces = {
++            "ue",
++            "89efe5924d3d467c839449ab6ab52e7f",  # Fab / UE marketplace
++        }
+         for record in records:
+-            if record["namespace"] == "ue":
++            if record.get("namespace") in skip_namespaces:
++                continue
++            catalog_item_id = record.get("catalogItemId")
++            if catalog_item_id and catalog_item_id in seen_catalog_ids:
+                 continue
+             game_details = self.get_game_details(record)
++            categories = {c.get("path", "") for c in (game_details.get("categories") or []) if isinstance(c, dict)}
++            if any(
++                path.startswith("asset-format")
++                or path.startswith("projects/")
++                or "unreal-engine" in path
++                for path in categories
++            ):
++                continue
++            if catalog_item_id:
++                seen_catalog_ids.add(catalog_item_id)
+             games.append(game_details)
+         return games
+ 
+@@ -302,6 +330,7 @@
+             logger.warning("EGS Token expired")
+             raise AuthTokenExpiredError("EGS Token expired") from ex
+         egs_games = []
++        seen_slugs = set()
+         for game in library:
+             try:
+                 # Subscriptions turn up as 'games' that have no 'appName'; these
+@@ -314,6 +343,9 @@
+                 logger.exception("Unable to interpret EGS game: %s", ex)
+                 logger.info("EGS game skipped: %s", game)
+                 continue
++            if egs_game.slug in seen_slugs:
++                continue
++            seen_slugs.add(egs_game.slug)
+             egs_game.save()
+             egs_games.append(egs_game)
+         return egs_games

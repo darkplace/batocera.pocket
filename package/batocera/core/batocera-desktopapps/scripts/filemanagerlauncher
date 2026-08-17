@@ -25,8 +25,19 @@ EOF
 # Enlarge toolkit UI on handhelds; keep native 1080p framebuffer.
 command -v batocera-ui-scale >/dev/null 2>&1 && eval "$(batocera-ui-scale env)"
 
+restore_mouse() {
+    command -v batocera-mouse-mode >/dev/null 2>&1 && batocera-mouse-mode disable >/dev/null 2>&1 || true
+    batocera-mouse hide
+}
+trap restore_mouse EXIT HUP INT TERM
+
 batocera-backglass disable
+# F1 has no evmapy stick→mouse mapping; enable pad mouse-mode for the session.
 batocera-mouse show
+if command -v batocera-mouse-mode >/dev/null 2>&1; then
+    batocera-mouse-mode enable >/dev/null 2>&1 || true
+fi
 DISPLAY=${DISPLAY:-:0.0} pcmanfm /userdata
-batocera-mouse hide
+restore_mouse
+trap - EXIT HUP INT TERM
 batocera-backglass enable

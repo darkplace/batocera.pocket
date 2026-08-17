@@ -1,0 +1,116 @@
+#!/bin/sh
+# Install a GOG title via Heroic's gogdl using Lutris GOG tokens.
+# Usage: batocera-lutris-gog-install <gog_game_id> <install_dir> [display_name]
+
+set -eu
+
+APP_ID="${1:-}"
+INSTALL_DIR="${2:-}"
+DISPLAY_NAME="${3:-$APP_ID}"
+
+if [ -z "$APP_ID" ] || [ -z "$INSTALL_DIR" ]; then
+	echo "usage: $0 <gog_game_id> <install_dir> [display_name]" >&2
+	exit 2
+fi
+
+LUTRIS_HOME="${BATOCERA_LUTRIS_HOME:-${HOME:-/userdata/saves/lutris}}"
+export HOME="$LUTRIS_HOME"
+export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
+export XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
+export XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
+
+find_gogdl() {
+	if [ -n "${BATOCERA_GOGDL:-}" ] && [ -x "${BATOCERA_GOGDL}" ]; then
+		echo "${BATOCERA_GOGDL}"
+		return 0
+	fi
+	if command -v gogdl >/dev/null 2>&1; then
+		command -v gogdl
+		return 0
+	fi
+	for cand in \
+		/usr/share/heroic/heroic-arm64/Heroic-*/resources/app.asar.unpacked/build/bin/arm64/linux/gogdl \
+		/usr/share/heroic/*/resources/app.asar.unpacked/build/bin/*/linux/gogdl
+	do
+		for f in $cand; do
+			[ -x "$f" ] || continue
+			echo "$f"
+			return 0
+		done
+	done
+	return 1
+}
+
+GOGDL="$(find_gogdl)" || {
+	echo "gogdl not found (Heroic)" >&2
+	exit 127
+}
+
+TOKEN="${XDG_CACHE_HOME}/lutris/.gog.token"
+AUTH_CFG="${XDG_CONFIG_HOME}/lutris-gogdl/credentials.json"
+mkdir -p "$(dirname "$AUTH_CFG")" "$INSTALL_DIR"
+
+if [ ! -s "$TOKEN" ]; then
+	echo "No Lutris GOG token at $TOKEN — log into GOG in Lutris first." >&2
+	exit 3
+fi
+
+# gogdl expects a credentials json; map Lutris token shape.
+python3 - "$TOKEN" "$AUTH_CFG" <<'PY'
+import json, sys
+from pathlib import Path
+tok = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+# Heroic/gogdl typically stores {"token": {...}} or flat token fields
+payload = {"token": tok} if "access_token" in tok else tok
+Path(sys.argv[2]).write_text(json.dumps(payload, indent=2), encoding="utf-8")
+print("gogdl credentials synced")
+PY
+
+echo "Installing GOG '$DISPLAY_NAME' ($APP_ID) → $INSTALL_DIR"
+"$GOGDL" --auth-config-path "$AUTH_CFG" download "$APP_ID" \
+	--platform windows \
+	--path "$INSTALL_DIR" \
+	--with-dlcs || "$GOGDL" --auth-config-path "$AUTH_CFG" download "$APP_ID" \
+	--platform windows \
+	--path "$INSTALL_DIR"
+
+MAIN_EXE="$(python3 - "$INSTALL_DIR" <<'PY'
+import sys
+from pathlib import Path
+root = Path(sys.argv[1])
+exes = [p for p in root.rglob("*.exe") if p.is_file()]
+skip = ("redist", "directx", "vcredist", "unins", "setup", "dotnet", "crash")
+exes = [p for p in exes if not any(s in str(p).lower() for s in skip)]
+if not exes:
+    sys.exit(4)
+preferred = ("launch", "start", "game", "play")
+ranked = sorted(
+    exes,
+    key=lambda p: (
+        0 if any(x in p.stem.lower() for x in preferred) else 1,
+        -p.stat().st_size,
+    ),
+)
+print(ranked[0].relative_to(root).as_posix())
+PY
+)"
+
+printf '%s\n' "$MAIN_EXE" > "$INSTALL_DIR/.gog-main-exe"
+PROTON_DEFAULT="/userdata/system/.local/share/Steam/steamapps/common/Proton - Experimental"
+cat > "$INSTALL_DIR/gog-launch" <<EOF
+#!/bin/sh
+set -e
+DIR="\$(cd "\$(dirname "\$0")" && pwd)"
+EXE="\$(cat "\$DIR/.gog-main-exe")"
+export STEAM_COMPAT_DATA_PATH="\${STEAM_COMPAT_DATA_PATH:-\$DIR/compatdata}"
+mkdir -p "\$STEAM_COMPAT_DATA_PATH"
+export PROTONPATH="\${PROTONPATH:-$PROTON_DEFAULT}"
+export GAMEID="\${GAMEID:-umu-gog-\$(basename "\$DIR")}"
+export PROTON_VERB="\${PROTON_VERB:-waitforexitandrun}"
+ulimit -Hn 1048576 2>/dev/null || true
+ulimit -Sn 524288 2>/dev/null || true
+cd "\$DIR"
+exec /usr/bin/umu-run "\$DIR/\$EXE" "\$@"
+EOF
+chmod 755 "$INSTALL_DIR/gog-launch"
+echo "OK: $DISPLAY_NAME → $INSTALL_DIR/gog-launch ($MAIN_EXE)"

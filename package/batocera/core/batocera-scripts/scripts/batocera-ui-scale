@@ -1,23 +1,32 @@
 #!/bin/sh
-# Resolve a UI scale factor for desktop Tools / Apps / Plasma LXC on handhelds.
+# Resolve / apply a UI scale factor for desktop Tools / Apps on handhelds.
 #
-# Keep the framebuffer at native 1080p (sharp); enlarge widgets/cursors via
-# toolkit scale instead of dropping the output mode.
+# Prefer Wayland-native scaling: temporarily raise the Sway *output* scale while
+# a config UI / file manager runs, then restore it. Games keep scale 1.0.
 #
-# Priority:
+# Toolkit env (QT_SCALE_FACTOR / GDK_*) is still exported for apps that honor
+# it on Wayland (many Qt UIs). Do NOT force XWayland — that breaks OSK / mouse
+# mode wired for native Wayland on Odin.
+#
+# Priority for the factor:
 #   1. BATOCERA_UI_SCALE (env override)
 #   2. system.ui.scale (batocera.conf)
-#   3. global.dpi / 96 (batocera.conf; documented DPI knob)
-#   4. board default (sm8550/sm8750 → 1.75)
+#   3. global.dpi / 96 (batocera.conf)
+#   4. board default (sm8550/sm8750 → 1.2)
 #   5. 1.0
 #
 # Usage:
 #   batocera-ui-scale              # print factor
 #   batocera-ui-scale factor       # print factor
-#   batocera-ui-scale env          # shell exports (eval "$(batocera-ui-scale env)")
-#   batocera-ui-scale chromium-arg # print --force-device-scale-factor=N if >1
+#   batocera-ui-scale env          # toolkit exports only (no compositor change)
+#   batocera-ui-scale chromium-arg # --force-device-scale-factor=N if >1
+#   batocera-ui-scale push-output  # raise Sway output scale (refcount)
+#   batocera-ui-scale pop-output   # restore when last pusher exits
+#   batocera-ui-scale begin        # push-output + compositor-safe env (no QT double-scale)
 
 set -eu
+
+STATE_FILE="${BATOCERA_UI_SCALE_STATE:-/var/run/batocera-ui-scale.output}"
 
 is_handheld_board() {
     arch=""
@@ -54,13 +63,10 @@ conf_get() {
 }
 
 normalize_factor() {
-    # Accept integers or simple decimals; reject junk.
     printf '%s' "$1" | grep -Eq '^[0-9]+([.][0-9]+)?$' || return 1
-    # Clamp to a sane handheld range.
     awk -v s="$1" 'BEGIN {
         if (s+0 < 1) s=1
         if (s+0 > 3) s=3
-        # Trim trailing zeros for cleaner env (1.50 → 1.5, 2.00 → 2)
         printf "%g\n", s+0
     }'
 }
@@ -82,9 +88,8 @@ resolve_factor() {
     fi
 
     if [ -z "${val}" ] && is_handheld_board; then
-        # ~1080p on a ~6" panel: 1× chrome is unusable with mouse/touch.
-        # Fractional KWin/Qt scale keeps 1920x1080 output mode.
-        val="1.75"
+        # ~1080p on a ~6–7" panel: mild enlarge for touch without clipping Qt menus.
+        val="1.2"
     fi
 
     if [ -z "${val}" ]; then
@@ -95,11 +100,10 @@ resolve_factor() {
 }
 
 gdk_pair_for() {
-    # GDK_SCALE is integer; fold the fraction into GDK_DPI_SCALE.
     factor="$1"
     awk -v s="${factor}" 'BEGIN {
         if (s+0 <= 1.01) { print "1 1"; exit }
-        g = int(s+0.999999)   # ceil
+        g = int(s+0.999999)
         if (g < 1) g = 1
         if (g > 3) g = 3
         dpi = s / g
@@ -108,16 +112,38 @@ gdk_pair_for() {
 }
 
 print_env() {
+    # mode: toolkit (default) | compositor
+    # compositor = Sway output already scaled; do NOT also set QT/GDK scale
+    # or Qt menus become ~factor² and unusable on handhelds.
+    mode="${1:-toolkit}"
     factor="$(resolve_factor)"
+
+    printf 'export BATOCERA_UI_SCALE=%s\n' "${factor}"
+
+    if [ "${mode}" = "compositor" ]; then
+        # Neutralize leaked toolkit scale from a parent shell.
+        printf 'export QT_SCALE_FACTOR=1\n'
+        printf 'export QT_AUTO_SCREEN_SCALE_FACTOR=0\n'
+        printf 'unset QT_FONT_DPI\n'
+        printf 'unset GDK_SCALE\n'
+        printf 'unset GDK_DPI_SCALE\n'
+        printf 'export BATOCERA_ARCH_PLASMA_OUTPUT_SCALE=%s\n' "${factor}"
+        return 0
+    fi
+
     gdk="$(gdk_pair_for "${factor}")"
     gdk_scale="$(printf '%s' "${gdk}" | awk '{print $1}')"
     gdk_dpi="$(printf '%s' "${gdk}" | awk '{print $2}')"
 
-    # Do not clobber an explicit toolkit override already set by the caller.
+    # Toolkit-only path (no sway push): used by Chromium args / legacy callers.
     if [ -z "${QT_SCALE_FACTOR:-}" ]; then
         printf 'export QT_SCALE_FACTOR=%s\n' "${factor}"
         printf 'export QT_AUTO_SCREEN_SCALE_FACTOR=0\n'
         printf 'export QT_ENABLE_HIGHDPI_SCALING=1\n'
+    fi
+    if [ -z "${QT_FONT_DPI:-}" ]; then
+        qt_dpi="$(awk -v s="${factor}" 'BEGIN { printf "%d\n", (s+0)*96 }')"
+        printf 'export QT_FONT_DPI=%s\n' "${qt_dpi}"
     fi
     if [ -z "${GDK_SCALE:-}" ]; then
         printf 'export GDK_SCALE=%s\n' "${gdk_scale}"
@@ -125,11 +151,9 @@ print_env() {
     if [ -z "${GDK_DPI_SCALE:-}" ]; then
         printf 'export GDK_DPI_SCALE=%s\n' "${gdk_dpi}"
     fi
-    # Plasma LXC / kscreen-doctor consume this when callers leave it empty.
     if [ -z "${BATOCERA_ARCH_PLASMA_OUTPUT_SCALE:-}" ]; then
         printf 'export BATOCERA_ARCH_PLASMA_OUTPUT_SCALE=%s\n' "${factor}"
     fi
-    printf 'export BATOCERA_UI_SCALE=%s\n' "${factor}"
 }
 
 print_chromium_arg() {
@@ -138,6 +162,154 @@ print_chromium_arg() {
         if (s+0 > 1.01)
             printf "--force-device-scale-factor=%g\n", s+0
     }'
+}
+
+ensure_swaysock() {
+    if [ -n "${SWAYSOCK:-}" ] && [ -S "${SWAYSOCK}" ]; then
+        return 0
+    fi
+    # SSH / ES child envs often omit SWAYSOCK; Batocera keeps the IPC under /run.
+    for cand in \
+        /run/sway-ipc.0.sock \
+        /run/sway-ipc.sock \
+        /var/run/sway-ipc.0.sock \
+        /var/run/sway-ipc.sock
+    do
+        if [ -S "${cand}" ]; then
+            SWAYSOCK="${cand}"
+            export SWAYSOCK
+            return 0
+        fi
+    done
+    # Last resort: any sway-ipc socket.
+    for cand in /run/sway-ipc.*.sock /var/run/sway-ipc.*.sock; do
+        if [ -S "${cand}" ]; then
+            SWAYSOCK="${cand}"
+            export SWAYSOCK
+            return 0
+        fi
+    done
+    return 1
+}
+
+sway_ready() {
+    command -v swaymsg >/dev/null 2>&1 || return 1
+    ensure_swaysock
+}
+
+focused_output() {
+    swaymsg -t get_outputs 2>/dev/null | python3 -c '
+import json,sys
+try:
+    outs=json.load(sys.stdin)
+except Exception:
+    sys.exit(1)
+for o in outs:
+    if o.get("focused"):
+        print(o.get("name",""))
+        sys.exit(0)
+for o in outs:
+    if o.get("active"):
+        print(o.get("name",""))
+        sys.exit(0)
+' 2>/dev/null || true
+}
+
+current_output_scale() {
+    output="$1"
+    swaymsg -t get_outputs 2>/dev/null | python3 -c '
+import json,sys
+name=sys.argv[1]
+outs=json.load(sys.stdin)
+for o in outs:
+    if o.get("name")==name:
+        print(o.get("scale",1))
+        break
+' "${output}" 2>/dev/null || echo "1"
+}
+
+read_state() {
+    OUTPUT=""
+    PREV_SCALE="1"
+    DEPTH="0"
+    if [ -f "${STATE_FILE}" ]; then
+        # shellcheck disable=SC1090
+        . "${STATE_FILE}"
+    fi
+}
+
+write_state() {
+    mkdir -p "$(dirname "${STATE_FILE}")"
+    cat > "${STATE_FILE}" <<EOF
+OUTPUT='${OUTPUT}'
+PREV_SCALE='${PREV_SCALE}'
+DEPTH='${DEPTH}'
+EOF
+}
+
+push_output() {
+    factor="$(resolve_factor)"
+    if ! awk -v s="${factor}" 'BEGIN { exit !(s+0 > 1.01) }'; then
+        return 0
+    fi
+    if ! sway_ready; then
+        echo "batocera-ui-scale: sway not available; skip output scale" >&2
+        return 0
+    fi
+
+    read_state
+    if [ "${DEPTH}" -gt 0 ] 2>/dev/null; then
+        DEPTH=$((DEPTH + 1))
+        write_state
+        return 0
+    fi
+
+    output="$(focused_output)"
+    if [ -z "${output}" ]; then
+        echo "batocera-ui-scale: no sway output; skip" >&2
+        return 0
+    fi
+
+    prev="$(current_output_scale "${output}")"
+    prev="$(normalize_factor "${prev}" 2>/dev/null || echo "1")"
+
+    if ! swaymsg "output ${output} scale ${factor}" >/dev/null 2>&1; then
+        echo "batocera-ui-scale: failed to set ${output} scale ${factor}" >&2
+        return 0
+    fi
+
+    OUTPUT="${output}"
+    PREV_SCALE="${prev}"
+    DEPTH="1"
+    write_state
+}
+
+pop_output() {
+    if ! sway_ready; then
+        rm -f "${STATE_FILE}"
+        return 0
+    fi
+    if [ ! -f "${STATE_FILE}" ]; then
+        return 0
+    fi
+
+    read_state
+    if [ -z "${DEPTH}" ] || [ "${DEPTH}" -le 0 ] 2>/dev/null; then
+        rm -f "${STATE_FILE}"
+        return 0
+    fi
+
+    DEPTH=$((DEPTH - 1))
+    if [ "${DEPTH}" -gt 0 ]; then
+        write_state
+        return 0
+    fi
+
+    if [ -n "${OUTPUT}" ]; then
+        swaymsg "output ${OUTPUT} scale ${PREV_SCALE}" >/dev/null 2>&1 || \
+            swaymsg "output ${OUTPUT} scale 1" >/dev/null 2>&1 || true
+    fi
+    rm -f "${STATE_FILE}"
 }
 
 cmd="${1:-factor}"
@@ -151,11 +323,22 @@ case "${cmd}" in
     chromium-arg|chromium)
         print_chromium_arg
         ;;
+    push-output|push)
+        push_output
+        ;;
+    pop-output|pop)
+        pop_output
+        ;;
+    begin)
+        # Raise compositor scale; emit compositor-safe env (no QT/GDK double-scale).
+        push_output
+        print_env compositor
+        ;;
     -h|--help|help)
-        sed -n '2,20p' "$0"
+        sed -n '2,30p' "$0"
         ;;
     *)
-        echo "Usage: $0 [factor|env|chromium-arg]" >&2
+        echo "Usage: $0 [factor|env|chromium-arg|push-output|pop-output|begin]" >&2
         exit 2
         ;;
 esac

@@ -1,0 +1,163 @@
+#!/bin/sh
+# SPDX-FileCopyrightText: Batocera / Odin Lutris EGS automation
+# Install an Epic Games Store title via Legendary using Lutris' EGS login.
+#
+# Usage:
+#   batocera-lutris-egs-install <AppName|CatalogId> <install_dir> [display_name]
+#
+# - Syncs ~/.cache/lutris/.egs.token → Legendary user.json (Lutris HOME)
+# - Downloads into <install_dir>
+# - Creates a Proton/umu launcher at <install_dir>/egs-launch
+
+set -eu
+
+APP_ID="${1:-}"
+INSTALL_DIR="${2:-}"
+DISPLAY_NAME="${3:-$APP_ID}"
+
+if [ -z "$APP_ID" ] || [ -z "$INSTALL_DIR" ]; then
+	echo "usage: $0 <AppName> <install_dir> [display_name]" >&2
+	exit 2
+fi
+
+# Lutris sets HOME to /userdata/saves/lutris; keep Legendary config there so
+# it shares the EGS session the user already logged into inside Lutris.
+LUTRIS_HOME="${BATOCERA_LUTRIS_HOME:-${HOME:-/userdata/saves/lutris}}"
+export HOME="$LUTRIS_HOME"
+export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
+export XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
+export XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
+
+find_legendary() {
+	if [ -n "${BATOCERA_LEGENDARY:-}" ] && [ -x "${BATOCERA_LEGENDARY}" ]; then
+		echo "${BATOCERA_LEGENDARY}"
+		return 0
+	fi
+	if command -v legendary >/dev/null 2>&1; then
+		command -v legendary
+		return 0
+	fi
+	for cand in \
+		/usr/share/heroic/heroic-arm64/Heroic-*/resources/app.asar.unpacked/build/bin/arm64/linux/legendary \
+		/usr/share/heroic/*/resources/app.asar.unpacked/build/bin/*/linux/legendary
+	do
+		# shellcheck disable=SC2086
+		for f in $cand; do
+			if [ -x "$f" ]; then
+				echo "$f"
+				return 0
+			fi
+		done
+	done
+	return 1
+}
+
+LEG="$(find_legendary)" || {
+	echo "legendary not found (install Heroic or set BATOCERA_LEGENDARY)" >&2
+	exit 127
+}
+
+mkdir -p "$XDG_CONFIG_HOME/legendary" "$INSTALL_DIR"
+
+# Import Lutris EGS OAuth into Legendary
+python3 - "$XDG_CONFIG_HOME/legendary/user.json" <<'PY'
+import json, os, sys
+from pathlib import Path
+
+out = Path(sys.argv[1])
+candidates = [
+    Path(os.environ.get("XDG_CACHE_HOME", "")) / "lutris" / ".egs.token",
+    Path(os.environ["HOME"]) / ".cache" / "lutris" / ".egs.token",
+    Path("/userdata/saves/lutris/.cache/lutris/.egs.token"),
+]
+tok = None
+for c in candidates:
+    if c.is_file():
+        tok = json.loads(c.read_text(encoding="utf-8"))
+        break
+if not tok or not tok.get("refresh_token"):
+    print("No Lutris EGS login found. Log into Epic Games in Lutris first.", file=sys.stderr)
+    sys.exit(3)
+
+keys = (
+    "access_token", "expires_at", "expires_in", "token_type", "refresh_token",
+    "refresh_expires_at", "account_id", "client_id", "displayName", "app", "in_app_id",
+)
+user = {k: tok[k] for k in keys if k in tok and tok[k] is not None}
+out.write_text(json.dumps(user, indent=2), encoding="utf-8")
+print(f"Legendary auth synced ({user.get('displayName') or user.get('account_id')})")
+PY
+
+# Install into INSTALL_DIR (base=parent, folder=basename)
+BASE="$(dirname "$INSTALL_DIR")"
+FOLDER="$(basename "$INSTALL_DIR")"
+mkdir -p "$BASE"
+
+echo "Installing '$DISPLAY_NAME' ($APP_ID) → $INSTALL_DIR"
+echo "Using: $LEG"
+
+# --skip-dlcs keeps first install deterministic; user can add DLCs later
+"$LEG" install "$APP_ID" \
+	--base-path "$BASE" \
+	--game-folder "$FOLDER" \
+	--platform Windows \
+	--skip-dlcs \
+	--yes
+
+# Detect a sensible Windows main executable
+MAIN_EXE="$(python3 - "$INSTALL_DIR" <<'PY'
+import os, sys
+from pathlib import Path
+root = Path(sys.argv[1])
+preferred = (
+    "gtavlauncher.exe", "playgtav.exe", "gta5.exe", "gta5_be.exe",
+    "launcher.exe", "start.exe", "game.exe",
+)
+exes = [p for p in root.rglob("*.exe") if p.is_file()]
+# drop obvious helpers
+skip = ("redist", "directx", "vcredist", "crash", "unins", "setup", "dotnet", "ue4prereq")
+exes = [p for p in exes if not any(s in str(p).lower() for s in skip)]
+by_name = {p.name.lower(): p for p in exes}
+for name in preferred:
+    if name in by_name:
+        print(by_name[name].relative_to(root).as_posix())
+        break
+else:
+    # largest remaining exe as heuristic
+    if not exes:
+        sys.exit(4)
+    best = max(exes, key=lambda p: p.stat().st_size)
+    print(best.relative_to(root).as_posix())
+PY
+)" || {
+	echo "Install finished but no game .exe was found in $INSTALL_DIR" >&2
+	exit 4
+}
+
+printf '%s\n' "$MAIN_EXE" > "$INSTALL_DIR/.egs-main-exe"
+
+# Proton/umu launcher used by Lutris (linux runner)
+PROTON_DEFAULT="/userdata/system/.local/share/Steam/steamapps/common/Proton - Experimental"
+cat > "$INSTALL_DIR/egs-launch" <<EOF
+#!/bin/sh
+set -e
+DIR="\$(cd "\$(dirname "\$0")" && pwd)"
+EXE="\$(cat "\$DIR/.egs-main-exe")"
+export STEAM_COMPAT_DATA_PATH="\${STEAM_COMPAT_DATA_PATH:-\$DIR/compatdata}"
+mkdir -p "\$STEAM_COMPAT_DATA_PATH"
+export PROTONPATH="\${PROTONPATH:-$PROTON_DEFAULT}"
+export GAMEID="\${GAMEID:-umu-egs-\$(basename "\$DIR")}"
+export PROTON_VERB="\${PROTON_VERB:-waitforexitandrun}"
+ulimit -Hn 1048576 2>/dev/null || true
+ulimit -Sn 524288 2>/dev/null || true
+cd "\$DIR"
+exec /usr/bin/umu-run "\$DIR/\$EXE" "\$@"
+EOF
+chmod 755 "$INSTALL_DIR/egs-launch"
+
+# Also keep a wine-runner friendly absolute pointer for optional wine configs
+printf '%s\n' "$INSTALL_DIR/$MAIN_EXE" > "$INSTALL_DIR/.egs-main-exe-abs"
+
+echo "OK: $DISPLAY_NAME installed"
+echo "Main exe: $MAIN_EXE"
+echo "Launch: $INSTALL_DIR/egs-launch"

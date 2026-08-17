@@ -81,7 +81,9 @@ run_pkg batocera-emulationstation
 run_pkg batocera-onscreen-keyboard-dirclean || true
 run_pkg batocera-onscreen-keyboard
 
-run_pkg hotkeygen
+run_pkg hotkeygen-reinstall || run_pkg hotkeygen
+# Force reinstall: local SITE package skips install when VERSION stamp is unchanged.
+run_pkg batocera-steam-aarch64-dirclean || true
 run_pkg batocera-steam-aarch64
 run_pkg batocera-userdatainit || run_pkg batocera-system || true
 run_pkg batocera-system-reinstall || run_pkg batocera-system
@@ -151,4 +153,4 @@ run_cmd all
 } | tee -a "$LOG_FILE"
 
 echo "OK $(date -Is)" >"$PROJECT_DIR/rebuild-sm8750-osk-qam-ss-ota.DONE"
-log "DONE — next: finish-sm8750-osk-qam-ss-release.sh"
+log "DONE — test locally with ./scripts/dev/apply-sm8750-ota.sh (do not upload to GitHub yet)"

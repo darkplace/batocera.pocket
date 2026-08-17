@@ -1,0 +1,69 @@
+From: batocera <batocera@localhost>
+Subject: 0002-cairo-surface-without-gi-cairo.patch
+
+--- a/lutris/gui/widgets/utils.py
++++ b/lutris/gui/widgets/utils.py
+@@ -1,6 +1,7 @@
+ """Various utilities using the GObject framework"""
+ 
+ import array
++import tempfile
+ import os
+ from typing import TYPE_CHECKING, Iterable, List, Optional, Type, TypeVar, Union, cast
+ 
+@@ -120,6 +121,33 @@
+     return width, height
+ 
+ 
++
++def _pixbuf_as_cairo_surface(pixbuf):
++    """Convert a GdkPixbuf to a Cairo ImageSurface without gi-cairo bindings."""
++    try:
++        _success, png_bytes = pixbuf.save_to_bufferv("png", [], [])
++    except Exception as ex:  # pylint: disable=broad-except
++        logger.debug("pixbuf save_to_bufferv failed: %s", ex)
++        return None
++    if not png_bytes:
++        return None
++    tmp_path = None
++    try:
++        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
++            tmp.write(png_bytes)
++            tmp_path = tmp.name
++        return cairo.ImageSurface.create_from_png(tmp_path)
++    except Exception as ex:  # pylint: disable=broad-except
++        logger.debug("cairo create_from_png failed: %s", ex)
++        return None
++    finally:
++        if tmp_path:
++            try:
++                os.unlink(tmp_path)
++            except OSError:
++                pass
++
++
+ def get_scaled_surface_by_path(path, size, device_scale, preserve_aspect_ratio=True):
+     """Returns a Cairo surface containing the image at the path given. It has the size indicated.
+ 
+@@ -152,8 +180,19 @@
+     surface = cairo.ImageSurface(cairo.Format.ARGB32, pixel_width, pixel_height)  # pylint:disable=no-member
+     cr = cairo.Context(surface)  # pylint:disable=no-member
+     cr.scale(scale_x, scale_y)
+-    Gdk.cairo_set_source_pixbuf(cr, pixbuf, 0, 0)
+-    cr.get_source().set_extend(cairo.Extend.PAD)  # pylint: disable=no-member
++    try:
++        Gdk.cairo_set_source_pixbuf(cr, pixbuf, 0, 0)
++        cr.get_source().set_extend(cairo.Extend.PAD)  # pylint: disable=no-member
++    except (TypeError, KeyError, AttributeError, GLib.Error):
++        # Missing python-gobject cairo support (common on embedded images).
++        tmp_surface = _pixbuf_as_cairo_surface(pixbuf)
++        if not tmp_surface:
++            return None
++        cr.set_source_surface(tmp_surface, 0, 0)
++        try:
++            cr.get_source().set_extend(cairo.Extend.PAD)  # pylint: disable=no-member
++        except Exception:  # pylint: disable=broad-except
++            pass
+     cr.paint()
+     surface.set_device_scale(device_scale, device_scale)
+     return surface

@@ -1,0 +1,586 @@
+#!/bin/sh
+# Launch gen1recomp / Gen2Recomped from EmulationStation.
+# Usage:
+#   pkmnrecomp [--core gen1recomp|gen2recomp] /path/to/rom.gb[c]
+#   pkmnrecomp [--core gen1recomp|gen2recomp] --config
+set -eu
+
+CORE=""
+ROM=""
+CONFIG_ONLY=0
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --core)
+            CORE="${2:-}"
+            shift 2
+            ;;
+        --core=*)
+            CORE="${1#--core=}"
+            shift
+            ;;
+        --config)
+            CONFIG_ONLY=1
+            shift
+            ;;
+        --)
+            shift
+            break
+            ;;
+        -*)
+            echo "pkmnrecomp: unknown option: $1" >&2
+            exit 2
+            ;;
+        *)
+            ROM="$1"
+            shift
+            break
+            ;;
+    esac
+done
+
+if [ -z "$ROM" ] && [ $# -gt 0 ]; then
+    ROM="$1"
+    shift
+fi
+
+if [ "$CONFIG_ONLY" -eq 0 ] && { [ -z "$ROM" ] || [ ! -f "$ROM" ]; }; then
+    echo "Usage: $0 [--core gen1recomp|gen2recomp] <rom.gb|rom.gbc>" >&2
+    echo "       $0 [--core gen1recomp|gen2recomp] --config" >&2
+    exit 2
+fi
+
+# Canonical US cartridge SHA-1 (upstream importers).
+# gen1: Red / Blue / Yellow (+ Gold phase 1)
+# gen2: Gold / Silver / Crystal (+ Gen 1 ROMs)
+sha1_of() {
+    sha1sum "$1" | awk '{print tolower($1)}'
+}
+
+game_from_sha1() {
+    case "$1" in
+        ea9bcae617fdf159b045185467ae58b2e4a48b9a) echo "red gen1" ;;
+        d7037c83e1ae5b39bde3c30787637ba1d4c48ce2) echo "blue gen1" ;;
+        cc7d03262ebfaf2f06772c1a480c7d9d5f4a38e1) echo "yellow gen1" ;;
+        d8b8a3600a465308c9953dfa04f0081c05bdcb94) echo "gold gen2" ;;
+        49b163f7e57702bc939d642a18f591de55d92dae) echo "silver gen2" ;;
+        f2f52230b536214ef7c9924f483392993e226cfb) echo "crystal gen2" ;;
+        f4cd194bdee0d04ca4eac29e09b8e4e9d818c133) echo "crystal gen2" ;;
+        *) echo "" ;;
+    esac
+}
+
+game_from_name() {
+    n="$(basename "$1" | tr '[:upper:]' '[:lower:]')"
+    case "$n" in
+        *yellow*) echo "yellow gen1" ;;
+        *blue*)   echo "blue gen1" ;;
+        *red*)    echo "red gen1" ;;
+        *silver*) echo "silver gen2" ;;
+        *crystal*) echo "crystal gen2" ;;
+        *gold*)   echo "gold gen2" ;;
+        *)        echo "" ;;
+    esac
+}
+
+SHA1=""
+DETECTED=""
+if [ "$CONFIG_ONLY" -eq 0 ]; then
+    SHA1="$(sha1_of "$ROM")"
+    DETECTED="$(game_from_sha1 "$SHA1")"
+    if [ -z "$DETECTED" ]; then
+        DETECTED="$(game_from_name "$ROM")"
+    fi
+fi
+
+GAME=""
+FAMILY=""
+if [ -n "$DETECTED" ]; then
+    GAME="${DETECTED%% *}"
+    FAMILY="${DETECTED##* }"
+fi
+
+case "$CORE" in
+    gen1recomp|gen1) CORE="gen1recomp" ;;
+    gen2recomp|gen2) CORE="gen2recomp" ;;
+    ""|auto|AUTO) CORE="" ;;
+esac
+
+# Honour the ES core when it can actually run this dump.
+# Silver/Crystal cannot boot on gen1recomp; Gold can on both.
+if [ -z "$CORE" ]; then
+    if [ "$FAMILY" = "gen2" ]; then
+        CORE="gen2recomp"
+    else
+        CORE="gen1recomp"
+    fi
+elif [ "$CORE" = "gen1recomp" ] && { [ "$GAME" = "silver" ] || [ "$GAME" = "crystal" ]; }; then
+    echo "pkmnrecomp: $GAME needs gen2recomp; ignoring gen1recomp core" >&2
+    CORE="gen2recomp"
+fi
+
+SYSTEM_DIR="${BATOCERA_PKMNRECOMP_DIR:-/usr/share/pkmnrecomp}"
+USER_DIR="${BATOCERA_PKMNRECOMP_USER:-/userdata/system/pkmnrecomp}"
+LOG="${BATOCERA_PKMNRECOMP_LOG:-/userdata/system/logs/pkmnrecomp.log}"
+
+if [ "$CORE" = "gen2recomp" ]; then
+    APP_NAME="gen2recomp.AppImage"
+    APP_ID="pkmnrecomp-gen2"
+else
+    APP_NAME="gen1recomp.AppImage"
+    APP_ID="pkmnrecomp-gen1"
+fi
+
+find_appimage() {
+    for candidate in \
+        "${USER_DIR}/${APP_NAME}" \
+        "${USER_DIR}/${CORE}.AppImage" \
+        "${SYSTEM_DIR}/${APP_NAME}"
+    do
+        if [ -f "$candidate" ]; then
+            echo "$candidate"
+            return 0
+        fi
+    done
+    return 1
+}
+
+APPIMAGE="$(find_appimage || true)"
+if [ -z "$APPIMAGE" ]; then
+    echo "pkmnrecomp: missing $APP_NAME (looked in $USER_DIR and $SYSTEM_DIR)" >&2
+    exit 1
+fi
+
+mkdir -p "$USER_DIR" "$(dirname "$LOG")"
+if [ ! -x "$APPIMAGE" ]; then
+    chmod 0755 "$APPIMAGE" 2>/dev/null || true
+fi
+
+# Drop folders on the ROM share (Samba: share/roms/pkmnrecomp/).
+# ZIPs are unpacked to mods/<id>/ (Loader only discovers directories).
+# gen2 desktop identity is Gen2Recomp; gen1 stays pokemon-love2d.
+ROM_DROP="${BATOCERA_PKMNRECOMP_ROMS:-/userdata/roms/pkmnrecomp}"
+if [ "$CORE" = "gen2recomp" ]; then
+    MOD_DROP="${ROM_DROP}/mods/gen2"
+    APP_HOME="/userdata/saves/apps/pkmnrecomp-gen2"
+    MOD_ID_DEFAULT="DRAMATIC_SHAPE"
+    LOVE_MOD_DIRS="
+${APP_HOME}/.local/share/Gen2Recomp/mods
+${APP_HOME}/.local/share/love/Gen2Recomp/mods
+"
+else
+    MOD_DROP="${ROM_DROP}/mods/gen1"
+    APP_HOME="/userdata/saves/apps/pkmnrecomp-gen1"
+    MOD_ID_DEFAULT="potato_voxel"
+    LOVE_MOD_DIRS="
+${APP_HOME}/.local/share/pokemon-love2d/mods
+${APP_HOME}/.local/share/love/pokemon-love2d/mods
+"
+fi
+mkdir -p "$MOD_DROP" "${ROM_DROP}/mods/optional" "$APP_HOME"
+
+mod_id_from_manifest() {
+    # Prefer python (Batocera has it); fall back to a tiny sed scrape.
+    man="$1"
+    [ -f "$man" ] || return 1
+    if command -v python3 >/dev/null 2>&1; then
+        python3 - "$man" <<'PY'
+import json,sys
+print(json.load(open(sys.argv[1], encoding="utf-8"))["id"])
+PY
+        return $?
+    fi
+    sed -n 's/.*"id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$man" | head -n1
+}
+
+install_one_mod() {
+    src="$1"
+    dest_root="$2"
+    name="$(basename "$src")"
+    case "$name" in
+        README*|readme*|_info*|.*) return 0 ;;
+    esac
+
+    tmp="$(mktemp -d "${TMPDIR:-/tmp}/pkmn-mod.XXXXXX")" || return 1
+
+    if [ -f "$src" ]; then
+        case "$name" in
+            *.zip|*.ZIP)
+                if ! unzip -q -o "$src" -d "$tmp"; then
+                    rm -rf "$tmp"
+                    return 1
+                fi
+                # Drop Windows VR runtimes / VCS noise; diorama does not need them.
+                rm -rf "$tmp/.git" "$tmp/oxr" "$tmp/oxr.zip" "$tmp/tests"
+                ;;
+            *)
+                rm -rf "$tmp"
+                return 0
+                ;;
+        esac
+    elif [ -d "$src" ]; then
+        cp -a "$src"/. "$tmp"/
+    else
+        rm -rf "$tmp"
+        return 0
+    fi
+
+    # Flat zip (manifest at root) or single nested folder with manifest.
+    man=""
+    payload=""
+    if [ -f "$tmp/manifest.json" ]; then
+        man="$tmp/manifest.json"
+        payload="$tmp"
+    else
+        for sub in "$tmp"/*; do
+            [ -d "$sub" ] || continue
+            if [ -f "$sub/manifest.json" ]; then
+                man="$sub/manifest.json"
+                payload="$sub"
+                break
+            fi
+        done
+    fi
+    if [ -z "$man" ] || [ -z "$payload" ]; then
+        echo "pkmnrecomp: skip $name (no manifest.json)" >&2
+        rm -rf "$tmp"
+        return 0
+    fi
+    mid="$(mod_id_from_manifest "$man" || true)"
+    if [ -z "$mid" ]; then
+        echo "pkmnrecomp: skip $name (manifest has no id)" >&2
+        rm -rf "$tmp"
+        return 0
+    fi
+
+    mkdir -p "$dest_root"
+    rm -rf "$dest_root/$mid"
+    mkdir -p "$dest_root/$mid"
+    cp -a "$payload"/. "$dest_root/$mid"/
+    # Remove stale zip copies from older syncs (never rm the folder we just filled).
+    case "$name" in
+        *.zip|*.ZIP) rm -f "$dest_root/$name" ;;
+    esac
+    rm -f "$dest_root/${mid}.zip"
+    # Handheld tweaks for DRAMATIC_SHAPE / potato_voxel (Adreno flicker).
+    case "$mid" in
+        DRAMATIC_SHAPE|potato_voxel)
+            handheld_tune_voxel_mod "$dest_root/$mid"
+            ;;
+    esac
+    rm -rf "$tmp"
+    echo "pkmnrecomp: installed $mid <- $name"
+}
+
+# Adreno/Odin: keep 3D frames stable across door warps and brief mesh misses.
+# Re-applied after every zip sync (install overwrites the mod tree).
+handheld_tune_voxel_mod() {
+    mod_root="$1"
+    [ -d "$mod_root" ] || return 0
+    main="$mod_root/main.lua"
+    mesh="$mod_root/lib/ChunkMesher.lua"
+    [ -f "$main" ] || return 0
+
+    # WATER FULL SSR strobes while panning; prefer SKY in applyFull.
+    sed -i 's/Water\.setting:setIndex(1, Game)/Water.setting:setIndex(2, Game)/' "$main" || true
+    # Door warps: refresh keeps stale mesh; invalidate flashes 2D/black.
+    sed -i '/map\.reloaded/,/^end)/ s/ChunkMesher\.invalidate(mapId)/ChunkMesher.refresh(mapId)/' "$main" || true
+
+    command -v python3 >/dev/null 2>&1 || return 0
+    python3 - "$main" "$mesh" <<'PY'
+import pathlib, re, sys
+
+main = pathlib.Path(sys.argv[1])
+mesh = pathlib.Path(sys.argv[2]) if len(sys.argv) > 2 else None
+
+mt = main.read_text(encoding="utf-8").replace("\r\n", "\n")
+if "__batoceraVoxelLastCanvas" not in mt:
+    mt2, n = re.subn(
+        r"if not canvas then return nil end\s*-- fall back to the 2D path",
+        "if not canvas then\n"
+        "      if _G.__batoceraVoxelLastCanvas then return _G.__batoceraVoxelLastCanvas end\n"
+        "      return nil\n"
+        "    end\n"
+        "    _G.__batoceraVoxelLastCanvas = canvas",
+        mt,
+        count=1,
+    )
+    if n:
+        main.write_text(mt2, encoding="utf-8")
+
+if not mesh or not mesh.is_file():
+    raise SystemExit(0)
+ct = mesh.read_text(encoding="utf-8").replace("\r\n", "\n")
+# Bigger cooperative meshing slices on handheld.
+ct = re.sub(r"(URGENT_SLICE\s*=\s*)0\.\d+", r"\g<1>0.008", ct, count=1)
+ct = re.sub(r"(IDLE_SLICE\s*=\s*)0\.\d+", r"\g<1>0.003", ct, count=1)
+ct = re.sub(r"(COVERED_SLICE\s*=\s*)0\.\d+", r"\g<1>0.020", ct, count=1)
+if "prevPrevLive" not in ct:
+    if "local prevLive = {}" in ct:
+        ct = ct.replace("local prevLive = {}", "local prevLive = {}\nlocal prevPrevLive = {}", 1)
+    # Broaden eviction guards to keep two live generations.
+    ct = ct.replace(
+        "not live[id] and not prevLive[id]",
+        "not live[id] and not prevLive[id] and not prevPrevLive[id]",
+    )
+    ct = ct.replace(
+        "not live[job.id] and not prevLive[job.id]",
+        "not live[job.id] and not prevLive[job.id] and not prevPrevLive[job.id]",
+    )
+    ct = ct.replace(
+        "  prevLive = live\nend",
+        "  prevPrevLive = prevLive\n  prevLive = live\nend",
+        1,
+    )
+mesh.write_text(ct, encoding="utf-8")
+
+# Soft-disable cast shadows: Adreno hitch/black flash while walking.
+shadow = mesh.parent / "ShadowMap.lua"
+if shadow.is_file():
+    st = shadow.read_text(encoding="utf-8")
+    if "batoceraNoShadows" not in st:
+        m = re.search(r"function ShadowMap\.begin\([^)]*\)\n", st)
+        if m:
+            st = (
+                st[: m.end()]
+                + "  if true then return false end -- batoceraNoShadows\n"
+                + st[m.end() :]
+            )
+            shadow.write_text(st, encoding="utf-8")
+PY
+}
+
+sync_mods() {
+    dest="$1"
+    mkdir -p "$dest"
+    [ -d "$MOD_DROP" ] || return 0
+    for src in "$MOD_DROP"/*; do
+        [ -e "$src" ] || continue
+        install_one_mod "$src" "$dest" || true
+    done
+}
+
+enable_graphics_mod() {
+    options="$1"
+    want_id="$2"
+    [ -f "$options" ] || return 0
+    command -v python3 >/dev/null 2>&1 || return 0
+    python3 - "$options" "$want_id" <<'PY'
+import pathlib, re, sys
+
+path = pathlib.Path(sys.argv[1])
+want = sys.argv[2]
+text = path.read_text(encoding="utf-8")
+
+def replace_brace_table(src: str, key: str, lines_inner: list[str]) -> str:
+    m = re.search(rf"(\n\s*){re.escape(key)}\s*=\s*\{{", src)
+    if not m:
+        return src
+    indent = m.group(1)
+    start = m.end()
+    depth = 1
+    i = start
+    while i < len(src) and depth:
+        ch = src[i]
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+        i += 1
+    body = "\n" + "\n".join(lines_inner) + indent
+    return src[:start] + body + src[i - 1 :]
+
+# Keep any unrelated enabled mods, force graphics on / nuzlocke off.
+existing = {}
+mm = re.search(r"\n\s*mods\s*=\s*\{([^}]*)\}", text, flags=re.S)
+if mm:
+    for k, v in re.findall(r"(\w+)\s*=\s*(true|false)", mm.group(1)):
+        existing[k] = v == "true"
+existing[want] = True
+existing["nuzlocke"] = False
+indent_mods = "  "
+mmods = re.search(r"\n(\s*)mods\s*=\s*\{", text)
+if mmods:
+    indent_mods = mmods.group(1) + "  "
+mod_lines = [f"{indent_mods}{k} = {'true' if v else 'false'}," for k, v in existing.items()]
+text2 = replace_brace_table(text, "mods", mod_lines)
+
+# Profile enabled{}: flip nuzlocke off, ensure want on
+def patch_enabled(m):
+    body = m.group(2)
+    body = re.sub(r"nuzlocke\s*=\s*true", "nuzlocke = false", body)
+    if not re.search(rf"{re.escape(want)}\s*=", body):
+        body = body.rstrip() + f"\n        {want} = true,\n      "
+    else:
+        body = re.sub(
+            rf"{re.escape(want)}\s*=\s*false", f"{want} = true", body
+        )
+    return m.group(1) + body + m.group(3)
+
+text2 = re.sub(
+    r"(enabled\s*=\s*\{)(.*?)(\n\s*\},)",
+    patch_enabled,
+    text2,
+    count=1,
+    flags=re.S,
+)
+
+# DRAMATIC_SHAPE / potato_voxel only draw when pipelines.voxel > 0.
+# Level 1 = FULL (the intended diorama preset). Seed only if missing so a
+# player who cycles to OFF with hotkey 3 keeps that choice.
+pm = re.search(r"\n(\s*)pipelines\s*=\s*\{", text2)
+if pm:
+    indent = pm.group(1)
+    inner = indent + "  "
+    start = pm.end()
+    depth = 1
+    i = start
+    while i < len(text2) and depth:
+        if text2[i] == "{":
+            depth += 1
+        elif text2[i] == "}":
+            depth -= 1
+        i += 1
+    body = text2[start : i - 1]
+    if not re.search(r"\bvoxel\s*=", body):
+        body = f"\n{inner}voxel = 1,\n{indent}"
+        text2 = text2[:start] + body + text2[i - 1 :]
+    # World pipeline and engine TILT fight; keep tilt off when seeding 3D.
+    text2 = re.sub(r"(\n\s*)tilt\s*=\s*[1-9]\d*", r"\1tilt = 0", text2, count=1)
+
+# Seed handheld-safe water=sky / aa=0 inside modOptions.<want> only when
+# the water key is missing (do not override a deliberate FULL/OFF choice).
+mo = re.search(r"\n(\s*)modOptions\s*=\s*\{", text2)
+if mo:
+    indent = mo.group(1)
+    start = mo.end()
+    depth = 1
+    i = start
+    while i < len(text2) and depth:
+        if text2[i] == "{":
+            depth += 1
+        elif text2[i] == "}":
+            depth -= 1
+        i += 1
+    mo_body = text2[start : i - 1]
+    wm = re.search(rf"(\n\s*){re.escape(want)}\s*=\s*\{{", mo_body)
+    if wm:
+        w_indent = wm.group(1)
+        w_start = wm.end()
+        w_depth = 1
+        j = w_start
+        while j < len(mo_body) and w_depth:
+            if mo_body[j] == "{":
+                w_depth += 1
+            elif mo_body[j] == "}":
+                w_depth -= 1
+            j += 1
+        w_body = mo_body[w_start : j - 1]
+        if not re.search(r"\bwater\s*=", w_body):
+            if not re.search(r"\baa\s*=", w_body):
+                seed = f"\n{w_indent}  water = \"sky\",\n{w_indent}  aa = 0,"
+            else:
+                seed = f"\n{w_indent}  water = \"sky\","
+            w_body = seed + w_body
+            mo_body2 = mo_body[:w_start] + w_body + mo_body[j - 1 :]
+            text2 = text2[:start] + mo_body2 + text2[i - 1 :]
+    else:
+        # Create a minimal entry for the graphics mod.
+        entry = (
+            f"\n{indent}  {want} = {{\n"
+            f"{indent}    water = \"sky\",\n"
+            f"{indent}    aa = 0,\n"
+            f"{indent}  }},"
+        )
+        text2 = text2[:start] + entry + mo_body + text2[i - 1 :]
+
+if text2 != text:
+    path.write_text(text2, encoding="utf-8")
+    print(f"pkmnrecomp: options {path}: enabled {want}, voxel pipeline seeded if needed")
+PY
+}
+
+# shellcheck disable=SC2086
+for _mod_dir in $LOVE_MOD_DIRS; do
+    [ -n "$_mod_dir" ] || continue
+    sync_mods "$_mod_dir"
+    # Re-apply after sync: zip install restores stock mesh/water behaviour.
+    for _mid in DRAMATIC_SHAPE potato_voxel; do
+        handheld_tune_voxel_mod "${_mod_dir}/${_mid}"
+    done
+done
+
+# Seed / fix enable bits for the 3D graphics mod; turn bundled Nuzlocke off.
+if [ "$CORE" = "gen2recomp" ]; then
+    enable_graphics_mod "${APP_HOME}/.local/share/Gen2Recomp/options.lua" "$MOD_ID_DEFAULT"
+else
+    enable_graphics_mod "${APP_HOME}/.local/share/pokemon-love2d/options.lua" "$MOD_ID_DEFAULT"
+fi
+
+LAUNCHER="/usr/bin/batocera-appimage-launcher"
+export APPIMAGE_ALLOW_ROOT="${APPIMAGE_ALLOW_ROOT:-1}"
+export APPIMAGE_EXTRACT_AND_RUN="${APPIMAGE_EXTRACT_AND_RUN:-1}"
+export SDL_JOYSTICK_HIDAPI="${SDL_JOYSTICK_HIDAPI:-0}"
+export SDL_ACCELEROMETER_AS_JOYSTICK="${SDL_ACCELEROMETER_AS_JOYSTICK:-0}"
+export POKEPORT_TOUCH="${POKEPORT_TOUCH:-0}"
+# Integer GB aspect (10:9 letterbox) vs fit-to-window; L2 toggles this.
+export POKEPORT_FORCE_MOBILE="${POKEPORT_FORCE_MOBILE:-1}"
+# Avoid vsync stalls presenting as black micro-stutters on 120 Hz DSI.
+export SDL_RENDER_VSYNC="${SDL_RENDER_VSYNC:-0}"
+export BATOCERA_PKMNRECOMP_HOTKEYS="${BATOCERA_PKMNRECOMP_HOTKEYS:-1}"
+if [ "$CONFIG_ONLY" -eq 0 ]; then
+    export POKEPORT_IMPORT_ROM="$ROM"
+    if [ -n "$GAME" ]; then
+        export POKEPORT_GAME="$GAME"
+    fi
+else
+    unset POKEPORT_IMPORT_ROM POKEPORT_GAME || true
+fi
+
+# Never replace configgen's per-pad line with a full community DB.
+# SDL 2.30's Odin 3 GUID includes a name CRC (0300bb95…) and numbers D-pad
+# as b11-b14; ES ids are b12-b15 because evdev lists BTN_BACK first.
+# If a user DB exists, keep it first and append ours so the last GUID wins.
+if [ -f /userdata/system/gamecontrollerdb.txt ]; then
+    user_db="$(cat /userdata/system/gamecontrollerdb.txt)"
+    if [ -n "${SDL_GAMECONTROLLERCONFIG:-}" ]; then
+        SDL_GAMECONTROLLERCONFIG="${user_db}
+${SDL_GAMECONTROLLERCONFIG}"
+    else
+        SDL_GAMECONTROLLERCONFIG="$user_db"
+    fi
+    export SDL_GAMECONTROLLERCONFIG
+fi
+
+# Force SDL 2.30's own Odin 3 numbering. Appended last so this GUID wins.
+ODIN3_SDL230_MAPPING="0300bb95202000000130000001000000,AYN Odin3 Gamepad,a:b0,b:b1,x:b2,y:b3,back:b6,guide:b8,start:b7,leftstick:b9,rightstick:b10,leftshoulder:b4,rightshoulder:b5,dpup:b11,dpdown:b12,dpleft:b13,dpright:b14,leftx:a0,lefty:a1,rightx:a3,righty:a4,lefttrigger:a2,righttrigger:a5,paddle1:b15,paddle2:b16,platform:Linux,"
+if [ -n "${SDL_GAMECONTROLLERCONFIG:-}" ]; then
+    SDL_GAMECONTROLLERCONFIG="${SDL_GAMECONTROLLERCONFIG}
+${ODIN3_SDL230_MAPPING}"
+else
+    SDL_GAMECONTROLLERCONFIG="$ODIN3_SDL230_MAPPING"
+fi
+export SDL_GAMECONTROLLERCONFIG
+
+{
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] core=$CORE game=${GAME:-?} sha1=${SHA1:-} rom=${ROM:-config} app=$APPIMAGE"
+} >> "$LOG"
+
+set --
+if [ "$CONFIG_ONLY" -eq 0 ] && [ -n "$GAME" ]; then
+    set -- "--game=${GAME}"
+fi
+
+if [ -x "$LAUNCHER" ]; then
+    exec "$LAUNCHER" "$APPIMAGE" "$APP_ID" 0 "$@"
+fi
+
+# Fallback if the AppImage launcher is not on this image yet.
+HOME_DIR="/userdata/saves/apps/${APP_ID}"
+export HOME="$HOME_DIR"
+export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
+export XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
+export XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+mkdir -p "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_CACHE_HOME" "$XDG_RUNTIME_DIR"
+exec "$APPIMAGE" "$@"

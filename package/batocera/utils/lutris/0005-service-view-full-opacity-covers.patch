@@ -1,0 +1,16 @@
+From: batocera <batocera@localhost>
+Subject: Keep full-opacity covers in service catalog views
+
+--- a/lutris/gui/widgets/cellrenderers.py	2026-08-16 17:46:55.738945138 +0200
++++ b/lutris/gui/widgets/cellrenderers.py	2026-08-16 17:46:55.773897154 +0200
+@@ -237,7 +237,9 @@
+         media_width = media_path.width
+         media_height = media_path.height
+         path = media_path.path
+-        alpha = 1 if self.is_installed else 100 / 255
++        # Service catalog views: keep full opacity so covers remain visible
++        # for uninstalled titles (Batocera light theme washes out 100/255 alpha).
++        alpha = 1 if (self.is_installed or self.service) else 100 / 255
+ 
+         if media_width > 0 and media_height > 0 and path:
+             surface = self._get_cached_surface_by_path(widget, path, size=(media_width, media_height))

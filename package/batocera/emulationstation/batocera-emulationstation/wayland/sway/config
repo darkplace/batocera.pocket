@@ -6,8 +6,8 @@ set $alt Mod1
 # hide_cursor hides the cursor image after the specified timeout (in milliseconds) has elapsed with no activity on that cursor
 seat * hide_cursor 500
 
-# Default wallpaper
-output * bg /usr/share/emulationstation/resources/logo.png fill
+# Default wallpaper (batocera.pocket brand — same asset as README.md)
+output * bg /usr/share/batocera/splash/batocera.pocket-logo.png fill
 
 # Set keyboard layout based on environment variables set (default US)
 input * {
