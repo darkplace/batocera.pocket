@@ -3,7 +3,8 @@
 from __future__ import print_function
 
 from hashlib import md5
-from os.path import isfile
+from os import listdir
+from os.path import isfile, isdir, join, getsize
 from collections import OrderedDict
 import sys
 import zipfile
@@ -165,9 +166,18 @@ systems = {
                                             { "md5": "32736f17079d0b2b7024407c39bd3050", "file": "bios/scph5502.bin"    },
                                             { "md5": "1e68c231d0896b7eadcad1d7d8e76129", "file": "bios/scph7001.bin"    } ] },
 
-    # https://pcsx2.net/config-guide/official-english-pcsx2-configuration-guide.html#Bios
-    # use the last USA bios which can run NTSC and PAL games
-    "ps2": { "name": "PS2", "biosFiles": [  { "md5": "21038400dc633070a78ad53090c53017", "file": "bios/ps2/ps2-0230a-20080220.bin" } ] },
+    # PS2: accept any real BIOS dump in bios/ps2/ (AetherSX2/ARMSX2/PCSX2 pick via
+    # configgen). Do not require the Batocera-renamed USA dump + strict MD5 — that
+    # false-alarms ES when users have scph39001.bin / SCPH30004R.bin / etc.
+    # Exclude EROM/ROM* NVRAM companions (~256KiB) which are not boot BIOS.
+    "ps2": { "name": "PS2", "biosFiles": [ {
+        "md5": "",
+        "file": "bios/ps2",
+        "anyFile": True,
+        "extensions": [".bin", ".rom"],
+        "minSize": 3500000,
+        "exclude": ["erom.bin", "rom1.bin", "rom2.bin", "patches.zip"],
+    } ] },
 
     # https://www.playstation.com/en-us/support/system-updates/ps3/
     "ps3": { "name": "PS3", "biosFiles": [  { "md5": "05fe32f5dc8c78acbcd84d36ee7fdc5b", "file": "bios/PS3UPDAT.PUP" } ] },
@@ -1050,6 +1060,37 @@ def checkInsideZip(container, fileName, md5sum):
     print('Missing file inside .zip: File {} not found in {}'.format(fileName, container))
     return False
 
+def checkAnyFileInDir(dirpath, fileEntry):
+    """True if dirpath contains at least one usable BIOS-like file."""
+    if not isdir(dirpath):
+        return False
+    extensions = {ext.lower() for ext in fileEntry.get("extensions", [".bin"])}
+    exclude = {name.lower() for name in fileEntry.get("exclude", [])}
+    minSize = int(fileEntry.get("minSize", 0))
+    try:
+        names = listdir(dirpath)
+    except OSError:
+        return False
+    for name in names:
+        lower = name.lower()
+        if lower in exclude:
+            continue
+        ext = ""
+        if "." in lower:
+            ext = "." + lower.rsplit(".", 1)[-1]
+        if extensions and ext not in extensions:
+            continue
+        full = join(dirpath, name)
+        if not isfile(full):
+            continue
+        try:
+            if getsize(full) < minSize:
+                continue
+        except OSError:
+            continue
+        return True
+    return False
+
 def coreExists(checkMe, emuDict):
     if "emulator" in checkMe:
         if checkMe["emulator"] in emuDict.keys():
@@ -1108,6 +1149,14 @@ def checkBios(systems, prefix, filterROMs):
                 for file in systems[system]["biosFiles"]:
                     if coreExists(file, emuDict) or filterROMs == False:
                         filepath = prefix + "/" + file["file"]
+                        # Directory presence check: any matching BIOS-like file is enough
+                        if file.get("anyFile"):
+                            if checkAnyFileInDir(filepath, file):
+                                continue
+                            if system not in missingBios:
+                                missingBios[system] = {}
+                            missingBios[system][file["file"]] = { "status": BiosStatus.MISSING, "md5": file.get("md5", ""), "file": file["file"] }
+                            continue
                         if isfile(filepath):
                             if not "zippedFile" in file:
                                 md5 = md5sum(filepath)

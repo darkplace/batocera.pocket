@@ -4,7 +4,7 @@
 #
 ################################################################################
 
-BATOCERA_CONFIGGEN_VERSION = 1.41b
+BATOCERA_CONFIGGEN_VERSION = 1.41e
 BATOCERA_CONFIGGEN_LICENSE = GPL
 BATOCERA_CONFIGGEN_SOURCE=
 BATOCERA_CONFIGGEN_SETUP_TYPE = pep517
@@ -125,6 +125,7 @@ define BATOCERA_CONFIGGEN_CONFIGS
 	mkdir -p $(TARGET_DIR)/usr/share/evmapy
 	cp $(CONFIGGEN_DIR)/hotkeys.keys $(TARGET_DIR)/usr/share/evmapy/hotkeys.keys
 	cp $(CONFIGGEN_DIR)/internet.firefox.keys $(TARGET_DIR)/usr/share/evmapy/internet.firefox.keys
+	cp $(CONFIGGEN_DIR)/config-ui.keys $(TARGET_DIR)/usr/share/evmapy/config-ui.keys
 endef
 
 define BATOCERA_CONFIGGEN_ES_HOOKS

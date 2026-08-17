@@ -271,6 +271,22 @@ def main(args: argparse.Namespace, maxnbplayers: int) -> int:
 def start_rom(args: argparse.Namespace, maxnbplayers: int, rom: Path, original_rom: Path) -> int:
     global _active_player_controllers, _evmapy_instance
 
+    # Toolkit UI scale (QT_SCALE_FACTOR / GDK_*) is set by batocera-config-* and
+    # filemanagerlauncher for touch-friendly menus. Never let it leak into real
+    # game processes — keep native resolution / HUD sizing.
+    if rom.name != "config":
+        for key in (
+            "QT_SCALE_FACTOR",
+            "QT_AUTO_SCREEN_SCALE_FACTOR",
+            "QT_ENABLE_HIGHDPI_SCALING",
+            "QT_FONT_DPI",
+            "GDK_SCALE",
+            "GDK_DPI_SCALE",
+            "BATOCERA_UI_SCALE",
+            "BATOCERA_ARCH_PLASMA_OUTPUT_SCALE",
+        ):
+            os.environ.pop(key, None)
+
     player_controllers = Controller.load_for_players(maxnbplayers, args)
 
     # Initialize the global state with the initial controller list

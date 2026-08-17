@@ -2254,7 +2254,7 @@ ps3:
   manufacturer: Sony
   release: 2006
   hardware: console
-  extensions: [ps3, psn, squashfs, iso]
+  extensions: [ps3, psn, squashfs, iso, bin, ps3boot]
   emulators:
     rpcs3:
       rpcs3: { requireAnyOf: [BR2_PACKAGE_RPCS3] }

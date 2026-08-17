@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import platform
 import re
 import shutil
 import struct
@@ -9,6 +11,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final, cast
 
 from ruamel.yaml import YAML
+from ruamel.yaml.scalarstring import DoubleQuotedScalarString
 
 from ... import Command
 from ...batoceraPaths import BIOS, CACHE, CONFIGS, configure_emulator, mkdir_if_not_exists
@@ -24,6 +27,15 @@ if TYPE_CHECKING:
     from ...types import HotkeysContext, Resolution
 
 _logger = logging.getLogger(__name__)
+
+_RPCS3_SHADER_MODE_ALIASES: Final[dict[str, str]] = {
+    # Legacy batocera / older RPCS3 labels → current RPCS3 enum strings
+    "Shader Recompiler": "Legacy Recompiler (single-threaded)",
+    "Async Shader Recompiler": "Async Recompiler (multi-threaded)",
+    "Async with Shader Interpreter": "Async Recompiler with Shader Interpreter",
+    "Legacy (single threaded)": "Legacy Recompiler (single-threaded)",
+    "Async (multi threaded)": "Async Recompiler (multi-threaded)",
+}
 
 
 def _seed_rpcs3_community_patches() -> None:
@@ -146,6 +158,22 @@ def _normalise_rpcs3_vsync(value: Any) -> str:
             case "false" | "off" | "0":
                 return "Disabled"
     return cast(str, value)
+
+
+def _normalise_rpcs3_shader_mode(value: Any) -> str:
+    text = str(value).strip()
+    return _RPCS3_SHADER_MODE_ALIASES.get(text, text)
+
+
+def _ensure_rpcs3_host_memory() -> None:
+    """RPCS3 reserves large virtual ranges (often ~32GiB). With
+    vm.overcommit_memory=0 those mmaps fail on handhelds without swap."""
+    try:
+        overcommit = Path("/proc/sys/vm/overcommit_memory")
+        if overcommit.is_file() and overcommit.read_text().strip() != "1":
+            overcommit.write_text("1\n", encoding="ascii")
+    except OSError as exc:
+        _logger.debug("Could not set vm.overcommit_memory=1 for RPCS3: %s", exc)
 
 def _cfg_get(system: Emulator, key: str, default: Any, *aliases: str) -> Any:
     if key in _RPCS3_DATABASE_KEYS and _rpcs3_database_profile_requested(system):
@@ -528,17 +556,33 @@ class Rpcs3Generator(Generator):
             _logger.debug("Vulkan driver is not available. Falling back to OpenGL")
             rpcs3ymlconfig["Video"]["Renderer"] = "OpenGL"
 
-        # System aspect ratio
-        rpcs3ymlconfig["Video"]["Aspect ratio"] = system.config.get("rpcs3_ratio") or Rpcs3Generator.getClosestRatio(gameResolution)
-        
-        # Shader compilation mode
-        rpcs3ymlconfig["Video"]["Shader Mode"] = _cfg_get(system, "rpcs3_shadermode", "Async Shader Recompiler", "shadermode")
-        
-        # Shader quality
-        rpcs3ymlconfig["Video"]["Shader Precision"] = _cfg_get(system, "rpcs3_shader", "High", "shader_quality")
-        
-        # Vsync
-        rpcs3ymlconfig["Video"]["VSync"] = _normalise_rpcs3_vsync(_cfg_get(system, "rpcs3_vsync", "Full", "vsync"))
+        # System aspect ratio (must be quoted: bare 16:9 is sexagesimal YAML)
+        aspect = system.config.get("rpcs3_ratio") or Rpcs3Generator.getClosestRatio(gameResolution)
+        rpcs3ymlconfig["Video"]["Aspect ratio"] = DoubleQuotedScalarString(str(aspect))
+
+        # Shader compilation mode (RPCS3 renamed enum labels)
+        rpcs3ymlconfig["Video"]["Shader Mode"] = _normalise_rpcs3_shader_mode(
+            _cfg_get(system, "rpcs3_shadermode", "Async Recompiler (multi-threaded)", "shadermode")
+        )
+
+        # Shader quality — Auto is safer default on aarch64 / Adreno
+        shader_default = "Auto" if platform.machine().startswith("aarch") else "High"
+        rpcs3ymlconfig["Video"]["Shader Precision"] = _cfg_get(system, "rpcs3_shader", shader_default, "shader_quality")
+
+        # VSync key renamed to "VSync Mode" in current RPCS3
+        rpcs3ymlconfig["Video"].pop("VSync", None)
+        rpcs3ymlconfig["Video"]["VSync Mode"] = _normalise_rpcs3_vsync(
+            _cfg_get(system, "rpcs3_vsync", "Disabled", "vsync")
+        )
+
+        # Adreno / limited-RAM handhelds: avoid huge VA reservations via ReBAR defaults
+        if platform.machine().startswith("aarch"):
+            if "Vulkan" not in rpcs3ymlconfig["Video"] or not isinstance(rpcs3ymlconfig["Video"]["Vulkan"], dict):
+                rpcs3ymlconfig["Video"]["Vulkan"] = {}
+            vulkan_cfg = rpcs3ymlconfig["Video"]["Vulkan"]
+            # Cap below host RAM; RPCS3's 65536 default triggers ~32GiB mmap failures.
+            vulkan_cfg["VRAM allocation limit (MB)"] = 8192
+            vulkan_cfg["Use Re-BAR for GPU uploads"] = False
 
         # Stretch to display area
         rpcs3ymlconfig["Video"]["Stretch To Display Area"] = _cfg_get_bool(system, "rpcs3_stretchdisplay", False, "stretchtodisplay")
@@ -755,28 +799,59 @@ class Rpcs3Generator(Generator):
         elif rom.suffix.lower() == ".iso":
             # Disc image: pass the ISO path directly to RPCS3.
             romName = rom
+        elif rom.suffix.lower() == ".ps3boot":
+            # Text pointer to a SELF/BIN (HD Collection inner games live under LAUNCH/).
+            target = ""
+            with rom.open() as fp:
+                for line in fp:
+                    line = line.strip()
+                    if line and not line.startswith("#"):
+                        target = line
+                        break
+            if not target:
+                raise BatoceraException(f'No boot path found in {rom}')
+            romName = Path(target)
+            if not romName.is_file():
+                raise BatoceraException(f'Boot path does not exist: {romName}')
+        elif rom.suffix.lower() in (".bin", ".self", ".elf"):
+            # Direct SELF/BIN boot — must live next to its game data (e.g. .../LAUNCH/DBZ3.BIN)
+            romName = rom
         elif configure_emulator(rom):
             romName: Path | None = None
         else:
             romName = rom / "PS3_GAME" / "USRDIR" / "EBOOT.BIN"
 
+        # --no-gui is broken on native Wayland (xdg_surface protocol error + abort).
+        # Force Qt/SDL onto Xwayland instead, which is stable with --no-gui.
+        use_no_gui = not system.config.get_bool("rpcs3_gui")
         if romName:
-            commandArray: list[Path | str] = [RPCS3_BIN, romName]
+            if use_no_gui:
+                commandArray: list[Path | str] = [RPCS3_BIN, "--no-gui", "--fullscreen", romName]
+            else:
+                commandArray = [RPCS3_BIN, romName]
         else:
-            commandArray: list[Path | str] = [RPCS3_BIN]
-
-        if not system.config.get_bool("rpcs3_gui") and romName:
-            commandArray.append("--no-gui")
+            commandArray = [RPCS3_BIN]
 
         # firmware not installed and available : instead of starting the game, install it
         if Rpcs3Generator.getFirmwareVersion() is None and (BIOS / "PS3UPDAT.PUP").exists():
             commandArray = [RPCS3_BIN, "--installfw", BIOS / "PS3UPDAT.PUP"]
 
+        _ensure_rpcs3_host_memory()
+
         env = {
             "XDG_CONFIG_HOME": CONFIGS,
             "XDG_CACHE_HOME": CACHE,
-            "BATOCERA_RPCS3_DISABLE_AUTO_DATABASE_CONFIG": "1"
+            "BATOCERA_RPCS3_DISABLE_AUTO_DATABASE_CONFIG": "1",
+            # Qt UTF-8 / locale warnings on Batocera
+            "LC_ALL": "C.UTF-8",
+            "LANG": "C.UTF-8",
         }
+        if use_no_gui and os.environ.get("XDG_SESSION_TYPE", "").lower() == "wayland":
+            # Native Wayland + --no-gui hits xdg_surface protocol errors; Xwayland is stable.
+            env["QT_QPA_PLATFORM"] = "xcb"
+            env["SDL_VIDEODRIVER"] = "x11"
+            if display := os.environ.get("DISPLAY"):
+                env["DISPLAY"] = display
         if _cfg_get_bool(system, "rpcs3_achievement_sound", True):
             if sound_path := _retroachievements_sound_path(system):
                 env["BATOCERA_RPCS3_TROPHY_SOUND"] = sound_path

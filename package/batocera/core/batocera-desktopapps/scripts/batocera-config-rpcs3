@@ -11,4 +11,26 @@ then
     export DISPLAY=$(getLocalXDisplay)
 fi
 
+# Nested "emulatorlauncher -rom config" is invoked WITHOUT pad args, so it
+# clears the outer evmapy stick→mouse map and never rebuilds it. Enable the
+# pad mouse-mode daemon for this config UI session instead.
+restore_pad_mouse() {
+    command -v batocera-mouse-mode >/dev/null 2>&1 && batocera-mouse-mode disable >/dev/null 2>&1 || true
+    command -v batocera-mouse >/dev/null 2>&1 && batocera-mouse hide >/dev/null 2>&1 || true
+}
+trap restore_pad_mouse EXIT HUP INT TERM
+command -v batocera-mouse >/dev/null 2>&1 && batocera-mouse show >/dev/null 2>&1 || true
+command -v batocera-mouse-mode >/dev/null 2>&1 && batocera-mouse-mode enable >/dev/null 2>&1 || true
+
+# Re-assert after nested gameStart hooks (they used to kill mouse-mode).
+(
+    sleep 1
+    command -v batocera-mouse >/dev/null 2>&1 && batocera-mouse show >/dev/null 2>&1 || true
+    command -v batocera-mouse-mode >/dev/null 2>&1 && batocera-mouse-mode enable >/dev/null 2>&1 || true
+) &
+
 emulatorlauncher -system ps3 -rom config -emulator rpcs3
+rc=$?
+restore_pad_mouse
+trap - EXIT HUP INT TERM
+exit "${rc}"

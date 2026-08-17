@@ -33,7 +33,11 @@ class Generator(metaclass=ABCMeta):
         return config['videomode']
 
     def getMouseMode(self, config: SystemConfig, rom: Path) -> bool:
-        return False
+        # Emulator "config" UIs (RPCS3/shadPS4/etc.) need a visible cursor.
+        # Real games keep the default False unless a generator overrides.
+        from ..batoceraPaths import configure_emulator
+
+        return configure_emulator(rom)
 
     def executionDirectory(self, config: SystemConfig, rom: Path) -> Path | None:
         return None

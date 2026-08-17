@@ -137,6 +137,21 @@ class evmapy(AbstractContextManager[None, None]):
             if keys_file.exists()
         ]
 
+        # Nested batocera-config-* launches use -rom config and wipe the outer
+        # Configure_*.sh.keys mapping. Attach stick→mouse only for that UI path
+        # so real games stay untouched.
+        from ..batoceraPaths import configure_emulator
+
+        if configure_emulator(self.rom) or self.rom.name == 'config':
+            for config_ui_keys in (
+                CONFIGS / 'evmapy' / 'config-ui.keys',
+                EVMAPY / 'config-ui.keys',
+                _EVMAPY_SHARE_DIR / 'config-ui.keys',
+            ):
+                if config_ui_keys.exists():
+                    files_to_merge.insert(0, config_ui_keys)
+                    break
+
         # merge conditionnally on the global hotkeys file until it is set everywhere
         keys_file = _EVMAPY_SHARE_DIR / 'hotkeys.keys'
         user_keys_file = CONFIGS / 'hotkeys.keys'  # prefer the custom one

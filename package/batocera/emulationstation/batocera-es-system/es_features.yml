@@ -12004,9 +12004,9 @@ rpcs3:
             prompt: SHADER MODE
             description: Only Async (skip draw) avoids freezing while compiling shaders.
             choices:
-                "Legacy Recompiler (single-threaded)":                 Shader Recompiler
-                "Async Recompiler (multi-threaded)(Default)":          Async Shader Recompiler
-                "Async Recompiler with Shader Interpreter":            Async with Shader Interpreter
+                "Legacy Recompiler (single-threaded)":                 Legacy Recompiler (single-threaded)
+                "Async Recompiler (multi-threaded)(Default)":          Async Recompiler (multi-threaded)
+                "Async Recompiler with Shader Interpreter":            Async Recompiler with Shader Interpreter
                 "Shader Interpreter only":         Shader Interpreter only
         rpcs3_num_compilers:
             submenu: RENDER
