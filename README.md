@@ -42,7 +42,7 @@ Images are per SoC. Every build ships the full Batocera stack (RetroArch cores, 
 |--------|--------|-------------|
 | AYN Odin 3 | ✅ Tested | **b_bloodcart99x**, **The Janitor** |
 
-> Official build: [`v44-sm8750-20260815`](https://github.com/darkplace/batocera.pocket/releases/tag/v44-sm8750-20260815) (**OTA + flash**). Previous: `v44-sm8750-20260814`.
+> Official build: [`v44-sm8750-20260818`](https://github.com/darkplace/batocera.pocket/releases/tag/v44-sm8750-20260818) (**OTA + flash**). Previous: Golden Rabbit `v44-sm8750-20260816`.
 
 <details>
 <summary><b>Emulators &amp; extras</b></summary>
@@ -130,169 +130,18 @@ In-device footage ([@lukemotionYT](https://www.youtube.com/@lukemotionYT)) — p
 
 ---
 
-## What's new — August 2026
+## What's new
 
-Per-board GitHub tags so OTA only matches the device SoC. Full history with collapsible **Updates** / **Fixes**: [docs/CHANGELOG.md](docs/CHANGELOG.md).
+Per-board tags so OTA only matches the device SoC. Full **Updates / Fixes** history:
+[docs/CHANGELOG.md](docs/CHANGELOG.md).
 
-| Tag | Board | Status |
-|-----|--------|--------|
-| `v44-sm8750-20260816` | SM8750 (Odin 3) | ✅ Tested — **OTA + flash** (**Golden Rabbit**) |
-| `v44-sm8750-20260815` | SM8750 (Odin 3) | ✅ Tested — **OTA + flash** (Steam touch / OSK) |
-| `v44-sm8750-20260814` | SM8750 (Odin 3) | OTA RC1 |
-| `v44-sm8550-20260818` | SM8550 (Odin 2 Portal) | ✅ Tested — **OTA + flash** (**Golden Rabbit**) |
-| `v44-sm8550-20260817` | SM8550 (Odin 2 Portal) | ✅ Tested — **OTA + flash** (stick LEDs + analog DZ) |
-| `v44-sm8550-20260816` | SM8550 (Odin 2 Portal) | OTA (Steam touch / OSK) |
-| `v44-sm8550-20260815` | SM8550 (Odin 2 Portal) | OTA (Waydroid / WiFi / Screenscraper) |
-| `v44-sm8550-20260813` | SM8550 (Odin 2 Portal) | Flash baseline |
-| `v44-sm8250-20260811` | SM8250 | ⚠️ Untested |
-| `v44-sm8750-20260809` | SM8750 (Odin 3) | Flash baseline (superseded for OTA) |
+| Board | Current tag | Notes |
+|-------|-------------|--------|
+| SM8750 (Odin 3) | [`v44-sm8750-20260818`](https://github.com/darkplace/batocera.pocket/releases/tag/v44-sm8750-20260818) | Discord / Vesktop, OSK window shift |
+| SM8550 (Odin 2 / Portal) | [`v44-sm8550-20260818`](https://github.com/darkplace/batocera.pocket/releases/tag/v44-sm8550-20260818) | **Golden Rabbit** (Proton 11 ★, MangoApp) |
+| SM8250 | [`v44-sm8250-20260811`](https://github.com/darkplace/batocera.pocket/releases/tag/v44-sm8250-20260811) | Untested |
 
-### Since `v44-sm8550-20260817` (Odin 2 Portal) — `v44-sm8550-20260818` **Golden Rabbit**
-
-<details>
-<summary><b>Updates</b></summary>
-
-- Same **Golden Rabbit** Steam ARM cut as sm8750 (`Proton 11 ★`, MangoApp ARM default, decky-bcc ≥ 0.2.18 docs).
-- Keeps Portal stick LED groups + rsinput deadzone from `20260817`.
-
-</details>
-
-<details>
-<summary><b>Fixes</b></summary>
-
-- Proton 11 AppError_51 / SLR 4185400 from AppID symlink registration.
-- MangoHud never appearing in steam-direct on ARM.
-
-</details>
-
-### Since `v44-sm8750-20260815` (Odin 3) — `v44-sm8750-20260816` **Golden Rabbit**
-
-<details>
-<summary><b>Updates</b></summary>
-
-- Public codename **Golden Rabbit** (`44-dev-pocket-golden-rabbit`).
-- Proton 11 ★ as custom tool (no SLR 4185400 merge); MangoApp on by default on ARM Steam.
-- Batocera Control / decky-bcc 0.2.18 shortcuts documented (QAM overlay, M1+M2, Power, LSFG).
-
-</details>
-
-<details>
-<summary><b>Fixes</b></summary>
-
-- Proton 11 AppError_51 from AppID/symlink registration.
-- MangoHud never appearing in steam-direct (MangoApp defaulted off).
-
-</details>
-
-### Since `v44-sm8750-20260814` (Odin 3) — `v44-sm8750-20260815`
-
-<details>
-<summary><b>Updates</b></summary>
-
-- **gamescope** Wayland `wl_touch` for Steam GamepadUI on Odin 3.
-- System **OSK** symbol layers (`123` / `@`).
-
-</details>
-
-<details>
-<summary><b>Fixes</b></summary>
-
-- Steam OSK vanishing while typing (Minecraft / MS login).
-- System OSK missing `@` / specials after base refresh.
-
-</details>
-
-### Since `v44-sm8550-20260816` (Odin 2 Portal) — `v44-sm8550-20260817`
-
-<details>
-<summary><b>Updates</b></summary>
-
-- Stick RGB groups (`LEDS_GROUP_MULTICOLOR`) + LED userspace prefers `rgb:l*`/`rgb:r*`.
-- rsinput ranges/deadzone (±1024, DZ 70) like sm8750.
-
-</details>
-
-<details>
-<summary><b>Fixes</b></summary>
-
-- Stick LED only drove power LED.
-- Left analog constant left/down (deadzone 0).
-
-</details>
-
-### Since `v44-sm8550-20260815` (Odin 2 Portal) — `v44-sm8550-20260816`
-
-<details>
-<summary><b>Updates</b></summary>
-
-- **gamescope** Wayland `wl_touch` for Steam GamepadUI.
-- System **OSK** symbol layers (`123` / `@`).
-
-</details>
-
-<details>
-<summary><b>Fixes</b></summary>
-
-- Steam OSK vanishing while typing.
-- System OSK missing `@` / specials after base refresh.
-
-</details>
-
-### Since `v44-sm8550-20260813` (Odin 2 Portal) — `v44-sm8550-20260815`
-
-<details>
-<summary><b>Updates</b></summary>
-
-- **In-device OTA** for SM8550 (`boot.tar.xz` parts on the Release).
-- **Waydroid** 1.6.3.
-- **WiFi resilience** (dead-air / IPv4LL / country stamp) aligned with sm8750.
-
-</details>
-
-<details>
-<summary><b>Fixes</b></summary>
-
-- Fixed Screenscraper support.
-- **AetherSX2 / RPCS3** configgen fixes.
-- WiFi zombie “connected but no Internet” recovery.
-
-</details>
-
-### Since `v44-sm8750-20260809` (Odin 3) — `v44-sm8750-20260814`
-
-<details>
-<summary><b>Updates</b></summary>
-
-- **In-device OTA** for SM8750 (`boot.tar.xz` parts on the Release) — use **Updates** in EmulationStation after this build (or flash once from the ZIP set).
-- **WiFi resilience** on Odin 3 (dead-air / no IPv4 / weak-signal recovery).
-- **Docs pack:** ROMs, controls/FAQ, changelog — see [Docs](#docs) below.
-- **Configure Heroic / Lutris** helpers under Apps & Tools.
-- Fan init ordering (`S12qcom-fan`).
-
-</details>
-
-<details>
-<summary><b>Fixes</b></summary>
-
-- Fixed Screenscraper support in EmulationStation.
-- WiFi “connected but no Internet” zombie on Odin 3.
-- **AetherSX2:** configgen crash (`option values must be strings` → `get_str`).
-- **RPCS3:** configgen patch path (`RPCS3_PATCH_YML` / `patch.yml`).
-- Brightness **Back** after Steam / force-kill; charge-limit helper hardening.
-
-</details>
-
-<details>
-<summary><b>Earlier August baselines (all boards)</b></summary>
-
-- **Fan modes** in Control Deck (**Home + A → Fan Mode**): Silent, Auto, Aggressive, Off — persist across reboots.
-- Default CPU governor **`ondemand`** on Qualcomm boards.
-- **OTA** per-board tags (`v44-<soc>-YYYYMMDD`).
-- **UI scaling** for Apps/Tools and Arch/Ubuntu Plasma LXC.
-- Wine / `wine64` runner normalization + WoW64 fallback.
-- Fan auto at boot; updater false-positives; force quit (`L1 + R1 + Select + Start`).
-
-</details>
+Older cuts stay on GitHub Releases. How OTA works: [docs/UPDATES.md](docs/UPDATES.md).
 
 ---
 
@@ -302,38 +151,59 @@ The first start of **Steam** and of the **Arch / Ubuntu Plasma LXC** containers 
 
 **Container initialization:** first time in a container, switch to keyboard mode and press `Enter` repeatedly to progress.
 
-**Home** = physical Guide / Mode button on the pad (`hotkey` in Batocera, SDL button id **9**).  
+**Home** = physical Guide / Mode button (`hotkey` in Batocera, SDL button id **9**).  
 Same mapping on **Odin 2** and **Odin 3** (GUID `03000000202000000130000001000000`).
 
-Verified against `hotkeys.keys` + Odin `hotkeygen` mappings (see [docs/CONTROLS_AND_FAQ.md](docs/CONTROLS_AND_FAQ.md) for the full FAQ):
+### EmulationStation / emulators (defaults)
+
+From `hotkeys.keys` + Odin `hotkeygen` (`.mapping.es`). Full FAQ: [docs/CONTROLS_AND_FAQ.md](docs/CONTROLS_AND_FAQ.md).
 
 | Combo | Action |
 |-------|--------|
-| **Home + Start** | Exit emulator (clean) |
+| **Home + Start** | Exit emulator (clean). |
+| **Home + B** | Emulator menu |
 | **L1 + Select + Start** | Force quit (`emukill`) |
-| **L1 + R1 + Select + Start** | Force quit (same; harder by accident) |
+| **L1 + R1 + Select + Start** | Force quit (harder by accident) |
 | **R1 + Select + Start** | Toggle mouse mode (evmapy) |
-| **Home + Start + Select** | Toggle mouse mode (`hotkeygen`) — *not* Home+Select+Start |
-| **Home + A** | Batocera Control Center / Control Deck |
-| **Home + B** | Emulator / options menu |
+| **Home + Start + Select** | Toggle mouse mode (`hotkeygen`) |
+| **Home + A** | Batocera Control Center |
 | **Home + Touch** | On-screen keyboard (hold Home, tap the screen) |
-| **Home + Y** | Save state |
-| **Home + X** | Load state |
+| **Home + Y** / **Home + X** | Save / load state |
 | **Home + ↑ / ↓** | Previous / next save slot |
 | **Home + ← / →** | Rewind / fast-forward (if the core supports it) |
 | **Home + L1** | Screenshot |
-| **Back** (next to Home on Odin) | Brightness cycle in ES |
+| **Home + L2** / **Home + R2** | Swap screens / toggle screen layout |
+| **Home + R1** | Translation overlay |
+| **Home + L3** / **Home + R3** | Next disk / hide bezels |
+| **Back** (next to Home) | Brightness cycle **in ES** |
 
-In **Steam** (GamepadUI), **Back** becomes the Steam chord (not brightness). After Steam exit / force-kill, brightness is restored automatically.
+### Steam GamepadUI (defaults)
 
-Steam + **Batocera Control** (decky-bcc) shortcuts: **⋯ → Performance Overlay** (MangoHud), **M1+M2** toggle HUD, plugin tabs for Power / Compatibility / LSFG — see [docs/CONTROLS_AND_FAQ.md](docs/CONTROLS_AND_FAQ.md#steam-gamepadui--batocera-control-decky-bcc).
+`hotkeygen` switches to `.mapping.steam` while Steam is focused.
+
+| Combo | Action |
+|-------|--------|
+| **Back** | Steam **Quick Access** (QAM) — not brightness |
+| **Home** | Steam left / guide menu |
+| **⋯ → Performance Overlay** | MangoHud / FPS (needs MangoApp; on by default on ARM) |
+
+After Steam exit / force-kill, **Back** returns to brightness in ES.
+
+**Discord (Apps)** is the only place that auto-enables mouse-mode and lifts the
+window above the OSK. That does **not** apply to EmulationStation or other apps.
+
+### Rear paddles (Odin M1 / M2)
+
+Stock **Batocera Control** leaves paddles **unassigned**. Bind them under
+**Steam → ⋯ → Batocera Control → Back Paddles** if you want. They are not a
+system-wide OSK/mouse default.
 
 ### Mini FAQ (start here)
 
 | Question | Doc |
 |----------|-----|
 | How do I flash / first boot? | [docs/INSTALL.md](docs/INSTALL.md) |
-| Where do ROMs / Windows / Steam / Heroic / Lutris go? | [docs/ADDING_ROMS.md](docs/ADDING_ROMS.md) |
+| Where do ROMs / Windows / Steam / Heroic / Lutris go? Extra data (Pokémon Recomp gen1/gen2, Switch keys, BIOS)? | [docs/ADDING_ROMS.md](docs/ADDING_ROMS.md) |
 | Hotkeys, brightness after Steam, GameCube folder, WiFi dead-air… | [docs/CONTROLS_AND_FAQ.md](docs/CONTROLS_AND_FAQ.md) |
 | How do in-device Updates (OTA) work? | [docs/UPDATES.md](docs/UPDATES.md) |
 | What changed in each release? | [docs/CHANGELOG.md](docs/CHANGELOG.md) |
@@ -346,7 +216,7 @@ Steam + **Batocera Control** (decky-bcc) shortcuts: **⋯ → Performance Overla
 | Doc | Content |
 |-----|---------|
 | [docs/INSTALL.md](docs/INSTALL.md) | Flash / first boot |
-| [docs/ADDING_ROMS.md](docs/ADDING_ROMS.md) | ROM paths (consoles + PC platforms) |
+| [docs/ADDING_ROMS.md](docs/ADDING_ROMS.md) | ROM paths, Pokémon Recomp gen1/gen2 mods, BIOS / keys / firmware |
 | [docs/CONTROLS_AND_FAQ.md](docs/CONTROLS_AND_FAQ.md) | Odin mappings + FAQ |
 | [docs/UPDATES.md](docs/UPDATES.md) | OTA from GitHub Releases |
 | [docs/CHANGELOG.md](docs/CHANGELOG.md) | Per-release Updates / Fixes (collapsible) |

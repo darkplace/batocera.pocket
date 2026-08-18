@@ -10,7 +10,8 @@ Table style inspired by [ROCKNIX — Supported emulators and cores](https://gith
 | Path | Contents |
 |------|----------|
 | `/userdata/roms/<system>/` | Games / ROMs for that system |
-| `/userdata/bios/` | BIOS / firmware (when the emulator needs it) |
+| `/userdata/roms/pkmnrecomp/` | Pokémon Recomp dumps + `mods/gen1` / `mods/gen2` (see below) |
+| `/userdata/bios/` | BIOS / firmware / console keys (when the emulator needs it) |
 | `/userdata/saves/` | Saves and states (managed by Batocera) |
 | `/userdata/system/configs/` | Emulator configuration |
 
@@ -35,15 +36,37 @@ After copying: in EmulationStation, **update the game list** (or restart ES).
 | **L1 + R1 + Select + Start** | Force quit |
 | **R1 + Select + Start** | Mouse mode |
 | **Home + A** | Control Center |
-| **Back** | Brightness (in ES) |
+| **Home + Touch** | On-screen keyboard |
+| **Back** | Brightness (in ES); Steam QAM in GamepadUI |
 
 Full FAQ + pad GUID: [CONTROLS_AND_FAQ.md](CONTROLS_AND_FAQ.md).
 
 </details>
 
-### BIOS
+### BIOS and other extra data
 
-Many systems need BIOS files under `/userdata/bios/`. Use **Settings → System → Check BIOS** or the official wiki: [batocera.org — BIOS](https://wiki.batocera.org/batocera-os:add_games_bios#bios).
+Many systems need more than a ROM: BIOS, encryption keys, firmware `.nca`, or
+mod ZIPs. Generic BIOS still goes under `/userdata/bios/` — use **Settings →
+System → Check BIOS** or the wiki:
+[batocera.org — BIOS](https://wiki.batocera.org/batocera-os:add_games_bios#bios).
+
+Systems that use **extra folders** (not a single file in `bios/`) are listed in
+[Per-system notes](#per-system-notes-pocket). Quick map:
+
+| Extra data | Path |
+|------------|------|
+| Pokémon Recomp mods (Gen 1) | `/userdata/roms/pkmnrecomp/mods/gen1/` |
+| Pokémon Recomp mods (Gen 2) | `/userdata/roms/pkmnrecomp/mods/gen2/` |
+| Switch keys | `/userdata/bios/switch/keys/` (`prod.keys`, optional `title.keys`) |
+| Switch firmware | `/userdata/bios/switch/firmware/` or `…/registered/` (`.nca`) |
+| Wii U keys | `/userdata/bios/cemu/keys.txt` |
+| PS2 BIOS | `/userdata/bios/ps2/` |
+| PS3 firmware | `/userdata/bios/PS3UPDAT.PUP` (installed on first launch) |
+| Xbox boot ROM / MCPX | `/userdata/bios/mcpx_1.0.bin` + flash (`cerbios.bin` or `Complex_4627.bin`) |
+| Dreamcast | `/userdata/bios/dc/` (`dc_boot.bin`, …) |
+| DS / DSi | `/userdata/bios/` (`bios7.bin`, `bios9.bin`, `firmware.bin`, `dsi_nand.bin`, …) |
+| 3DS keys (Azahar) | `/userdata/saves/3ds/azahar-emu/sysdata/aes_keys.txt` |
+| ScummVM extras | `/userdata/bios/scummvm/extra/` |
 
 ---
 
@@ -150,6 +173,7 @@ Paths are relative to `/userdata/roms/`. The default emulator depends on the boa
 | Nintendo | NES | `nes` | `.nes` `.zip` `.7z` | **libretro:** nestopia / fceumm / mesen |
 | Nintendo | SNES | `snes` | `.sfc` `.smc` `.zip` `.7z` | **libretro:** snes9x |
 | Nintendo | Game Boy / Color | `gb` / `gbc` | `.gb` `.gbc` `.zip` `.7z` | **libretro:** gambatte / mgba |
+| Nintendo | Pokémon Recomp | `pkmnrecomp` | `.gb` `.gbc` (US dumps, **not zip**) | **pkmnrecomp:** gen1recomp / gen2recomp |
 | Nintendo | GBA | `gba` | `.gba` `.zip` `.7z` | **libretro:** mgba |
 | Nintendo | N64 | `n64` | `.z64` `.n64` `.v64` `.zip` `.7z` | **libretro:** mupen64plus-next |
 | Nintendo | DS | `nds` | `.nds` `.zip` `.7z` | **libretro:** melonds / melonDS SA |
@@ -179,6 +203,46 @@ The full Batocera system list (hundreds of platforms) follows the [systems wiki]
 
 ## Per-system notes (pocket)
 
+### Pokémon Recomp (`pkmnrecomp`) — Gen 1 / Gen 2
+
+Native LÖVE recreations (**gen1recomp** / **gen2recomp**). Nothing is bundled:
+you supply your own **canonical US** dumps. The system stays hidden in ES until
+at least one `.gb` / `.gbc` is present.
+
+| What | Path |
+|------|------|
+| ROMs (game list) | `/userdata/roms/pkmnrecomp/` |
+| Gen 1 mods | `/userdata/roms/pkmnrecomp/mods/gen1/` |
+| Gen 2 mods | `/userdata/roms/pkmnrecomp/mods/gen2/` |
+| Optional mods (not auto-loaded) | `/userdata/roms/pkmnrecomp/mods/optional/` |
+| Saves / options (Gen 1) | `/userdata/saves/apps/pkmnrecomp-gen1/` |
+| Saves / options (Gen 2) | `/userdata/saves/apps/pkmnrecomp-gen2/` |
+| AppImage override (optional) | `/userdata/system/pkmnrecomp/` |
+
+Samba: `\\BATOCERA\share\roms\pkmnrecomp\`
+
+**Dumps** — unzipped `.gb` / `.gbc` only. SHA-1 picks the core automatically
+(Red/Blue/Yellow → gen1, Gold/Silver/Crystal → gen2). Gold can run on both;
+Silver/Crystal need gen2.
+
+| Game | SHA-1 (US) |
+|------|------------|
+| Red | `ea9bcae617fdf159b045185467ae58b2e4a48b9a` |
+| Blue | `d7037c83e1ae5b39bde3c30787637ba1d4c48ce2` |
+| Yellow | `cc7d03262ebfaf2f06772c1a480c7d9d5f4a38e1` |
+| Gold | `d8b8a3600a465308c9953dfa04f0081c05bdcb94` |
+| Silver | `49b163f7e57702bc939d642a18f591de55d92dae` |
+| Crystal Rev 1 | `f2f52230b536214ef7c9924f483392993e226cfb` |
+| Crystal Rev 0 | `f4cd194bdee0d04ca4eac29e09b8e4e9d818c133` |
+
+**Mods** — ZIP or a folder with `manifest.json`. On launch the wrapper unpacks
+ZIPs into `mods/<id>/`. Drop Gen 1 packs in `mods/gen1/` (e.g. potato_voxel)
+and Gen 2 packs in `mods/gen2/` (e.g. DRAMATIC_SHAPE). Files in `mods/optional/`
+(Nuzlocke, …) stay idle until you copy them into `gen1/` or `gen2/`.
+
+First Gen 2 import can take a couple of minutes (no file picker). Vanilla
+options/controls: **Tools → Configure Gen1Recomp / Configure Gen2Recomp**.
+
 ### PlayStation 4 (`ps4`)
 
 1. Extract the PKG off-device (PKG Extractor / your own dump).
@@ -192,26 +256,73 @@ On sm8550/sm8750 the default shadPS4 resolution is **1280×720**.
 ### PlayStation 3 (`ps3`)
 
 - Folders renamed to `Game.ps3`, **or** an `.iso` image.
-- Install PS3 firmware once from RPCS3 (F1 → Applications → rpcs3-config).
+- Firmware: copy `PS3UPDAT.PUP` to `/userdata/bios/`. First game launch (or
+  **Tools → rpcs3-config**) installs it.
+
+### PlayStation 2 (`ps2`)
+
+- BIOS dumps in `/userdata/bios/ps2/` (`.bin` / `.rom`). Aethersx2 / ArmSX2
+  pick them from that folder.
+
+### PlayStation Vita (`psvita`)
+
+- Games: `/userdata/roms/psvita/` (`.psvita` / `.pkg` / `.zip`).
+- Firmware is installed once from **Tools → vita3k-config** (not a drop-in ROM
+  folder). Saves live under `/userdata/saves/psvita/`.
 
 ### Switch (`switch`)
 
-- `.nsp` / `.xci` (often inside folders; ES scans extensions).
-- Default emulator: **Eden**. Keys/firmware per emulator requirements.
+- Games: `.nsp` / `.xci` under `/userdata/roms/switch/`.
+- Default emulator: **Eden**. Extra data (shared with Yuzu/Ryujinx):
+
+| File | Path |
+|------|------|
+| `prod.keys` | `/userdata/bios/switch/keys/prod.keys` (also accepted in `…/switch/prod.keys`) |
+| `title.keys` | `/userdata/bios/switch/keys/title.keys` (optional) |
+| Firmware `.nca` | `/userdata/bios/switch/firmware/` or `/userdata/bios/switch/registered/` |
 
 ### Wii U (`wiiu`)
 
 - Folder dump with `code/` / `content/` / `meta/`, or `.wua` / `.wux`, etc.
-- Emulator: **Cemu**.
+- Emulator: **Cemu**. Title keys: `/userdata/bios/cemu/keys.txt`.
+
+### 3DS (`3ds`)
+
+- Games: `/userdata/roms/3ds/` (`.cci` / `.cia` / `.3ds`, …). Emulator: **Azahar**.
+- Encryption keys (needed for many dumps):  
+  `/userdata/saves/3ds/azahar-emu/sysdata/aes_keys.txt`
+
+### Xbox (`xbox`)
+
+- Games: `/userdata/roms/xbox/` (`.iso`). Emulator: **xemu**.
+- Extra: `/userdata/bios/mcpx_1.0.bin` plus flash ROM (`cerbios.bin` or
+  `Complex_4627.bin`). HDD image is created under `/userdata/saves/xbox/`.
 
 ### Xbox 360 (`xbox360`)
 
 - On aarch64: **Xenia Canary** / **Xenia Edge** (native Vulkan).
-- ISOs / dumps compatible with Xenia.
+- ISOs / dumps compatible with Xenia. No separate keys folder.
+
+### Nintendo DS (`nds`)
+
+- Games: `/userdata/roms/nds/`.
+- BIOS / firmware in `/userdata/bios/`: `bios7.bin`, `bios9.bin`, `firmware.bin`;
+  DSi also wants `dsi_firmware.bin` and `dsi_nand.bin`.
+
+### Dreamcast / Naomi / Atomiswave
+
+- BIOS: `/userdata/bios/dc/` (at least `dc_boot.bin`). Flycast uses this path
+  for Dreamcast, Naomi, and Atomiswave.
 
 ### GameCube
 
 - Official path: `/userdata/roms/gamecube/` (not `gc`, unless you created a symlink on purpose).
+
+### ScummVM / Ports
+
+- ScummVM extras (fonts, …): `/userdata/bios/scummvm/extra/`.
+- PortMaster / script ports: `/userdata/roms/ports/` (`.sh` and the game data
+  the script expects next to it).
 
 ---
 

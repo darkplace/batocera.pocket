@@ -8,6 +8,7 @@ set -eu
 CORE=""
 ROM=""
 CONFIG_ONLY=0
+PREPARE_ONLY=0
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -21,6 +22,10 @@ while [ $# -gt 0 ]; do
             ;;
         --config)
             CONFIG_ONLY=1
+            shift
+            ;;
+        --prepare)
+            PREPARE_ONLY=1
             shift
             ;;
         --)
@@ -44,10 +49,15 @@ if [ -z "$ROM" ] && [ $# -gt 0 ]; then
     shift
 fi
 
-if [ "$CONFIG_ONLY" -eq 0 ] && { [ -z "$ROM" ] || [ ! -f "$ROM" ]; }; then
+if [ "$CONFIG_ONLY" -eq 0 ] && [ "$PREPARE_ONLY" -eq 0 ] && { [ -z "$ROM" ] || [ ! -f "$ROM" ]; }; then
     echo "Usage: $0 [--core gen1recomp|gen2recomp] <rom.gb|rom.gbc>" >&2
     echo "       $0 [--core gen1recomp|gen2recomp] --config" >&2
+    echo "       $0 [--core gen1recomp|gen2recomp] --prepare" >&2
     exit 2
+fi
+
+if [ "$PREPARE_ONLY" -eq 1 ] && [ -z "$CORE" ]; then
+    CORE="gen1recomp"
 fi
 
 # Canonical US cartridge SHA-1 (upstream importers).
@@ -85,7 +95,7 @@ game_from_name() {
 
 SHA1=""
 DETECTED=""
-if [ "$CONFIG_ONLY" -eq 0 ]; then
+if [ "$CONFIG_ONLY" -eq 0 ] && [ "$PREPARE_ONLY" -eq 0 ]; then
     SHA1="$(sha1_of "$ROM")"
     DETECTED="$(game_from_sha1 "$SHA1")"
     if [ -z "$DETECTED" ]; then
@@ -160,24 +170,136 @@ fi
 # ZIPs are unpacked to mods/<id>/ (Loader only discovers directories).
 # gen2 desktop identity is Gen2Recomp; gen1 stays pokemon-love2d.
 ROM_DROP="${BATOCERA_PKMNRECOMP_ROMS:-/userdata/roms/pkmnrecomp}"
+LEGACY_SYSTEM="/userdata/system/.local/share"
 if [ "$CORE" = "gen2recomp" ]; then
     MOD_DROP="${ROM_DROP}/mods/gen2"
     APP_HOME="/userdata/saves/apps/pkmnrecomp-gen2"
     MOD_ID_DEFAULT="DRAMATIC_SHAPE"
-    LOVE_MOD_DIRS="
-${APP_HOME}/.local/share/Gen2Recomp/mods
-${APP_HOME}/.local/share/love/Gen2Recomp/mods
-"
+    DATA_ID="Gen2Recomp"
 else
     MOD_DROP="${ROM_DROP}/mods/gen1"
     APP_HOME="/userdata/saves/apps/pkmnrecomp-gen1"
     MOD_ID_DEFAULT="potato_voxel"
-    LOVE_MOD_DIRS="
-${APP_HOME}/.local/share/pokemon-love2d/mods
-${APP_HOME}/.local/share/love/pokemon-love2d/mods
-"
+    DATA_ID="pokemon-love2d"
 fi
 mkdir -p "$MOD_DROP" "${ROM_DROP}/mods/optional" "$APP_HOME"
+
+# ES passes HOME=/userdata/system. Force an isolated app home before any I/O
+# so saves, options and mods land in one persistent tree (same as Ports apps).
+export HOME="$APP_HOME"
+export XDG_CONFIG_HOME="$HOME/.config"
+export XDG_DATA_HOME="$HOME/.local/share"
+export XDG_CACHE_HOME="$HOME/.cache"
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+mkdir -p "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_CACHE_HOME" "$XDG_RUNTIME_DIR"
+
+DATA_ROOT="$XDG_DATA_HOME/$DATA_ID"
+MOD_ROOTS="$DATA_ROOT/mods $XDG_DATA_HOME/love/$DATA_ID/mods"
+mkdir -p "$DATA_ROOT" "$DATA_ROOT/mods" "$XDG_DATA_HOME/love/$DATA_ID/mods"
+
+options_looks_empty() {
+    opts="$1"
+    [ -f "$opts" ] || return 0
+    grep -q 'mods = {}' "$opts" 2>/dev/null && grep -q 'pipelines = {}' "$opts" 2>/dev/null
+}
+
+merge_legacy_tree() {
+    src="$1"
+    [ -d "$src" ] || return 0
+    case "$src" in
+        "$DATA_ROOT"|"$DATA_ROOT/"*|"$APP_HOME"|"$APP_HOME/"*) return 0 ;;
+    esac
+
+    echo "pkmnrecomp: merge legacy ${src} -> ${DATA_ROOT}"
+
+    if [ -f "$src/options.lua" ]; then
+        if [ ! -f "$DATA_ROOT/options.lua" ] || options_looks_empty "$DATA_ROOT/options.lua"; then
+            cp -a "$src/options.lua" "$DATA_ROOT/options.lua"
+        elif [ "$src/options.lua" -nt "$DATA_ROOT/options.lua" ] && options_looks_empty "$DATA_ROOT/options.lua"; then
+            cp -a "$src/options.lua" "$DATA_ROOT/options.lua"
+        fi
+    fi
+
+    for save in "$src"/save_*.lua; do
+        [ -f "$save" ] || continue
+        base="$(basename "$save")"
+        ver="${base#save_}"
+        ver="${ver%.lua}"
+        if [ "$CORE" = "gen2recomp" ]; then
+            slot="$DATA_ROOT/saves/$ver/slot1.lua"
+            mkdir -p "$(dirname "$slot")"
+            dest="$slot"
+        else
+            dest="$DATA_ROOT/$base"
+        fi
+        if [ ! -f "$dest" ] || [ "$save" -nt "$dest" ]; then
+            cp -a "$save" "$dest"
+            echo "pkmnrecomp: migrated save ${save} -> ${dest}"
+        fi
+    done
+
+    if [ -d "$src/saves" ]; then
+        mkdir -p "$DATA_ROOT/saves"
+        for slot in "$src"/saves/*/*.lua; do
+            [ -f "$slot" ] || continue
+            rel="${slot#"$src"/saves/}"
+            dest="$DATA_ROOT/saves/$rel"
+            mkdir -p "$(dirname "$dest")"
+            if [ ! -f "$dest" ] || [ "$slot" -nt "$dest" ]; then
+                cp -a "$slot" "$dest"
+            fi
+        done
+    fi
+
+    if [ -d "$src/mods" ]; then
+        mkdir -p "$DATA_ROOT/mods"
+        for mod in "$src/mods"/*; do
+            [ -e "$mod" ] || continue
+            name="$(basename "$mod")"
+            if [ ! -e "$DATA_ROOT/mods/$name" ]; then
+                cp -a "$mod" "$DATA_ROOT/mods/$name"
+            fi
+        done
+    fi
+
+    for verdir in "$src"/*; do
+        [ -d "$verdir" ] || continue
+        ver="$(basename "$verdir")"
+        case "$ver" in
+            mods|saves|updates|love) continue ;;
+            blue|red|yellow|gold|silver|crystal)
+                if [ ! -d "$DATA_ROOT/$ver" ]; then
+                    cp -a "$verdir" "$DATA_ROOT/$ver"
+                fi
+                ;;
+        esac
+    done
+}
+
+migrate_legacy_data() {
+    marker="$DATA_ROOT/.batocera-migrated-from-system"
+    if [ "$CORE" = "gen2recomp" ]; then
+        merge_legacy_tree "$LEGACY_SYSTEM/Gen2Recomp"
+        merge_legacy_tree "$LEGACY_SYSTEM/love/Gen2Recomp"
+    else
+        merge_legacy_tree "$LEGACY_SYSTEM/pokemon-love2d"
+        merge_legacy_tree "$LEGACY_SYSTEM/love/pokemon-love2d"
+    fi
+    touch "$marker"
+}
+
+pull_legacy_saves_if_newer() {
+    if [ "$CORE" = "gen2recomp" ]; then
+        legacy="$LEGACY_SYSTEM/Gen2Recomp"
+    else
+        legacy="$LEGACY_SYSTEM/pokemon-love2d"
+    fi
+    [ -d "$legacy" ] || return 0
+    merge_legacy_tree "$legacy"
+}
+
+migrate_legacy_data
+pull_legacy_saves_if_newer
 
 mod_id_from_manifest() {
     # Prefer python (Batocera has it); fall back to a tiny sed scrape.
@@ -363,7 +485,9 @@ sync_mods() {
 enable_graphics_mod() {
     options="$1"
     want_id="$2"
-    [ -f "$options" ] || return 0
+    if [ ! -f "$options" ]; then
+        printf '%s\n' 'return {' '  mods = {},' '  pipelines = {},' '}' > "$options"
+    fi
     command -v python3 >/dev/null 2>&1 || return 0
     python3 - "$options" "$want_id" <<'PY'
 import pathlib, re, sys
@@ -394,15 +518,27 @@ def replace_brace_table(src: str, key: str, lines_inner: list[str]) -> str:
 existing = {}
 mm = re.search(r"\n\s*mods\s*=\s*\{([^}]*)\}", text, flags=re.S)
 if mm:
-    for k, v in re.findall(r"(\w+)\s*=\s*(true|false)", mm.group(1)):
-        existing[k] = v == "true"
+    for m in re.finditer(
+        r'(\["([^"]+)"\]|(\w+))\s*=\s*(true|false)', mm.group(1)
+    ):
+        key = m.group(2) if m.group(2) else m.group(3)
+        if not key or key in ("batocera", "handheld"):
+            continue
+        existing[key] = m.group(4) == "true"
 existing[want] = True
+existing["batocera-handheld"] = True
 existing["nuzlocke"] = False
 indent_mods = "  "
 mmods = re.search(r"\n(\s*)mods\s*=\s*\{", text)
 if mmods:
     indent_mods = mmods.group(1) + "  "
-mod_lines = [f"{indent_mods}{k} = {'true' if v else 'false'}," for k, v in existing.items()]
+mod_lines = []
+for k, v in sorted(existing.items()):
+    lit = "true" if v else "false"
+    if re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", k):
+        mod_lines.append(f"{indent_mods}{k} = {lit},")
+    else:
+        mod_lines.append(f'{indent_mods}["{k}"] = {lit},')
 text2 = replace_brace_table(text, "mods", mod_lines)
 
 # Profile enabled{}: flip nuzlocke off, ensure want on
@@ -501,7 +637,7 @@ PY
 }
 
 # shellcheck disable=SC2086
-for _mod_dir in $LOVE_MOD_DIRS; do
+for _mod_dir in $MOD_ROOTS; do
     [ -n "$_mod_dir" ] || continue
     sync_mods "$_mod_dir"
     # Re-apply after sync: zip install restores stock mesh/water behaviour.
@@ -511,13 +647,19 @@ for _mod_dir in $LOVE_MOD_DIRS; do
 done
 
 # Seed / fix enable bits for the 3D graphics mod; turn bundled Nuzlocke off.
-if [ "$CORE" = "gen2recomp" ]; then
-    enable_graphics_mod "${APP_HOME}/.local/share/Gen2Recomp/options.lua" "$MOD_ID_DEFAULT"
-else
-    enable_graphics_mod "${APP_HOME}/.local/share/pokemon-love2d/options.lua" "$MOD_ID_DEFAULT"
+enable_graphics_mod "${DATA_ROOT}/options.lua" "$MOD_ID_DEFAULT"
+
+if [ "$PREPARE_ONLY" -eq 1 ]; then
+    echo "pkmnrecomp: prepared core=$CORE home=$HOME data=$DATA_ROOT"
+    exit 0
 fi
 
-LAUNCHER="/usr/bin/batocera-appimage-launcher"
+LAUNCHER="/usr/libexec/batocera-appimage-launcher"
+if [ ! -x "$LAUNCHER" ]; then
+    LAUNCHER="/usr/bin/batocera-appimage-launcher"
+fi
+export BATOCERA_APPS_HOME="$APP_HOME"
+export BATOCERA_APPIMAGE_EXTRACT_AND_RUN="${BATOCERA_APPIMAGE_EXTRACT_AND_RUN:-1}"
 export APPIMAGE_ALLOW_ROOT="${APPIMAGE_ALLOW_ROOT:-1}"
 export APPIMAGE_EXTRACT_AND_RUN="${APPIMAGE_EXTRACT_AND_RUN:-1}"
 export SDL_JOYSTICK_HIDAPI="${SDL_JOYSTICK_HIDAPI:-0}"
@@ -563,7 +705,7 @@ fi
 export SDL_GAMECONTROLLERCONFIG
 
 {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] core=$CORE game=${GAME:-?} sha1=${SHA1:-} rom=${ROM:-config} app=$APPIMAGE"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] core=$CORE game=${GAME:-?} sha1=${SHA1:-} rom=${ROM:-config} app=$APPIMAGE home=$HOME xdg_data=$XDG_DATA_HOME data=$DATA_ROOT"
 } >> "$LOG"
 
 set --
@@ -575,12 +717,4 @@ if [ -x "$LAUNCHER" ]; then
     exec "$LAUNCHER" "$APPIMAGE" "$APP_ID" 0 "$@"
 fi
 
-# Fallback if the AppImage launcher is not on this image yet.
-HOME_DIR="/userdata/saves/apps/${APP_ID}"
-export HOME="$HOME_DIR"
-export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
-export XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
-export XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
-export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
-mkdir -p "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_CACHE_HOME" "$XDG_RUNTIME_DIR"
 exec "$APPIMAGE" "$@"

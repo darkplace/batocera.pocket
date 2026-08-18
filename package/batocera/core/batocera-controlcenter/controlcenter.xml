@@ -65,6 +65,9 @@
 			<progressbar display="${qcom-fan percent}" min="0" max="100" refresh="1" />
 			<button display="Fan +" action="qcom-fan set +10" afterclick="bcc_refresh" />
 		</feature>
+		<!-- Runtime picker only. Curve *points* for Silent/Auto/Aggressive live
+		     in qcom-fan (Fans tab of Batocera Control). Do not add a second
+		     daemon or write fan.state from that editor. -->
 		<feature display="Fan Mode" if='${qcom-fan available &amp;&amp; echo 1}' refresh="2">
 			<text display="${qcom-fan label}" refresh="1" />
 			<choice display="Silent" action="qcom-fan silent" selected='${[ "$(qcom-fan mode)" = "silent" ] &amp;&amp; echo 1}' afterclick="bcc_refresh" />

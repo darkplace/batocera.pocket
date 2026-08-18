@@ -1,9 +1,10 @@
 # Changelog — batocera.pocket
 
-Notes for **GitHub Releases** and the README. Each version uses `<details>`
-blocks so the page stays readable: **Updates** and **Fixes**.
+Notes for **GitHub Releases**. Each version uses `<details>` blocks so the page
+stays readable: **Updates** and **Fixes**.
 
-When you publish a tag, copy the matching section into the Release body.
+When you publish a tag, copy the matching section into the Release body. The
+README only lists the current tag per board — not this history.
 
 ---
 
@@ -17,8 +18,8 @@ When you publish a tag, copy the matching section into the Release body.
 - **Apps → Discord:** Vesktop Flatpak from Flathub, auto-installed/updated at boot.
   UI scale via Chromium `--force-device-scale-factor` (default **1.35×**, not Sway output scale).
 - **Quit Discord:** **Home + Start** (or **Hotkey + B**) with mouse-mode on or off.
-- **On-screen keyboard:** one-shot Sway shift to the workspace exclusive zone
-  (~250px on Odin) so Discord sits flush above the keyboard without wobble.
+- **On-screen keyboard:** overlay without shrinking EmulationStation; Discord
+  (Vesktop) is lifted ~250px above the keys. Mouse-mode toasts restored.
 
 </details>
 

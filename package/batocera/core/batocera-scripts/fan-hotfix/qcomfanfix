@@ -1,0 +1,49 @@
+#!/bin/bash
+# Persist qcom-fan thermal safety fix across reboots until the next OTA
+# ships S12qcom-fan + the updated /usr/bin/qcom-fan in squashfs.
+# Enabled via: batocera-services enable qcomfanfix
+set -euo pipefail
+
+HOTFIX_DIR="/userdata/system/fan-hotfix"
+HOTFIX_BIN="${HOTFIX_DIR}/qcom-fan"
+HOTFIX_INIT="${HOTFIX_DIR}/S12qcom-fan"
+
+start() {
+	if [ ! -x "${HOTFIX_BIN}" ]; then
+		echo "qcomfanfix: missing ${HOTFIX_BIN}"
+		return 1
+	fi
+	install -m 0755 "${HOTFIX_BIN}" /usr/bin/qcom-fan
+	# Control Deck choice highlight + fan XML (optional extras in hotfix dir)
+	if [ -f "${HOTFIX_DIR}/ui_core.py" ]; then
+		install -m 0755 "${HOTFIX_DIR}/ui_core.py" /usr/share/batocera/controlcenter/ui_core.py
+	fi
+	if [ -f "${HOTFIX_DIR}/xml_utils.py" ]; then
+		install -m 0755 "${HOTFIX_DIR}/xml_utils.py" /usr/share/batocera/controlcenter/xml_utils.py
+	fi
+	if [ -f "${HOTFIX_DIR}/controlcenter.xml" ]; then
+		install -m 0755 "${HOTFIX_DIR}/controlcenter.xml" /usr/share/batocera/controlcenter/controlcenter.xml
+	fi
+	if [ -f "${HOTFIX_INIT}" ]; then
+		install -m 0755 "${HOTFIX_INIT}" /etc/init.d/S12qcom-fan
+		rm -f /etc/init.d/S06qcom-fan
+	fi
+	# Squashfs still ships S06 which may have started the OLD binary before
+	# this S99 service runs. Force-kill that daemon and start the new one.
+	/usr/bin/qcom-fan daemon-stop >/dev/null 2>&1 || true
+	start-stop-daemon -K -q -p /var/run/qcom-fan.pid >/dev/null 2>&1 || true
+	pkill -f '/usr/bin/qcom-fan start' >/dev/null 2>&1 || true
+	rm -f /var/run/qcom-fan.pid /var/run/qcom-fan-manual.pid /var/run/qcom-fan.manual
+	/usr/bin/qcom-fan boot >/dev/null 2>&1 || /etc/init.d/S12qcom-fan start >/dev/null 2>&1 || true
+	echo "qcomfanfix: applied"
+}
+
+stop() {
+	true
+}
+
+case "${1:-start}" in
+	start) start ;;
+	stop) stop ;;
+	*) start ;;
+esac

@@ -1,3 +1,6 @@
 # Upstream ARM64 AppImages (GitHub Releases).
 sha256  2fabe51cfd2e4554a675732f6c051eb662560a08c491d416c1cec8a7d55fdb76  gen1recomp-0.1.99-linux-arm64.AppImage
 sha256  7f9ec64a7d82d19126330cb747b53151caf6468965f71fb36d0f90fff36579f8  Gen2Recomped-0.7.10-linux-arm64.AppImage
+# Default 3D graphics mods (synced by /usr/bin/pkmnrecomp on launch).
+sha256  d989fd7c97a60fa5df767d424967e3e45fb600517cad50afee8b76eba5c6b653  potato_voxel-1.7.11.zip
+sha256  fb40498dce7bb7682582155ec8cbb86b7c45e6a634fc070a01a90d2eaab14eb4  gen2dramaticshapes0.7.6-UNDERdecoded.zip

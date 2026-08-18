@@ -2,12 +2,16 @@
 """
 Qualcomm PWM fan helper for Batocera.
 
-Automatic fan modes (selectable from the Batocera Control Deck / CLI):
+Automatic fan modes (selectable from Control Center / Home+A / CLI):
   qcom-fan silent      quiet-first curve (higher temps, minimal noise)
   qcom-fan auto        balanced default
   qcom-fan aggressive  cool-first curve (spins earlier/harder)
   qcom-fan manual / set N   fixed speed
   qcom-fan stop        fan off
+
+Curve *points* for those named modes can be edited from Batocera Control
+(Fans tab) into qcom-fan-curves.conf. That write path must not change
+fan.state — Control Center Fan Mode remains the runtime picker.
 
 The default automatic curve can be overridden in:
   /userdata/system/configs/fan.conf
@@ -64,12 +68,15 @@ TEMP_RISE_ALPHA = 0.7
 TEMP_FALL_ALPHA = 0.08
 TEMP_PEAK_HOLD_S = 12
 CONFIG_FILE = "/userdata/system/configs/fan.conf"
+# Per-mode curve overrides (Fans tab in Batocera Control). Control Center
+# (Home+A) still only picks silent/auto/aggressive/manual/off.
+CURVES_FILE = "/userdata/system/configs/qcom-fan-curves.conf"
 STATE_FILE = "/userdata/system/configs/fan.state"
 PID_FILE = "/var/run/qcom-fan.pid"
 MANUAL_PID_FILE = "/var/run/qcom-fan-manual.pid"
 MANUAL_TARGET_FILE = "/var/run/qcom-fan.manual"
 PWM_MAX = 255
-# Named automatic fan curves selectable from the Control Deck / CLI. Each curve
+# Named automatic fan curves selectable from Control Center / CLI. Each curve
 # is a list of "temp=percent" high -> low thresholds (get_fanspeed returns the
 # first entry whose temp is reached).
 #   - silent:     prioritise noise; stays off until it's genuinely warm and
@@ -87,8 +94,14 @@ FAN_CURVES = {
 }
 # Modes that run the automatic (curve-driven) daemon.
 AUTO_MODES = ("auto", "silent", "aggressive")
+CURVE_LABELS = {
+    "silent": "Silent",
+    "auto": "Balanced",
+    "aggressive": "Aggressive",
+}
 # Back-compat alias: the plain automatic curve.
 DEFAULT_FAN_CONFIG = FAN_CURVES["auto"]
+PWM_UI_MAX = 255
 
 
 def read_file(path):
@@ -156,14 +169,19 @@ def is_writable(path):
     return bool(path and os.path.exists(path) and os.access(path, os.W_OK))
 
 
-def get_fanspeed(tempval, configlist):
+def get_fanspeed(tempval, configlist, min_percent=0):
+    speed = 0
     for curconfig in configlist:
         curpair = curconfig.split("=")
         tempcfg = float(curpair[0])
         fancfg = int(float(curpair[1]))
         if tempval >= tempcfg:
-            return fancfg
-    return 0
+            speed = fancfg
+            break
+    # Minimum fan speed is a hard floor: it wins over Fan Stop / 0% points.
+    if min_percent:
+        speed = max(speed, int(min_percent))
+    return speed
 
 
 def load_config(fname):
@@ -584,19 +602,237 @@ def wait_userdata(timeout=USERDATA_WAIT_TIMEOUT):
     return userdata_ready()
 
 
+def percent_to_pwm(percent):
+    return int(round(clamp(int(percent), 0, 100) * PWM_UI_MAX / 100.0))
+
+
+def pwm_to_percent(pwm):
+    return int(round(clamp(int(pwm), 0, PWM_UI_MAX) * 100.0 / PWM_UI_MAX))
+
+
+def curve_list_to_ui(configlist):
+    """qcom-fan temp=percent (any order) → UI temp:pwm sorted low→high."""
+    points = []
+    for item in configlist or []:
+        if "=" not in str(item):
+            continue
+        temp_s, pct_s = str(item).split("=", 1)
+        try:
+            temp = int(round(float(temp_s.strip())))
+            pct = int(round(float(pct_s.strip())))
+        except Exception:
+            continue
+        points.append((temp, percent_to_pwm(pct)))
+    points.sort(key=lambda pair: pair[0])
+    return ",".join("{}:{}".format(temp, pwm) for temp, pwm in points)
+
+
+def ui_curve_to_list(value):
+    """UI temp:pwm → qcom-fan temp=percent list, high→low for get_fanspeed."""
+    points = []
+    for item in str(value or "").split(","):
+        item = item.strip()
+        if not item or ":" not in item:
+            continue
+        temp_s, pwm_s = item.split(":", 1)
+        try:
+            temp = int(temp_s)
+            pwm = int(pwm_s)
+        except Exception:
+            continue
+        points.append((temp, pwm_to_percent(pwm)))
+    points.sort(key=lambda pair: pair[0], reverse=True)
+    return ["{}={}".format(temp, pct) for temp, pct in points]
+
+
+def load_named_curve_overrides():
+    """Parse qcom-fan-curves.conf into {name: {label, list}} plus min_percent."""
+    curves = {}
+    min_percent = 0
+    try:
+        section = None
+        with open(CURVES_FILE, "r") as fp:
+            for raw in fp:
+                line = raw.strip()
+                if not line or line[0] == "#":
+                    continue
+                if line.startswith("[") and line.endswith("]"):
+                    section = line[1:-1].strip()
+                    if section and section != "fan":
+                        curves.setdefault(section, {"label": "", "list": []})
+                    continue
+                if "=" not in line:
+                    continue
+                key, _, value = line.partition("=")
+                key = key.strip()
+                value = value.strip()
+                if section == "fan" and key == "min_percent":
+                    parsed = parse_int(value)
+                    if parsed is not None:
+                        min_percent = clamp(parsed, 0, 100)
+                    continue
+                if not section or section == "fan":
+                    continue
+                if key == "label":
+                    curves[section]["label"] = value
+                elif key == "curve":
+                    if ":" in value and "=" not in value.split(",")[0]:
+                        curves[section]["list"] = ui_curve_to_list(value)
+                    else:
+                        items = []
+                        for part in value.split(","):
+                            part = part.strip()
+                            if "=" in part:
+                                items.append(part)
+                        if items:
+                            items.sort(key=lambda item: float(item.split("=", 1)[0]), reverse=True)
+                            curves[section]["list"] = items
+    except Exception:
+        return {}, 0
+    return curves, min_percent
+
+
+def factory_curve_entry(name):
+    return {
+        "label": CURVE_LABELS.get(name, name.replace("_", " ").title()),
+        "curve": curve_list_to_ui(FAN_CURVES.get(name) or FAN_CURVES["auto"]),
+    }
+
+
+def _normalize_curve_list(configlist):
+    points = []
+    for item in configlist or []:
+        if "=" not in str(item):
+            continue
+        temp_s, pct_s = str(item).split("=", 1)
+        try:
+            points.append((int(round(float(temp_s.strip()))), int(round(float(pct_s.strip())))))
+        except Exception:
+            continue
+    points.sort(key=lambda pair: pair[0], reverse=True)
+    return points
+
+
+def curve_lists_equal(left, right):
+    return _normalize_curve_list(left) == _normalize_curve_list(right)
+
+
+def active_min_percent():
+    _overrides, min_percent = load_named_curve_overrides()
+    return min_percent
+
+
 def active_curve():
     """Resolve the curve the auto daemon should follow.
 
-    Priority: a user custom curve in fan.conf wins; otherwise the named curve
-    for the persisted mode (silent/auto/aggressive); otherwise plain auto.
+    Named mode (silent/auto/aggressive) uses factory points, then per-mode
+    overrides from qcom-fan-curves.conf. Legacy fan.conf still overrides
+    *auto only* when that mode has no named-file override, so Control Center
+    Silent/Aggressive keep working.
     """
-    tmpconfig = load_config(CONFIG_FILE)
-    if tmpconfig:
-        return tmpconfig
     mode, _ = load_state()
+    if mode not in AUTO_MODES:
+        mode = "auto"
+    overrides, _min = load_named_curve_overrides()
+    if mode in overrides and overrides[mode].get("list"):
+        return list(overrides[mode]["list"])
+    if mode == "auto":
+        tmpconfig = load_config(CONFIG_FILE)
+        if tmpconfig:
+            return tmpconfig
     if mode in FAN_CURVES:
         return list(FAN_CURVES[mode])
     return list(FAN_CURVES["auto"])
+
+
+def curves_payload():
+    overrides, min_percent = load_named_curve_overrides()
+    factory = {name: factory_curve_entry(name) for name in AUTO_MODES}
+    fan_curves = dict(factory)
+    for name, entry in overrides.items():
+        if not entry.get("list"):
+            continue
+        fan_curves[name] = {
+            "label": entry.get("label") or CURVE_LABELS.get(name, name.replace("_", " ").title()),
+            "curve": curve_list_to_ui(entry["list"]),
+        }
+    mode, _ = load_state()
+    runtime = mode if mode in ("silent", "auto", "aggressive", "manual", "off") else (mode or "")
+    profiles = {
+        name: {
+            "label": "{} (Control Center)".format(CURVE_LABELS[name]),
+            "fan_curve": name,
+        }
+        for name in AUTO_MODES
+    }
+    dummy_ramp = {"ramp_up": 36, "ramp_down": 6, "smoothing": 0.50, "min_pwm": percent_to_pwm(min_percent)}
+    return {
+        "fanCurves": fan_curves,
+        "factoryFanCurves": factory,
+        "fanSettings": dict(dummy_ramp),
+        "factoryFanSettings": {"ramp_up": 36, "ramp_down": 6, "smoothing": 0.50, "min_pwm": 0},
+        "profiles": profiles,
+        "activeProfile": runtime if runtime in AUTO_MODES else "auto",
+        "runtimeMode": runtime,
+        "currentTemp": get_temp(),
+        "minPercent": min_percent,
+        "controllableModes": list(AUTO_MODES) + ["manual", "off"],
+    }
+
+
+def write_named_curves(fan_curves, fan_settings=None):
+    """Persist Fans-tab edits. Does not change fan.state / Control Center mode."""
+    if not isinstance(fan_curves, dict) or not fan_curves:
+        raise ValueError("at least one fan curve is required")
+    for name in AUTO_MODES:
+        if name not in fan_curves:
+            raise ValueError("missing Control Center curve: {}".format(name))
+    min_percent = 0
+    if isinstance(fan_settings, dict):
+        try:
+            if "min_percent" in fan_settings:
+                min_percent = clamp(int(fan_settings["min_percent"]), 0, 100)
+            else:
+                min_percent = pwm_to_percent(int(fan_settings.get("min_pwm") or 0))
+        except Exception:
+            min_percent = 0
+    persisted = []
+    for name, entry in fan_curves.items():
+        if not isinstance(entry, dict):
+            continue
+        native = ui_curve_to_list(entry.get("curve"))
+        if not native:
+            continue
+        # Omit factory-identical named modes so legacy fan.conf can still
+        # override auto, and Control Center Silent/Aggressive stay stock.
+        if name in FAN_CURVES and curve_lists_equal(native, FAN_CURVES[name]):
+            continue
+        label = str(entry.get("label") or CURVE_LABELS.get(name, name))
+        persisted.append((name, label, native))
+    if not persisted and int(min_percent) == 0:
+        try:
+            if os.path.isfile(CURVES_FILE):
+                os.unlink(CURVES_FILE)
+        except OSError:
+            pass
+        return curves_payload()
+    os.makedirs(os.path.dirname(CURVES_FILE), exist_ok=True)
+    lines = [
+        "# qcom-fan named curves — edited by Batocera Control Fans tab",
+        "# Control Center (Home+A) still selects silent/auto/aggressive/off.",
+        "# This file does not change fan.state.",
+        "",
+        "[fan]",
+        "min_percent={}".format(int(min_percent)),
+        "",
+    ]
+    for name, label, native in persisted:
+        lines.append("[{}]".format(name))
+        lines.append("label={}".format(label))
+        lines.append("curve={}".format(",".join(native)))
+        lines.append("")
+    write_file(CURVES_FILE, "\n".join(lines))
+    return curves_payload()
 
 
 def poll_sleep(temp_c, block, prevblock):
@@ -661,14 +897,14 @@ def temp_check():
     prevblock = 0
     while True:
         # Re-resolve every loop: fan.state may appear after a late userdata mount,
-        # and Control Deck can change silent/auto/aggressive without restarting us.
+        # and Control Center can change silent/auto/aggressive without restarting us.
         fanconfig = active_curve()
         raw = get_temp()
         if raw is None:
             time.sleep(CHECK_INTERVAL)
             continue
         val = tracker.update(raw)
-        block = get_fanspeed(val, fanconfig)
+        block = get_fanspeed(val, fanconfig, active_min_percent())
         try:
             raw_set_speed(block, quiet=True)
             if DEBUG:
@@ -761,6 +997,31 @@ def main():
         return 0 if ok else 1
     if command == "boot":
         return restore_boot_state()
+    if command == "curves-json":
+        print(json.dumps(curves_payload(), sort_keys=True))
+        return 0
+    if command == "curves-write":
+        try:
+            if len(sys.argv) > 2:
+                with open(sys.argv[2], "r") as fp:
+                    payload = json.load(fp)
+            else:
+                payload = json.load(sys.stdin)
+            result = write_named_curves(
+                payload.get("fanCurves") or payload.get("fan_curves") or {},
+                payload.get("fanSettings") or payload.get("fan_settings"),
+            )
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
+        print(json.dumps(result, sort_keys=True))
+        return 0
+    if command == "temp":
+        temp = get_temp()
+        if temp is None:
+            return 1
+        print(int(round(temp)))
+        return 0
 
     status = read_status()
     if command == "available":
@@ -792,7 +1053,7 @@ def main():
     if command == "set" and len(sys.argv) > 2:
         return set_speed(sys.argv[2])
 
-    print("Usage: qcom-fan [start|boot|stop|daemon-stop|auto|silent|aggressive|manual|available|status|label|json|percent|rpm|mode|set <0-100|+N|-N>]", file=sys.stderr)
+    print("Usage: qcom-fan [start|boot|stop|daemon-stop|auto|silent|aggressive|manual|available|status|label|json|percent|rpm|mode|temp|curves-json|curves-write|set <0-100|+N|-N>]", file=sys.stderr)
     return 1
 
 

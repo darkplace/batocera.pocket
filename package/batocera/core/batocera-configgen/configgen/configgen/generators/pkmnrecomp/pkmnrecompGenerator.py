@@ -43,10 +43,17 @@ class PkmnrecompGenerator(Generator):
         if core not in {"gen1recomp", "gen2recomp"}:
             core = "gen1recomp"
 
+        app_id = "pkmnrecomp-gen2" if core == "gen2recomp" else "pkmnrecomp-gen1"
+        home = f"/userdata/saves/apps/{app_id}"
+
         commandArray = ["pkmnrecomp", "--core", core, rom]
         return Command.Command(
             array=commandArray,
             env={
+                "HOME": home,
+                "XDG_CONFIG_HOME": f"{home}/.config",
+                "XDG_DATA_HOME": f"{home}/.local/share",
+                "XDG_CACHE_HOME": f"{home}/.cache",
                 "SDL_GAMECONTROLLERCONFIG": _with_sdl230_crc_guids(
                     generate_sdl_game_controller_config(playersControllers)
                 ),

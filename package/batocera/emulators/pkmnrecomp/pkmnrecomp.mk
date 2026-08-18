@@ -9,8 +9,12 @@ PKMNRECOMP_GEN2_VERSION = 0.7.10
 PKMNRECOMP_SITE = https://github.com/bryanthaboi/gen1recomp/releases/download/v$(PKMNRECOMP_VERSION)
 PKMNRECOMP_SOURCE = gen1recomp-$(PKMNRECOMP_VERSION)-linux-arm64.AppImage
 PKMNRECOMP_GEN2_SOURCE = Gen2Recomped-$(PKMNRECOMP_GEN2_VERSION)-linux-arm64.AppImage
+PKMNRECOMP_MOD_GEN1 = potato_voxel-1.7.11.zip
+PKMNRECOMP_MOD_GEN2 = gen2dramaticshapes0.7.6-UNDERdecoded.zip
 PKMNRECOMP_EXTRA_DOWNLOADS = \
-	https://github.com/UNDERdecoded/Gen2Recomped/releases/download/v$(PKMNRECOMP_GEN2_VERSION)/$(PKMNRECOMP_GEN2_SOURCE)
+	https://github.com/UNDERdecoded/Gen2Recomped/releases/download/v$(PKMNRECOMP_GEN2_VERSION)/$(PKMNRECOMP_GEN2_SOURCE) \
+	https://github.com/ShaneMcGovernIE/potato_voxel/releases/download/v1.7.11/$(PKMNRECOMP_MOD_GEN1) \
+	https://github.com/UNDERdecoded/Gen2Recomped/releases/download/v$(PKMNRECOMP_GEN2_VERSION)/$(PKMNRECOMP_MOD_GEN2)
 
 PKMNRECOMP_LICENSE = Custom
 PKMNRECOMP_STRIP = NO
@@ -46,6 +50,10 @@ define PKMNRECOMP_INSTALL_TARGET_CMDS
 		$(TARGET_DIR)/usr/share/batocera/datainit/roms/pkmnrecomp/mods/gen1/batocera-handheld
 	cp -a $(PKMNRECOMP_PKGDIR)/files/mods/batocera-handheld \
 		$(TARGET_DIR)/usr/share/batocera/datainit/roms/pkmnrecomp/mods/gen2/batocera-handheld
+	$(INSTALL) -m 0644 $(PKMNRECOMP_DL_DIR)/$(PKMNRECOMP_MOD_GEN1) \
+		$(TARGET_DIR)/usr/share/batocera/datainit/roms/pkmnrecomp/mods/gen1/$(PKMNRECOMP_MOD_GEN1)
+	$(INSTALL) -m 0644 $(PKMNRECOMP_DL_DIR)/$(PKMNRECOMP_MOD_GEN2) \
+		$(TARGET_DIR)/usr/share/batocera/datainit/roms/pkmnrecomp/mods/gen2/$(PKMNRECOMP_MOD_GEN2)
 	mkdir -p $(TARGET_DIR)/usr/share/emulationstation/themes/es-theme-carbon/art/background
 	mkdir -p $(TARGET_DIR)/usr/share/emulationstation/themes/es-theme-carbon/art/consoles
 	mkdir -p $(TARGET_DIR)/usr/share/emulationstation/themes/es-theme-carbon/art/controllers

@@ -23,23 +23,29 @@ Recognized devices:
 | Combo | Action |
 |-------|--------|
 | **Home + Start** | Exit emulator (clean exit) |
+| **Home + B** | Emulator menu |
 | **L1 + Select + Start** | Force quit (`batocera-es-swissknife --emukill`) |
 | **L1 + R1 + Select + Start** | Force quit (same; harder to press by accident) |
 | **R1 + Select + Start** | Toggle mouse mode |
 | **Home + Start + Select** | Toggle mouse mode (via `hotkeygen`) |
 | **Home + A** | Batocera Control Center / Control Deck |
-| **Home + B** | Emulator / options menu |
 | **Home + Touch** | On-screen keyboard (hold Home, tap the screen) |
 | **Home + Y** | Save state |
 | **Home + X** | Load state |
 | **Home + ↑ / ↓** | Previous / next save slot |
 | **Home + ← / →** | Rewind / fast-forward (if the core supports it) |
 | **Home + L1** | Screenshot |
-| **Back** (next to Home on Odin) | Brightness cycle (`brightness-cycle`) |
+| **Home + L2** / **Home + R2** | Swap screens / screen layout |
+| **Home + R1** | Translation overlay |
+| **Back** (next to Home on Odin) | Brightness cycle **in ES** (`brightness-cycle`) |
 
-In **Steam** (GamepadUI), Back becomes `steam_chord` (not brightness).
+In **Steam** (GamepadUI), **Back** opens **Quick Access (QAM)** (`steam_qam`),
+not brightness. **Home** stays the Steam guide / left menu.
 On Steam exit / force-kill, `51-odin-brightness-hotkeys.sh` restores the ES
 mapping so brightness works again.
+
+Rear paddles start **unassigned**. Mouse-mode and the OSK window-lift apply
+**only inside Discord** (Apps → Discord), not in EmulationStation.
 
 ---
 
@@ -50,7 +56,7 @@ Open the plugin from Steam **Quick Access (⋯) → Batocera Control**.
 | Shortcut / UI | Action |
 |---------------|--------|
 | **⋯ → Performance → Performance Overlay** | Steam-native MangoHud / FPS overlay level |
-| **M1 + M2** | Toggle MangoHud show/hide (`mangohudctl`), when bound in Batocera Control → Back Paddles (recommended default) |
+| **M1 + M2** | Toggle MangoHud show/hide (`mangohudctl`), only if you bind it in Back Paddles |
 | **⋯ → Batocera Control → Compatibility** | Proton default, per-game tweaks, env vars, **Re-apply** nice/affinity to a running game |
 | **⋯ → Batocera Control → Power** | eco / balanced / performance (governor + fan on Qualcomm) |
 | **⋯ → Batocera Control → LSFG** | Lossless Scaling VK (DLL at `/userdata/system/wine/lossless-scaling/Lossless.dll`) |
@@ -140,6 +146,12 @@ Guide: [ADDING_ROMS.md](ADDING_ROMS.md).
 
 Official folder is `/userdata/roms/gamecube/` (not `gc`).
 
+### Pokémon Recomp / Switch keys / other extra data
+
+ROMs plus mods, keys, and firmware: [ADDING_ROMS.md](ADDING_ROMS.md#per-system-notes-pocket)
+(Pokémon dumps in `/userdata/roms/pkmnrecomp/`, Gen 1/2 mods in `mods/gen1` and
+`mods/gen2`).
+
 ### Where do Windows / Steam / Heroic / Lutris go?
 
 | Platform | Path |
@@ -154,12 +166,10 @@ Details and extensions: [ADDING_ROMS.md](ADDING_ROMS.md).
 
 ### Discord (Apps)
 
-Vesktop installs/updates from Flathub in the background (the Batocera launcher,
-OSK shift, and quit hotkeys stay in `/usr/bin` — a Discord/Vesktop update does
-not overwrite them). While Discord is open, **Home + Start** or **Hotkey + B**
-quits, with mouse-mode on or off. Scale is `--force-device-scale-factor`
-(default **1.35×**); override with `/userdata/system/configs/apps-hotfix/vesktop-ui-scale`.
-The on-screen keyboard lifts Discord once to sit above the keys.
+Vesktop installs/updates from Flathub in the background. **While Discord is
+open**, mouse-mode is on and the OSK lifts **only that window** (EmulationStation
+is never moved). **Home + Start** / **Home + B** quit Discord. Scale default
+**1.35×**; override `/userdata/system/configs/apps-hotfix/vesktop-ui-scale`.
 
 ### BIOS
 

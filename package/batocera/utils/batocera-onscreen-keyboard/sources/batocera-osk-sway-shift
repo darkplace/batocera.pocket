@@ -1,11 +1,5 @@
 #!/usr/bin/env python3
-"""Shift the focused Sway window above the on-screen keyboard.
-
-Do this once. A hold/reapply loop fights Electron (CSD rect never matches)
-and is what made Discord wobble. wvkbd is a layer-shell surface: Sway
-shrinks the workspace by the exclusive zone (~250px on Odin, not -L 350).
-Floating windows ignore that zone, so we copy the workspace rectangle.
-"""
+"""Shift Discord/Vesktop above the OSK. Never move EmulationStation or other apps."""
 
 from __future__ import annotations
 
@@ -20,9 +14,10 @@ STATE_PATH = Path("/var/run/batocera-osk-sway-shift.json")
 HOLD_PID_PATH = Path("/var/run/batocera-osk-sway-shift.hold.pid")
 OSK_PID_PATH = Path("/var/run/onscreen-keyboard.pid")
 DEFAULT_KB_HEIGHT = 250
-SKIP_APP = ("wvkbd", "wvkbd-mobintl", "sm.puri.osk", "onboard", "squeekboard")
-SKIP_NAME = ("wvkbd", "on-screen keyboard", "onscreen keyboard")
-PREFER_APP = ("vesktop", "vencord", "discord", "chromium", "google-chrome", "firefox")
+SKIP_APP = ("wvkbd", "wvkbd-mobintl", "sm.puri.osk", "onboard", "squeekboard", "emulationstation")
+SKIP_NAME = ("wvkbd", "on-screen keyboard", "onscreen keyboard", "emulationstation")
+DISCORD_APP = ("vesktop", "vencord")
+DISCORD_NAME = ("discord",)
 
 
 def resolve_swaysock() -> str | None:
@@ -88,20 +83,19 @@ def is_leaf_window(node: dict) -> bool:
     return node.get("type") in {"con", "floating_con"} and bool(node.get("pid") or node.get("app_id") or node.get("window_properties") or node.get("name"))
 
 
-def find_focused(tree: dict) -> dict | None:
-    for node in iter_nodes(tree):
-        if node.get("focused") and is_leaf_window(node) and not is_keyboard(node):
-            return node
-    return None
+def is_discord(node: dict) -> bool:
+    if is_keyboard(node) or not is_leaf_window(node):
+        return False
+    app = app_id_of(node)
+    name = (node.get("name") or "").lower()
+    if "emulationstation" in app or "emulationstation" in name:
+        return False
+    return any(tok in app for tok in DISCORD_APP) or any(tok in name for tok in DISCORD_NAME)
 
 
-def find_preferred(tree: dict) -> dict | None:
+def find_discord(tree: dict) -> dict | None:
     for node in iter_nodes(tree):
-        if not is_leaf_window(node) or is_keyboard(node):
-            continue
-        app = app_id_of(node)
-        name = (node.get("name") or "").lower()
-        if any(tok in app or tok in name for tok in PREFER_APP):
+        if is_discord(node):
             return node
     return None
 
@@ -189,19 +183,13 @@ def usable_geom(output: dict) -> tuple[int, int, int, int]:
     out_y = int(out_rect.get("y", 0))
     out_w = int(out_rect.get("width", 0))
     out_h = int(out_rect.get("height", 0))
-    ws = workspace_rect(output)
-    # wvkbd layer-shell exclusive zone shrinks the workspace (Odin: 1080→830,
-    # not 350). Floating windows ignore that zone, so match the workspace.
-    if ws and out_h > 0 and ws["height"] <= out_h - 8:
-        return ws["x"], ws["y"], ws["width"], ws["height"]
-    return out_x, out_y, out_w, max(200, out_h - kb_height())
+    kb = kb_height()
+    return out_x, out_y, out_w, max(200, out_h - kb)
 
 
-def wait_usable(rect: dict, timeout: float = 0.9) -> tuple[dict, tuple[int, int, int, int]] | None:
+def wait_usable(rect: dict, timeout: float = 0.2) -> tuple[dict, tuple[int, int, int, int]] | None:
     deadline = time.time() + timeout
     last: tuple[dict, tuple[int, int, int, int]] | None = None
-    last_h: int | None = None
-    stable_since: float | None = None
     while time.time() < deadline:
         tree = get_tree()
         if not tree:
@@ -211,17 +199,8 @@ def wait_usable(rect: dict, timeout: float = 0.9) -> tuple[dict, tuple[int, int,
         if not output:
             time.sleep(0.03)
             continue
-        geom = usable_geom(output)
-        last = (output, geom)
-        out_h = int((output.get("rect") or {}).get("height") or 0)
-        if out_h > 0 and geom[3] <= out_h - 8:
-            if last_h == geom[3]:
-                if stable_since is not None and time.time() - stable_since >= 0.12:
-                    return last
-            else:
-                last_h = geom[3]
-                stable_since = time.time()
-        time.sleep(0.03)
+        last = (output, usable_geom(output))
+        return last
     return last
 
 
@@ -237,21 +216,19 @@ def layout_window(cid: int, x: int, y: int, w: int, h: int, *, configure: bool =
 
 
 def resolve_target(tree: dict, state: dict | None = None) -> dict | None:
+    """Discord/Vesktop only. Never ES, Lutris, browsers, or the focused fallback."""
     if state:
         cid = state.get("id")
         if cid is not None:
             node = find_by_id(tree, int(cid))
-            if node and not is_keyboard(node):
+            if node and is_discord(node):
                 return node
         app = (state.get("app_id") or "").lower()
-        if app:
+        if app and any(tok in app for tok in DISCORD_APP):
             for node in iter_nodes(tree):
-                if app_id_of(node) == app and is_leaf_window(node) and not is_keyboard(node):
+                if is_discord(node) and app_id_of(node) == app:
                     return node
-    preferred = find_preferred(tree)
-    if preferred:
-        return preferred
-    return find_focused(tree)
+    return find_discord(tree)
 
 
 def shift_up() -> int:
