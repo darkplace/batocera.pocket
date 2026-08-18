@@ -30,4 +30,13 @@ PYTHON_GOBJECT_CONF_ENV += \
 	_PYTHON_SYSCONFIGDATA_NAME=$(PKG_PYTHON_SYSCONFIGDATA_NAME) \
 	PYTHONPATH=$(PYTHON3_PATH)
 
+# Lutris IconView covers stay blank without the cairo foreign module.
+define PYTHON_GOBJECT_CHECK_CAIRO
+	if ! ls "$(TARGET_DIR)"/usr/lib/python*/site-packages/gi/_gi_cairo*.so >/dev/null 2>&1; then \
+		echo "ERROR: python-gobject missing gi._gi_cairo (enable pycairo)" >&2; \
+		exit 1; \
+	fi
+endef
+PYTHON_GOBJECT_POST_INSTALL_TARGET_HOOKS += PYTHON_GOBJECT_CHECK_CAIRO
+
 $(eval $(meson-package))

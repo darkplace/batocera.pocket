@@ -4,8 +4,8 @@
 # ath12k sometimes re-enables PS after association; re-apply and verify.
 # Inspired by ROCKNIX #3170 / #3173: keep PS off and apply wifi.country once.
 #
-# ath12k on this SoC is self-managed: `iw reg get` stays country 00 even after
-# `iw reg set`. Re-applying every watchdog tick (and on every udev CHANGE)
+# With CFG80211_CERTIFICATION_ONUS the phy should honor `iw reg set`. Still
+# apply country at most once per boot: re-applying every watchdog tick
 # churns the phy while associated and can drop DHCP into IPv4LL (169.254).
 
 COUNTRY_STAMP="/var/run/sm8750-wifi.country"
@@ -54,8 +54,8 @@ unblock_wifi_if_needed() {
 }
 
 # Apply batocera.conf wifi.country via iw reg set at most once per boot
-# (or when the setting changes). Self-managed ath12k never reports the
-# new country, so "current != target" must not be re-tried every 30s.
+# (or when the setting changes). Do not retry every 30s even if `iw reg
+# get` still shows 00 on an older kernel.
 apply_wifi_country() {
     country=""
     target=""

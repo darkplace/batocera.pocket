@@ -1,0 +1,27 @@
+Subject: [PATCH] wifi: ath12k: send the computed scan priority to the firmware
+
+The firmware schedules every scan through one queue and runs its
+offloaded 11d country scan at MEDIUM priority. The driver knows this:
+ath12k_wmi_send_scan_start_cmd() computes a priority for each hardware
+scan, LOW as the baseline and MEDIUM while an 11d scan is about to run,
+precisely so host scans are not starved by the 11d service. But it only
+writes the result into arg->scan_priority; cmd->scan_priority is never
+assigned, so every hardware scan reaches the firmware as priority 0,
+WMI_SCAN_PRIORITY_VERY_LOW.
+
+ath11k assigns the same computation to the command it sends; the copy
+was lost in the ath12k rework. Port of ROCKNIX #3189 (measured on
+WCN7850 / Odin 2; same ath12k WMI path on WCN7860 / Odin 3).
+
+Signed-off-by: Edouard Durand <edouard.durand@gmail.com>
+---
+--- a/drivers/net/wireless/ath/ath12k/wmi.c
++++ b/drivers/net/wireless/ath/ath12k/wmi.c
+@@ -2626,6 +2626,7 @@
+ 		arg->scan_priority = WMI_SCAN_PRIORITY_MEDIUM;
+ 	else
+ 		arg->scan_priority = WMI_SCAN_PRIORITY_LOW;
++	cmd->scan_priority = cpu_to_le32(arg->scan_priority);
+ 	cmd->notify_scan_events = cpu_to_le32(arg->notify_scan_events);
+ 
+ 	ath12k_wmi_copy_scan_event_cntrl_flags(cmd, arg);
