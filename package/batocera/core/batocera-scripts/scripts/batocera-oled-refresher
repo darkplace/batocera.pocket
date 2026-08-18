@@ -21,6 +21,7 @@ import argparse
 import os
 import random
 import signal
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -28,10 +29,60 @@ from pathlib import Path
 AYN_TEXT = "Anti-image-retention pixel refresh in progress, tap to exit (%ds)"
 INSET = 16
 BLOCK = 3  # 1×1–2×2 bloom on this panel; 3×3 is the hard-edge minimum
+INPUT_GRACE_S = 0.5  # ignore map/focus clicks so the sweep is actually visible
 
 STATE_DIR = Path("/var/run/batocera-oled-care")
 CANCEL_FILE = STATE_DIR / "cancel-refresh"
 ACTIVE_FILE = STATE_DIR / "refresh-active"
+LOG_FILE = Path("/userdata/system/logs/batocera-oled-care.log")
+
+
+def log_line(msg: str) -> None:
+    try:
+        LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with LOG_FILE.open("a", encoding="utf-8") as fh:
+            fh.write(f"{time.strftime('%Y-%m-%dT%H:%M:%S')} oled-refresher: {msg}\n")
+    except OSError:
+        pass
+
+
+def prepare_display_env() -> None:
+    """SDL/pygame read WAYLAND at import/init — must run first, even with empty S33 env."""
+    os.environ.setdefault("PYGAME_HIDE_SUPPORT_PROMPT", "1")
+    os.environ["SDL_VIDEODRIVER"] = "wayland"
+    os.environ.setdefault("DISPLAY", ":0")
+    runtime = os.environ.get("XDG_RUNTIME_DIR", "")
+    display = os.environ.get("WAYLAND_DISPLAY", "")
+    socket_ok = bool(runtime and display and os.path.exists(os.path.join(runtime, display)))
+    if not socket_ok:
+        for cand_runtime in ("/var/run", "/run", "/run/user/0", "/run/user/1000"):
+            for sock in ("wayland-1", "wayland-0"):
+                if os.path.exists(os.path.join(cand_runtime, sock)):
+                    os.environ["XDG_RUNTIME_DIR"] = cand_runtime
+                    os.environ["WAYLAND_DISPLAY"] = sock
+                    socket_ok = True
+                    break
+            if socket_ok:
+                break
+        if not socket_ok:
+            os.environ.setdefault("XDG_RUNTIME_DIR", "/var/run")
+            os.environ.setdefault("WAYLAND_DISPLAY", "wayland-1")
+    if not os.environ.get("SWAYSOCK"):
+        for cand in ("/run/sway-ipc.0.sock", "/var/run/sway-ipc.0.sock"):
+            if os.path.exists(cand):
+                os.environ["SWAYSOCK"] = cand
+                break
+
+
+def raise_sway_window() -> None:
+    try:
+        subprocess.Popen(
+            ["swaymsg", '[title="OLED Care Refresher"]', "focus, fullscreen enable"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except OSError:
+        pass
 
 
 def parse_args() -> argparse.Namespace:
@@ -65,6 +116,7 @@ def cancelled() -> bool:
 def run_headless(duration: float, passes: int) -> int:
     total = max(0.1, duration) * max(1, passes)
     mark_active(True, f"headless duration={duration} passes={passes}")
+    log_line(f"headless duration={duration} passes={passes}")
     end = time.monotonic() + total
     try:
         while time.monotonic() < end:
@@ -95,11 +147,7 @@ def make_band(pygame, width: int, band_h: int, block: int):
 
 
 def run_pygame(duration: float, passes: int, band_ratio: float, fps: int, block: int) -> int:
-    os.environ.setdefault("XDG_RUNTIME_DIR", "/var/run")
-    os.environ.setdefault("WAYLAND_DISPLAY", "wayland-1")
-    os.environ.setdefault("DISPLAY", ":0")
-    os.environ["SDL_VIDEODRIVER"] = "wayland"
-
+    prepare_display_env()
     import pygame
 
     pygame.display.init()
@@ -115,6 +163,7 @@ def run_pygame(duration: float, passes: int, band_ratio: float, fps: int, block:
     except TypeError:
         screen = pygame.display.set_mode((width, height), pygame.FULLSCREEN)
     pygame.display.set_caption("OLED Care Refresher")
+    raise_sway_window()
 
     block = max(1, int(block))
     band_h = max(48 + 2 * INSET, int(height * max(0.12, min(0.5, band_ratio))))
@@ -125,14 +174,15 @@ def run_pygame(duration: float, passes: int, band_ratio: float, fps: int, block:
     clock = pygame.time.Clock()
     font = pygame.font.SysFont("dejavusans", 32) or pygame.font.Font(None, 36)
     total = duration * passes
-
-    mark_active(
-        True,
+    meta = (
         f"pygame {screen.get_width()}x{screen.get_height()} "
-        f"band={band_h}px block={block} vsync @{fps}Hz",
+        f"band={band_h}px block={block} vsync @{fps}Hz"
     )
+    mark_active(True, meta)
+    log_line(meta)
     running = True
     t0 = pygame.time.get_ticks() / 1000.0
+    ignore_until = t0 + INPUT_GRACE_S
     try:
         for _p in range(passes):
             band = make_band(pygame, width, band_h, block)
@@ -140,6 +190,8 @@ def run_pygame(duration: float, passes: int, band_ratio: float, fps: int, block:
             while True:
                 now = pygame.time.get_ticks() / 1000.0
                 for event in pygame.event.get():
+                    if now < ignore_until:
+                        continue
                     if event.type in (
                         pygame.QUIT,
                         pygame.KEYDOWN,
@@ -180,22 +232,27 @@ def run_pygame(duration: float, passes: int, band_ratio: float, fps: int, block:
 
 
 def main() -> int:
+    prepare_display_env()
     args = parse_args()
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
     signal.signal(signal.SIGINT, lambda *_: sys.exit(0))
 
     if args.force_headless:
+        log_line("force-headless")
         return run_headless(args.duration, args.passes)
 
     try:
         import pygame  # noqa: F401
     except ImportError:
+        log_line("pygame missing; headless fallback")
         return run_headless(args.duration, args.passes)
 
     try:
         return run_pygame(args.duration, args.passes, args.band_ratio, args.fps, args.block)
     except Exception as exc:  # noqa: BLE001 — fall back cleanly on display failures
-        sys.stderr.write(f"oled-refresher: pygame failed ({exc}); headless fallback\n")
+        msg = f"pygame failed ({exc}); headless fallback"
+        sys.stderr.write(f"oled-refresher: {msg}\n")
+        log_line(msg)
         return run_headless(args.duration, args.passes)
 
 

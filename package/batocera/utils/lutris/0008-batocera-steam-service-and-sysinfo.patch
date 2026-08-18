@@ -1,14 +1,9 @@
 From: batocera <batocera@localhost>
 Subject: 0008-batocera-steam-service-and-sysinfo.patch
 
-- Detect Batocera Steam so the native "Steam" source appears
-- Prefer batocera-steam / steam.sh as the Steam runner
-- Hide Wine "Steam for Windows" when Batocera Steam is present
-- On aarch64, report host Vulkan instead of missing x86_64 Wine libs
-
 --- a/lutris/util/linux.py
 +++ b/lutris/util/linux.py
-@@ -243,12 +243,24 @@ class LinuxSystem:
+@@ -244,10 +244,21 @@
  
      def has_steam(self) -> bool:
          """Return whether Steam is installed locally"""
@@ -29,7 +24,8 @@ Subject: 0008-batocera-steam-service-and-sysinfo.patch
 +            or os.path.exists("/userdata/system/.local/share/Steam/ubuntu12_32/steam")
          )
  
-@@ -423,6 +435,12 @@ class LinuxSystem:
+     @property
+@@ -423,6 +434,11 @@
          return not self.get_missing_requirement_libs(feature)[0]
  
      def is_vulkan_supported(self) -> bool:
@@ -43,11 +39,7 @@ Subject: 0008-batocera-steam-service-and-sysinfo.patch
  
 --- a/lutris/runners/steam.py
 +++ b/lutris/runners/steam.py
-@@ -127,11 +127,26 @@ class steam(Runner):
-     def get_executable(self) -> str:
-         if linux.LINUX_SYSTEM.is_flatpak():
-             # Fallback to xgd-open for Steam URIs in Flatpak
-             return system.find_required_executable("xdg-open")
+@@ -131,6 +131,18 @@
          runner_executable = self.runner_config.get("runner_executable")
          if runner_executable and os.path.isfile(runner_executable):
              return runner_executable
@@ -68,7 +60,8 @@ Subject: 0008-batocera-steam-service-and-sysinfo.patch
      @property
 --- a/lutris/services/steamwindows.py
 +++ b/lutris/services/steamwindows.py
-@@ -22,9 +22,13 @@ class SteamWindowsGame(SteamGame):
+@@ -21,8 +21,10 @@
+ 
  class SteamWindowsService(SteamService):
      id = "steamwindows"
 -    name = _("Steam for Windows")
@@ -80,10 +73,9 @@ Subject: 0008-batocera-steam-service-and-sysinfo.patch
      runner = "wine"
      game_class = SteamWindowsGame
      client_installer = "steam-wine"
- 
 --- a/lutris/services/__init__.py
 +++ b/lutris/services/__init__.py
-@@ -47,7 +47,10 @@ def get_services():
+@@ -47,7 +47,10 @@
          _services["xdg"] = XDGService
      if LINUX_SYSTEM.has_steam():
          _services["steam"] = SteamService

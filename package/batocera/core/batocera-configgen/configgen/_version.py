@@ -17,6 +17,15 @@ def _read_version(file: Path, pattern: str, /) -> str | None:
     return match.group('version') if match else None
 
 
+def _to_pep440(version: str) -> str:
+    """Hatchling rejects Batocera letter suffixes such as 1.41e (PEP 440)."""
+    match = re.fullmatch(r'(\d+\.\d+)([a-z])', version.strip())
+    if match:
+        n = ord(match.group(2)) - ord('a') + 1
+        return f'{match.group(1)}.post{n}'
+    return version
+
+
 def _get_version() -> str:
     version: str | None = None
 
@@ -29,7 +38,7 @@ def _get_version() -> str:
         version = _read_version(_VERSION_FILE, _VERSION_PATTERN)
 
     if version is not None:
-        return version
+        return _to_pep440(version)
 
     raise Exception('Unable to obtain version')
 

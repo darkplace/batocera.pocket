@@ -29,6 +29,8 @@ define BATOCERA_SPLASH_SM8550_INSTALL_VIDEO
     mkdir -p $(TARGET_DIR)/usr/share/batocera/splash
     cp "$(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/core/batocera-splash-sm8550/videos/splash.mp4" \
         "$(TARGET_DIR)/usr/share/batocera/splash/splash.mp4"
+    echo -e "1\n00:00:00,000 --> 00:00:05,000\n$(BATOCERA_SPLASH_SM8550_TGVERSION)" > \
+        "$(TARGET_DIR)/usr/share/batocera/splash/splash.srt"
 endef
 
 define BATOCERA_SPLASH_SM8550_INSTALL_IMAGE

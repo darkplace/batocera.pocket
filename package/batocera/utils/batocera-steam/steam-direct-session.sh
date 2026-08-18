@@ -733,14 +733,35 @@ run_frontend_env() {
             unset "${steam_env}"
         done
 
+        frontend_path=""
+        if [[ -n "${PATH:-}" ]]; then
+            IFS=':' read -r -a _frontend_path_parts <<< "${PATH}"
+            for _frontend_path_part in "${_frontend_path_parts[@]}"; do
+                [[ -n "${_frontend_path_part}" ]] || continue
+                [[ "${_frontend_path_part,,}" == *steam* ]] && continue
+                if [[ -z "${frontend_path}" ]]; then
+                    frontend_path="${_frontend_path_part}"
+                else
+                    frontend_path="${frontend_path}:${_frontend_path_part}"
+                fi
+            done
+        fi
+
         env \
             -u MANGOHUD \
             -u MANGOHUD_CONFIG \
             -u MANGOHUD_CONFIGFILE \
             -u MANGOHUD_DLSYM \
             -u MANGOAPP_CONFIG \
+            -u LD_LIBRARY_PATH \
             -u LD_PRELOAD \
             -u LD_AUDIT \
+            -u SDL_NOMOUSE \
+            -u STEAM_DECK \
+            -u STEAMOS \
+            -u STEAM_GAMEPADUI \
+            -u STEAM_FORCE_DESKTOPUI \
+            -u SDL_AUDIODRIVER \
             -u GAMESCOPE_DISPLAY \
             -u GAMESCOPE_WAYLAND_DISPLAY \
             -u GAMESCOPE_SESSION \
@@ -751,6 +772,7 @@ run_frontend_env() {
             -u XKB_DEFAULT_LAYOUT \
             -u XKB_VARIANT \
             -u XKB_DEFAULT_VARIANT \
+            PATH="${frontend_path:-/sbin:/usr/sbin:/bin:/usr/bin}" \
             XDG_CURRENT_DESKTOP=sway \
             XDG_SESSION_TYPE=wayland \
             XDG_RUNTIME_DIR="${frontend_runtime}" \

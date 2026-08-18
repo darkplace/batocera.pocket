@@ -339,7 +339,7 @@ pkmnrecomp:
   hardware: portable
   extensions: [gb, gbc]
   platform: gb
-  theme: gb
+  theme: pkmnrecomp
   path: pkmnrecomp
   emulators:
     pkmnrecomp:

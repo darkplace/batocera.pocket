@@ -1,9 +1,6 @@
 From: batocera <batocera@localhost>
 Subject: 0009-batocera-egs-legendary-install.patch
 
-On Batocera, install EGS catalog games via Legendary (Heroic binary) using
-the user's existing Lutris Epic login, instead of launching Wine EGS client.
-
 --- a/lutris/services/egs.py
 +++ b/lutris/services/egs.py
 @@ -20,6 +20,7 @@
@@ -14,7 +11,7 @@ the user's existing Lutris Epic login, instead of launching Wine EGS client.
  from lutris.util.log import logger
  from lutris.util.strings import slugify
  
-@@ -405,6 +406,55 @@ class EpicGamesStoreService(OnlineService):
+@@ -400,7 +401,50 @@
          sync_media(installed_slugs)
          logger.debug("All EGS games imported")
  
@@ -65,8 +62,7 @@ the user's existing Lutris Epic login, instead of launching Wine EGS client.
          egs_game = Game(egs_db_game["id"])
          egs_exe = egs_game.config.game_config["exe"]
          if not os.path.isabs(egs_exe):
-@@ -444,6 +494,16 @@ class EpicGamesStoreService(OnlineService):
- 
+@@ -441,6 +485,16 @@
      def install(self, db_game):
          egs_game = get_game_by_field(self.client_installer, "slug")
          application = Gio.Application.get_default()

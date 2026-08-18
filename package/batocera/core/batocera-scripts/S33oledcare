@@ -22,6 +22,10 @@ case "$1" in
             exit 0
         fi
         mkdir -p /var/run/batocera-oled-care
+        export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/var/run}"
+        export WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-wayland-1}"
+        [ -S /run/sway-ipc.0.sock ] && export SWAYSOCK=/run/sway-ipc.0.sock
+        [ -S /var/run/sway-ipc.0.sock ] && export SWAYSOCK="${SWAYSOCK:-/var/run/sway-ipc.0.sock}"
         "${BIN}" apply >/dev/null 2>&1 || true
         "${BIN}" watch >/dev/null 2>&1 &
         echo "$!" > "${PIDFILE}"

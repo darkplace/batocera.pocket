@@ -1,9 +1,6 @@
 From: batocera <batocera@localhost>
 Subject: 0004-batocera-wine-defaults.patch
 
-Prefer Steam Proton Experimental (via umu) for Epic/Rockstar launchers,
-keep Batocera wine-proton/wine-tkg selectable, fall back to ge-proton.
-
 --- a/lutris/util/wine/wine.py
 +++ b/lutris/util/wine/wine.py
 @@ -14,7 +14,11 @@
@@ -30,7 +27,7 @@ keep Batocera wine-proton/wine-tkg selectable, fall back to ge-proton.
      _candidate = None
      _wine_path = None
  except Exception as ex:
-@@ -239,8 +248,32 @@
+@@ -239,8 +248,33 @@
  
  
  def get_default_wine_version() -> str:

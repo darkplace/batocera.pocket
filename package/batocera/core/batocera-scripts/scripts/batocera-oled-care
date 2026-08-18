@@ -107,7 +107,7 @@ mura_available() {
 mura_get() {
     if ! mura_available; then
         echo "unavailable"
-        return 1
+        return 0
     fi
     local raw
     raw="$(tr -d '\n' < "${MURA_SYSFS}" 2>/dev/null || true)"
@@ -253,7 +253,7 @@ do_refresh_now() {
     write_state refreshing
     if [ -x "${REFRESHER_BIN}" ]; then
         log "refresh-now duration=${duration}s passes=${passes}"
-        "${REFRESHER_BIN}" --duration "${duration}" --passes "${passes}" || {
+        "${REFRESHER_BIN}" --duration "${duration}" --passes "${passes}" >> "${LOG}" 2>&1 || {
             log "refresher exit $?"
             write_state idle
             return 1
@@ -274,6 +274,8 @@ watch_loop() {
     log "watch started"
     local idle timeout
     while true; do
+        # Decky/Steam must not leave us without a helper; respawn if it died.
+        start_idle_helper || true
         if [ "$(cfg_enabled)" != "1" ]; then
             sleep 5
             continue

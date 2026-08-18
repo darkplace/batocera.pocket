@@ -6,7 +6,10 @@
 
 BATOCERA_SYSTEM_SOURCE=
 
-BATOCERA_SYSTEM_VERSION = 44-dev-pocket-golden-rabbit
+# Display + batocera.version prefix. GitHub OTA compares only the trailing
+# "YYYY/MM/DD HH:MM" fields (see batocera-config canupdate). Keep this short
+# and without "dev" so the git hash is not appended in the Start menu.
+BATOCERA_SYSTEM_VERSION = 44-pocket
 BATOCERA_SYSTEM_DATE_TIME = $(shell date "+%Y/%m/%d %H:%M")
 BATOCERA_SYSTEM_DATE = $(shell date "+%Y/%m/%d")
 BATOCERA_SYSTEM_DEPENDENCIES = tzdata

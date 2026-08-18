@@ -387,8 +387,10 @@ class MouseModeDaemon:
                     run_quiet(["onscreen-keyboard", "toggle"])
                 return
             if event.code == PADDLE_M2:
+                # Same as hotkeygen mousemode (hotkey+select+start): toggle.
+                # Skip the enabling tap; grab hides M2 from the Armada daemon.
                 if event.value == 1 and time.monotonic() - self.enabled_at > 0.45:
-                    self.disable()
+                    self.toggle()
                 return
 
             if event.code in TOGGLE_CODES:

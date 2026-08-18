@@ -923,11 +923,45 @@ def _controller_monitor_thread():
     if we_initialized_sdl:
         sdl2.SDL_QuitSubSystem(sdl2.SDL_INIT_JOYSTICK)
 
+_STEAM_ENV_DROP = (
+    "SDL_NOMOUSE",
+    "STEAM_DECK",
+    "STEAMOS",
+    "STEAM_GAMEPADUI",
+    "STEAM_FORCE_DESKTOPUI",
+    "SDL_AUDIODRIVER",
+)
+
+
+def _path_looks_like_steam(value: str) -> bool:
+    lowered = value.lower()
+    return "steam" in lowered or "steamrt" in lowered
+
+
+def _strip_steam_runtime_env(env: dict[str, str | Path]) -> None:
+    """ES resumed after Steam still inherits Steam's ARM SDL/GL paths.
+
+    Native emulators (RPCS3, etc.) then load Steam's SDL and the pad
+    enumerates under a different name than configgen wrote — no controls.
+    """
+    for key in ("LD_LIBRARY_PATH", "LD_PRELOAD"):
+        if _path_looks_like_steam(str(env.get(key, ""))):
+            env.pop(key, None)
+    path = str(env.get("PATH", ""))
+    if path:
+        kept = [part for part in path.split(":") if part and not _path_looks_like_steam(part)]
+        if kept:
+            env["PATH"] = ":".join(kept)
+    for key in _STEAM_ENV_DROP:
+        env.pop(key, None)
+
+
 def runCommand(command: Command) -> int:
     global proc
 
     # compute environment : first the current envs, then override by values set at generator level
     envvars: dict[str, str | Path] = dict(os.environ)
+    _strip_steam_runtime_env(envvars)
     envvars.update(command.env)
     command.env = envvars
     if command.env.pop(OPENGL_DRIVER_UNSET_ENV, None):

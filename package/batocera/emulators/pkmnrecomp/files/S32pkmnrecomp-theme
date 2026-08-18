@@ -1,0 +1,24 @@
+#!/bin/sh
+# Seed PlayStation-X art for Pokemon Recomp (pokéball logo + Pokemon cover).
+# Userdata copies survive OTA; this only fills gaps after a theme reinstall.
+case "$1" in
+  start)
+    PSX=/userdata/themes/es-theme-PlayStation-X/_theme_inc/images
+    LOGO=/usr/share/pkmnrecomp/theme/logo-pokeball.png
+    [ -d "$PSX" ] || exit 0
+    [ -f "$LOGO" ] || exit 0
+    mkdir -p "$PSX/logos" "$PSX/consoles" "$PSX/caratulas/iconset" "$PSX/overlay-arts"
+    [ -e "$PSX/logos/pkmnrecomp.png" ] || cp -a "$LOGO" "$PSX/logos/pkmnrecomp.png"
+    [ -e "$PSX/consoles/pkmnrecomp.png" ] || cp -a "$LOGO" "$PSX/consoles/pkmnrecomp.png"
+    if [ -f "$PSX/caratulas/Pokemon.jpg" ] && [ ! -e "$PSX/caratulas/pkmnrecomp.jpg" ]; then
+      cp -a "$PSX/caratulas/Pokemon.jpg" "$PSX/caratulas/pkmnrecomp.jpg"
+    fi
+    if [ -f "$PSX/caratulas/iconset/Pokemon.png" ] && [ ! -e "$PSX/caratulas/iconset/pkmnrecomp.png" ]; then
+      cp -a "$PSX/caratulas/iconset/Pokemon.png" "$PSX/caratulas/iconset/pkmnrecomp.png"
+    fi
+    if [ -f "$PSX/overlay-arts/Pokemon.png" ] && [ ! -e "$PSX/overlay-arts/pkmnrecomp.png" ]; then
+      cp -a "$PSX/overlay-arts/Pokemon.png" "$PSX/overlay-arts/pkmnrecomp.png"
+    fi
+    ;;
+esac
+exit 0

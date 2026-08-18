@@ -54,16 +54,23 @@ define PKMNRECOMP_INSTALL_TARGET_CMDS
 		$(TARGET_DIR)/usr/share/batocera/datainit/roms/pkmnrecomp/mods/gen1/$(PKMNRECOMP_MOD_GEN1)
 	$(INSTALL) -m 0644 $(PKMNRECOMP_DL_DIR)/$(PKMNRECOMP_MOD_GEN2) \
 		$(TARGET_DIR)/usr/share/batocera/datainit/roms/pkmnrecomp/mods/gen2/$(PKMNRECOMP_MOD_GEN2)
+	mkdir -p $(TARGET_DIR)/usr/share/pkmnrecomp/theme
+	$(INSTALL) -m 0644 $(PKMNRECOMP_PKGDIR)/files/logo-pokeball.png \
+		$(TARGET_DIR)/usr/share/pkmnrecomp/theme/logo-pokeball.png
+	$(INSTALL) -m 0755 $(PKMNRECOMP_PKGDIR)/files/S32pkmnrecomp-theme \
+		$(TARGET_DIR)/etc/init.d/S32pkmnrecomp-theme
 	mkdir -p $(TARGET_DIR)/usr/share/emulationstation/themes/es-theme-carbon/art/background
 	mkdir -p $(TARGET_DIR)/usr/share/emulationstation/themes/es-theme-carbon/art/consoles
 	mkdir -p $(TARGET_DIR)/usr/share/emulationstation/themes/es-theme-carbon/art/controllers
 	mkdir -p $(TARGET_DIR)/usr/share/emulationstation/themes/es-theme-carbon/art/logos
 	mkdir -p $(TARGET_DIR)/usr/share/emulationstation/themes/es-theme-carbon/layouts
 	ln -snf gb.jpg $(TARGET_DIR)/usr/share/emulationstation/themes/es-theme-carbon/art/background/pkmnrecomp.jpg
-	ln -snf gb.png $(TARGET_DIR)/usr/share/emulationstation/themes/es-theme-carbon/art/consoles/pkmnrecomp.png
 	ln -snf gb.svg $(TARGET_DIR)/usr/share/emulationstation/themes/es-theme-carbon/art/controllers/pkmnrecomp.svg
-	ln -snf gb.svg $(TARGET_DIR)/usr/share/emulationstation/themes/es-theme-carbon/art/logos/pkmnrecomp.svg
 	ln -snf gb.xml $(TARGET_DIR)/usr/share/emulationstation/themes/es-theme-carbon/layouts/pkmnrecomp.xml
+	$(INSTALL) -m 0644 $(PKMNRECOMP_PKGDIR)/files/logo-pokeball.png \
+		$(TARGET_DIR)/usr/share/emulationstation/themes/es-theme-carbon/art/logos/pkmnrecomp.png
+	$(INSTALL) -m 0644 $(PKMNRECOMP_PKGDIR)/files/logo-pokeball.png \
+		$(TARGET_DIR)/usr/share/emulationstation/themes/es-theme-carbon/art/consoles/pkmnrecomp.png
 endef
 
 $(eval $(generic-package))

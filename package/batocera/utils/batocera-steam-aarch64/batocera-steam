@@ -1670,13 +1670,17 @@ ensure_native_steam_client() {
 proton_tip_already_installed() {
     local steam_dir="$1"
     local expected_version="$2"
-    local stamped=""
 
+    # A working proton binary is enough. Never treat a version-string bump as
+    # "missing" — that re-downloaded ~900MB of CachyOS+GE on every OTA/launch.
+    # Force a tip bump with BATOCERA_STEAM_PROTON_TIP_FORCE=1.
+    case "${BATOCERA_STEAM_PROTON_TIP_FORCE:-0}" in
+        1|true|TRUE|yes|YES|on|ON)
+            return 1
+            ;;
+    esac
     [[ -x "${steam_dir}/proton" ]] || return 1
-    if [[ -f "${steam_dir}/.batocera-proton-version" ]]; then
-        stamped="$(tr -d '[:space:]' < "${steam_dir}/.batocera-proton-version" 2>/dev/null || true)"
-        [[ -z "${stamped}" || "${stamped}" == "${expected_version}" ]] || return 1
-    else
+    if [[ ! -f "${steam_dir}/.batocera-proton-version" ]]; then
         printf '%s\n' "${expected_version}" > "${steam_dir}/.batocera-proton-version"
     fi
     return 0
@@ -1705,6 +1709,11 @@ install_proton_cachyos() {
     if [[ -x "${extracted_dir}/proton" ]]; then
         repair_proton_cachyos_dir "${extracted_dir}"
         log_msg "Proton-CachyOS ${PROTON_CACHYOS_VERSION_FULL} already installed."
+        return 0
+    fi
+
+    if proton_cachyos_any_payload_exists; then
+        log_msg "Proton-CachyOS already present on disk; skip download (set BATOCERA_STEAM_PROTON_TIP_FORCE=1 to bump)."
         return 0
     fi
 
@@ -1744,6 +1753,11 @@ install_proton_ge() {
     if [[ -x "${extracted_dir}/proton" ]]; then
         repair_proton_ge_dir "${extracted_dir}"
         log_msg "GE-Proton ${PROTON_GE_VERSION_FULL} already installed."
+        return 0
+    fi
+
+    if proton_ge_any_payload_exists; then
+        log_msg "GE-Proton already present on disk; skip download (set BATOCERA_STEAM_PROTON_TIP_FORCE=1 to bump)."
         return 0
     fi
 
@@ -2048,11 +2062,16 @@ promote_recommended_proton_steam_dirs() {
     steam_dir="${compat_dir}/${PROTON_CACHYOS_STEAM_DIR}"
     if [[ -x "${tip_dir}/proton" ]]; then
         if [[ "${tip_dir}" != "${steam_dir}" ]]; then
-            rm -rf "${steam_dir}"
-            mv "${tip_dir}" "${steam_dir}"
-            log_msg "Promoted Proton-CachyOS tip to Steam dir ${PROTON_CACHYOS_STEAM_DIR}."
+            if [[ -x "${steam_dir}/proton" ]]; then
+                log_msg "Keeping existing ${PROTON_CACHYOS_STEAM_DIR}; not replacing a working Proton tip."
+            else
+                mv "${tip_dir}" "${steam_dir}"
+                log_msg "Promoted Proton-CachyOS tip to Steam dir ${PROTON_CACHYOS_STEAM_DIR}."
+            fi
         fi
-        printf '%s\n' "${PROTON_CACHYOS_VERSION_FULL}" > "${steam_dir}/.batocera-proton-version"
+        if [[ -x "${steam_dir}/proton" && ! -f "${steam_dir}/.batocera-proton-version" ]]; then
+            printf '%s\n' "${PROTON_CACHYOS_VERSION_FULL}" > "${steam_dir}/.batocera-proton-version"
+        fi
     elif [[ -x "${steam_dir}/proton" && ! -f "${steam_dir}/.batocera-proton-version" ]]; then
         printf '%s\n' "${PROTON_CACHYOS_VERSION_FULL}" > "${steam_dir}/.batocera-proton-version"
     fi
@@ -2061,11 +2080,16 @@ promote_recommended_proton_steam_dirs() {
     steam_dir="${compat_dir}/${PROTON_GE_STEAM_DIR}"
     if [[ -x "${tip_dir}/proton" ]]; then
         if [[ "${tip_dir}" != "${steam_dir}" ]]; then
-            rm -rf "${steam_dir}"
-            mv "${tip_dir}" "${steam_dir}"
-            log_msg "Promoted ${PROTON_GE_VERSION_FULL} tip to Steam dir ${PROTON_GE_STEAM_DIR}."
+            if [[ -x "${steam_dir}/proton" ]]; then
+                log_msg "Keeping existing ${PROTON_GE_STEAM_DIR}; not replacing a working Proton tip."
+            else
+                mv "${tip_dir}" "${steam_dir}"
+                log_msg "Promoted ${PROTON_GE_VERSION_FULL} tip to Steam dir ${PROTON_GE_STEAM_DIR}."
+            fi
         fi
-        printf '%s\n' "${PROTON_GE_VERSION_FULL}" > "${steam_dir}/.batocera-proton-version"
+        if [[ -x "${steam_dir}/proton" && ! -f "${steam_dir}/.batocera-proton-version" ]]; then
+            printf '%s\n' "${PROTON_GE_VERSION_FULL}" > "${steam_dir}/.batocera-proton-version"
+        fi
     elif [[ -x "${steam_dir}/proton" && ! -f "${steam_dir}/.batocera-proton-version" ]]; then
         printf '%s\n' "${PROTON_GE_VERSION_FULL}" > "${steam_dir}/.batocera-proton-version"
     fi
@@ -3015,8 +3039,12 @@ sync_steam_library_folders
 ensure_network_for_steam_setup
 ensure_native_steam_client
 prepare_arm64_steam_layout
-# Default ARM Proton set (CachyOS + GE + Valve 11 + Janitor). Idempotent: skips tips already present;
-# OTA bumps of default versions install the new tip on the next Steam launch.
+# Default ARM Proton set (CachyOS + GE + Valve 11 + Janitor). Idempotent: skips
+# any working tip. Never re-download because a default version string changed.
+# flock: steam-direct-session can start batocera-steam twice in one boot.
+mkdir -p "${STEAM_ROOT}/compatibilitytools.d"
+exec 9>"${STEAM_ROOT}/compatibilitytools.d/.batocera-install.lock"
+flock 9
 install_proton_cachyos
 install_proton_ge
 install_proton_janitor
