@@ -2,6 +2,8 @@
 # SPDX-FileCopyrightText: 2026 suckbluefrog
 set -euo pipefail
 
+exec 8>&- 9>&- 2>/dev/null || true
+
 log="/userdata/system/logs/steam-desktop-switch.log"
 mkdir -p "$(dirname "${log}")"
 lock="/var/run/batocera-steam-desktop-switch.lock"

@@ -1,6 +1,8 @@
 #!/bin/bash
 set -u
 
+exec 8>&- 9>&- 2>/dev/null || true
+
 LOG="/userdata/system/logs/steam-session-supervisor.log"
 PIDFILE="/var/run/batocera-steam-session-supervisor.pid"
 ACTIVE="/var/run/batocera-steam-session-supervisor.active"

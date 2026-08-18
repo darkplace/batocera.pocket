@@ -37,16 +37,57 @@ apply_steam_launch_environment() {
     fi
 }
 
+session_lock_holder_is_stale() {
+    local holder="$1"
+    local comm="$2"
+    local cmdline="$3"
+
+    [[ -z "${holder}" ]] && return 0
+    [[ ! -d "/proc/${holder}" ]] && return 0
+
+    case "${cmdline}" in
+        *steam-direct-session.sh*|*/usr/bin/batocera-steam[[:space:]]*|*/usr/bin/batocera-steam)
+            return 1
+            ;;
+        *batocera-steam-session[[:space:]]*)
+            return 1
+            ;;
+    esac
+    case "${comm}" in
+        steam|steamwebhelper|gamescope|FEX|FEXServer|FEXLoader)
+            return 1
+            ;;
+    esac
+    return 0
+}
+
 acquire_direct_session_lock() {
+    local attempt holder comm cmdline
+
     if command -v flock >/dev/null 2>&1; then
-        exec 8>"${DIRECT_SESSION_LOCK}"
-        if ! flock -n 8; then
+        for attempt in 1 2; do
+            exec 8>"${DIRECT_SESSION_LOCK}"
+            if flock -n 8; then
+                printf '%s\n' "$$" 1>&8 || true
+                DIRECT_SESSION_LOCK_ACQUIRED=1
+                return 0
+            fi
+            exec 8>&- 2>/dev/null || true
+            holder="$(tr -d ' \n' < "${DIRECT_SESSION_LOCK}" 2>/dev/null || true)"
+            comm=""
+            cmdline=""
+            if [[ -n "${holder}" && -d "/proc/${holder}" ]]; then
+                comm="$(cat "/proc/${holder}/comm" 2>/dev/null || true)"
+                cmdline="$(tr '\0' ' ' < "/proc/${holder}/cmdline" 2>/dev/null || true)"
+            fi
+            if [[ "${attempt}" -eq 1 ]] && session_lock_holder_is_stale "${holder}" "${comm}" "${cmdline}"; then
+                log "stale Steam session lock from pid ${holder:-unknown} (${comm:-dead}); taking over"
+                rm -f "${DIRECT_SESSION_LOCK}"
+                continue
+            fi
             log "another Steam direct session is already running; ignoring duplicate launch"
             exit 0
-        fi
-        printf '%s\n' "$$" 1>&8 || true
-        DIRECT_SESSION_LOCK_ACQUIRED=1
-        return 0
+        done
     fi
 
     if ! mkdir "${DIRECT_SESSION_LOCK_DIR}" 2>/dev/null; then
@@ -957,23 +998,29 @@ start_frontend_recover_monitor() {
     command -v batocera-steam-frontend-recover >/dev/null 2>&1 || return 0
 
     log "starting Steam frontend recovery monitor: ${1:-steam-direct-session}"
-    if command -v setsid >/dev/null 2>&1; then
-        setsid batocera-steam-frontend-recover \
-            --wait-steam-exit \
-            --reason "${1:-steam-direct-session}" >/dev/null 2>&1 &
-    else
-        batocera-steam-frontend-recover \
-            --wait-steam-exit \
-            --reason "${1:-steam-direct-session}" >/dev/null 2>&1 &
-    fi
-    disown "$!" 2>/dev/null || true
+    (
+        exec 8>&- 9>&- 2>/dev/null || true
+        if command -v setsid >/dev/null 2>&1; then
+            setsid batocera-steam-frontend-recover \
+                --wait-steam-exit \
+                --reason "${1:-steam-direct-session}" >/dev/null 2>&1 &
+        else
+            batocera-steam-frontend-recover \
+                --wait-steam-exit \
+                --reason "${1:-steam-direct-session}" >/dev/null 2>&1 &
+        fi
+        disown "$!" 2>/dev/null || true
+    )
 }
 
 start_session_supervisor() {
     command -v batocera-steam-session-supervisor >/dev/null 2>&1 || return 0
 
     log "starting Steam session supervisor: ${1:-steam-direct-session}"
-    batocera-steam-session-supervisor start "${1:-steam-direct-session}" >/dev/null 2>&1 || true
+    (
+        exec 8>&- 9>&- 2>/dev/null || true
+        batocera-steam-session-supervisor start "${1:-steam-direct-session}" >/dev/null 2>&1 || true
+    )
 }
 
 stop_session_supervisor() {
@@ -1013,6 +1060,8 @@ cleanup() {
     [[ -e "${GAMESCOPE_ES_SESSION_FLAG}" ]] && es_gamescope_session=1
     rm -f "${DIRECT_APP_SESSION_FLAG}"
     rm -f "${GAMESCOPE_ES_SESSION_FLAG}"
+    # Release before supervisor/recover/ES so they cannot inherit the flock.
+    release_direct_session_lock
     stop_session_supervisor
     restore_sway_display_config
     if [[ "${BATOCERA_STEAM_GS_BACKEND:-}" == "drm" && "${BATOCERA_STEAM_RESET_DSI_AFTER_GAMESCOPE:-0}" == "1" ]]; then
@@ -1022,7 +1071,6 @@ cleanup() {
     if [[ "${es_gamescope_session}" != "1" ]] && session_select_return_active; then
         log "frontend restore deferred to steamos-session-select"
         restore_sm8550_gpu_profile
-        release_direct_session_lock
         exit "${rc}"
     fi
     terminate_steam_stack
@@ -1032,7 +1080,6 @@ cleanup() {
     fi
     restore_backglass_widget
     restore_sm8550_gpu_profile
-    release_direct_session_lock
     exit "${rc}"
 }
 

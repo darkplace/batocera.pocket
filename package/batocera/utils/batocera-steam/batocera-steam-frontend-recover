@@ -3,6 +3,9 @@
 
 set -u
 
+# Drop an inherited Steam session flock so Return-to-Desktop can relaunch Steam.
+exec 8>&- 9>&- 2>/dev/null || true
+
 LOG="/userdata/system/logs/steam-frontend-recover.log"
 ES_SERVICE="/etc/init.d/S31emulationstation"
 REASON="unspecified"
@@ -97,6 +100,7 @@ run_frontend_env() {
     local steam_env
 
     (
+        exec 8>&- 9>&- 2>/dev/null || true
         for steam_env in ${!BATOCERA_STEAM_@}; do
             unset "${steam_env}"
         done
@@ -141,7 +145,10 @@ start_frontend_clean() {
 
     if compositor_running && command -v emulationstation-standalone >/dev/null 2>&1; then
         log_msg "starting EmulationStation standalone inside existing compositor"
-        run_frontend_env nohup /usr/bin/emulationstation-standalone </dev/null >> "${LOG}" 2>&1 &
+        run_frontend_env setsid /bin/sh -c \
+            'exec 8>&- 9>&- 2>/dev/null || true; exec /usr/bin/emulationstation-standalone' \
+            </dev/null >> "${LOG}" 2>&1 &
+        disown "$!" 2>/dev/null || true
         return 0
     fi
 
@@ -153,7 +160,10 @@ start_frontend_clean() {
 
     if command -v emulationstation-standalone >/dev/null 2>&1; then
         log_msg "starting raw EmulationStation standalone"
-        run_frontend_env nohup /usr/bin/emulationstation-standalone </dev/null >> "${LOG}" 2>&1 &
+        run_frontend_env setsid /bin/sh -c \
+            'exec 8>&- 9>&- 2>/dev/null || true; exec /usr/bin/emulationstation-standalone' \
+            </dev/null >> "${LOG}" 2>&1 &
+        disown "$!" 2>/dev/null || true
         return 0
     fi
 

@@ -1667,15 +1667,40 @@ ensure_native_steam_client() {
     [[ -x "${STEAM_ROOT}/steamrtarm64/steam" ]] || die "ARM64 Steam client did not install to ${STEAM_ROOT}/steamrtarm64/steam."
 }
 
+proton_tip_already_installed() {
+    local steam_dir="$1"
+    local expected_version="$2"
+    local stamped=""
+
+    [[ -x "${steam_dir}/proton" ]] || return 1
+    if [[ -f "${steam_dir}/.batocera-proton-version" ]]; then
+        stamped="$(tr -d '[:space:]' < "${steam_dir}/.batocera-proton-version" 2>/dev/null || true)"
+        [[ -z "${stamped}" || "${stamped}" == "${expected_version}" ]] || return 1
+    else
+        printf '%s\n' "${expected_version}" > "${steam_dir}/.batocera-proton-version"
+    fi
+    return 0
+}
+
 install_proton_cachyos() {
     local dest_dir="${STEAM_ROOT}/compatibilitytools.d"
     local tar_path="${dest_dir}/${PROTON_CACHYOS_TAR}"
     local extracted_dir="${dest_dir}/${PROTON_CACHYOS_DIR}"
+    local steam_dir="${dest_dir}/${PROTON_CACHYOS_STEAM_DIR}"
 
     proton_cachyos_enabled || return 0
 
     command -v tar >/dev/null 2>&1 || die "tar is required to install Proton-CachyOS."
     mkdir -p "${dest_dir}"
+
+    # promote_recommended_proton_steam_dirs moves the versioned extract into
+    # proton_cachyos_arm64. Treat that as installed so we do not re-download
+    # ~300MB on every Steam launch.
+    if proton_tip_already_installed "${steam_dir}" "${PROTON_CACHYOS_VERSION_FULL}"; then
+        repair_proton_cachyos_dir "${steam_dir}"
+        log_msg "Proton-CachyOS ${PROTON_CACHYOS_VERSION_FULL} already installed."
+        return 0
+    fi
 
     if [[ -x "${extracted_dir}/proton" ]]; then
         repair_proton_cachyos_dir "${extracted_dir}"
@@ -1702,12 +1727,19 @@ install_proton_ge() {
     local dest_dir="${STEAM_ROOT}/compatibilitytools.d"
     local tar_path="${dest_dir}/${PROTON_GE_TAR}"
     local extracted_dir="${dest_dir}/${PROTON_GE_DIR}"
+    local steam_dir="${dest_dir}/${PROTON_GE_STEAM_DIR}"
     local candidate
 
     proton_ge_enabled || return 0
 
     command -v tar >/dev/null 2>&1 || die "tar is required to install GE-Proton."
     mkdir -p "${dest_dir}"
+
+    if proton_tip_already_installed "${steam_dir}" "${PROTON_GE_VERSION_FULL}"; then
+        repair_proton_ge_dir "${steam_dir}"
+        log_msg "GE-Proton ${PROTON_GE_VERSION_FULL} already installed."
+        return 0
+    fi
 
     if [[ -x "${extracted_dir}/proton" ]]; then
         repair_proton_ge_dir "${extracted_dir}"
@@ -2664,6 +2696,15 @@ install_batocera_control_quiet() {
         rm -rf "${tmp}"
         log_msg "Batocera Control ${installed_version} already installed."
         return 0
+    fi
+    # GitHub /releases/latest/download can serve a stale SHA256SUMS (CDN).
+    # Never replace a newer local plugin with an older resolved tag.
+    if batocera_control_present && [[ -n "${installed_version}" && -n "${BATOCERA_CONTROL_VERSION}" ]]; then
+        if [[ "$(printf '%s\n%s\n' "${BATOCERA_CONTROL_VERSION}" "${installed_version}" | sort -V | tail -n 1)" == "${installed_version}" ]]; then
+            rm -rf "${tmp}"
+            log_msg "Batocera Control ${installed_version} newer than resolved ${BATOCERA_CONTROL_VERSION}; keeping local."
+            return 0
+        fi
     fi
 
     archive="${tmp}/decky-bcc-${BATOCERA_CONTROL_VERSION}.tar.gz"
