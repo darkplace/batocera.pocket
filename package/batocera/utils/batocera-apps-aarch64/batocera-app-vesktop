@@ -19,10 +19,13 @@ if ! flatpak info "$APP_ID" >/dev/null 2>&1; then
     exit 1
 fi
 
+# Electron/Chromium: scale via --force-device-scale-factor only (like Chrome).
+# Do NOT raise Sway output scale here — Lutris uses compositor scale for GTK;
+# pairing both made Discord ~2× and unusable.
 if [ -z "${BATOCERA_UI_SCALE:-}" ] && [ -f /userdata/system/configs/apps-hotfix/vesktop-ui-scale ]; then
     BATOCERA_UI_SCALE="$(tr -d '[:space:]' </userdata/system/configs/apps-hotfix/vesktop-ui-scale)"
 fi
-export BATOCERA_UI_SCALE="${BATOCERA_UI_SCALE:-1.75}"
+export BATOCERA_UI_SCALE="${BATOCERA_UI_SCALE:-1.35}"
 
 export HOME="/userdata/saves/apps/vesktop"
 export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
@@ -41,35 +44,15 @@ export QT_SCALE_FACTOR=1
 export QT_AUTO_SCREEN_SCALE_FACTOR=0
 unset QT_FONT_DPI 2>/dev/null || true
 
-VESKTOP_SWAY_SCALE_APPLIED=0
-VESKTOP_SWAY_SCALE_PREV=""
 mouse_mode_on=0
 fit_pid=""
 
-vesktop_apply_sway_scale() {
-    command -v swaymsg >/dev/null 2>&1 || return 0
-    [ -n "${SWAYSOCK:-}" ] && [ -S "${SWAYSOCK}" ] || return 0
-    VESKTOP_SWAY_SCALE_PREV="$(swaymsg -t get_outputs 2>/dev/null | python3 -c 'import json,sys
-outs=json.load(sys.stdin)
-o=next((x for x in outs if x.get("focused")), None) or next((x for x in outs if x.get("active")), None)
-print(o.get("scale",1) if o else 1)' 2>/dev/null || echo 1)"
-    swaymsg -q "output * scale ${BATOCERA_UI_SCALE}" >/dev/null 2>&1 && VESKTOP_SWAY_SCALE_APPLIED=1 || true
-}
-
-vesktop_restore_sway_scale() {
-    [ "${VESKTOP_SWAY_SCALE_APPLIED}" = "1" ] || return 0
-    command -v swaymsg >/dev/null 2>&1 || return 0
-    prev="${VESKTOP_SWAY_SCALE_PREV:-1}"
-    swaymsg -q "output * scale ${prev}" >/dev/null 2>&1 || swaymsg -q "output * scale 1" >/dev/null 2>&1 || true
-    VESKTOP_SWAY_SCALE_APPLIED=0
-}
-
 vesktop_set_for_window() {
-    local w="$1" h="$2"
-    [ -n "$w" ] && [ -n "$h" ] || return 0
-    swaymsg -q "for_window [app_id=\"dev.vencord.Vesktop\"] floating enable, border none, move absolute position 0 0, resize set ${w} px ${h} px" >/dev/null 2>&1 || true
-    swaymsg -q "for_window [app_id=\"vesktop\"] floating enable, border none, move absolute position 0 0, resize set ${w} px ${h} px" >/dev/null 2>&1 || true
-    swaymsg -q "for_window [class=\"vesktop\"] floating enable, border none, move absolute position 0 0, resize set ${w} px ${h} px" >/dev/null 2>&1 || true
+    # Do NOT pin size/position in for_window: Electron remaps on OSK resize and
+    # a persistent full-screen rule snaps Discord back over the keyboard.
+    swaymsg -q 'for_window [app_id="dev.vencord.Vesktop"] floating enable, border none' >/dev/null 2>&1 || true
+    swaymsg -q 'for_window [app_id="vesktop"] floating enable, border none' >/dev/null 2>&1 || true
+    swaymsg -q 'for_window [class="vesktop"] floating enable, border none' >/dev/null 2>&1 || true
 }
 
 vesktop_output_size() {
@@ -92,7 +75,7 @@ vesktop_fit_window() {
     [ -n "${SWAYSOCK:-}" ] && [ -S "${SWAYSOCK}" ] || return 0
 
     python3 - <<'PY'
-import json, subprocess, sys, time
+import json, os, subprocess, sys, time
 
 def load_tree():
     return json.loads(subprocess.check_output(["swaymsg", "-t", "get_tree"], text=True))
@@ -130,13 +113,23 @@ def fit(node, w, h):
     sway(f"[con_id={cid}] resize set {w} px {h} px")
     sway(f"[con_id={cid}] move absolute position 0 0")
 
+def osk_up():
+    p = "/var/run/onscreen-keyboard.pid"
+    try:
+        pid = int(open(p).read().strip())
+    except (OSError, ValueError):
+        return os.path.exists(p)
+    return os.path.exists(f"/proc/{pid}") or os.path.exists("/var/run/batocera-osk-sway-shift.json")
+
 size = output_size()
 if not size:
     sys.exit(0)
 w, h = size
-deadline = time.time() + 12.0
+deadline = time.time() + 4.0
 seen = False
 while time.time() < deadline:
+    if osk_up():
+        sys.exit(0)
     size = output_size() or (w, h)
     w, h = size
     node = find_vesktop(load_tree())
@@ -150,7 +143,7 @@ while time.time() < deadline:
     if rw != w or rh != h or rx != 0 or ry != 0:
         fit(node, w, h)
     time.sleep(0.25)
-if seen:
+if seen and not osk_up():
     node = find_vesktop(load_tree())
     size = output_size()
     if node is not None and size is not None:
@@ -166,7 +159,6 @@ restore_all() {
         mouse_mode_on=0
     fi
     command -v batocera-mouse >/dev/null 2>&1 && batocera-mouse hide
-    vesktop_restore_sway_scale
 }
 trap restore_all EXIT HUP INT TERM
 
@@ -182,14 +174,13 @@ fi
 chown -R root:audio /var/run/pulse 2>/dev/null || true
 chmod -R g+rwX /var/run/pulse 2>/dev/null || true
 
-if command -v swaymsg >/dev/null 2>&1 && [ -n "${SWAYSOCK:-}" ] && [ -S "${SWAYSOCK}" ]; then
-    read -r OUT_W OUT_H < <(vesktop_output_size)
-    if [ -n "${OUT_W:-}" ] && [ -n "${OUT_H:-}" ]; then
-        vesktop_set_for_window "${OUT_W}" "${OUT_H}"
-    fi
+command -v batocera-mouse >/dev/null 2>&1 && batocera-mouse show
+if command -v batocera-mouse-mode >/dev/null 2>&1; then
+    batocera-mouse-mode enable >/dev/null 2>&1 && mouse_mode_on=1 || true
 fi
-
-vesktop_apply_sway_scale
+if command -v swaymsg >/dev/null 2>&1 && [ -n "${SWAYSOCK:-}" ] && [ -S "${SWAYSOCK}" ]; then
+    swaymsg -q "seat * hide_cursor 0" >/dev/null 2>&1 || true
+fi
 
 if command -v swaymsg >/dev/null 2>&1 && [ -n "${SWAYSOCK:-}" ] && [ -S "${SWAYSOCK}" ]; then
     read -r OUT_W OUT_H < <(vesktop_output_size)

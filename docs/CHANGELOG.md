@@ -15,11 +15,10 @@ When you publish a tag, copy the matching section into the Release body.
 <summary><b>Updates</b></summary>
 
 - **Apps → Discord:** Vesktop Flatpak from Flathub, auto-installed/updated at boot.
-  UI scale matches Lutris (~1.75× Sway output scale + fullscreen fit on Odin 3).
-- **Quit Discord:** hold **Hotkey + Start** (or **Hotkey + B**) while the app is
-  focused — same pattern as Lutris/Steam helpers.
-- **On-screen keyboard:** Sway window shift when the OSK opens so typed text stays
-  visible (persists across reboots).
+  UI scale via Chromium `--force-device-scale-factor` (default **1.35×**, not Sway output scale).
+- **Quit Discord:** **Home + Start** (or **Hotkey + B**) with mouse-mode on or off.
+- **On-screen keyboard:** one-shot Sway shift to the workspace exclusive zone
+  (~250px on Odin) so Discord sits flush above the keyboard without wobble.
 
 </details>
 
@@ -29,6 +28,8 @@ When you publish a tag, copy the matching section into the Release body.
 - Vesktop launch on Sway: valid Flatpak sockets, Chromium flags after the app ID,
   `XDG_RUNTIME_DIR=/run/user/0`, and `--no-sandbox` when running as root.
 - Flatpak gamelist hook maps Vesktop/Vencord icons to the bundled Discord artwork.
+- Mouse-mode exclusive grab no longer swallows Home+Start (emukill works after ungrab).
+- OSK no longer re-applies window geometry in a loop (Electron CSD fight / wobble).
 
 </details>
 

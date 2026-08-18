@@ -15,7 +15,7 @@ PIDFILE="/var/run/onscreen-keyboard.pid"
 LOGFILE="/var/log/onscreen-keyboard.log"
 KEYBOARD_BIN="/usr/libexec/onscreen-keyboard/wvkbd-mobintl"
 OSK_SHIFT="/usr/bin/batocera-osk-sway-shift"
-OSK_HEIGHT="350"
+OSK_HEIGHT="250"
 
 log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" >> "$LOGFILE"
@@ -103,9 +103,10 @@ start_keyboard() {
     pid=$!
     echo "$pid" > "$PIDFILE"
 
-    sleep 0.2
+    sleep 0.15
     if [ -d "/proc/$pid" ]; then
         if [ -x "$OSK_SHIFT" ]; then
+            # Shift after wvkbd maps so Sway's exclusive zone is the real height.
             BATOCERA_OSK_HEIGHT="$OSK_HEIGHT" "$OSK_SHIFT" up >/dev/null 2>&1 || true
         fi
         echo "started"

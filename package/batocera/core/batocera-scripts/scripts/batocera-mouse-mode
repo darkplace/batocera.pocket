@@ -29,6 +29,8 @@ CONFIG_FILE = Path("/userdata/system/configs/batocera-mouse-mode.json")
 DEVICE_NAME = "batocera mouse mode"
 IGNORE_NAMES = {DEVICE_NAME, "batocera hotkeys", "evmapy"}
 TOGGLE_CODES = {ecodes.BTN_MODE, ecodes.BTN_START, ecodes.BTN_SELECT}
+# Home+Start is Batocera's exit combo. Exclusive grab hides it from evmapy.
+EXIT_COMBO = {ecodes.BTN_MODE, ecodes.BTN_START}
 # AYN rear paddles live on the same evdev node as the gamepad. Exclusive grab
 # blocks the paddle daemon, so M2 must disable mouse-mode from inside this process.
 PADDLE_DISABLE_CODES = {
@@ -330,7 +332,31 @@ class MouseModeDaemon:
             self.disable(show_message=False)
             self.running = False
 
+    def handle_exit_combo(self, event: evdev.InputEvent) -> bool:
+        """Home+Start must close the app even when mouse-mode is disabled.
+
+        Exclusive grab only happens while enabled; when disabled we still see a
+        copy of the pad events and evmapy often misses the combo after ungrab.
+        """
+        if event.type != ecodes.EV_KEY or event.code not in EXIT_COMBO:
+            return False
+        if event.value:
+            self.pressed_codes.add(event.code)
+            ready = (not self.enabled) or (time.monotonic() - self.enabled_at > 0.35)
+            if EXIT_COMBO.issubset(self.pressed_codes) and ready:
+                if self.enabled:
+                    self.disable()
+                run_quiet(["batocera-es-swissknife", "--emukill", "0.5"], timeout=3.0)
+                self.pressed_codes.clear()
+                return True
+        else:
+            self.pressed_codes.discard(event.code)
+        return True
+
     def handle_event(self, source: SourceDevice, event: evdev.InputEvent) -> None:
+        if self.handle_exit_combo(event):
+            return
+
         if not self.enabled or source is not self.selected:
             return
 
@@ -341,21 +367,17 @@ class MouseModeDaemon:
             elif event.code == source.axis_y:
                 source.y = normalize_abs(event.value, source.abs_y, deadzone)
         elif event.type == ecodes.EV_KEY:
-            # M1/M2 press or release exits mouse mode. Release-only failed when
-            # Armada's M2 binding both enables (paddle_daemon toggle) and is
-            # expected to disable: exclusive grab hides events from the daemon,
-            # so this in-process path is the only reliable exit.
-            if event.code in PADDLE_DISABLE_CODES and event.value in (0, 1):
-                if time.monotonic() - self.enabled_at > 0.20:
+            # Exclusive grab hides paddle taps from the daemon, so M2 must also
+            # exit mouse-mode here. Only a *new press* counts: the enabling tap
+            # is a release, and treating value=0 as exit immediately undoes M2.
+            if event.code in PADDLE_DISABLE_CODES:
+                if event.value == 1 and time.monotonic() - self.enabled_at > 0.45:
                     self.disable()
                 return
 
             if event.code in TOGGLE_CODES:
                 if event.value:
                     self.pressed_codes.add(event.code)
-                    if TOGGLE_CODES.issubset(self.pressed_codes) and time.monotonic() - self.enabled_at > 0.5:
-                        self.disable()
-                        return
                 else:
                     self.pressed_codes.discard(event.code)
                 return
@@ -514,7 +536,9 @@ def main() -> int:
         if daemon_running():
             send_command("disable")
             time.sleep(0.15)
-        if STATE_FILE.exists() or daemon_running():
+        # Keep the daemon alive so Home+Start still works after ungrab.
+        # Only SIGKILL if exclusive grab is stuck (state file still present).
+        if STATE_FILE.exists():
             force_kill_daemon()
         else:
             run_quiet(["batocera-mouse", "hide"])

@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Shift the focused Sway window above the on-screen keyboard."""
+"""Shift the focused Sway window above the on-screen keyboard.
+
+Do this once. A hold/reapply loop fights Electron (CSD rect never matches)
+and is what made Discord wobble. wvkbd is a layer-shell surface: Sway
+shrinks the workspace by the exclusive zone (~250px on Odin, not -L 350).
+Floating windows ignore that zone, so we copy the workspace rectangle.
+"""
 
 from __future__ import annotations
 
@@ -7,10 +13,16 @@ import json
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 STATE_PATH = Path("/var/run/batocera-osk-sway-shift.json")
-DEFAULT_KB_HEIGHT = 350
+HOLD_PID_PATH = Path("/var/run/batocera-osk-sway-shift.hold.pid")
+OSK_PID_PATH = Path("/var/run/onscreen-keyboard.pid")
+DEFAULT_KB_HEIGHT = 250
+SKIP_APP = ("wvkbd", "wvkbd-mobintl", "sm.puri.osk", "onboard", "squeekboard")
+SKIP_NAME = ("wvkbd", "on-screen keyboard", "onscreen keyboard")
+PREFER_APP = ("vesktop", "vencord", "discord", "chromium", "google-chrome", "firefox")
 
 
 def resolve_swaysock() -> str | None:
@@ -56,16 +68,54 @@ def iter_nodes(node: dict):
                 yield from iter_nodes(child)
 
 
+def app_id_of(node: dict) -> str:
+    app = (node.get("app_id") or "").lower()
+    if app:
+        return app
+    props = node.get("window_properties") or {}
+    return (props.get("class") or props.get("instance") or "").lower()
+
+
+def is_keyboard(node: dict) -> bool:
+    app = app_id_of(node)
+    name = (node.get("name") or "").lower()
+    if any(tok in app for tok in SKIP_APP):
+        return True
+    return any(tok in name for tok in SKIP_NAME)
+
+
+def is_leaf_window(node: dict) -> bool:
+    return node.get("type") in {"con", "floating_con"} and bool(node.get("pid") or node.get("app_id") or node.get("window_properties") or node.get("name"))
+
+
 def find_focused(tree: dict) -> dict | None:
     for node in iter_nodes(tree):
-        if node.get("focused") and node.get("type") in {"con", "floating_con"}:
+        if node.get("focused") and is_leaf_window(node) and not is_keyboard(node):
+            return node
+    return None
+
+
+def find_preferred(tree: dict) -> dict | None:
+    for node in iter_nodes(tree):
+        if not is_leaf_window(node) or is_keyboard(node):
+            continue
+        app = app_id_of(node)
+        name = (node.get("name") or "").lower()
+        if any(tok in app or tok in name for tok in PREFER_APP):
+            return node
+    return None
+
+
+def find_by_id(tree: dict, cid: int) -> dict | None:
+    for node in iter_nodes(tree):
+        if node.get("id") == cid:
             return node
     return None
 
 
 def find_output_for_rect(tree: dict, rect: dict) -> dict | None:
     cx = int(rect.get("x", 0)) + int(rect.get("width", 0)) // 2
-    cy = int(rect.get("y", 0)) + int(rect.get("height", 0)) // 2
+    cy = int(rect.get("y", 0)) + max(0, int(rect.get("height", 0))) // 2
     for node in iter_nodes(tree):
         if node.get("type") != "output":
             continue
@@ -74,6 +124,8 @@ def find_output_for_rect(tree: dict, rect: dict) -> dict | None:
         oy = int(out_rect.get("y", 0))
         ow = int(out_rect.get("width", 0))
         oh = int(out_rect.get("height", 0))
+        if ow <= 0 or oh <= 0:
+            continue
         if ox <= cx < ox + ow and oy <= cy < oy + oh:
             return node
     for node in iter_nodes(tree):
@@ -93,6 +145,115 @@ def kb_height() -> int:
     return DEFAULT_KB_HEIGHT
 
 
+def pid_alive(path: Path) -> bool:
+    try:
+        pid = int(path.read_text(encoding="utf-8").strip())
+    except (OSError, ValueError):
+        return False
+    return Path(f"/proc/{pid}").exists()
+
+
+def stop_hold() -> None:
+    if not HOLD_PID_PATH.exists():
+        return
+    try:
+        pid = int(HOLD_PID_PATH.read_text(encoding="utf-8").strip())
+        os.kill(pid, 15)
+    except (OSError, ValueError):
+        pass
+    HOLD_PID_PATH.unlink(missing_ok=True)
+
+
+def workspace_rect(output: dict) -> dict | None:
+    for child in output.get("nodes") or []:
+        if child.get("type") != "workspace":
+            continue
+        if str(child.get("name") or "").startswith("__"):
+            continue
+        rect = child.get("rect") or {}
+        w = int(rect.get("width") or 0)
+        h = int(rect.get("height") or 0)
+        if w > 0 and h > 0:
+            return {
+                "x": int(rect.get("x") or 0),
+                "y": int(rect.get("y") or 0),
+                "width": w,
+                "height": h,
+            }
+    return None
+
+
+def usable_geom(output: dict) -> tuple[int, int, int, int]:
+    out_rect = output.get("rect") or {}
+    out_x = int(out_rect.get("x", 0))
+    out_y = int(out_rect.get("y", 0))
+    out_w = int(out_rect.get("width", 0))
+    out_h = int(out_rect.get("height", 0))
+    ws = workspace_rect(output)
+    # wvkbd layer-shell exclusive zone shrinks the workspace (Odin: 1080→830,
+    # not 350). Floating windows ignore that zone, so match the workspace.
+    if ws and out_h > 0 and ws["height"] <= out_h - 8:
+        return ws["x"], ws["y"], ws["width"], ws["height"]
+    return out_x, out_y, out_w, max(200, out_h - kb_height())
+
+
+def wait_usable(rect: dict, timeout: float = 0.9) -> tuple[dict, tuple[int, int, int, int]] | None:
+    deadline = time.time() + timeout
+    last: tuple[dict, tuple[int, int, int, int]] | None = None
+    last_h: int | None = None
+    stable_since: float | None = None
+    while time.time() < deadline:
+        tree = get_tree()
+        if not tree:
+            time.sleep(0.03)
+            continue
+        output = find_output_for_rect(tree, rect)
+        if not output:
+            time.sleep(0.03)
+            continue
+        geom = usable_geom(output)
+        last = (output, geom)
+        out_h = int((output.get("rect") or {}).get("height") or 0)
+        if out_h > 0 and geom[3] <= out_h - 8:
+            if last_h == geom[3]:
+                if stable_since is not None and time.time() - stable_since >= 0.12:
+                    return last
+            else:
+                last_h = geom[3]
+                stable_since = time.time()
+        time.sleep(0.03)
+    return last
+
+
+def layout_window(cid: int, x: int, y: int, w: int, h: int, *, configure: bool = True) -> None:
+    # Separate commands: a chained resize with "1920px" (no space) is invalid
+    # sway syntax and aborts the rest of the command.
+    if configure:
+        swaymsg(f"[con_id={cid}] fullscreen disable")
+        swaymsg(f"[con_id={cid}] floating enable")
+        swaymsg(f"[con_id={cid}] border none")
+    swaymsg(f"[con_id={cid}] resize set {w} px {h} px")
+    swaymsg(f"[con_id={cid}] move absolute position {x} {y}")
+
+
+def resolve_target(tree: dict, state: dict | None = None) -> dict | None:
+    if state:
+        cid = state.get("id")
+        if cid is not None:
+            node = find_by_id(tree, int(cid))
+            if node and not is_keyboard(node):
+                return node
+        app = (state.get("app_id") or "").lower()
+        if app:
+            for node in iter_nodes(tree):
+                if app_id_of(node) == app and is_leaf_window(node) and not is_keyboard(node):
+                    return node
+    preferred = find_preferred(tree)
+    if preferred:
+        return preferred
+    return find_focused(tree)
+
+
 def shift_up() -> int:
     if not resolve_swaysock():
         return 0
@@ -101,7 +262,7 @@ def shift_up() -> int:
     if not tree:
         return 1
 
-    focused = find_focused(tree)
+    focused = resolve_target(tree)
     if not focused:
         return 0
 
@@ -110,44 +271,62 @@ def shift_up() -> int:
     if cid is None or not rect:
         return 0
 
-    output = find_output_for_rect(tree, rect)
-    if not output:
+    waited = wait_usable(rect)
+    tree = get_tree() or tree
+    focused = resolve_target(tree) or focused
+    cid = focused.get("id")
+    rect = focused.get("rect") or rect
+    if cid is None:
         return 0
 
-    out_rect = output.get("rect") or {}
-    out_x = int(out_rect.get("x", 0))
-    out_y = int(out_rect.get("y", 0))
-    out_w = int(out_rect.get("width", 0))
-    out_h = int(out_rect.get("height", 0))
-    if out_w <= 0 or out_h <= 0:
+    if waited:
+        output, geom = waited
+        # Recompute from a fresh tree so exclusive-zone height is current.
+        output = find_output_for_rect(tree, rect) or output
+        geom = usable_geom(output)
+    else:
+        output = find_output_for_rect(tree, rect)
+        if not output:
+            return 0
+        geom = usable_geom(output)
+
+    out_x, out_y, out_w, out_h = (
+        int((output.get("rect") or {}).get("x", 0)),
+        int((output.get("rect") or {}).get("y", 0)),
+        int((output.get("rect") or {}).get("width", 0)),
+        int((output.get("rect") or {}).get("height", 0)),
+    )
+    x, y, w, h = geom
+    if w <= 0 or h <= 0:
         return 0
 
-    avail_h = max(200, out_h - kb_height())
-    state = {
+    existing: dict | None = None
+    if STATE_PATH.exists():
+        try:
+            existing = json.loads(STATE_PATH.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            existing = None
+
+    state = existing or {
         "id": cid,
-        "rect": {
-            "x": int(rect.get("x", 0)),
-            "y": int(rect.get("y", 0)),
-            "width": int(rect.get("width", 0)),
-            "height": int(rect.get("height", 0)),
-        },
+        "app_id": focused.get("app_id") or app_id_of(focused),
+        "name": focused.get("name"),
         "fullscreen_mode": int(focused.get("fullscreen_mode") or 0),
         "floating": focused.get("floating"),
-        "app_id": focused.get("app_id"),
-        "name": focused.get("name"),
+        "restore_output": True,
     }
+    state["id"] = cid
+    state["app_id"] = focused.get("app_id") or app_id_of(focused)
+    state["output"] = {"x": out_x, "y": out_y, "width": out_w, "height": out_h}
+    state["shifted"] = {"x": x, "y": y, "width": w, "height": h}
     STATE_PATH.write_text(json.dumps(state), encoding="utf-8")
 
-    swaymsg(
-        f"[con_id={cid}] floating enable, "
-        f"move absolute position {out_x} {out_y}, "
-        f"resize set {out_w}px {avail_h}px, "
-        f"border none"
-    )
+    layout_window(int(cid), x, y, w, h, configure=True)
     return 0
 
 
 def shift_down() -> int:
+    stop_hold()
     if not STATE_PATH.exists():
         return 0
 
@@ -161,11 +340,22 @@ def shift_down() -> int:
     if not resolve_swaysock():
         return 0
 
-    cid = state.get("id")
-    rect = state.get("rect") or {}
+    tree = get_tree()
+    target = resolve_target(tree, state) if tree else None
+    cid = target.get("id") if target else state.get("id")
     if cid is None:
         return 0
 
+    out = state.get("output") or {}
+    if state.get("restore_output") and int(out.get("width") or 0) > 0:
+        x = int(out.get("x", 0))
+        y = int(out.get("y", 0))
+        w = int(out.get("width", 0))
+        h = int(out.get("height", 0))
+        layout_window(int(cid), x, y, w, h)
+        return 0
+
+    rect = state.get("rect") or {}
     x = int(rect.get("x", 0))
     y = int(rect.get("y", 0))
     w = int(rect.get("width", 0))
@@ -173,7 +363,8 @@ def shift_down() -> int:
     fullscreen_mode = int(state.get("fullscreen_mode") or 0)
     was_floating = state.get("floating")
 
-    swaymsg(f"[con_id={cid}] move absolute position {x} {y}, resize set {w}px {h}px")
+    if w > 0 and h > 0:
+        layout_window(int(cid), x, y, w, h)
 
     if fullscreen_mode == 1:
         swaymsg(f"[con_id={cid}] fullscreen enable")

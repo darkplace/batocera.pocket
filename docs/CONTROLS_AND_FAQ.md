@@ -154,10 +154,12 @@ Details and extensions: [ADDING_ROMS.md](ADDING_ROMS.md).
 
 ### Discord (Apps)
 
-Vesktop installs/updates from Flathub in the background. While Discord is open,
-hold **Hotkey + Start** or **Hotkey + B** to quit (same as other desktop apps).
-UI scale defaults to ~1.75× on Odin 3; override with
-`/userdata/system/configs/apps-hotfix/vesktop-ui-scale`.
+Vesktop installs/updates from Flathub in the background (the Batocera launcher,
+OSK shift, and quit hotkeys stay in `/usr/bin` — a Discord/Vesktop update does
+not overwrite them). While Discord is open, **Home + Start** or **Hotkey + B**
+quits, with mouse-mode on or off. Scale is `--force-device-scale-factor`
+(default **1.35×**); override with `/userdata/system/configs/apps-hotfix/vesktop-ui-scale`.
+The on-screen keyboard lifts Discord once to sit above the keys.
 
 ### BIOS
 
