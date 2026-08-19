@@ -228,7 +228,7 @@ if [ ! -f "$PRIMARY/target/usr/share/pkmnrecomp/theme/logo-pokeball.png" ]; then
 fi
 run_cmd batocera-steam-aarch64-dirclean
 run_pkg batocera-steam-aarch64
-if ! grep -q '-u LD_LIBRARY_PATH' "$PRIMARY/target/usr/bin/steam-direct-session.sh"; then
+if ! grep -qF -- '-u LD_LIBRARY_PATH' "$PRIMARY/target/usr/bin/steam-direct-session.sh"; then
   log "FAILED: steam-direct-session.sh missing LD_LIBRARY_PATH unset"
   echo "FAILED steam-env $(date -Is)" >"$PROJECT_DIR/rebuild-sm8750-linux-0615.FAILED"
   exit 1

@@ -26,10 +26,14 @@ fail() {
   exit 1
 }
 
-log "=== chain start $(date -Is) SKIP_LINUX=$SKIP_LINUX SKIP_GOBJECT=$SKIP_GOBJECT ==="
+log "=== chain start $(date -Is) SKIP_LINUX=$SKIP_LINUX SKIP_GOBJECT=$SKIP_GOBJECT SKIP_REBUILD=${SKIP_REBUILD:-0} ==="
 
-log ">>> rebuild"
-./scripts/dev/rebuild-sm8750-linux-0615.sh || fail rebuild
+if [ "${SKIP_REBUILD:-0}" = 1 ]; then
+  log "SKIP_REBUILD=1: reuse current target, go to pack"
+else
+  log ">>> rebuild"
+  ./scripts/dev/rebuild-sm8750-linux-0615.sh || fail rebuild
+fi
 log ">>> pack"
 ./scripts/dev/pack-sm8750-linux-0615-ota.sh || fail pack
 
