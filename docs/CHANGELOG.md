@@ -8,6 +8,53 @@ README only lists the current tag per board — not this history.
 
 ---
 
+## `v44-sm8550-20260819-2` — Odin 2 / Portal (Pokémon Recomp + pocket parity)
+
+> On top of Golden Rabbit (`v44-sm8550-20260818`) and Ports translator /
+> Proton tips (`v44-sm8550-20260819`). Shared pocket features with the Odin 3
+> cut — **without** OLED Care and **without** the Odin 3 Wi-Fi / UFS tickets.
+> System string: `44-pocket 2026/08/19 04:08`.
+
+<details>
+<summary><b>Updates</b></summary>
+
+- **Pokémon Recomp** is its own system in EmulationStation (pokéball art, not a
+  second Game Boy tile). Put dumps in **`roms/pkmnrecomp/`** — not in `gb` / `gbc`.
+  - **Red / Blue** → `.gb` · **Yellow / Gold / Silver / Crystal** → `.gbc`
+  - The game is picked automatically (Gen 1 vs Gen 2) from the ROM.
+  - Mods: `roms/pkmnrecomp/mods/gen1/` and `…/mods/gen2/` (ZIP or folder).
+  - Options: **Tools → Configure Gen1Recomp** / **Configure Gen2Recomp**.
+  - Saves: `saves/apps/pkmnrecomp-gen1/` and `…/pkmnrecomp-gen2/`.
+  - Network share: `\\BATOCERA\share\roms\pkmnrecomp\`
+- **Pad (same as the rest of the image):** **Home + Start** exits. **A / B /
+  Start / Select** and the D-pad work in-game. Tweak extra options from the
+  Configure tools above — do not put these dumps in the Game Boy list.
+- **Steam Proton tips:** Valve ARM64, CachyOS, GE, and Experimental (x86 ·
+  Rockstar) with `★ Recommended` / `★ Rockstar`; already-installed tips are not
+  re-downloaded. After you leave Steam, pads still work in native emulators.
+- **M2** paddle toggles mouse mode. **Lutris** shows Epic/GOG covers again.
+- **Ports X86 Translator:** Tools + **Advanced Options → PORTS TRANSLATOR**
+  (Box64 ↔ FEX). See [CONTROLS_AND_FAQ.md](CONTROLS_AND_FAQ.md).
+- **On-screen keyboard:** `@` and special keys emit Shift+digit. Discord
+  (Vesktop) is lifted above the keys. **EmulationStation** dim/black screensaver
+  covers the full rotated Wayland panel.
+- **xenia-edge** is the default Xbox 360 core.
+
+</details>
+
+<details>
+<summary><b>Fixes</b></summary>
+
+- Pokémon Recomp no longer hides as a duplicate Game Boy entry.
+- Steam no longer re-downloads Proton tools that are already installed.
+- Steam can be opened again after **Return to Desktop**.
+- Lutris Epic/GOG cover art (cairo / pixbuf).
+- OSK no longer types `2` instead of `@`.
+
+</details>
+
+---
+
 ## `v44-sm8750-20260819-2` — Odin 3 (Steam screen + Pokémon Recomp)
 
 > On top of Ports translator / Proton tips (`v44-sm8750-20260819`). Smoke-tested

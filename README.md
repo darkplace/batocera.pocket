@@ -13,7 +13,7 @@
 <p align="center">
   <!-- Per-board tags only — never /releases/latest (OTA is SoC-scoped). -->
   <a href="https://github.com/darkplace/batocera.pocket/releases/tag/v44-sm8750-20260819-2"><img src="https://img.shields.io/github/v/release/darkplace/batocera.pocket?filter=v44-sm8750-*&amp;label=SM8750&amp;color=2ea043" alt="SM8750 release"></a>
-  <a href="https://github.com/darkplace/batocera.pocket/releases/tag/v44-sm8550-20260818"><img src="https://img.shields.io/github/v/release/darkplace/batocera.pocket?filter=v44-sm8550-*&amp;label=SM8550&amp;color=2ea043" alt="SM8550 release"></a>
+  <a href="https://github.com/darkplace/batocera.pocket/releases/tag/v44-sm8550-20260819-2"><img src="https://img.shields.io/github/v/release/darkplace/batocera.pocket?filter=v44-sm8550-*&amp;label=SM8550&amp;color=2ea043" alt="SM8550 release"></a>
   <a href="https://github.com/darkplace/batocera.pocket/releases/tag/v44-sm8250-20260811"><img src="https://img.shields.io/github/v/release/darkplace/batocera.pocket?filter=v44-sm8250-*&amp;label=SM8250&amp;color=c69026" alt="SM8250 release"></a>
 </p>
 
@@ -73,7 +73,7 @@ Images are per SoC. Every build ships the full Batocera stack (RetroArch cores, 
 | AYANEO Pocket ACE / DS / DMG / EVO / S2K | Community | — |
 | Retroid Pocket 6 (+ TOP-DPAD DTB) | Community | — |
 
-> Deep sleep (S2RAM) is intentionally left off; the board uses the working s2idle path. Official build: [`v44-sm8550-20260818`](https://github.com/darkplace/batocera.pocket/releases/tag/v44-sm8550-20260818) (**OTA + flash**, **Golden Rabbit**). Previous: `v44-sm8550-20260817` (stick LEDs + analog DZ).
+> Deep sleep (S2RAM) is intentionally left off; the board uses the working s2idle path. Official build: [`v44-sm8550-20260819-2`](https://github.com/darkplace/batocera.pocket/releases/tag/v44-sm8550-20260819-2) (**OTA + flash**, Pokémon Recomp + pocket parity). Previous: Golden Rabbit `v44-sm8550-20260818`.
 
 <details>
 <summary><b>Emulators &amp; extras</b></summary>
@@ -88,6 +88,7 @@ Images are per SoC. Every build ships the full Batocera stack (RetroArch cores, 
 - AetherSX2 / ARMSX2 · PCSX2 · Play!
 - Cemu · Vita3K · Xemu
 - Xenia Canary / Edge
+- Pokémon Recomp (`roms/pkmnrecomp/`)
 - *+ the rest of the Batocera set for this board*
 </details>
 
@@ -138,7 +139,7 @@ Per-board tags so OTA only matches the device SoC. Full **Updates / Fixes** hist
 | Board | Current tag | Notes |
 |-------|-------------|--------|
 | SM8750 (Odin 3) | [`v44-sm8750-20260819-2`](https://github.com/darkplace/batocera.pocket/releases/tag/v44-sm8750-20260819-2) | Steam screen + Pokémon Recomp |
-| SM8550 (Odin 2 / Portal) | [`v44-sm8550-20260818`](https://github.com/darkplace/batocera.pocket/releases/tag/v44-sm8550-20260818) | **Golden Rabbit** (Proton 11 ★, MangoApp) |
+| SM8550 (Odin 2 / Portal) | [`v44-sm8550-20260819-2`](https://github.com/darkplace/batocera.pocket/releases/tag/v44-sm8550-20260819-2) | Pokémon Recomp + pocket parity |
 | SM8250 | [`v44-sm8250-20260811`](https://github.com/darkplace/batocera.pocket/releases/tag/v44-sm8250-20260811) | Untested |
 
 Older cuts stay on GitHub Releases. How OTA works: [docs/UPDATES.md](docs/UPDATES.md).

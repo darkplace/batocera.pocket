@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Wait for sm8550 full-fixes rebuild, then split + GitHub release v44-sm8550-20260819.
+# Split + GitHub release v44-sm8550-20260819-2 (Pokémon Recomp + pocket parity).
+# Release notes: no in-device OTA part-file instructions (confuses downloaders).
 set -euo pipefail
 PROJECT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$PROJECT_DIR"
@@ -7,7 +8,7 @@ LOG=/tmp/finish-sm8550-ports-proton-release.log
 DONE_BUILD="$PROJECT_DIR/rebuild-sm8550-full-fixes-ota.DONE"
 FAIL_BUILD="$PROJECT_DIR/rebuild-sm8550-full-fixes-ota.FAILED"
 IMG="$PROJECT_DIR/output/sm8550/images/batocera/images/sm8550"
-TAG=v44-sm8550-20260819
+TAG=v44-sm8550-20260819-2
 REPO=darkplace/batocera.pocket
 : >"$LOG"
 log() { printf '%s\n' "[$(date -Is)] $*" | tee -a "$LOG"; }
@@ -37,10 +38,7 @@ while true; do
   sleep 45
 done
 
-grep -qE 'ports_translator|PORTS TRANSLATOR' \
-  "$PROJECT_DIR/output/sm8550/target/usr/share/emulationstation/es_features.cfg"
-grep -q 'proton_cachyos_arm64\|PROTON_CACHYOS_STEAM_DIR' \
-  "$PROJECT_DIR/output/sm8550/target/usr/bin/batocera-steam"
+./scripts/dev/verify-sm8550-must-ship.sh target | tee -a "$LOG"
 VER=$(cat "$IMG/batocera.version")
 IMG_GZ=$(ls -1 "$IMG"/batocera-sm8550-*.img.gz | head -1)
 log "version=$VER img=$IMG_GZ"
@@ -52,41 +50,48 @@ BASE=$(basename "$IMG_GZ")
 STEM=${BASE%.img.gz}
 if ! gh release view "$TAG" -R "$REPO" >/dev/null 2>&1; then
   gh release create "$TAG" -R "$REPO" --target main \
-    --title "batocera.pocket SM8550 (Odin 2 Portal) — 2026-08-19 (Ports translator + Proton tips)" \
+    --title "batocera.pocket SM8550 (Odin 2 Portal) — 2026-08-19 (Pokémon Recomp + pocket parity)" \
     --notes "$(cat <<EOF
 ### Version
 - Image: \`${STEM}\`
 - System string: \`${VER}\`
-- Board: **SM8550** / AYN Odin 2 Portal
+- Board: **SM8550** / AYN Odin 2 / Odin 2 Portal
 
-> Same Ports translator + Proton tip polish as sm8750 \`v44-sm8750-20260819\`, on top of Golden Rabbit / Portal baseline.
+> Shared pocket features with the Odin 3 cut — without OLED Care and without the Odin 3 Wi-Fi / UFS tickets.
 
 ### What's new
 
 <details>
 <summary><b>Updates</b></summary>
 
-- **Ports X86 Translator:** Tools + **Advanced Options → PORTS TRANSLATOR** (Box64 ↔ FEX). Docs: [CONTROLS_AND_FAQ.md](https://github.com/darkplace/batocera.pocket/blob/main/docs/CONTROLS_AND_FAQ.md).
-- **Steam Proton tips:** \`★ Recommended\` / \`★ Rockstar\` labels; tip folders \`proton_cachyos_arm64\` / \`proton_ge_arm64\`.
-- **xenia-edge** patches; Xbox 360 default → \`xenia-edge\`.
+- **Pokémon Recomp** is its own system (pokéball art, not a second Game Boy). Put dumps in **\`roms/pkmnrecomp/\`** — not in \`gb\` / \`gbc\`.
+  - **Red / Blue** → \`.gb\` · **Yellow / Gold / Silver / Crystal** → \`.gbc\`
+  - Gen 1 vs Gen 2 is chosen automatically from the ROM.
+  - Mods: \`roms/pkmnrecomp/mods/gen1/\` and \`…/mods/gen2/\`
+  - Options: **Tools → Configure Gen1Recomp** / **Configure Gen2Recomp**
+  - Saves: \`saves/apps/pkmnrecomp-gen1/\` and \`…/pkmnrecomp-gen2/\`
+  - Share: \`\\\\BATOCERA\\share\\roms\\pkmnrecomp\\\`
+- **Pad:** **Home + Start** exits. **A / B / Start / Select** and the D-pad work in-game. Extra options live in those Configure tools.
+- **Steam Proton tips:** Valve ARM64, CachyOS, GE, and Experimental (x86 · Rockstar) with \`★ Recommended\` / \`★ Rockstar\`; already-installed tips are not re-downloaded. After you leave Steam, pads still work in native emulators.
+- **M2** toggles mouse mode. **Lutris** shows Epic/GOG covers again.
+- **Ports X86 Translator:** Tools + **Advanced Options → PORTS TRANSLATOR** (Box64 ↔ FEX).
+- **On-screen keyboard:** \`@\` and special keys emit Shift+digit. Discord (Vesktop) is lifted above the keys. **EmulationStation** dim/black screensaver covers the full rotated Wayland panel.
+- **xenia-edge** is the default Xbox 360 core.
 
 </details>
 
 <details>
 <summary><b>Fixes</b></summary>
 
-- Proton tip picker order via stable Steam-facing folder names.
-- Tools Ports launcher: copy from datainit into userdata if missing after OTA.
+- Pokémon Recomp no longer hides as a duplicate Game Boy entry.
+- Steam no longer re-downloads Proton tools that are already installed.
+- Steam can be opened again after **Return to Desktop**.
+- Lutris Epic/GOG cover art (cairo / pixbuf).
+- OSK no longer types \`2\` instead of \`@\`.
 
 </details>
 
-Full notes: [docs/CHANGELOG.md](https://github.com/darkplace/batocera.pocket/blob/main/docs/CHANGELOG.md)
-
-### In-device OTA
-EmulationStation → **Updates**. Assets:
-- \`batocera.version\`
-- \`boot.tar.xz.md5\`
-- \`boot.tar.xz.part01\` + \`part02\` + \`part03\`
+Full notes: [docs/CHANGELOG.md](https://github.com/darkplace/batocera.pocket/blob/main/docs/CHANGELOG.md) · ROM paths: [docs/ADDING_ROMS.md](https://github.com/darkplace/batocera.pocket/blob/main/docs/ADDING_ROMS.md)
 
 ### Fresh install (Windows)
 1. Download **ALL** volumes: \`${STEM}.zip\` + \`.z01\` + \`.z02\` (same folder, do not rename).

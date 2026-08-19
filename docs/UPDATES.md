@@ -19,6 +19,8 @@ Controls / user FAQ: **[CONTROLS_AND_FAQ.md](CONTROLS_AND_FAQ.md)**.
 | `v44-sm8750-20260816` | SM8750 | Odin 3 — **OTA + flash** (**Golden Rabbit**) |
 | `v44-sm8750-20260815` | SM8750 | Odin 3 — **OTA + flash** (Steam touch / OSK) |
 | `v44-sm8750-20260814` | SM8750 | Odin 3 — OTA RC1 |
+| `v44-sm8550-20260819-2` | SM8550 | Odin 2 / Portal — **OTA + flash** (Pokémon Recomp + pocket parity) |
+| `v44-sm8550-20260819` | SM8550 | Odin 2 Portal — **OTA + flash** (Ports translator + Proton tips) |
 | `v44-sm8550-20260818` | SM8550 | Odin 2 Portal — **OTA + flash** (**Golden Rabbit**) |
 | `v44-sm8550-20260817` | SM8550 | Odin 2 Portal — **OTA + flash** (stick LEDs + analog DZ) |
 | `v44-sm8550-20260816` | SM8550 | Odin 2 Portal — **OTA + flash** (Steam touch / OSK) |
