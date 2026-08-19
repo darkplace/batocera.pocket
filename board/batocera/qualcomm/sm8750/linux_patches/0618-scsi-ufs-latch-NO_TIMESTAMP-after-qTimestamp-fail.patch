@@ -1,0 +1,35 @@
+Subject: [PATCH] scsi: ufs: latch NO_TIMESTAMP after qTimestamp fails
+
+UFS 4.0 parts in the AYN Odin 3 reject QUERY_ATTR_IDN_TIMESTAMP
+(Query RSP 0xfd → -EINVAL). ufshcd_set_timestamp_attr() is retried on
+every runtime resume, about every 5–10 s, while holding the device
+management lock.
+
+That collides with ufshcd_devfreq_scale and jbd2: Steam's first
+session (CEF + squashfuse + logs) then wedges the journal, steamwebhelper
+sticks in D, SteamEngineWatch ptraces the client, and gamescope shows a
+black Big Picture window.
+
+If the attribute is unsupported once, never send it again.
+
+Signed-off-by: lukemotion <darkplace@gmail.com>
+---
+--- a/drivers/ufs/core/ufshcd.c
++++ b/drivers/ufs/core/ufshcd.c
+@@ -9137,9 +9137,15 @@
+ 
+ 	err = ufshcd_exec_dev_cmd(hba, DEV_CMD_TYPE_QUERY, dev_cmd_timeout);
+ 
+-	if (err)
++	if (err) {
+ 		dev_err(hba->dev, "%s: failed to set timestamp %d\n",
+ 			__func__, err);
++		/*
++		 * Some UFS 4.0 devices advertise wspecversion >= 0x400 but
++		 * reject qTimestamp. Stop retrying on every runtime resume.
++		 */
++		hba->dev_quirks |= UFS_DEVICE_QUIRK_NO_TIMESTAMP_SUPPORT;
++	}
+ 
+ 	ufshcd_dev_man_unlock(hba);
+ }

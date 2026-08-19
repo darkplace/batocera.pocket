@@ -12,7 +12,7 @@
 
 <p align="center">
   <!-- Per-board tags only — never /releases/latest (OTA is SoC-scoped). -->
-  <a href="https://github.com/darkplace/batocera.pocket/releases/tag/v44-sm8750-20260815"><img src="https://img.shields.io/github/v/release/darkplace/batocera.pocket?filter=v44-sm8750-*&amp;label=SM8750&amp;color=2ea043" alt="SM8750 release"></a>
+  <a href="https://github.com/darkplace/batocera.pocket/releases/tag/v44-sm8750-20260819-2"><img src="https://img.shields.io/github/v/release/darkplace/batocera.pocket?filter=v44-sm8750-*&amp;label=SM8750&amp;color=2ea043" alt="SM8750 release"></a>
   <a href="https://github.com/darkplace/batocera.pocket/releases/tag/v44-sm8550-20260818"><img src="https://img.shields.io/github/v/release/darkplace/batocera.pocket?filter=v44-sm8550-*&amp;label=SM8550&amp;color=2ea043" alt="SM8550 release"></a>
   <a href="https://github.com/darkplace/batocera.pocket/releases/tag/v44-sm8250-20260811"><img src="https://img.shields.io/github/v/release/darkplace/batocera.pocket?filter=v44-sm8250-*&amp;label=SM8250&amp;color=c69026" alt="SM8250 release"></a>
 </p>
@@ -42,7 +42,7 @@ Images are per SoC. Every build ships the full Batocera stack (RetroArch cores, 
 |--------|--------|-------------|
 | AYN Odin 3 | ✅ Tested | **b_bloodcart99x**, **The Janitor** |
 
-> Official build: [`v44-sm8750-20260818`](https://github.com/darkplace/batocera.pocket/releases/tag/v44-sm8750-20260818) (**OTA + flash**). Previous: Golden Rabbit `v44-sm8750-20260816`.
+> Official build: [`v44-sm8750-20260819-2`](https://github.com/darkplace/batocera.pocket/releases/tag/v44-sm8750-20260819-2) (**OTA + flash**). Previous: Ports/Proton `v44-sm8750-20260819`.
 
 <details>
 <summary><b>Emulators &amp; extras</b></summary>
@@ -137,7 +137,7 @@ Per-board tags so OTA only matches the device SoC. Full **Updates / Fixes** hist
 
 | Board | Current tag | Notes |
 |-------|-------------|--------|
-| SM8750 (Odin 3) | [`v44-sm8750-20260818`](https://github.com/darkplace/batocera.pocket/releases/tag/v44-sm8750-20260818) | Discord / Vesktop, OSK window shift |
+| SM8750 (Odin 3) | [`v44-sm8750-20260819-2`](https://github.com/darkplace/batocera.pocket/releases/tag/v44-sm8750-20260819-2) | Steam screen + Pokémon Recomp |
 | SM8550 (Odin 2 / Portal) | [`v44-sm8550-20260818`](https://github.com/darkplace/batocera.pocket/releases/tag/v44-sm8550-20260818) | **Golden Rabbit** (Proton 11 ★, MangoApp) |
 | SM8250 | [`v44-sm8250-20260811`](https://github.com/darkplace/batocera.pocket/releases/tag/v44-sm8250-20260811) | Untested |
 

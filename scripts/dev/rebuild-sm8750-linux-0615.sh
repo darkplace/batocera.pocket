@@ -3,6 +3,7 @@
 #   0615 skip fully-passive multi-band scan (crash)
 #   0616 split scan into 8-channel chunks (missing APs)
 #   0617 send computed scan_priority (11d starvation)
+#   0618 latch UFS NO_TIMESTAMP after qTimestamp fail (Steam black screen)
 #   defconfig CFG80211_CERTIFICATION_ONUS (real country / active 5 GHz)
 #   python-gobject cairo foreign + lutris + batocera-config-lutris
 # Does NOT touch ES, USB gadget, ConnMan, iwd, or NetworkManager.
@@ -64,12 +65,14 @@ run_pkg() {
   log "OK: $pkg"
 }
 
-log "=== sm8750 linux ath12k wifi 0615/0616/0617 + ONUS + Lutris cairo ($(date -Is)) ==="
+log "=== sm8750 linux ath12k wifi 0615/0616/0617 + UFS 0618 + ONUS + Lutris cairo ($(date -Is)) ==="
 log "Hands-off: USB gadget, ES Network Settings, ConnMan, NM/iwd."
 
 MAC="$PRIMARY/build/linux-7.1.4/drivers/net/wireless/ath/ath12k/mac.c"
 WMI="$PRIMARY/build/linux-7.1.4/drivers/net/wireless/ath/ath12k/wmi.c"
 KCFG="$PRIMARY/build/linux-7.1.4/.config"
+
+UFSHCD="$PRIMARY/build/linux-7.1.4/drivers/ufs/core/ufshcd.c"
 
 if [ "${SKIP_LINUX:-0}" = 1 ]; then
   log "SKIP_LINUX=1: reuse existing linux build"
@@ -78,6 +81,12 @@ else
   log "next: PKG=linux (defconfig + show-build-order can stay quiet for several minutes)"
   run_pkg linux
 fi
+if ! grep -q 'Some UFS 4.0 devices advertise wspecversion >= 0x400 but' "$UFSHCD"; then
+  log "FAILED: ufshcd.c missing 0618 NO_TIMESTAMP latch"
+  echo "FAILED ufs-0618 $(date -Is)" >"$PROJECT_DIR/rebuild-sm8750-linux-0615.FAILED"
+  exit 1
+fi
+log "UFS 0618 qTimestamp latch present"
 
 fail=0
 if ! grep -q 'ath12k_mac_scan_start_chunk' "$MAC"; then

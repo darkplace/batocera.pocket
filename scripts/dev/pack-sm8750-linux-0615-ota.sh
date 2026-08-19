@@ -120,6 +120,23 @@ if ! grep -q 'set_exclusive_zone(layer_surface, 0)' \
   echo "FAILED osk-exclusive $(date -Is)" >"$PROJECT_DIR/pack-sm8750-linux-0615-ota.FAILED"
   exit 1
 fi
+install -m 0755 \
+  "$PROJECT_DIR/board/batocera/qualcomm/sm8750/fsoverlay/etc/init.d/S08ufs-pm" \
+  "$PRIMARY/target/etc/init.d/S08ufs-pm"
+install -m 0644 \
+  "$PROJECT_DIR/board/batocera/qualcomm/sm8750/fsoverlay/usr/lib/udev/rules.d/99-ayn-odin3.rules" \
+  "$PRIMARY/target/usr/lib/udev/rules.d/99-ayn-odin3.rules"
+if [ ! -x "$PRIMARY/target/etc/init.d/S08ufs-pm" ]; then
+  log "FAILED: S08ufs-pm missing in target"
+  echo "FAILED s08ufs-pm $(date -Is)" >"$PROJECT_DIR/pack-sm8750-linux-0615-ota.FAILED"
+  exit 1
+fi
+if ! grep -q 'DRIVER=="ufshcd-qcom"' \
+     "$PRIMARY/target/usr/lib/udev/rules.d/99-ayn-odin3.rules"; then
+  log "FAILED: udev missing ufshcd-qcom power/control=on"
+  echo "FAILED ufs-udev $(date -Is)" >"$PROJECT_DIR/pack-sm8750-linux-0615-ota.FAILED"
+  exit 1
+fi
 
 log ">>> wipe prior squashfs / OTA (keep split zip parts)"
 rm -f "$PRIMARY/images/rootfs.squashfs"

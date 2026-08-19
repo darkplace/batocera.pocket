@@ -1,1 +1,4 @@
 SUBSYSTEM=="input", ATTRS{name}=="AYN Odin3 Gamepad", MODE="0666", ENV{ID_INPUT_JOYSTICK}="1", ENV{ID_INPUT_MOUSE}="0"
+# Odin 3 UFS 4.0 rejects qTimestamp; runtime resume retries it and can
+# deadlock jbd2 when Steam starts. Keep the host runtime-active.
+ACTION=="add", SUBSYSTEM=="platform", DRIVER=="ufshcd-qcom", ATTR{power/control}="on"

@@ -49,6 +49,12 @@ verify_tree() {
   need_file "$t/usr/share/emulationstation/themes/es-theme-carbon/art/logos/pkmnrecomp.png" "carbon pkmnrecomp pokeball"
   need_file "$t/etc/init.d/S32pkmnrecomp-theme" "S32 pkmnrecomp PlayStation-X art"
   need_grep "proton_tip_already_installed" "$t/usr/bin/batocera-steam" "Steam proton tip skip"
+  need_grep "UFS_DEVICE_QUIRK_NO_TIMESTAMP_SUPPORT" \
+    "$ROOT/board/batocera/qualcomm/sm8750/linux_patches/0618-scsi-ufs-latch-NO_TIMESTAMP-after-qTimestamp-fail.patch" \
+    "UFS 0618 latch NO_TIMESTAMP"
+  need_file "$t/etc/init.d/S08ufs-pm" "S08ufs-pm keeps UFS runtime-active"
+  need_grep "power/control" "$t/etc/init.d/S08ufs-pm" "S08ufs-pm writes power/control"
+  need_grep 'DRIVER=="ufshcd-qcom"' "$t/usr/lib/udev/rules.d/99-ayn-odin3.rules" "udev keeps ufshcd-qcom runtime-active"
 
   need_grep "anyFile" "$t/usr/bin/batocera-systems" "PS2 anyFile BIOS check"
   need_grep "RPCS3_SHARE_PATCH" "$py/configgen/generators/rpcs3/rpcs3Paths.py" "PS3 RPCS3_SHARE_PATCH"
@@ -116,6 +122,16 @@ need_grep "start_idle_helper || true" /usr/bin/batocera-oled-care "live OLED hel
 need_grep "^44-pocket " /usr/share/batocera/batocera.version "live short version"
 need_grep discord_running /usr/bin/onscreen-keyboard "live OSK discord_running"
 need_file /usr/xenia_edge/xenia_edge "live xenia-edge payload"
+need_file "$BASE/etc/init.d/S08ufs-pm" "squashfs S08ufs-pm"
+need_file /etc/init.d/S08ufs-pm "live S08ufs-pm"
+need_grep 'DRIVER=="ufshcd-qcom"' /usr/lib/udev/rules.d/99-ayn-odin3.rules "live UFS udev keeps host active"
+need_grep 'DRIVER=="ufshcd-qcom"' "$BASE/usr/lib/udev/rules.d/99-ayn-odin3.rules" "squashfs UFS udev"
+ufsctl=$(cat /sys/bus/platform/devices/1d84000.ufs/power/control 2>/dev/null || true)
+if [ "$ufsctl" = on ]; then
+  pass "UFS power/control=on"
+else
+  fail "UFS power/control is '${ufsctl:-missing}' (want on)"
+fi
 
 # overlays must not still install old PS2/PS3
 if grep -q 'es-resume-fix/configgen/rpcs3Paths.py' /userdata/system/services/custom_service 2>/dev/null; then
@@ -152,6 +168,9 @@ case "$MODE" in
     need_grep "ath12k_mac_scan_chunk_multiband" "$mac" "wifi 0615/0616 multiband"
     need_grep "cmd->scan_priority = cpu_to_le32(arg->scan_priority)" "$wmi" "wifi 0617 scan_priority"
     need_grep "^CONFIG_CFG80211_CERTIFICATION_ONUS=y" "$kcfg" "CERTIFICATION_ONUS"
+    ufshcd="$PRIMARY/build/linux-7.1.4/drivers/ufs/core/ufshcd.c"
+    need_grep "Some UFS 4.0 devices advertise wspecversion >= 0x400 but" \
+      "$ufshcd" "UFS 0618 latch in ufshcd.c"
     oskc="$PRIMARY/build/batocera-onscreen-keyboard-v0.17/main.c"
     need_grep "set_exclusive_zone(layer_surface, 0)" "$oskc" "wvkbd exclusive_zone 0"
     ;;

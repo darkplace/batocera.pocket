@@ -8,6 +8,46 @@ README only lists the current tag per board — not this history.
 
 ---
 
+## `v44-sm8750-20260819-2` — Odin 3 (Steam screen + Pokémon Recomp)
+
+> On top of Ports translator / Proton tips (`v44-sm8750-20260819`). Smoke-tested
+> on AYN Odin 3. System string: `44-pocket 2026/08/19 02:06`.
+
+<details>
+<summary><b>Updates</b></summary>
+
+- **Pokémon Recomp** is its own system in EmulationStation (pokéball art, not a
+  second Game Boy tile). Put dumps in **`roms/pkmnrecomp/`** — not in `gb` / `gbc`.
+  - **Red / Blue** → `.gb` · **Yellow / Gold / Silver / Crystal** → `.gbc`
+  - The game is picked automatically (Gen 1 vs Gen 2) from the ROM.
+  - Mods: `roms/pkmnrecomp/mods/gen1/` and `…/mods/gen2/` (ZIP or folder).
+  - Options: **Tools → Configure Gen1Recomp** / **Configure Gen2Recomp**.
+  - Saves: `saves/apps/pkmnrecomp-gen1/` and `…/pkmnrecomp-gen2/`.
+  - Network share: `\\BATOCERA\share\roms\pkmnrecomp\`
+- **Pad (same as the rest of the image):** **Home + Start** exits. **A / B /
+  Start / Select** and the D-pad work in-game. Tweak extra options from the
+  Configure tools above — do not put these dumps in the Game Boy list.
+- **Steam** after an update: the GamepadUI stays on screen (no more black
+  panel when you launch Steam).
+- **OLED care** keeps running in EmulationStation. **M2** paddle toggles mouse
+  mode. After you leave Steam, pads still work in native emulators (e.g. PS3).
+- **Wi-Fi** finds 5 GHz networks more reliably. **Lutris** shows Epic/GOG
+  covers again.
+
+</details>
+
+<details>
+<summary><b>Fixes</b></summary>
+
+- Black screen when opening Steam right after an OTA / reboot.
+- Steam no longer re-downloads Proton tools that are already installed.
+- Steam can be opened again after **Return to Desktop**.
+- Pokémon Recomp no longer hides as a duplicate Game Boy entry.
+
+</details>
+
+---
+
 ## `v44-sm8750-20260818` — Odin 3 (Discord / Vesktop + OSK sway shift)
 
 > On top of `v44-sm8750-20260817` (OSK `@` + QAM Back + screensaver).

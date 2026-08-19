@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Rebuild userspace changes (keep already-built linux 0615 + cairo), pack OTA,
+# Rebuild kernel (UFS 0618 + wifi 0615–0617) + userspace must-ship, pack OTA,
 # apply on the Odin, reboot, verify squashfs contents.
 set -euo pipefail
 PROJECT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -8,7 +8,8 @@ cd "$PROJECT_DIR"
 CHAIN_LOG="${CHAIN_LOG:-$PROJECT_DIR/rebuild-pack-apply-sm8750-linux-0615.log}"
 HOST="${HOST:-root@10.10.10.115}"
 PW="${PW:-linux}"
-export SKIP_LINUX="${SKIP_LINUX:-1}"
+# Kernel 0618 (UFS qTimestamp latch) must ship; do not default-skip linux.
+export SKIP_LINUX="${SKIP_LINUX:-0}"
 export SKIP_GOBJECT="${SKIP_GOBJECT:-1}"
 export DOCKER_OPTS="${DOCKER_OPTS:---dns 9.9.9.9 --dns 1.1.1.1}"
 
@@ -58,6 +59,18 @@ SSH 'cp -a /userdata/system/upgrade/hotpatch/wvkbd-mobintl /userdata/system/upgr
      rm -f /userdata/system/upgrade/hotpatch/batocera.version /userdata/system/upgrade/hotpatch/splash.srt' \
   || fail hotpatch-chmod
 
+log ">>> stop Steam and pin UFS runtime-active before 5GB scp"
+SSH 'for d in /sys/bus/platform/devices/*.ufs; do
+       [ -e "$d/power/control" ] || continue
+       echo on > "$d/power/control" 2>/dev/null || true
+     done
+     /etc/init.d/S08ufs-pm start >/dev/null 2>&1 || true
+     pkill -TERM -f steam-direct-session 2>/dev/null || true
+     pkill -TERM -x steam 2>/dev/null || true
+     sleep 2
+     pkill -KILL -f "steamwebhelper|gamescope-wl|steam-direct-session" 2>/dev/null || true
+     true' || log "warn: pre-apply steam stop returned $?"
+
 log ">>> apply OTA"
 ./scripts/dev/apply-sm8750-ota.sh || fail apply
 
@@ -96,7 +109,7 @@ grep -n discord_running /usr/bin/onscreen-keyboard | head
 echo "=== mouse M2 ==="
 grep -n PADDLE_M2 /usr/bin/batocera-mouse-mode | head
 echo "=== ps2/ps3 ==="
-grep -c anyFile /usr/bin/batocera-systems || true
+echo "anyFile $(grep -c anyFile /usr/bin/batocera-systems || true)"
 python3 - <<'PY'
 import sys
 sys.path.insert(0, "/usr/lib/python3.12/site-packages")
@@ -120,6 +133,11 @@ echo "=== kernel wifi ==="
 zcat /proc/config.gz 2>/dev/null | grep CERTIFICATION_ONUS || true
 echo "=== lutris cairo ==="
 python3 -c "from gi import _gi_cairo; print('gi_cairo_ok')" 2>/dev/null || echo gi_cairo_missing
+echo "=== ufs pm ==="
+ls -l /etc/init.d/S08ufs-pm /overlay/base/etc/init.d/S08ufs-pm
+grep ufshcd-qcom /usr/lib/udev/rules.d/99-ayn-odin3.rules || true
+echo "ufs_power=$(cat /sys/bus/platform/devices/1d84000.ufs/power/control 2>/dev/null)"
+dmesg | grep -c 'set_timestamp_attr: failed' || true
 REMOTE
 
 log "=== verify dump ==="
@@ -135,6 +153,8 @@ grep -q PADDLE_M2 "$VERIFY" || { log "VERIFY fail M2"; failn=1; }
 grep -q anyFile "$VERIFY" || { log "VERIFY fail ps2"; failn=1; }
 grep -q RPCS3_SHARE_PATCH "$VERIFY" || { log "VERIFY fail rpcs3"; failn=1; }
 grep -q batocera-oled-care "$VERIFY" || { log "VERIFY fail oled"; failn=1; }
+grep -q S08ufs-pm "$VERIFY" || { log "VERIFY fail S08ufs-pm"; failn=1; }
+grep -q 'ufs_power=on' "$VERIFY" || { log "VERIFY fail UFS power/control"; failn=1; }
 
 if [ "$failn" -ne 0 ]; then
   fail "verify (see $VERIFY)"

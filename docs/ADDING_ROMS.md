@@ -242,6 +242,8 @@ and Gen 2 packs in `mods/gen2/` (e.g. DRAMATIC_SHAPE). Files in `mods/optional/`
 
 First Gen 2 import can take a couple of minutes (no file picker). Vanilla
 options/controls: **Tools → Configure Gen1Recomp / Configure Gen2Recomp**.
+On the Odin pad, **Home + Start** exits like any other emulator; **A / B /
+Start / Select** and the D-pad are the in-game buttons.
 
 ### PlayStation 4 (`ps4`)
 

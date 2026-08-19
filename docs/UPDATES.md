@@ -12,6 +12,8 @@ Controls / user FAQ: **[CONTROLS_AND_FAQ.md](CONTROLS_AND_FAQ.md)**.
 
 | Tag | Board | Notes |
 |-----|--------|--------|
+| `v44-sm8750-20260819-2` | SM8750 | Odin 3 — **OTA + flash** (Steam screen + Pokémon Recomp) |
+| `v44-sm8750-20260819` | SM8750 | Odin 3 — **OTA + flash** (Ports translator + Proton tips) |
 | `v44-sm8750-20260818` | SM8750 | Odin 3 — **OTA + flash** (Discord/Vesktop + OSK sway shift) |
 | `v44-sm8750-20260817` | SM8750 | Odin 3 — **OTA + flash** (OSK `@` + QAM Back + screensaver) |
 | `v44-sm8750-20260816` | SM8750 | Odin 3 — **OTA + flash** (**Golden Rabbit**) |

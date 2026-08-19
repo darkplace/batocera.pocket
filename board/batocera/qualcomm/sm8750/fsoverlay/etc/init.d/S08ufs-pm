@@ -1,0 +1,27 @@
+#!/bin/sh
+# Keep the SM8750 UFS host runtime-active.
+#
+# The Odin 3 UFS 4.0 device rejects qTimestamp. Runtime resume retries that
+# query and can deadlock the journal when Steam starts writing. Forcing
+# power/control=on stops those resume-time queries until the kernel latch
+# (0618) is in the running Image.
+
+start() {
+	for d in /sys/bus/platform/devices/*.ufs; do
+		[ -e "$d/power/control" ] || continue
+		echo on > "$d/power/control" 2>/dev/null || true
+	done
+}
+
+case "$1" in
+	start)
+		start
+		;;
+	stop|restart|reload)
+		;;
+	*)
+		echo "Usage: $0 {start}"
+		exit 1
+esac
+
+exit 0
